@@ -1,10 +1,17 @@
-import React from 'react'
+import {BrowserRouter, Routes,Route} from 'react-router-dom';
+import Navbar from './Layouts/Navbar';
+import Home from './pages/Home';
+import Footer from './Layouts/Footer';
 
 const App = () => {
   return (
-    <h1 className='text-3xl font-bold underline'>
-      Hello world!
-    </h1>
+    <BrowserRouter>
+      <Navbar/>
+      <Routes>
+        <Route path='/' element={<Home/>}/>
+      </Routes>
+      <Footer/>
+    </BrowserRouter>
   )
 }
 
