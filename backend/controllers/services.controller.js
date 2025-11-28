@@ -1,32 +1,33 @@
-const Service = require('../models/category.model.js');
-const errorHandler = require('../utils/errorHandler.js');
+const Category = require('../models/category.model.js');
+const Service = require('../models/services.model.js');
 
 const createService = async (req, res, next) => {
-    try {
-        const { title, description, category, price, deliveryTime } = req.body;
+  try {
+    const { title, description, category, price, deliveryTime } = req.body;
+    const cat = await Category.findById(category).lean();
+    if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
+    const service = await Service.create({
+      title,
+      description,
+      category,
+      price,
+      deliveryTime,
+      createdBy: req.user?._id
+    });
+    res.status(201).json({ success: true, service });
+  } catch (err) {
+    next(err);
 
-        const service = await Service.create({
-            title,
-            description,
-            category,
-            price,
-            deliveryTime,
-            createdBy: req.user?._id,
-        });
-
-        res.status(201).json({ success: true, service });
-    } catch (err) {
-        next(errorHandler(500, "Server Error"));
-
-    }
+  }
 };
 
-const getServices = async (req,res,next)=>{
-    try {
+const getServices = async (req, res, next) => {
+  try {
     const services = await Service.find()
+      .lean()
+      .sort({ createdAt: -1 })
       .populate("category", "name")
-      .populate("createdBy", "fullname email")
-      .sort({ createdAt: -1 });
+      .populate("createdBy", "fullname email");
 
     res.json({ success: true, services });
   } catch (err) {
@@ -37,12 +38,10 @@ const getServices = async (req,res,next)=>{
 const getServiceById = async (req, res, next) => {
   try {
     const service = await Service.findById(req.params.id)
-      .populate("category", "name")
-      .populate("createdBy", "fullname email");
-
-    if (!service)
-      return res.status(404).json({ message: "Service not found" });
-
+      .populate('category', 'name')
+      .populate('createdBy', 'name email')
+      .lean();
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
     res.json({ success: true, service });
   } catch (err) {
     next(err);
@@ -51,16 +50,22 @@ const getServiceById = async (req, res, next) => {
 
 const updateService = async (req, res, next) => {
   try {
-    const updated = await Service.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    const service = await Service.findById(req.params.id);
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
 
-    if (!updated)
-      return res.status(404).json({ message: "Service not found" });
+    // ownership or admin
+    if (service.createdBy && req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
 
-    res.json({ success: true, service: updated });
+    const updatable = ['title', 'description', 'category', 'price', 'deliveryTime'];
+    updatable.forEach(field => {
+      if (req.body[field] !== undefined) service[field] = req.body[field];
+    });
+
+    await service.save();
+    const populated = await Service.findById(service._id).populate('category', 'name').populate('createdBy', 'name email').lean();
+    res.json({ success: true, service: populated });
   } catch (err) {
     next(err);
   }
@@ -68,11 +73,15 @@ const updateService = async (req, res, next) => {
 
 const deleteService = async (req, res, next) => {
   try {
-    const deleted = await Service.findByIdAndDelete(req.params.id);
-    if (!deleted)
-      return res.status(404).json({ message: "Service not found" });
+    const service = await Service.findById(req.params.id);
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
 
-    res.json({ success: true, message: "Service deleted" });
+    if (service.createdBy && req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    await service.deleteOne();
+    res.json({ success: true, message: 'Service deleted' });
   } catch (err) {
     next(err);
   }
