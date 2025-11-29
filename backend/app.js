@@ -5,6 +5,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth.route.js');
 const categoryRoutes = require('./routes/category.route.js');
 const serviceRoutes = require('./routes/services.route.js');
+const gigRoutes = require('./routes/gig.route.js');
 
 dotenv.config(); 
 connectDB();
@@ -19,6 +20,7 @@ app.use(cors());
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/gig', gigRoutes);
 
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
