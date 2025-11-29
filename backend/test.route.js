@@ -1,5 +1,5 @@
 // testRoutes.js  → ONLY LOADED DURING TESTS
-const { protect } = require('../middleware/auth.middleware');
+const { protect } = require('./middleware/auth.middleware');
 
 module.exports = (app) => {
   console.log('Test-only dummy routes loaded');
