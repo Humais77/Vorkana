@@ -63,13 +63,28 @@ const updateService = async (req, res, next) => {
       if (req.body[field] !== undefined) service[field] = req.body[field];
     });
 
+    // Check category exists
+    if (req.body.category) {
+      const cat = await Category.findById(req.body.category).lean();
+      if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
+    }
+
     await service.save();
-    const populated = await Service.findById(service._id).populate('category', 'name').populate('createdBy', 'name email').lean();
+
+    const populated = await Service.findById(service._id)
+      .populate('category', 'name')
+      .populate('createdBy', 'fullname email')
+      .lean();
+
     res.json({ success: true, service: populated });
   } catch (err) {
+    if (err.name === 'CastError' && err.kind === 'ObjectId') {
+      return res.status(400).json({ success: false, message: 'Invalid service ID' });
+    }
     next(err);
   }
 };
+
 
 const deleteService = async (req, res, next) => {
   try {
