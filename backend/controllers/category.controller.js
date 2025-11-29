@@ -39,8 +39,13 @@ const getCategoryById = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid category ID' });
     }
 
-    const category = await Category.findOne({ _id: id, isActive: true }).lean();
-    if (!category) return res.status(404).json({ success: false, message: 'Category not found' });
+    const category = await Category.findOne({ _id: id, isActive: true });
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found'
+      });
+    }
 
     res.json({ success: true, category });
   } catch (error) {
@@ -62,7 +67,7 @@ const updateCategory = async (req, res, next) => {
     }
 
     if (category.createdBy && req.user.role !== 'admin' &&
-        category.createdBy.toString() !== req.user._id.toString()) {
+      category.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
@@ -95,7 +100,7 @@ const deleteCategory = async (req, res, next) => {
     }
 
     if (category.createdBy && req.user.role !== 'admin' &&
-        category.createdBy.toString() !== req.user._id.toString()) {
+      category.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 

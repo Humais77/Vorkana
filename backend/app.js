@@ -27,7 +27,7 @@ app.use((err, req, res, next) => {
 });
 
 // if (process.env.NODE_ENV === 'test') {
-//   require('./testRoutes')(app);
+//   require('./test.route.js')(app);
 // }
 
 module.exports = app;
