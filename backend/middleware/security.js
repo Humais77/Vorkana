@@ -15,4 +15,4 @@ module.exports = (app) => {
         message:{success:false, message:"Too many requests, please try again later."}
     }));
     app.disable('x-powered-by');
-};
+}

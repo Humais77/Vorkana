@@ -1,27 +1,35 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model.js');
 
-const protect = async (req, res, next) => {
-    try {
-        const auth = req.headers.authorization;
-        const token = auth && auth.startsWith('Bearer ') ? auth.split(' ')[1] : null;
-        if (!token) {
-            return res.status(401).json({ success: false, message: "Authorization denied" });
+const protect = async (req,res,next)=>{
+    let token;
+    if(req.headers.authorization && req.headers.authorization.startsWith("Bearer")){
+        try {
+            token = req.headers.authorization.split(" ")[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const userId = decoded.user?.id || decoded._id || decoded.id;
+            if(!userId){
+                return res.status(401).json({success:false, message:"Not authorized, token failed"});
+            }
+            req.user = await User.findById(userId, '-password');
+            if(!req.user){
+                return res.status(401).json({success:false, message:"Not authorized, user not found"});
+            }
+            return next();
+        } catch (error) {
+            console.error("Token verification failed:", error);
+            return res.status(401).json({ message: "Not authorized, token failed" });
         }
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-        if (!payload?.id) return res.status(401).json({ success: false, message: "Invalid Token" });
-        const user = await User.findById(payload.id).lean();
-        if (!user) return res.status(401).json({ success: false, message: "User not found" });
-
-        req.user = { _id: payload.id, role: user.role, name: user.name, email: user.email };
+    }else{
+             return res.status(401).json({ message: "Not authorized, no token provided" });
+        }
+}
+const adminOnly = (req,res,next)=>{
+    if(req.user && req.user.role ==="admin"){
         next();
-    } catch (error) {
-        return res.status(401).json({ success: false, message: "Token invalid or expired" });
+    }else{
+        res.status(403).json({message:"Not authorized as an admin"});
     }
 }
-const adminOnly = (req, res, next) => {
-    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only' });
-    next();
-}
-module.exports = { protect, adminOnly };
+
+module.exports = { protect ,adminOnly};
