@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
 
 const register = async (req, res, next) => {
-  const { name, email, password } = req.body;
+  const { name, email, password ,role} = req.body;
 
   try {
     const existingUser = await User.findOne({ email });
@@ -19,6 +19,7 @@ const register = async (req, res, next) => {
       name,
       email,
       password: hashedPassword,
+      role: role || 'user',
     });
 
     const token = jwt.sign(
