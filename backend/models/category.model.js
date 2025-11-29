@@ -2,39 +2,40 @@ const mongoose = require('mongoose');
 const slugify = require('slugify');
 
 const categorySchema = new mongoose.Schema({
-    name:{
-        type:String,
-        required:true,
-        unique:true,
-        trim:true,
-        minLength:2,
-        maxLength:50,
-    },
-    description:{
-        type:String,
-        default:'',
-    },
-    createdBy:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User",
-    },
-    slug:{
-        type:String,
-        index:true,
-    },   
-},{timestamps:true});
-categorySchema.pre("save",function(next){
-    if(!this.isModified("name")){
-        this.slug = slugify(this.name,{lower:true,strict:true});
-    }
-    next();
-});
-categorySchema.post('save', function(error, doc, next) {
-  if (error.name === 'MongoServerError' && error.code === 11000) {
-    next(new Error('Category with that name already exists'));
-  } else {
-    next(error);
+  name: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    minlength: 2,
+    maxlength: 50,
+  },
+  description: {
+    type: String,
+    default: '',
+    trim: true,
+    maxlength: 1000,
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  slug: {
+    type: String,
+    index: true,
+  },
+  isActive: {
+    type: Boolean,
+    default: true, // optional soft delete
+  }
+}, { timestamps: true });
+
+// Slug generation
+categorySchema.pre("save", function () {
+  if (this.isModified("name")) {
+    this.slug = slugify(this.name, { lower: true, strict: true });
   }
 });
-const Category = mongoose.model('Category',categorySchema);
+
+const Category = mongoose.model('Category', categorySchema);
 module.exports = Category;
