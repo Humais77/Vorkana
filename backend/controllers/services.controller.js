@@ -4,7 +4,7 @@ const Service = require('../models/services.model.js');
 const createService = async (req, res, next) => {
   try {
     const { title, description, category, price, deliveryTime } = req.body;
-    const cat = await Category.findById(category).lean();
+    const cat = await Category.findById(category)
     if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
     const service = await Service.create({
       title,
@@ -24,7 +24,7 @@ const createService = async (req, res, next) => {
 const getServices = async (req, res, next) => {
   try {
     const services = await Service.find()
-      .lean()
+      
       .sort({ createdAt: -1 })
       .populate("category", "name")
       .populate("createdBy", "fullname email");
@@ -40,7 +40,7 @@ const getServiceById = async (req, res, next) => {
     const service = await Service.findById(req.params.id)
       .populate('category', 'name')
       .populate('createdBy', 'name email')
-      .lean();
+     
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
     res.json({ success: true, service });
   } catch (err) {
@@ -65,7 +65,7 @@ const updateService = async (req, res, next) => {
 
     // Check category exists
     if (req.body.category) {
-      const cat = await Category.findById(req.body.category).lean();
+      const cat = await Category.findById(req.body.category)
       if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
     }
 
@@ -74,7 +74,7 @@ const updateService = async (req, res, next) => {
     const populated = await Service.findById(service._id)
       .populate('category', 'name')
       .populate('createdBy', 'fullname email')
-      .lean();
+      
 
     res.json({ success: true, service: populated });
   } catch (err) {
@@ -89,16 +89,23 @@ const updateService = async (req, res, next) => {
 const deleteService = async (req, res, next) => {
   try {
     const service = await Service.findById(req.params.id);
-    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
+    if (!service) return res.status(404).json({ message: "Service not found" });
 
-    if (service.createdBy && req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
+    if (req.user.role !== "admin") {
+      if (service.createdBy.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Not allowed to delete this service" });
+      }
     }
 
     await service.deleteOne();
-    res.json({ success: true, message: 'Service deleted' });
-  } catch (err) {
-    next(err);
+
+   return res.json({
+  success: true,
+  message: "Service deleted"
+});
+
+  } catch (error) {
+    next(error);
   }
 };
 module.exports = {

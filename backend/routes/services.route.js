@@ -8,6 +8,6 @@ router.post("/", protect,validateCreate,controller.createService);
 router.get("/", controller.getServices);
 router.get("/:id", controller.getServiceById);
 router.put('/:id', protect, validateUpdate, controller.updateService);
-router.delete('/:id', protect, adminOnly, controller.deleteService); 
+router.delete('/:id', protect, controller.deleteService); 
 
 module.exports = router;
