@@ -1,33 +1,79 @@
+// backend/controllers/services.controller.js
+
+const mongoose = require('mongoose');
+const sanitizeHtml = require('sanitize-html');
 const Category = require('../models/category.model.js');
 const Service = require('../models/services.model.js');
 
+/**
+ * Sanitize string input to prevent XSS attacks
+ */
+const sanitizeInput = (str) => {
+  if (typeof str !== 'string') return str;
+  return sanitizeHtml(str, { allowedTags: [], allowedAttributes: {} }).trim();
+};
+
+/**
+ * Sanitize request body
+ */
+const sanitizeBody = (body) => {
+  const clean = {};
+  for (const key in body) {
+    if (Object.hasOwn(body, key)) {
+      clean[key] = typeof body[key] === 'string' ? sanitizeInput(body[key]) : body[key];
+    }
+  }
+  return clean;
+};
+
+/**
+ * Create a new service
+ */
 const createService = async (req, res, next) => {
   try {
-    const { title, description, category, price, deliveryTime } = req.body;
-    const cat = await Category.findById(category)
-    if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
+    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const { title, description, category, price, deliveryTime } = sanitizeBody(req.body);
+
+    // Validate required fields
+    if (!title || !category || price === undefined || !deliveryTime) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Validate numeric values
+    if (price < 0) return res.status(400).json({ success: false, message: 'Invalid price' });
+    if (deliveryTime < 1) return res.status(400).json({ success: false, message: 'Invalid delivery time' });
+
+    // Validate category ID
+    if (!mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({ success: false, message: 'Invalid category ID' });
+    }
+
+    const cat = await Category.findById(category);
+    if (!cat) return res.status(400).json({ success: false, message: 'Category not found' });
+
     const service = await Service.create({
       title,
-      description,
+      description: description || '',
       category,
       price,
       deliveryTime,
-      createdBy: req.user?._id
+      createdBy: req.user._id,
     });
+
     res.status(201).json({ success: true, service });
   } catch (err) {
-    next(err);
-
+    next(err); 
   }
 };
 
+
 const getServices = async (req, res, next) => {
   try {
-    const services = await Service.find()
-      
+    const services = await Service.find({ isActive: { $ne: false } })
       .sort({ createdAt: -1 })
-      .populate("category", "name")
-      .populate("createdBy", "fullname email");
+      .populate('category', 'name')
+      .populate('createdBy', 'fullname email'); 
 
     res.json({ success: true, services });
   } catch (err) {
@@ -37,11 +83,19 @@ const getServices = async (req, res, next) => {
 
 const getServiceById = async (req, res, next) => {
   try {
-    const service = await Service.findById(req.params.id)
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid service ID' });
+    }
+
+    const service = await Service.findById(id)
       .populate('category', 'name')
-      .populate('createdBy', 'name email')
-     
-    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
+      .populate('createdBy', 'fullname email');
+
+    if (!service || service.isActive === false) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
+
     res.json({ success: true, service });
   } catch (err) {
     next(err);
@@ -50,64 +104,78 @@ const getServiceById = async (req, res, next) => {
 
 const updateService = async (req, res, next) => {
   try {
-    const service = await Service.findById(req.params.id);
-    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
+    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    // ownership or admin
-    if (service.createdBy && req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid service ID' });
+    }
+
+    const service = await Service.findById(id);
+    if (!service || service.isActive === false) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
+    if (req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    const updatable = ['title', 'description', 'category', 'price', 'deliveryTime'];
-    updatable.forEach(field => {
-      if (req.body[field] !== undefined) service[field] = req.body[field];
-    });
+    const cleanData = sanitizeBody(req.body);
+    const allowed = ['title', 'description', 'category', 'price', 'deliveryTime'];
 
-    // Check category exists
-    if (req.body.category) {
-      const cat = await Category.findById(req.body.category)
-      if (!cat) return res.status(400).json({ success: false, message: 'Invalid category id' });
+    allowed.forEach(field => {
+      if (Object.hasOwn(cleanData, field)) {
+        service[field] = cleanData[field];
+      }
+    });
+    if (service.price < 0) return res.status(400).json({ success: false, message: 'Invalid price' });
+    if (service.deliveryTime < 1) return res.status(400).json({ success: false, message: 'Invalid delivery time' });
+    if (cleanData.category) {
+      if (!mongoose.Types.ObjectId.isValid(cleanData.category)) {
+        return res.status(400).json({ success: false, message: 'Invalid category ID' });
+      }
+      const cat = await Category.findById(cleanData.category);
+      if (!cat) return res.status(400).json({ success: false, message: 'Category not found' });
     }
 
     await service.save();
 
     const populated = await Service.findById(service._id)
       .populate('category', 'name')
-      .populate('createdBy', 'fullname email')
-      
+      .populate('createdBy', 'fullname email');
 
-    res.json({ success: true, service: populated });
+    res.json({ success: true, service: populated || service });
   } catch (err) {
-    if (err.name === 'CastError' && err.kind === 'ObjectId') {
-      return res.status(400).json({ success: false, message: 'Invalid service ID' });
-    }
     next(err);
   }
 };
 
-
 const deleteService = async (req, res, next) => {
   try {
-    const service = await Service.findById(req.params.id);
-    if (!service) return res.status(404).json({ message: "Service not found" });
+    if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    if (req.user.role !== "admin") {
-      if (service.createdBy.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: "Not allowed to delete this service" });
-      }
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid service ID' });
     }
 
-    await service.deleteOne();
+    const service = await Service.findById(id);
+    if (!service || service.isActive === false) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
 
-   return res.json({
-  success: true,
-  message: "Service deleted"
-});
+    if (req.user.role !== 'admin' && service.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
 
-  } catch (error) {
-    next(error);
+    service.isActive = false;
+    await service.save();
+
+    res.json({ success: true, message: 'Service deleted' });
+  } catch (err) {
+    next(err);
   }
 };
+
 module.exports = {
   createService,
   getServices,
