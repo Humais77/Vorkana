@@ -20,7 +20,7 @@ app.use(cors());
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
-app.use('/api/gig', gigRoutes);
+app.use('/api/gigs', gigRoutes);
 
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;

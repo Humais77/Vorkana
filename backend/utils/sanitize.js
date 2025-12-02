@@ -1,3 +1,12 @@
-const sanitizeInput = (str) => String(str).replace(/[<>$]/g, '').trim();
+const xss = require('xss');
 
-module.exports = { sanitizeInput };
+const sanitizeHtml = (str) => {
+  if (typeof str !== 'string') return str;
+  return xss(str, {
+    whiteList: {},          // Allow NO tags
+    stripIgnoreTag: true,   // Remove <script>, <iframe>, etc.
+    stripIgnoreTagBody: ['script', 'style', 'iframe']
+  }).trim();
+};
+
+module.exports = { sanitizeHtml };
