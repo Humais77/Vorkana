@@ -4,15 +4,14 @@ const Joi = require('joi');
 const createSchema = Joi.object({
   name: Joi.string().trim().min(2).max(50).required(),
   description: Joi.string().trim().allow('').max(1000),
-});
+}).unknown(false); 
 
-// Update schema - all fields optional
+// Update schema
 const updateSchema = Joi.object({
   name: Joi.string().trim().min(2).max(50),
   description: Joi.string().trim().allow('').max(1000),
-});
+}).unknown(false); 
 
-// Middleware
 const validateCreate = (req, res, next) => {
   const { error } = createSchema.validate(req.body);
   if (error)

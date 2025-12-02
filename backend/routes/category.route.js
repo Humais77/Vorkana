@@ -4,11 +4,10 @@ const controller = require('../controllers/category.controller.js');
 const { protect, adminOnly } = require('../middleware/auth.middleware.js');
 const { validateCreate, validateUpdate } = require('../middleware/validators/category.validator.js');
 
-
 router.post('/', protect, adminOnly, validateCreate, controller.createCategory);
 router.get('/', controller.getCategories);
 router.get('/:id', controller.getCategoryById);
-router.put('/:id', protect, validateUpdate, controller.updateCategory);
+router.put('/:id', protect, adminOnly, validateUpdate, controller.updateCategory);
 router.delete('/:id', protect, adminOnly, controller.deleteCategory);
 
 module.exports = router;
