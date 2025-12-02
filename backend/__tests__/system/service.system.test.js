@@ -8,23 +8,25 @@ const jwt = require('jsonwebtoken');
 
 describe('Service System Test', () => {
   jest.setTimeout(60000);
-  let mongo, token, category;
+
+  let mongo, token, category, user;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'testsecret123';
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
 
-    // In service.system.test.js
-    const user = await User.create({
+    // Create user
+    user = await User.create({
       fullname: "Sys User",
       email: "sys@example.com",
       password: "password123",
-      role: "user"   // ADD THIS LINE
+      role: "user"
     });
 
     token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
 
+    // Create category only once
     category = await Category.create({ name: "Web" });
   });
 
@@ -34,12 +36,13 @@ describe('Service System Test', () => {
   });
 
   it('creates, updates, fetches and deletes service', async () => {
-    // Create
+    // CREATE
     const createRes = await request(app)
       .post('/api/services')
       .set('Authorization', `Bearer ${token}`)
       .send({
         title: "System Service",
+        description: "Test description",
         category: category._id,
         price: 50,
         deliveryTime: 5
@@ -48,21 +51,26 @@ describe('Service System Test', () => {
     expect(createRes.status).toBe(201);
     const id = createRes.body.service._id;
 
-    // Update
-    await request(app)
+    // UPDATE
+    const updateRes = await request(app)
       .put(`/api/services/${id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ title: "Updated System Service" })
-      .expect(200);
+      .send({ title: "Updated System Service" });
 
-    // Fetch
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.service.title).toBe("Updated System Service");
+
+    // FETCH
     const getRes = await request(app).get(`/api/services/${id}`);
+    expect(getRes.status).toBe(200);
     expect(getRes.body.service.title).toBe("Updated System Service");
 
-    // Delete
-    await request(app)
+    // DELETE
+    const deleteRes = await request(app)
       .delete(`/api/services/${id}`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(deleteRes.status).toBe(200);
+    expect(deleteRes.body.success).toBe(true);
   });
 });

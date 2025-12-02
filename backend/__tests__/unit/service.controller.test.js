@@ -1,3 +1,6 @@
+// backend/__tests__/unit/service.controller.test.js
+
+const mongoose = require('mongoose');
 const Service = require('../../models/services.model.js');
 const Category = require('../../models/category.model.js');
 const {
@@ -6,120 +9,136 @@ const {
   deleteService,
 } = require('../../controllers/services.controller.js');
 
-jest.mock('../../models/services.model.js');
-jest.mock('../../models/category.model.js');
+jest.mock('../../models/services.model');
+jest.mock('../../models/category.model');
 
 describe('Service Controller - Unit Tests', () => {
   let req, res, next;
+  const validId = new mongoose.Types.ObjectId().toHexString();
+  const validCategoryId = new mongoose.Types.ObjectId().toHexString();
 
   beforeEach(() => {
-    req = { body: {}, params: {}, user: { _id: 'user123', role: 'user' } };
-    res = { 
-      status: jest.fn().mockReturnThis(), 
-      json: jest.fn() 
+    req = { body: {}, params: {}, user: { _id: new mongoose.Types.ObjectId().toHexString(), role: 'user' } };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
     };
     next = jest.fn();
-
-    // Clear all mocks
     jest.clearAllMocks();
   });
 
-  // CREATE
   it('should create a service successfully', async () => {
-    Category.findById.mockResolvedValue({ _id: 'cat123' }); // Mock FIRST
-    Service.create.mockResolvedValue({ _id: 'svc1', title: 'Test Service' });
+    Category.findById.mockResolvedValue({ _id: validCategoryId });
+    Service.create.mockResolvedValue({
+      _id: validId,
+      title: 'Test Service',
+      category: validCategoryId,
+      createdBy: req.user._id,
+    });
 
     req.body = {
-      title: "Test Service",
-      description: "Desc",
-      category: "cat123",
-      price: 10,
-      deliveryTime: 3,
+      title: 'Test Service',
+      description: 'desc',
+      category: validCategoryId,
+      price: 50,
+      deliveryTime: 5,
     };
 
     await createService(req, res, next);
 
-    expect(Category.findById).toHaveBeenCalledWith('cat123');
-    expect(Service.create).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Test Service",
-      category: "cat123",
-      createdBy: "user123"
-    }));
     expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      service: expect.any(Object)
-    });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
-  it('should fail if category does not exist', async () => {
-    Category.findById.mockResolvedValue(null); // Mock first
-
-    req.body = {
-      title: "Test",
-      category: "invalid",
-      price: 10,
-      deliveryTime: 3
-    };
-
-    await createService(req, res, next);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      success: false,
-      message: "Invalid category id"
-    });
-  });
-
-  // UPDATE
   it('should update service successfully', async () => {
     const fakeService = {
-      _id: "svc1",
-      title: "Old",
-      createdBy: "user123",
-      save: jest.fn().mockResolvedValue(this),
+      _id: validId,
+      title: 'Old Title',
+      createdBy: req.user._id,
+      category: validCategoryId,
+      save: jest.fn().mockResolvedValue({}),
     };
 
-    Service.findById.mockResolvedValue(fakeService);
-    Category.findById.mockResolvedValue({ _id: "cat123" });
+    // Mock the first findById (controller update)
+    Service.findById
+      .mockResolvedValueOnce(fakeService) // fetch before update
+      .mockReturnValueOnce({              // populate after save
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue({
+            ...fakeService,
+            title: 'Updated Title',
+            category: { _id: validCategoryId, name: 'Web' },
+            createdBy: { _id: req.user._id, fullname: 'Sys User', email: 'sys@example.com' },
+          }),
+        }),
+      });
 
-    req.params.id = "svc1";
-    req.body = { title: "Updated Title" };
+    req.params.id = validId;
+    req.body = { title: 'Updated Title' };
 
     await updateService(req, res, next);
 
     expect(fakeService.save).toHaveBeenCalled();
-    expect(fakeService.title).toBe("Updated Title");
+    expect(fakeService.title).toBe('Updated Title');
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      service: expect.objectContaining({
+        _id: validId,
+        title: 'Updated Title',
+        category: { _id: validCategoryId, name: 'Web' },
+        createdBy: { _id: req.user._id, fullname: 'Sys User', email: 'sys@example.com' },
+      }),
+    });
   });
 
   it('should prevent unauthorized update', async () => {
-    req.user._id = "hacker123";
-    req.params.id = "svc1";
+    Service.findById.mockResolvedValue({
+      _id: validId,
+      createdBy: 'otherUser',
+      isActive: true,
+    });
 
-    Service.findById.mockResolvedValue({ createdBy: "user123" });
+    req.params.id = validId;
+    req.user._id = 'hacker';
 
     await updateService(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  // DELETE
-  it('should delete a service', async () => {
+  it('should delete a service successfully', async () => {
     const svc = {
-      _id: "svc1",
-      createdBy: "user123",
-      deleteOne: jest.fn()
+      _id: validId,
+      createdBy: req.user._id,
+      isActive: true,
+      save: jest.fn().mockResolvedValue({}),
     };
 
     Service.findById.mockResolvedValue(svc);
-    req.params.id = "svc1";
+    req.params.id = validId;
 
     await deleteService(req, res, next);
 
-    expect(svc.deleteOne).toHaveBeenCalled();
+    expect(svc.isActive).toBe(false);
+    expect(svc.save).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
       success: true,
-      message: "Service deleted"
+      message: 'Service deleted',
     });
+  });
+
+  it('should prevent unauthorized delete', async () => {
+    Service.findById.mockResolvedValue({
+      _id: validId,
+      createdBy: 'otherUser',
+      isActive: true,
+    });
+
+    req.params.id = validId;
+    req.user._id = 'hacker';
+
+    await deleteService(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });

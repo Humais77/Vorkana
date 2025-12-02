@@ -20,6 +20,7 @@ describe('Category Controller Unit Tests', () => {
     jest.clearAllMocks();
   });
 
+  // --------------------- CREATE ---------------------
   describe('createCategory', () => {
     it('creates category successfully', async () => {
       req.body = { name: 'Design', description: 'UI/UX' };
@@ -43,8 +44,17 @@ describe('Category Controller Unit Tests', () => {
         message: 'Category with that name already exists'
       });
     });
+
+    it('returns 403 for non-admin', async () => {
+      req.user.role = 'user';
+      await createCategory(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: 'Forbidden' }));
+    });
   });
 
+  // --------------------- GET ALL ---------------------
   describe('getCategories', () => {
     it('returns active categories', async () => {
       Category.find.mockReturnValue({ lean: () => ({ sort: () => ['cat'] }) });
@@ -55,6 +65,7 @@ describe('Category Controller Unit Tests', () => {
     });
   });
 
+  // --------------------- GET BY ID ---------------------
   describe('getCategoryById', () => {
     it('returns 400 invalid id', async () => {
       req.params.id = 'invalid';
@@ -62,6 +73,7 @@ describe('Category Controller Unit Tests', () => {
       await getCategoryById(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
 
     it('returns 404 not found', async () => {
@@ -71,18 +83,19 @@ describe('Category Controller Unit Tests', () => {
       await getCategoryById(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
   });
 
+  // --------------------- UPDATE ---------------------
   describe('updateCategory', () => {
-    it('updates successfully', async () => {
+    it('updates successfully as admin', async () => {
       const now = new mongoose.Types.ObjectId();
       req.params.id = now;
 
       const mockCategory = {
         _id: now,
         isActive: true,
-        createdBy: '123',
         save: jest.fn(),
       };
 
@@ -95,26 +108,32 @@ describe('Category Controller Unit Tests', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     });
 
-    it('forbidden update when not owner', async () => {
+    it('returns 403 when user is not admin', async () => {
       req.params.id = new mongoose.Types.ObjectId().toString();
-      Category.findById.mockResolvedValue({
-        isActive: true,
-        createdBy: 'different_user',
-      });
-
-      req.user = { _id: '123', role: 'user' };
+      req.user.role = 'user'; // non-admin
 
       await updateCategory(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: 'Forbidden' }));
+    });
+
+    it('returns 404 when category not found', async () => {
+      req.params.id = new mongoose.Types.ObjectId().toString();
+      Category.findById.mockResolvedValue(null);
+
+      await updateCategory(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
   });
 
+  // --------------------- DELETE ---------------------
   describe('deleteCategory', () => {
-    it('soft deletes successfully', async () => {
+    it('soft deletes successfully as admin', async () => {
       const mockCategory = {
         isActive: true,
-        createdBy: '123',
         save: jest.fn()
       };
 
@@ -128,6 +147,27 @@ describe('Category Controller Unit Tests', () => {
         success: true,
         message: 'Category deleted'
       });
+    });
+
+    it('returns 403 for non-admin', async () => {
+      req.user.role = 'user';
+      req.params.id = new mongoose.Types.ObjectId().toString();
+
+      await deleteCategory(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: 'Forbidden' }));
+    });
+
+    it('returns 404 when category not found', async () => {
+      req.user.role = 'admin';
+      Category.findById.mockResolvedValue(null);
+      req.params.id = new mongoose.Types.ObjectId().toString();
+
+      await deleteCategory(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
   });
 });
