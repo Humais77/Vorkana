@@ -12,11 +12,14 @@ const {
 const { validateCreate, validateUpdate } = require('../middleware/validators/gig.validator.js');
 const { protect } = require('../middleware/auth.middleware.js');
 const { creatorOrAdmin } = require('../middleware/gig.middleware.js');
+const multer = require("multer");
 
+const storage = multer.memoryStorage();
+const upload = multer({storage});
 router.get('/', getGigs);
 router.get('/:id', getGigById);
 
-router.post('/', protect, validateCreate, createGig);
+router.post('/', protect, validateCreate,upload.array('attachments'), createGig);
 
 router.put('/:id',
   protect,

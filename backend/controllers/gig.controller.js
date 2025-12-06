@@ -6,7 +6,17 @@ const { sanitizeHtml } = require('../utils/sanitize.js');
 const createGig = async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    // req.body now contains text fields
     const data = req.body;
+
+    // If attachments exist
+    const attachments = req.files; // array of uploaded files
+
+    if (!data.projectCategory) {
+      return res.status(400).json({ success: false, message: 'Project category is required' });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(data.projectCategory)) {
       return res.status(400).json({ success: false, message: 'Invalid category ID' });
     }
@@ -17,9 +27,18 @@ const createGig = async (req, res) => {
     data.createdBy = req.user._id;
 
     const gig = new Gig(data);
-    await gig.save(); 
 
-  
+    // If you want to store attachments paths
+    if (attachments && attachments.length > 0) {
+      gig.attachments = attachments.map(file => ({
+        filename: file.originalname,
+        buffer: file.buffer,
+        mimetype: file.mimetype
+      }));
+    }
+
+    await gig.save();
+
     await gig.populate('projectCategory', 'name');
     await gig.populate('createdBy', 'fullname email');
 
