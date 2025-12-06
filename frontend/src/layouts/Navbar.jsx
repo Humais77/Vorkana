@@ -104,6 +104,20 @@ const Navbar = () => {
               Contact
             </NavLink>
           </li>
+          <li>
+             <NavLink
+              to="/sign-in"
+              className={({ isActive }) =>
+                `transition ${
+                  isActive
+                    ? "text-indigo-300 font-semibold"
+                    : "text-gray-300 hover:text-indigo-300"
+                }`
+              }
+            >
+              Login
+            </NavLink>
+          </li>
         </ul>
       </div>
 
