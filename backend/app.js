@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+dotenv.config();
 const connectDB = require('./config/db');
 const security = require('./middleware/security.js');
 
@@ -8,8 +9,9 @@ const authRoutes = require('./routes/auth.route.js');
 const categoryRoutes = require('./routes/category.route.js');
 const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
+const passport = require("passport");
+require("./config/passport.js");
 
-dotenv.config();
 connectDB();
 
 const app = express();
@@ -37,10 +39,12 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+app.use(passport.initialize());
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
+
 
 app.get('/health', (req, res) => {
   res.json({ success: true, message: 'API is alive', timestamp: new Date().toISOString() });

@@ -24,7 +24,15 @@ const createGig = async (req, res) => {
     const category = await Category.findById(data.projectCategory);
     if (!category) return res.status(400).json({ success: false, message: 'Category not found' });
 
+    // Auto-fill user information
     data.createdBy = req.user._id;
+    data.fullName = req.user.name || data.fullName; // Use user's name if available
+    data.oauthEmail = req.user.email; // Auto-fill user's email
+
+    // If user is logged in, they don't need to provide fullName and email
+    if (!data.fullName && req.user.name) {
+      data.fullName = req.user.name;
+    }
 
     const gig = new Gig(data);
 
@@ -40,7 +48,7 @@ const createGig = async (req, res) => {
     await gig.save();
 
     await gig.populate('projectCategory', 'name');
-    await gig.populate('createdBy', 'fullname email');
+    await gig.populate('createdBy', 'name email');
 
     res.status(201).json({ success: true, gig });
   } catch (err) {
