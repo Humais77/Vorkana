@@ -1,11 +1,24 @@
 import React, { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import BurgerIcon from "../assets/icons/hamburger.svg";
 import Logo from "../assets/logo.png";
 import SideBar from "../layouts/SideBar";
+import { logout } from "../redux/slices/authSlice";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  
+  // Get auth state from Redux
+  const { isAuthenticated, user } = useSelector((state) => state.auth || {});
+
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate("/");
+    setMenuOpen(false);
+  };
 
   return (
     <nav className="w-full bg-[#0A1A3D] text-white sticky top-0 z-50 shadow-lg">
@@ -104,20 +117,38 @@ const Navbar = () => {
               Contact
             </NavLink>
           </li>
-          <li>
-             <NavLink
-              to="/sign-in"
-              className={({ isActive }) =>
-                `transition ${
-                  isActive
-                    ? "text-indigo-300 font-semibold"
-                    : "text-gray-300 hover:text-indigo-300"
-                }`
-              }
-            >
-              Login
-            </NavLink>
-          </li>
+          
+          {/* Conditional Login/Logout */}
+          {isAuthenticated ? (
+            <>
+              <li className="flex items-center space-x-4">
+                <span className="text-gray-300">
+                  Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md transition-colors"
+                >
+                  Logout
+                </button>
+              </li>
+            </>
+          ) : (
+            <li>
+              <NavLink
+                to="/sign-in"
+                className={({ isActive }) =>
+                  `transition ${
+                    isActive
+                      ? "text-indigo-300 font-semibold"
+                      : "text-gray-300 hover:text-indigo-300"
+                  }`
+                }
+              >
+                Login
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
 
@@ -149,6 +180,20 @@ const Navbar = () => {
         </div>
         <div className="overflow-y-auto h-[calc(100%-56px)]">
           <SideBar />
+          {/* Add logout button to mobile sidebar */}
+          {isAuthenticated && (
+            <div className="p-4 border-t border-gray-700">
+              <div className="mb-4 px-2 text-gray-300">
+                Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full bg-red-600 hover:bg-red-700 px-4 py-3 rounded-md transition-colors text-white font-medium"
+              >
+                Logout
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
