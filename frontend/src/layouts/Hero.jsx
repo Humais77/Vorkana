@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle, Users, Shield, Target, Star, Sparkles } from "
 
 const Hero = () => {
   return (
-    <section className="relative bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 text-gray-900 overflow-hidden">
+    <section className="relative bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 text-gray-900 overflow-hidden -mt-5">
       {/* Enhanced blue background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-400/20 rounded-full blur-3xl"></div>
@@ -17,12 +17,12 @@ const Hero = () => {
         <div className="absolute bottom-32 left-32 w-24 h-24 border-4 border-indigo-300/30 rounded-full"></div>
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-36 lg:py-48">
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-16">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 lg:py-32">
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-12 lg:gap-16">
           {/* Left Content */}
           <div className="lg:w-1/2 text-center lg:text-left">
             {/* Premium Badge */}
-            <div className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 backdrop-blur-sm px-5 py-3 rounded-2xl mb-8 border border-blue-300/50 shadow-lg">
+            <div className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 backdrop-blur-sm px-5 py-3 rounded-2xl mb-6 border border-blue-300/50 shadow-lg">
               <Sparkles className="w-5 h-5 text-blue-600" />
               <span className="text-sm font-semibold text-blue-800 bg-white/80 px-3 py-1 rounded-full">
                 No sign-up needed
@@ -31,20 +31,20 @@ const Hero = () => {
             </div>
 
             {/* Main Heading with enhanced blue theme */}
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight mb-8">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6">
               Find the Perfect <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">Freelancer</span>
               <br />
-              <span className="text-4xl sm:text-5xl lg:text-6xl text-blue-800">for Your Project</span>
+              <span className="text-3xl sm:text-4xl lg:text-5xl text-blue-800">for Your Project</span>
             </h1>
 
             {/* Subtitle with blue accents */}
-            <p className="text-xl sm:text-2xl text-blue-700/80 mb-10 max-w-2xl leading-relaxed">
+            <p className="text-lg sm:text-xl text-blue-700/80 mb-8 max-w-2xl leading-relaxed">
               Post your project in minutes. Get quality proposals from verified freelancers. 
               <span className="font-bold text-blue-800 ml-2">Fast, secure, and completely hassle-free.</span>
             </p>
 
             {/* Enhanced Features Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
               <div className="bg-gradient-to-br from-white to-blue-50 rounded-2xl p-6 shadow-xl border border-blue-200 hover:border-blue-300 transition-all duration-300 hover:-translate-y-1">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
@@ -67,19 +67,19 @@ const Hero = () => {
             </div>
 
             {/* Enhanced CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-6 mb-10">
+            <div className="flex flex-col sm:flex-row gap-5 mb-8">
               <Link
                 to="/create-gig"
-                className="group relative bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 hover:from-blue-700 hover:via-blue-800 hover:to-indigo-800 text-white font-bold px-10 py-5 rounded-2xl shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center gap-4 text-lg overflow-hidden"
+                className="group relative bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 hover:from-blue-700 hover:via-blue-800 hover:to-indigo-800 text-white font-bold px-8 py-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-4 text-base overflow-hidden"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-white/10 to-blue-500/0 animate-shimmer"></div>
                 <span className="relative">Create Your Gig — It's Free</span>
-                <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform duration-300" />
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform duration-300" />
               </Link>
               
               <Link
                 to="/categories"
-                className="group bg-gradient-to-br from-white to-blue-50 hover:from-blue-50 hover:to-indigo-50 text-blue-800 font-semibold px-10 py-5 rounded-2xl border-2 border-blue-300 hover:border-blue-400 transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
+                className="group bg-gradient-to-br from-white to-blue-50 hover:from-blue-50 hover:to-indigo-50 text-blue-800 font-semibold px-8 py-4 rounded-2xl border-2 border-blue-300 hover:border-blue-400 transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
               >
                 <Users className="w-5 h-5" />
                 <span>Browse Freelancers</span>
@@ -87,32 +87,32 @@ const Hero = () => {
             </div>
 
             {/* Enhanced Trust Indicators */}
-            <div className="flex flex-wrap items-center gap-10 text-sm">
-              <div className="flex items-center gap-4 bg-white/80 backdrop-blur-sm px-6 py-4 rounded-xl shadow-md">
+            <div className="flex flex-wrap items-center gap-8 text-sm">
+              <div className="flex items-center gap-4 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-xl shadow-md">
                 <div className="relative">
                   <div className="flex -space-x-4">
                     {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 border-3 border-white shadow-lg"></div>
+                      <div key={i} className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 border-3 border-white shadow-lg"></div>
                     ))}
                   </div>
-                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
-                    <CheckCircle className="w-3 h-3 text-white" />
+                  <div className="absolute -top-2 -right-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
+                    <CheckCircle className="w-2.5 h-2.5 text-white" />
                   </div>
                 </div>
                 <div>
-                  <div className="font-bold text-blue-900">500+ Active Projects</div>
+                  <div className="font-bold text-blue-900 text-sm">500+ Active Projects</div>
                   <div className="text-xs text-blue-600">Live right now</div>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm px-6 py-4 rounded-xl shadow-md">
+              <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm px-5 py-3 rounded-xl shadow-md">
                 <div className="flex">
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <Star key={star} className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                    <Star key={star} className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                   ))}
                 </div>
                 <div>
-                  <div className="font-bold text-blue-900">4.9/5 Rating</div>
+                  <div className="font-bold text-blue-900 text-sm">4.9/5 Rating</div>
                   <div className="text-xs text-blue-600">Average client satisfaction</div>
                 </div>
               </div>
@@ -125,7 +125,7 @@ const Hero = () => {
             <div className="absolute -top-6 -left-6 w-32 h-32 bg-gradient-to-r from-blue-400/30 to-indigo-400/30 rounded-full blur-xl"></div>
             <div className="absolute -bottom-6 -right-6 w-40 h-40 bg-gradient-to-r from-cyan-400/30 to-blue-400/30 rounded-full blur-xl"></div>
             
-            <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 rounded-3xl shadow-2xl p-10 text-white overflow-hidden transform hover:scale-[1.02] transition-transform duration-500">
+            <div className="relative bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 rounded-3xl shadow-2xl p-8 text-white overflow-hidden transform hover:scale-[1.02] transition-transform duration-500">
               {/* Animated background */}
               <div className="absolute inset-0">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shine"></div>
@@ -134,54 +134,54 @@ const Hero = () => {
               
               <div className="relative">
                 {/* Stats Section - Moved to top */}
-                <div className="mb-12">
-                  <h2 className="text-3xl font-bold mb-8 text-center">Why Choose Us</h2>
-                  <div className="grid grid-cols-2 gap-8">
+                <div className="mb-10">
+                  <h2 className="text-2xl font-bold mb-6 text-center">Why Choose Us</h2>
+                  <div className="grid grid-cols-2 gap-6">
                     <div className="text-center">
-                      <div className="text-5xl font-bold mb-3">10K+</div>
-                      <div className="text-lg text-blue-200 font-medium">Verified Freelancers</div>
+                      <div className="text-4xl font-bold mb-3">10K+</div>
+                      <div className="text-base text-blue-200 font-medium">Verified Freelancers</div>
                       <div className="text-sm text-blue-300 mt-2">Skilled professionals ready to work</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-5xl font-bold mb-3">98%</div>
-                      <div className="text-lg text-blue-200 font-medium">Success Rate</div>
+                      <div className="text-4xl font-bold mb-3">98%</div>
+                      <div className="text-base text-blue-200 font-medium">Success Rate</div>
                       <div className="text-sm text-blue-300 mt-2">Projects completed successfully</div>
                     </div>
                   </div>
                 </div>
 
                 {/* Additional Stats */}
-                <div className="grid grid-cols-2 gap-6 mb-12">
-                  <div className="text-center p-6 bg-white/10 backdrop-blur-sm rounded-2xl">
-                    <div className="text-3xl font-bold mb-2">24h</div>
+                <div className="grid grid-cols-2 gap-5 mb-10">
+                  <div className="text-center p-5 bg-white/10 backdrop-blur-sm rounded-2xl">
+                    <div className="text-2xl font-bold mb-2">24h</div>
                     <div className="text-sm text-blue-200">Avg. Response Time</div>
                   </div>
-                  <div className="text-center p-6 bg-white/10 backdrop-blur-sm rounded-2xl">
-                    <div className="text-3xl font-bold mb-2">$5M+</div>
+                  <div className="text-center p-5 bg-white/10 backdrop-blur-sm rounded-2xl">
+                    <div className="text-2xl font-bold mb-2">$5M+</div>
                     <div className="text-sm text-blue-200">Paid to Freelancers</div>
                   </div>
                 </div>
 
                 {/* Enhanced Testimonial */}
-                <div className="bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
-                  <div className="flex items-center gap-4 mb-6">
+                <div className="bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                  <div className="flex items-center gap-4 mb-5">
                     <div className="relative">
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-lg"></div>
-                      <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-                        <CheckCircle className="w-4 h-4 text-white" />
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-lg"></div>
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+                        <CheckCircle className="w-3.5 h-3.5 text-white" />
                       </div>
                     </div>
                     <div>
-                      <div className="font-bold text-xl">Alex Thompson</div>
-                    
+                      <div className="font-bold text-lg">Alex Thompson</div>
+                      <div className="text-sm text-blue-300">Startup Founder</div>
                     </div>
                   </div>
-                  <p className="text-lg italic text-white/90 leading-relaxed">
+                  <p className="text-base italic text-white/90 leading-relaxed">
                     "Posted my project and received 5 qualified proposals within hours. The quality exceeded expectations!"
                   </p>
                   <div className="flex mt-4">
                     {[1, 2, 3, 4, 5].map((star) => (
-                      <Star key={star} className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                      <Star key={star} className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                     ))}
                   </div>
                 </div>
@@ -194,7 +194,7 @@ const Hero = () => {
       {/* Enhanced Wave separator */}
       <div className="absolute bottom-0 left-0 w-full overflow-hidden">
         <svg 
-          className="relative block w-full h-32"
+          className="relative block w-full h-24"
           viewBox="0 0 1200 120" 
           preserveAspectRatio="none"
           style={{ transform: 'rotate(180deg)' }}

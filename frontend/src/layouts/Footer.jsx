@@ -1,113 +1,112 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { IoLogoInstagram } from "react-icons/io";
-import { RiTwitterXLine } from "react-icons/ri";
-import { TbBrandMeta } from "react-icons/tb";
-import { FiPhoneCall } from "react-icons/fi";
 
 const Footer = () => {
-  const footerSections = [
-    {
-      title: "Categories",
+  const footerLinks = {
+    discover: {
+      title: "Discover",
       links: [
-        "Graphics & Design",
-        "Digital Marketing",
-        "Writing & Translation",
-        "Video & Animation",
-        "Music & Audio",
-        "Programming & Tech",
-        "AI Services",
-        "Consulting",
-        "Data",
-        "Business",
-        "Personal Growth & Hobbies",
-        "Photography",
-        "Finance",
-        "End-to-End Projects",
-        "Service Catalog",
-        "For Clients"
+        { label: "Browse Projects", path: "/projects" },
+        { label: "Find Freelancers", path: "/talent" },
+        { label: "Popular Skills", path: "/skills" },
+        { label: "Top Rated", path: "/top-rated" },
+        { label: "Trending Services", path: "/trending" },
+        { label: "Local Freelancers", path: "/local" },
       ]
     },
-    {
-      title: "How it Works",
-      links: [
-        "How Vorkana Works",
-        "Customer Success Stories",
-        "Quality Guide",
-        "Vorkana Guides",
-        "Vorkana Answers",
-        "Browse Freelance By Skill"
-      ]
-    },
-    {
+    freelancers: {
       title: "For Freelancers",
       links: [
-        "Become a Freelancer",
-        "Become an Agency",
-        "Freelancer Equity Program",
-        "Community Hub",
-        "Forum",
-        "Events"
+        { label: "How to Start", path: "/get-started" },
+        { label: "Create a Profile", path: "/create-profile" },
+        { label: "Find Work", path: "/find-work" },
+        { label: "Membership Plans", path: "/membership" },
+        { label: "Success Stories", path: "/success-stories" },
+        { label: "Community Forum", path: "/community" },
       ]
     },
-    {
-      title: "Business Solutions",
+    clients: {
+      title: "For Clients",
       links: [
-        "Vorkana Pro",
-        "Project Management Service",
-        "Expert Sourcing Service",
-        "ClearVoice - Content Marketing",
-        "AutoDS - Dropshipping Tool",
-        "AI store builder",
-        "Vorkana Logo Maker",
-        "Contact Sales"
+        { label: "Post a Project", path: "/post-project" },
+        { label: "Browse Talent", path: "/browse-talent" },
+        { label: "Hire Freelancers", path: "/hire" },
+        { label: "Client Resources", path: "/resources" },
+        { label: "Project Management", path: "/project-management" },
+        { label: "Enterprise Solutions", path: "/enterprise" },
       ]
     },
-    {
+    company: {
       title: "Company",
       links: [
-        "About Us",
-        "Help Center",
-        "Trust & Safety",
-        "Social Impact",
-        "Careers",
-        "Terms of Service",
-        "Privacy Policy",
-        "Do not sell or share my personal information",
-        "Partnerships",
-        "Creator Network",
-        "Affiliates",
-        "Invite a Friend",
-        "Press & News",
-        "Investor Relations"
+        { label: "About Us", path: "/about" },
+        { label: "Careers", path: "/careers" },
+        { label: "Press & Media", path: "/press" },
+        { label: "Blog", path: "/blog" },
+        { label: "Affiliate Program", path: "/affiliates" },
+        { label: "Partnerships", path: "/partnerships" },
+      ]
+    },
+    support: {
+      title: "Support",
+      links: [
+        { label: "Help Center", path: "/help" },
+        { label: "Contact Support", path: "/contact" },
+        { label: "Trust & Safety", path: "/trust" },
+        { label: "Dispute Resolution", path: "/disputes" },
+        { label: "Payment Protection", path: "/payment-protection" },
+        { label: "FAQ", path: "/faq" },
       ]
     }
-  ];
+  };
 
-  const socialLinks = [
-    { icon: TbBrandMeta, url: "https://www.facebook.com", label: "Facebook" },
-    { icon: IoLogoInstagram, url: "https://www.instagram.com", label: "Instagram" },
-    { icon: RiTwitterXLine, url: "https://www.twitter.com", label: "Twitter" },
+  const features = [
+    {
+      title: "Secure Payments",
+      description: "100% payment protection for safe transactions"
+    },
+    {
+      title: "Quality Work",
+      description: "Verified professionals delivering excellence"
+    },
+    {
+      title: "24/7 Support",
+      description: "Always available to assist you"
+    },
+    {
+      title: "Fast Delivery",
+      description: "On-time project completion guaranteed"
+    }
   ];
 
   return (
     <footer className="bg-gray-900 text-white pt-16 pb-10">
-      <div className="max-w-7xl mx-auto px-6">
-        {/* Main Footer Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Features Section */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+          {features.map((feature, index) => (
+            <div key={index} className="text-center p-6 rounded-xl bg-gray-800/30 border border-gray-700 hover:border-gray-600 transition-colors duration-300">
+              <h4 className="font-semibold text-lg mb-3 text-white">{feature.title}</h4>
+              <p className="text-gray-400 text-sm">{feature.description}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Main Footer Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
-          {footerSections.map((section, index) => (
-            <div key={index}>
-              <h3 className="font-bold text-white mb-6 text-lg">
+          {Object.values(footerLinks).map((section, index) => (
+            <div key={index} className="space-y-4">
+              <h3 className="font-bold text-lg text-white mb-6 border-l-4 border-blue-500 pl-3">
                 {section.title}
               </h3>
               <ul className="space-y-3">
                 {section.links.map((link, linkIndex) => (
                   <li key={linkIndex}>
                     <Link 
-                      to="#" 
-                      className="text-gray-400 hover:text-white transition-colors duration-200 text-sm"
+                      to={link.path}
+                      className="text-gray-400 hover:text-white transition-colors duration-200 text-sm block py-1"
                     >
-                      {link}
+                      {link.label}
                     </Link>
                   </li>
                 ))}
@@ -117,61 +116,145 @@ const Footer = () => {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-800 my-8"></div>
+        <div className="border-t border-gray-800 my-10"></div>
+
+        {/* Newsletter & Contact */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-10">
+          {/* Newsletter */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-bold text-xl mb-2">Stay Updated</h3>
+              <p className="text-gray-400 mb-6">Get the latest news, updates, and special offers</p>
+            </div>
+            <form className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="email"
+                  placeholder="Enter your email address"
+                  className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                />
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-300"
+                >
+                  Subscribe
+                </button>
+              </div>
+              <p className="text-gray-500 text-xs">
+                By subscribing, you agree to our Privacy Policy
+              </p>
+            </form>
+          </div>
+
+          {/* Contact Info */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-bold text-xl mb-2">Contact Us</h3>
+              <p className="text-gray-400 mb-6">We're here to help you succeed</p>
+            </div>
+            <div className="space-y-4">
+              <div className="text-gray-300">
+                <div className="font-medium mb-1">Email</div>
+                <div className="text-gray-400">support@vorkana.com</div>
+              </div>
+              <div className="text-gray-300">
+                <div className="font-medium mb-1">Phone</div>
+                <div className="text-gray-400">+1 (555) 123-4567</div>
+              </div>
+              <div className="text-gray-300">
+                <div className="font-medium mb-1">Address</div>
+                <div className="text-gray-400">
+                  123 Business Avenue<br />
+                  Suite 100<br />
+                  San Francisco, CA 94107
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-gray-800 my-10"></div>
 
         {/* Bottom Section */}
-        <div className="flex flex-col md:flex-row justify-between items-center">
-          {/* Logo and Copyright */}
-          <div className="mb-6 md:mb-0">
-            <div className="text-2xl font-bold text-white mb-2">Vorkana</div>
-            <p className="text-gray-400 text-sm">
-              &copy; 2025 Vorkana International Ltd. All rights reserved.
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-8">
+          {/* Logo & Copyright */}
+          <div className="text-center lg:text-left">
+            <div className="mb-4">
+              <span className="text-2xl font-bold text-white">
+                Vorkana
+              </span>
+            </div>
+            <p className="text-gray-500 text-sm max-w-md mb-4">
+              Connecting businesses with top freelance talent worldwide. Quality work, secure payments, and seamless collaboration.
+            </p>
+            <p className="text-gray-500 text-sm">
+              © {new Date().getFullYear()} Vorkana. All rights reserved.
             </p>
           </div>
 
-          {/* Social Links and Language/Currency */}
-          <div className="flex flex-col items-center md:items-end space-y-4">
-            {/* Social Links */}
-            <div className="flex space-x-4">
-              {socialLinks.map(({ icon: Icon, url, label }, i) => (
-                <a
-                  key={i}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={label}
-                  className="w-10 h-10 rounded-full bg-gray-800 hover:bg-gray-700 flex items-center justify-center transition-colors duration-200"
-                >
-                  <Icon className="w-5 h-5" />
-                </a>
-              ))}
-            </div>
-
-            {/* Language and Currency Selector */}
-            <div className="flex items-center space-x-6">
-              {/* Language Selector */}
-              <div className="flex items-center space-x-2">
-                <span className="text-gray-400 text-sm">Language:</span>
-                <select className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-1 text-sm focus:outline-none focus:border-blue-500">
+          {/* Settings & Links */}
+          <div className="flex flex-col items-center lg:items-end gap-6">
+            {/* Language & Currency */}
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <div className="px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
+                <select className="bg-transparent text-white text-sm focus:outline-none">
                   <option>English</option>
                   <option>Español</option>
                   <option>Français</option>
                   <option>Deutsch</option>
                 </select>
               </div>
-
-              {/* Currency Selector */}
-              <div className="flex items-center space-x-2">
-                <span className="text-gray-400 text-sm">Currency:</span>
-                <select className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-1 text-sm focus:outline-none focus:border-blue-500">
-                  <option>USD ($)</option>
-                  <option>EUR (€)</option>
-                  <option>GBP (£)</option>
-                  <option>PKR (₨)</option>
+              
+              <div className="px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
+                <select className="bg-transparent text-white text-sm focus:outline-none">
+                  <option>USD $</option>
+                  <option>EUR €</option>
+                  <option>GBP £</option>
+                  <option>CAD $</option>
                 </select>
               </div>
             </div>
+
+            {/* Social Links */}
+            <div className="flex items-center gap-4">
+              <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+                Facebook
+              </a>
+              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+                Twitter
+              </a>
+              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+                Instagram
+              </a>
+              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+                LinkedIn
+              </a>
+            </div>
+
+            {/* Policy Links */}
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500">
+              <Link to="/privacy" className="hover:text-white transition-colors duration-200">
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="hover:text-white transition-colors duration-200">
+                Terms of Service
+              </Link>
+              <Link to="/cookies" className="hover:text-white transition-colors duration-200">
+                Cookie Policy
+              </Link>
+              <Link to="/sitemap" className="hover:text-white transition-colors duration-200">
+                Sitemap
+              </Link>
+            </div>
           </div>
+        </div>
+
+        {/* Made with love */}
+        <div className="mt-12 pt-6 border-t border-gray-800 text-center">
+          <p className="text-gray-600 text-sm">
+            Made with passion by the Vorkana team
+          </p>
         </div>
       </div>
     </footer>

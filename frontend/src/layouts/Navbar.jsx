@@ -2,15 +2,14 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import BurgerIcon from "../assets/icons/hamburger.svg";
+import { Menu, X, Search, Bell, MessageSquare, User, Briefcase, Globe } from "lucide-react";
 import Logo from "../assets/logo.png";
-import SideBar from "../layouts/SideBar";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const navigate = useNavigate();
   
-  // Get auth state from Zustand
   const { isAuthenticated, user, loading } = useAuthStore();
   const logoutMutation = useLogout();
 
@@ -27,18 +26,16 @@ const Navbar = () => {
   // Show loading state while checking authentication
   if (loading) {
     return (
-      <nav className="w-full bg-[#0A1A3D] text-white sticky top-0 z-50 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-between p-4">
-          <div className="flex items-center mx-auto md:mx-0">
-            <img
-              src={Logo}
-              alt="Vorkana Logo"
-              className="h-10 md:h-12 object-contain"
-            />
-          </div>
-          <div className="hidden md:flex space-x-4">
-            <div className="animate-pulse h-6 w-20 bg-gray-700 rounded"></div>
-            <div className="animate-pulse h-6 w-20 bg-gray-700 rounded"></div>
+      <nav className="w-full bg-gradient-to-r from-white to-gray-50 border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="h-10 w-32 bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg animate-pulse"></div>
+            </div>
+            <div className="hidden lg:flex space-x-4">
+              <div className="animate-pulse h-8 w-20 bg-gray-100 rounded"></div>
+              <div className="animate-pulse h-8 w-20 bg-gray-100 rounded"></div>
+            </div>
           </div>
         </div>
       </nav>
@@ -46,203 +43,436 @@ const Navbar = () => {
   }
 
   return (
-    <nav className="w-full bg-[#0A1A3D] text-white sticky top-0 z-50 shadow-lg">
-      <div className="max-w-7xl mx-auto flex items-center justify-between p-4 relative">
-        {/* Mobile Hamburger */}
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="md:hidden absolute left-4 text-gray-200 hover:text-white transition"
-          aria-label="Toggle menu"
-          disabled={logoutMutation.isPending}
-        >
-          {menuOpen ? (
-            <svg
-              className="w-7 h-7"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          ) : (
-            <img src={BurgerIcon} alt="Burger Icon" className="w-7 h-7" />
-          )}
-        </button>
+    <nav className="w-full bg-gradient-to-r from-white to-gray-50 border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        <div className="flex items-center justify-between">
+          {/* Left Section - Logo & Search */}
+          <div className="flex items-center flex-1">
+            {/* Logo */}
+            <Link to="/" className="flex items-center group">
+              <div className="relative">
+                <img
+                  src={Logo}
+                  alt="Vorkana Logo"
+                  className="h-9 w-auto object-contain transition-all duration-300 group-hover:scale-105"
+                />
+                <div className="absolute -inset-2 bg-gradient-to-r from-blue-400/10 to-purple-400/10 rounded-full blur-sm group-hover:blur-md transition-all duration-300"></div>
+              </div>
+              <span className="ml-3 text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 font-bold text-xl tracking-tight">
+                Vorkana
+              </span>
+            </Link>
 
-        {/* Logo */}
-        <Link to="/" className="mx-auto md:mx-0 flex items-center">
-          <img
-            src={Logo}
-            alt="Vorkana Logo"
-            className="h-10 md:h-12 object-contain transition-transform duration-300 hover:scale-105"
-          />
-          <span className="ml-2 text-white font-extrabold text-xl md:text-3xl tracking-wide hidden md:inline">
-            Vorkana
-          </span>
-        </Link>
+            {/* Desktop Search */}
+            <div className="hidden lg:block ml-8">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search for services, freelancers..."
+                  className="w-64 px-4 py-2.5 pl-10 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              </div>
+            </div>
+          </div>
 
-        {/* Desktop Menu */}
-        <ul className="hidden md:flex items-center space-x-10 text-lg">
-          <li>
+          {/* Mobile Search Toggle */}
+          <button
+            onClick={() => setSearchOpen(!searchOpen)}
+            className="lg:hidden ml-4 p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+
+          {/* Center Section - Desktop Navigation */}
+          <div className="hidden lg:flex items-center space-x-1">
             <NavLink
               to="/"
               className={({ isActive }) =>
-                `transition ${
+                `flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
                   isActive
-                    ? "text-indigo-300 font-semibold"
-                    : "text-gray-300 hover:text-indigo-300"
+                    ? "text-blue-600 bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 font-semibold"
+                    : "text-gray-700 hover:text-blue-600 hover:bg-blue-50/50"
                 }`
               }
             >
-              Home
+              <Briefcase className="w-4 h-4" />
+              Find Work
             </NavLink>
-          </li>
-          <li>
-            <NavLink
-              to="/services"
-              className={({ isActive }) =>
-                `transition ${
-                  isActive
-                    ? "text-indigo-300 font-semibold"
-                    : "text-gray-300 hover:text-indigo-300"
-                }`
-              }
-            >
-              Services
-            </NavLink>
-          </li>
-          <li>
+            
             <NavLink
               to="/categories"
               className={({ isActive }) =>
-                `transition ${
+                `flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
                   isActive
-                    ? "text-indigo-300 font-semibold"
-                    : "text-gray-300 hover:text-indigo-300"
+                    ? "text-purple-600 bg-gradient-to-r from-purple-50 to-purple-100 border border-purple-200 font-semibold"
+                    : "text-gray-700 hover:text-purple-600 hover:bg-purple-50/50"
                 }`
               }
             >
+              <Globe className="w-4 h-4" />
               Categories
             </NavLink>
-          </li>
-          <li>
+            
             <NavLink
-              to="/contact"
+              to="/services"
               className={({ isActive }) =>
-                `transition ${
+                `flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
                   isActive
-                    ? "text-indigo-300 font-semibold"
-                    : "text-gray-300 hover:text-indigo-300"
+                    ? "text-green-600 bg-gradient-to-r from-green-50 to-green-100 border border-green-200 font-semibold"
+                    : "text-gray-700 hover:text-green-600 hover:bg-green-50/50"
                 }`
               }
             >
-              Contact
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Services
             </NavLink>
-          </li>
-          
-          {/* Conditional Login/Logout */}
-          {isAuthenticated ? (
-            <li className="flex items-center space-x-4">
-              <span className="text-gray-300">
-                Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
-              </span>
-              <button
-                onClick={handleLogout}
-                disabled={logoutMutation.isPending}
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {logoutMutation.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Logging out...
-                  </>
-                ) : (
-                  "Logout"
-                )}
-              </button>
-            </li>
-          ) : (
-            <li>
-              <NavLink
-                to="/sign-in"
-                className={({ isActive }) =>
-                  `transition ${
-                    isActive
-                      ? "text-indigo-300 font-semibold"
-                      : "text-gray-300 hover:text-indigo-300"
-                  }`
-                }
-              >
-                Login
-              </NavLink>
-            </li>
-          )}
-        </ul>
-      </div>
+          </div>
 
-      {/* Mobile SideBar Menu */}
-      <div
-        className={`md:hidden fixed top-0 left-0 h-full w-2/3 max-w-xs bg-[#0A1A3D] shadow-lg z-50 transform transition-transform duration-300 ${
-          menuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="p-4 flex justify-end">
-          <button
-            onClick={() => setMenuOpen(false)}
-            className="text-gray-200 hover:text-white"
-            aria-label="Close menu"
-          >
-            <svg
-              className="w-7 h-7"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+          {/* Right Section - Actions */}
+          <div className="flex items-center space-x-3">
+            {isAuthenticated ? (
+              <>
+                {/* Desktop Actions */}
+                <div className="hidden lg:flex items-center space-x-3">
+                  <button className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative">
+                    <Bell className="w-5 h-5" />
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      3
+                    </span>
+                  </button>
+                  
+                  <button className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all relative">
+                    <MessageSquare className="w-5 h-5" />
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
+                      5
+                    </span>
+                  </button>
+                  
+                  {/* User Profile */}
+                  <div className="relative group">
+                    <button className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 border border-gray-200 transition-all">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                        {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                      </div>
+                      <div className="text-left">
+                        <div className="text-sm font-medium text-gray-800">
+                          {user?.name?.split(' ')[0] || 'User'}
+                        </div>
+                        <div className="text-xs text-gray-500">Freelancer</div>
+                      </div>
+                      <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    
+                    {/* Dropdown Menu */}
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                      <div className="p-4 border-b border-gray-100">
+                        <div className="font-medium text-gray-800">{user?.name}</div>
+                        <div className="text-sm text-gray-500">{user?.email}</div>
+                      </div>
+                      <div className="p-2">
+                        <Link to="/profile" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg">
+                          <User className="w-4 h-4" />
+                          My Profile
+                        </Link>
+                        <Link to="/dashboard" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg">
+                          <Briefcase className="w-4 h-4" />
+                          Dashboard
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          disabled={logoutMutation.isPending}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {logoutMutation.isPending ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                              Logging out...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                              </svg>
+                              Logout
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <Link
+                    to="/create-project"
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-xl shadow-sm hover:shadow transition-all duration-300"
+                  >
+                    Post a Project
+                  </Link>
+                </div>
+
+                {/* Mobile Menu Toggle */}
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="lg:hidden p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl"
+                >
+                  {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Not Authenticated - Desktop */}
+                <div className="hidden lg:flex items-center space-x-4">
+                  <NavLink
+                    to="/sign-in"
+                    className="text-gray-700 hover:text-blue-600 font-medium px-4 py-2.5 rounded-xl hover:bg-blue-50 transition-all"
+                  >
+                    Sign In
+                  </NavLink>
+                  <Link
+                    to="/sign-up"
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium px-6 py-2.5 rounded-xl shadow-sm hover:shadow transition-all duration-300"
+                  >
+                    Join Free
+                  </Link>
+                </div>
+
+                {/* Mobile Menu Toggle */}
+                <button
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="lg:hidden p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl"
+                >
+                  {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                </button>
+              </>
+            )}
+          </div>
         </div>
-        <div className="overflow-y-auto h-[calc(100%-56px)]">
-          <SideBar />
-          {/* Add logout button to mobile sidebar */}
-          {isAuthenticated && (
-            <div className="p-4 border-t border-gray-700">
-              <div className="mb-4 px-2 text-gray-300">
-                Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
-              </div>
+
+        {/* Mobile Search Bar */}
+        {searchOpen && (
+          <div className="lg:hidden mt-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search for services, freelancers..."
+                className="w-full px-4 py-3 pl-11 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <button
-                onClick={handleLogout}
-                disabled={logoutMutation.isPending}
-                className="w-full bg-red-600 hover:bg-red-700 px-4 py-3 rounded-md transition-colors text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                onClick={() => setSearchOpen(false)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
-                {logoutMutation.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Logging out...
-                  </>
-                ) : (
-                  "Logout"
-                )}
+                <X className="w-5 h-5" />
               </button>
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* Mobile Menu */}
+      <div
+        className={`lg:hidden fixed inset-y-0 right-0 w-full max-w-sm bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${
+          menuOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          {/* Header */}
+          <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img src={Logo} alt="Vorkana" className="h-8 w-auto" />
+                <span className="text-xl font-bold text-gray-800">Vorkana</span>
+              </div>
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {isAuthenticated && (
+              <div className="mt-6">
+                <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                    {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">{user?.name}</div>
+                    <div className="text-sm text-gray-500">{user?.email}</div>
+                    <div className="text-xs text-purple-600 font-medium mt-1">⭐ Premium Member</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Menu Items */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-2">
+              {isAuthenticated ? (
+                <>
+                  <Link
+                    to="/dashboard"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 font-medium"
+                  >
+                    <Briefcase className="w-5 h-5" />
+                    Dashboard
+                  </Link>
+                  
+                  <div className="space-y-1 mt-4">
+                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2">Navigation</div>
+                    
+                    {[
+                      { to: "/", label: "Find Work", icon: Briefcase },
+                      { to: "/categories", label: "Categories", icon: Globe },
+                      { to: "/services", label: "Services", icon: "services" },
+                      { to: "/messages", label: "Messages", icon: MessageSquare, badge: 5 },
+                      { to: "/notifications", label: "Notifications", icon: Bell, badge: 3 },
+                      { to: "/profile", label: "My Profile", icon: User },
+                    ].map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                            isActive
+                              ? "text-blue-600 bg-blue-50"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`
+                        }
+                      >
+                        <div className="flex items-center gap-3">
+                          {item.icon === "services" ? (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                          ) : (
+                            <item.icon className="w-5 h-5" />
+                          )}
+                          <span>{item.label}</span>
+                        </div>
+                        {item.badge && (
+                          <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-600 rounded-full">
+                            {item.badge}
+                          </span>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-6 pt-6 border-t border-gray-100">
+                    <Link
+                      to="/create-project"
+                      onClick={() => setMenuOpen(false)}
+                      className="block w-full py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl text-center shadow-sm hover:shadow transition-all"
+                    >
+                      Post a Project
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {[
+                    { to: "/", label: "Find Work", icon: Briefcase },
+                    { to: "/categories", label: "Categories", icon: Globe },
+                    { to: "/services", label: "Services", icon: "services" },
+                    { to: "/how-it-works", label: "How it Works", icon: "guide" },
+                    { to: "/pricing", label: "Pricing", icon: "pricing" },
+                  ].map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setMenuOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all ${
+                          isActive
+                            ? "text-blue-600 bg-blue-50"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`
+                      }
+                    >
+                      {item.icon === "services" ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      ) : item.icon === "guide" ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      ) : item.icon === "pricing" ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      ) : (
+                        <item.icon className="w-5 h-5" />
+                      )}
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))}
+                  
+                  <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
+                    <Link
+                      to="/sign-in"
+                      onClick={() => setMenuOpen(false)}
+                      className="block py-3 text-center text-blue-600 font-medium border-2 border-blue-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all"
+                    >
+                      Sign In
+                    </Link>
+                    <Link
+                      to="/sign-up"
+                      onClick={() => setMenuOpen(false)}
+                      className="block py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl text-center shadow-sm hover:shadow transition-all"
+                    >
+                      Join Free
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="p-6 border-t border-gray-100">
+            {isAuthenticated ? (
+              <button
+                onClick={handleLogout}
+                disabled={logoutMutation.isPending}
+                className="w-full flex items-center justify-center gap-3 py-3.5 text-red-600 hover:bg-red-50 font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {logoutMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                    Logging out...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Logout
+                  </>
+                )}
+              </button>
+            ) : (
+              <div className="text-center text-sm text-gray-500">
+                © 2024 Vorkana. Connecting talent with opportunity.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Overlay when menu is open */}
+      {/* Overlay */}
       {menuOpen && (
         <div
-          className="md:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
           onClick={() => setMenuOpen(false)}
         />
       )}
