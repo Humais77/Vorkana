@@ -582,6 +582,7 @@ const initialState = {
     gigDetails: null,
     loading: false,
     error: null,
+    lastCreatedGigId: null, // Add this for navigation
 };
 
 // Get token from localStorage
@@ -661,22 +662,75 @@ export const createGig = createAsyncThunk(
     "gigs/createGig",
     async (gigData, { rejectWithValue }) => {
         try {
+            console.log('Creating gig with data:', gigData);
+            
+            // Log form data for debugging
+            if (gigData instanceof FormData) {
+                for (let [key, value] of gigData.entries()) {
+                    console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+                }
+            }
+            
             const { data } = await api.post('/api/gigs', gigData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
             });
-            return data.gig || data;
+            
+            console.log('Gig creation response:', data);
+            
+            if (!data) {
+                throw new Error('No response from server');
+            }
+            
+            if (!data.success && data.message) {
+                throw new Error(data.message);
+            }
+            
+            // Return the created gig object
+            const createdGig = data.gig || data;
+            
+            if (!createdGig || !createdGig._id) {
+                console.error('Invalid gig response:', createdGig);
+                throw new Error('Gig created but ID not returned');
+            }
+            
+            return createdGig;
+            
         } catch (error) {
+            console.error('Gig creation error:', error);
+            
+            // Better error handling
+            let errorMessage = 'Failed to create gig';
+            if (error.response) {
+                // Server responded with error
+                errorMessage = error.response.data?.message || 
+                               error.response.data?.error || 
+                               `Server error: ${error.response.status}`;
+                
+                // Handle validation errors
+                if (error.response.data?.errors) {
+                    const validationErrors = Object.values(error.response.data.errors).join(', ');
+                    errorMessage = `Validation failed: ${validationErrors}`;
+                }
+            } else if (error.request) {
+                // Request made but no response
+                errorMessage = 'No response from server. Please check your connection.';
+            } else {
+                // Something else happened
+                errorMessage = error.message || errorMessage;
+            }
+            
             return rejectWithValue({ 
-                message: error.response?.data?.message || error.message 
+                message: errorMessage,
+                details: error.response?.data
             });
         }
     }
 );
 
 // Auth actions
- const login = createAsyncThunk(
+const login = createAsyncThunk(
     "auth/login",
     async (credentials, { rejectWithValue }) => {
         try {
@@ -694,7 +748,7 @@ export const createGig = createAsyncThunk(
     }
 );
 
- const register = createAsyncThunk(
+const register = createAsyncThunk(
     "auth/register",
     async (userData, { rejectWithValue }) => {
         try {
@@ -712,7 +766,7 @@ export const createGig = createAsyncThunk(
     }
 );
 
- const logout = () => {
+const logout = () => {
     localStorage.removeItem("userToken");
     localStorage.removeItem("user");
     return { type: 'auth/logout' };
@@ -729,6 +783,12 @@ const gigSlice = createSlice({
         clearError: (state) => {
             state.error = null;
         },
+        clearLastCreatedGig: (state) => {
+            state.lastCreatedGigId = null;
+        },
+        setLastCreatedGigId: (state, action) => {
+            state.lastCreatedGigId = action.payload;
+        }
     },
     extraReducers: (builder) => {
         builder
@@ -774,16 +834,22 @@ const gigSlice = createSlice({
             .addCase(createGig.pending, (state) => {
                 state.loading = true;
                 state.error = null;
+                state.lastCreatedGigId = null;
             })
             .addCase(createGig.fulfilled, (state, action) => {
                 state.loading = false;
+                state.error = null;
+                state.lastCreatedGigId = action.payload?._id || null;
+                
+                // Add new gig to the list
                 if (action.payload && action.payload._id) {
-                    state.gigs.push(action.payload);
+                    state.gigs.unshift(action.payload); // Add to beginning
                 }
             })
             .addCase(createGig.rejected, (state, action) => {
                 state.loading = false;
                 state.error = action.payload?.message;
+                state.lastCreatedGigId = null;
             })
             
             // Auth reducers
@@ -814,10 +880,16 @@ const gigSlice = createSlice({
             .addCase('auth/logout', (state) => {
                 state.loading = false;
                 state.error = null;
+                state.lastCreatedGigId = null;
             });
     },
 });
 
-export const { clearGigDetails, clearError } = gigSlice.actions;
+export const { 
+    clearGigDetails, 
+    clearError, 
+    clearLastCreatedGig, 
+    setLastCreatedGigId 
+} = gigSlice.actions;
 export { login, register, logout };
 export default gigSlice.reducer;
