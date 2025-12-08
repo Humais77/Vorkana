@@ -22,7 +22,12 @@ import {
   Clock,
   FileCheck,
   LogIn,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Briefcase,
+  Users,
+  Star,
+  Save
 } from "lucide-react";
 import { createGig } from "../../redux/slices/gigSlice.js";
 import { fetchCategories } from "../../redux/slices/categorySlice.js";
@@ -182,10 +187,6 @@ const GigCreate = () => {
     }
   };
 
-  const prevStep = () => {
-    setActiveStep(prev => Math.max(prev - 1, 1));
-  };
-
   const handleGoogleSignIn = () => {
     window.location.href = `${API_URL}/api/auth/google`;
   };
@@ -336,18 +337,91 @@ const GigCreate = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-12 px-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">
-            Create Your <span className="text-blue-600">Gig</span>
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Fill in your project details and find the perfect freelancer
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12 px-4">
+      {/* Top Info Section with Different Design */}
+      <div className="max-w-6xl mx-auto mb-12">
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-8 shadow-lg border border-emerald-100">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="md:w-2/3">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
+                  <Briefcase className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+                    Create Your Gig
+                  </h1>
+                  <p className="text-emerald-700 font-medium">Get matched with top freelancers</p>
+                </div>
+              </div>
+              
+              <p className="text-gray-600 mb-6">
+                Fill out this form to post your gig. Our platform will match you with qualified freelancers 
+                who have the skills you need. The more details you provide, the better matches you'll get.
+              </p>
+              
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                    <Users className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-800">10K+ Freelancers</div>
+                    <div className="text-sm text-gray-500">Ready to work</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                    <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-800">4.9/5 Rating</div>
+                    <div className="text-sm text-gray-500">Client satisfaction</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-gray-800">No Fees</div>
+                    <div className="text-sm text-gray-500">Posting is completely free</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="md:w-1/3">
+              <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-200">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <Info className="w-5 h-5 text-emerald-600" />
+                  Quick Tips
+                </h3>
+                <ul className="space-y-3 text-sm text-gray-600">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Be specific about your requirements</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Set a realistic budget for better matches</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Add attachments for clarity</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>Verification ensures secure collaboration</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
 
+      <div className="max-w-6xl mx-auto">
         {/* Progress Steps */}
         <div className="mb-10">
           <div className="flex justify-between items-center">
@@ -361,7 +435,7 @@ const GigCreate = () => {
                   <div className="flex flex-col items-center relative z-10">
                     <div className={`
                       w-12 h-12 rounded-full flex items-center justify-center
-                      ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}
+                      ${isActive ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-400'}
                       ${isCompleted ? 'bg-green-500 text-white' : ''}
                       transition-all duration-300
                       shadow-lg
@@ -379,7 +453,7 @@ const GigCreate = () => {
                   {index < steps.length - 1 && (
                     <div className="flex-1 h-1 bg-gray-200 mx-2 relative">
                       <div 
-                        className={`absolute top-0 left-0 h-full bg-blue-600 transition-all duration-300 ${
+                        className={`absolute top-0 left-0 h-full bg-emerald-600 transition-all duration-300 ${
                           isCompleted ? 'w-full' : 'w-0'
                         }`}
                       />
@@ -395,7 +469,7 @@ const GigCreate = () => {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Left Panel - Information */}
           <div className="lg:w-2/5">
-            <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl shadow-2xl p-8 text-white h-full">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-8 text-white h-full">
               <div className="mb-8">
                 <div className="flex items-center mb-4">
                   <Info className="mr-3" size={24} />
@@ -403,7 +477,7 @@ const GigCreate = () => {
                     {stepInformation[activeStep]?.title || "Complete Your Gig"}
                   </h2>
                 </div>
-                <p className="text-blue-100">
+                <p className="text-emerald-100">
                   {stepInformation[activeStep]?.description || "Your gig is ready to be published! Review your information before submitting."}
                 </p>
               </div>
@@ -445,11 +519,11 @@ const GigCreate = () => {
                         <>
                           <li className="flex items-start">
                             <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3"></div>
-                            <span>Select the most relevant project category</span>
+                            <span>Select the most relevant gig category</span>
                           </li>
                           <li className="flex items-start">
                             <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3"></div>
-                            <span>Realistic budget range for your project</span>
+                            <span>Realistic budget range for your gig</span>
                           </li>
                         </>
                       )}
@@ -457,11 +531,11 @@ const GigCreate = () => {
                         <>
                           <li className="flex items-start">
                             <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3"></div>
-                            <span>Detailed project description</span>
+                            <span>Detailed gig description</span>
                           </li>
                           <li className="flex items-start">
                             <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3"></div>
-                            <span>Project timeline expectation</span>
+                            <span>Gig timeline expectation</span>
                           </li>
                           <li className="flex items-start">
                             <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3"></div>
@@ -483,7 +557,7 @@ const GigCreate = () => {
                               <tip.icon className="mr-3 flex-shrink-0" size={20} />
                               <h4 className="font-semibold">{tip.title}</h4>
                             </div>
-                            <p className="text-sm text-blue-100">{tip.description}</p>
+                            <p className="text-sm text-emerald-100">{tip.description}</p>
                           </div>
                         ))}
                       </div>
@@ -498,30 +572,30 @@ const GigCreate = () => {
                         {activeStep >= 1 && currentUser && (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-blue-100">Name:</span>
+                              <span className="text-emerald-100">Name:</span>
                               <span className="font-medium">{currentUser.name}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-blue-100">Email:</span>
+                              <span className="text-emerald-100">Email:</span>
                               <span className="font-medium">{currentUser.email}</span>
                             </div>
                           </>
                         )}
                         {activeStep >= 2 && formData.country && (
                           <div className="flex justify-between">
-                            <span className="text-blue-100">Country:</span>
+                            <span className="text-emerald-100">Country:</span>
                             <span className="font-medium">{formData.country}</span>
                           </div>
                         )}
                         {activeStep >= 3 && formData.budget && (
                           <div className="flex justify-between">
-                            <span className="text-blue-100">Budget:</span>
+                            <span className="text-emerald-100">Budget:</span>
                             <span className="font-medium">${formData.budget}</span>
                           </div>
                         )}
                         {activeStep >= 3 && formData.projectCategory && (
                           <div className="flex justify-between">
-                            <span className="text-blue-100">Category:</span>
+                            <span className="text-emerald-100">Category:</span>
                             <span className="font-medium">
                               {categories.find(c => c._id === formData.projectCategory)?.name || "Selected"}
                             </span>
@@ -536,10 +610,10 @@ const GigCreate = () => {
               {/* Success Message */}
               {activeStep === 5 && (
                 <div className="text-center py-8">
-                  <CheckCircle className="w-16 h-16 mx-auto mb-6 text-green-300" />
+                  <CheckCircle className="w-16 h-16 mx-auto mb-6 text-emerald-300" />
                   <h3 className="text-2xl font-bold mb-4">Gig Created Successfully!</h3>
-                  <p className="text-blue-100 mb-6">
-                    Your project is now live and visible to thousands of qualified freelancers.
+                  <p className="text-emerald-100 mb-6">
+                    Your gig is now live and visible to thousands of qualified freelancers.
                   </p>
                   <div className="bg-white/10 rounded-xl p-4">
                     <h4 className="font-bold mb-2">What happens next?</h4>
@@ -561,16 +635,16 @@ const GigCreate = () => {
               {/* Success Screen */}
               {activeStep === 5 ? (
                 <div className="p-12 text-center">
-                  <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <CheckCircle className="w-12 h-12 text-green-600" />
+                  <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <CheckCircle className="w-12 h-12 text-emerald-600" />
                   </div>
                   <h2 className="text-3xl font-bold text-gray-900 mb-4">
                     Gig Created Successfully!
                   </h2>
                   <p className="text-gray-600 text-lg mb-8">
-                    Your project is now live. Redirecting to your gig page...
+                    Your Gig is now live. Redirecting to your gig page...
                   </p>
-                  <div className="w-24 h-1 bg-blue-600 rounded-full mx-auto animate-pulse"></div>
+                  <div className="w-24 h-1 bg-emerald-600 rounded-full mx-auto animate-pulse"></div>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="p-8">
@@ -585,18 +659,18 @@ const GigCreate = () => {
                   {activeStep === 1 && (
                     <div className="space-y-6 animate-fadeIn">
                       <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <LogIn className="mr-3 text-blue-600" size={24} />
+                        <LogIn className="mr-3 text-emerald-600" size={24} />
                         Sign In Required
                       </h2>
                       
                       {!isAuthenticated ? (
                         <div className="space-y-6">
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
                             <div className="flex items-start">
-                              <AlertCircle className="text-yellow-600 mr-3 flex-shrink-0 mt-0.5" size={20} />
+                              <AlertCircle className="text-amber-600 mr-3 flex-shrink-0 mt-0.5" size={20} />
                               <div>
-                                <h3 className="font-semibold text-yellow-800 mb-2">Authentication Required</h3>
-                                <p className="text-yellow-700">
+                                <h3 className="font-semibold text-amber-800 mb-2">Authentication Required</h3>
+                                <p className="text-amber-700">
                                   You need to sign in with Google to create a gig. This ensures secure communication and helps build trust with freelancers.
                                 </p>
                               </div>
@@ -610,8 +684,8 @@ const GigCreate = () => {
                               </h3>
                               <div className="space-y-3">
                                 <div className="flex items-start">
-                                  <div className="bg-blue-100 p-2 rounded-lg mr-3">
-                                    <Shield className="text-blue-600" size={18} />
+                                  <div className="bg-emerald-100 p-2 rounded-lg mr-3">
+                                    <Shield className="text-emerald-600" size={18} />
                                   </div>
                                   <div>
                                     <h4 className="font-medium text-gray-800">Secure & Verified</h4>
@@ -628,8 +702,8 @@ const GigCreate = () => {
                                   </div>
                                 </div>
                                 <div className="flex items-start">
-                                  <div className="bg-purple-100 p-2 rounded-lg mr-3">
-                                    <User className="text-purple-600" size={18} />
+                                  <div className="bg-teal-100 p-2 rounded-lg mr-3">
+                                    <User className="text-teal-600" size={18} />
                                   </div>
                                   <div>
                                     <h4 className="font-medium text-gray-800">Instant Profile</h4>
@@ -660,12 +734,12 @@ const GigCreate = () => {
                         </div>
                       ) : (
                         <div className="space-y-6">
-                          <div className="bg-green-50 border border-green-200 rounded-xl p-6">
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
                             <div className="flex items-center">
-                              <CheckCircle className="text-green-600 mr-3 flex-shrink-0" size={24} />
+                              <CheckCircle className="text-emerald-600 mr-3 flex-shrink-0" size={24} />
                               <div>
-                                <h3 className="font-semibold text-green-800">Signed in Successfully!</h3>
-                                <p className="text-green-700">
+                                <h3 className="font-semibold text-emerald-800">Signed in Successfully!</h3>
+                                <p className="text-emerald-700">
                                   Welcome back, {currentUser.name}! Your information has been automatically filled.
                                 </p>
                               </div>
@@ -683,7 +757,7 @@ const GigCreate = () => {
                                 name="fullName"
                                 value={formData.fullName}
                                 onChange={handleInputChange}
-                                className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                                 placeholder="Full Name"
                               />
                               {errors.fullName && (
@@ -696,7 +770,7 @@ const GigCreate = () => {
                                 <Mail className="text-gray-600 mr-2" size={18} />
                                 <h4 className="font-semibold text-gray-800">Your Email</h4>
                               </div>
-                              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                                 <div className="flex items-center">
                                   <div className="bg-white p-1 rounded mr-3">
                                     <img 
@@ -706,7 +780,7 @@ const GigCreate = () => {
                                     />
                                   </div>
                                   <span className="text-gray-700">{formData.oauthEmail}</span>
-                                  <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                  <span className="ml-2 bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded-full">
                                     Verified
                                   </span>
                                 </div>
@@ -725,13 +799,13 @@ const GigCreate = () => {
                   {activeStep === 2 && (
                     <div className="space-y-6 animate-fadeIn">
                       <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <Phone className="mr-3 text-blue-600" size={24} />
+                        <Phone className="mr-3 text-emerald-600" size={24} />
                         Contact Details
                       </h2>
                       
                       {!isAuthenticated ? (
                         <div className="text-center py-12">
-                          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                          <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
                           <h3 className="text-xl font-semibold text-gray-800 mb-2">
                             Authentication Required
                           </h3>
@@ -741,7 +815,7 @@ const GigCreate = () => {
                           <button
                             type="button"
                             onClick={handleGoogleSignIn}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google
                           </button>
@@ -759,7 +833,7 @@ const GigCreate = () => {
                                 name="country"
                                 value={formData.country}
                                 onChange={handleInputChange}
-                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all"
                                 placeholder="United States"
                                 disabled={gigLoading}
                               />
@@ -784,7 +858,7 @@ const GigCreate = () => {
                                 name="phone"
                                 value={formData.phone}
                                 onChange={handleInputChange}
-                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all"
                                 placeholder="+1 234 567 8900"
                                 disabled={gigLoading}
                               />
@@ -806,20 +880,20 @@ const GigCreate = () => {
                   {activeStep === 3 && (
                     <div className="space-y-6 animate-fadeIn">
                       <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <DollarSign className="mr-3 text-blue-600" size={24} />
+                        <DollarSign className="mr-3 text-emerald-600" size={24} />
                         Project Scope
                       </h2>
                       
                       {!isAuthenticated ? (
                         <div className="text-center py-12">
-                          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                          <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
                           <h3 className="text-xl font-semibold text-gray-800 mb-2">
                             Please Sign In First
                           </h3>
                           <button
                             type="button"
                             onClick={handleGoogleSignIn}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google to Continue
                           </button>
@@ -834,7 +908,7 @@ const GigCreate = () => {
                               name="projectCategory"
                               value={formData.projectCategory}
                               onChange={handleInputChange}
-                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
                               disabled={categoryLoading || gigLoading}
                             >
                               <option value="">Select a category</option>
@@ -872,7 +946,7 @@ const GigCreate = () => {
                                 name="budget"
                                 value={formData.budget}
                                 onChange={handleInputChange}
-                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                className="w-full pl-10 p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
                                 placeholder="Enter your budget"
                                 min="5"
                                 max="100000"
@@ -885,7 +959,7 @@ const GigCreate = () => {
                                 💡 A clear budget helps freelancers provide accurate quotes
                               </p>
                               {formData.budget && (
-                                <span className="text-sm font-semibold text-blue-600">
+                                <span className="text-sm font-semibold text-emerald-600">
                                   ${parseFloat(formData.budget).toLocaleString()}
                                 </span>
                               )}
@@ -903,23 +977,23 @@ const GigCreate = () => {
                   {activeStep === 4 && (
                     <div className="space-y-6 animate-fadeIn">
                       <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <FileText className="mr-3 text-blue-600" size={24} />
+                        <FileText className="mr-3 text-emerald-600" size={24} />
                         Project Details
                       </h2>
                       
                       {!isAuthenticated ? (
                         <div className="text-center py-12">
-                          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                          <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
                           <h3 className="text-xl font-semibold text-gray-800 mb-2">
                             Almost There!
                           </h3>
                           <p className="text-gray-600 mb-6">
-                            Sign in to complete your gig creation.
+                            Sign in to complete your project creation.
                           </p>
                           <button
                             type="button"
                             onClick={handleGoogleSignIn}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google to Finish
                           </button>
@@ -936,7 +1010,7 @@ const GigCreate = () => {
                               name="timeline"
                               value={formData.timeline}
                               onChange={handleInputChange}
-                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
+                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
                               placeholder="e.g., 2 weeks, 1 month, ASAP"
                               disabled={gigLoading}
                             />
@@ -968,7 +1042,7 @@ const GigCreate = () => {
                                   <div className={`
                                     px-4 py-3 rounded-lg border-2 transition-all
                                     ${formData.communication === method 
-                                      ? 'border-blue-500 bg-blue-50 text-blue-600' 
+                                      ? 'border-emerald-500 bg-emerald-50 text-emerald-600' 
                                       : 'border-gray-200 hover:border-gray-300'
                                     }
                                     ${gigLoading ? 'opacity-50 cursor-not-allowed' : ''}
@@ -989,7 +1063,7 @@ const GigCreate = () => {
                               value={formData.description}
                               onChange={handleInputChange}
                               rows="6"
-                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all resize-none disabled:bg-gray-50 disabled:cursor-not-allowed"
+                              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all resize-none disabled:bg-gray-50 disabled:cursor-not-allowed"
                               placeholder="Describe your project in detail. Include:
 • What you want to achieve
 • Specific requirements
@@ -1007,7 +1081,7 @@ const GigCreate = () => {
                                 </p>
                               </div>
                               <span className={`text-sm font-medium ${
-                                formData.description.length < 20 ? 'text-red-500' : 'text-green-500'
+                                formData.description.length < 20 ? 'text-red-500' : 'text-emerald-500'
                               }`}>
                                 {formData.description.length}/20
                               </span>
@@ -1022,7 +1096,7 @@ const GigCreate = () => {
                               <Upload className="mr-2" size={16} />
                               Attachments (Optional)
                             </label>
-                            <div className={`border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-colors ${gigLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-blue-400'}`}>
+                            <div className={`border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-colors ${gigLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-emerald-400'}`}>
                               <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                               <p className="text-gray-600 mb-2">
                                 Drag & drop files or click to browse
@@ -1041,7 +1115,7 @@ const GigCreate = () => {
                               />
                               <label
                                 htmlFor="file-upload"
-                                className={`inline-block px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                                className={`inline-block px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
                               >
                                 Browse Files
                               </label>
@@ -1066,7 +1140,7 @@ const GigCreate = () => {
                                       {uploadProgress[file.name] < 100 && (
                                         <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                                           <div 
-                                            className="h-full bg-green-500 transition-all duration-300"
+                                            className="h-full bg-emerald-500 transition-all duration-300"
                                             style={{ width: `${uploadProgress[file.name] || 0}%` }}
                                           />
                                         </div>
@@ -1090,45 +1164,33 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Navigation Buttons */}
-                  <div className="flex justify-between pt-8 mt-8 border-t border-gray-200">
-                    {activeStep > 1 && activeStep < 5 ? (
-                      <button
-                        type="button"
-                        onClick={prevStep}
-                        className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={gigLoading}
-                      >
-                        ← Previous
-                      </button>
-                    ) : (
-                      <div></div>
-                    )}
-                    
+                  {/* Navigation Buttons - UPDATED */}
+                  <div className="flex justify-end pt-8 mt-8 border-t border-gray-200">
                     {activeStep < 4 ? (
                       <button
                         type="button"
                         onClick={nextStep}
-                        className="px-8 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-8 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={gigLoading || (activeStep === 1 && !isAuthenticated)}
                       >
-                        Next Step
+                        <Save className="mr-2" size={20} />
+                        Save & Continue
                         <ChevronRight className="ml-2" size={20} />
                       </button>
                     ) : activeStep === 4 ? (
                       <button
                         type="submit"
                         disabled={gigLoading || categoryLoading || !isAuthenticated}
-                        className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium flex items-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {gigLoading ? (
                           <>
                             <Loader2 className="mr-2 animate-spin" size={20} />
-                            Creating Gig...
+                            Creating Project...
                           </>
                         ) : (
                           <>
-                            Create Gig
+                            Create Project
                             <ChevronRight className="ml-2" size={20} />
                           </>
                         )}
