@@ -1,24 +1,49 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useAuthStore } from "../store/useAuthStore";
+import { useLogout } from "../hooks/useAuth";
 import BurgerIcon from "../assets/icons/hamburger.svg";
 import Logo from "../assets/logo.png";
 import SideBar from "../layouts/SideBar";
-import { logout } from "../redux/slices/authSlice";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   
-  // Get auth state from Redux
-  const { isAuthenticated, user } = useSelector((state) => state.auth || {});
+  // Get auth state from Zustand
+  const { isAuthenticated, user, loading } = useAuthStore();
+  const logoutMutation = useLogout();
 
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate("/");
-    setMenuOpen(false);
+  const handleLogout = async () => {
+    try {
+      await logoutMutation.mutateAsync();
+      setMenuOpen(false);
+      navigate("/");
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <nav className="w-full bg-[#0A1A3D] text-white sticky top-0 z-50 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-between p-4">
+          <div className="flex items-center mx-auto md:mx-0">
+            <img
+              src={Logo}
+              alt="Vorkana Logo"
+              className="h-10 md:h-12 object-contain"
+            />
+          </div>
+          <div className="hidden md:flex space-x-4">
+            <div className="animate-pulse h-6 w-20 bg-gray-700 rounded"></div>
+            <div className="animate-pulse h-6 w-20 bg-gray-700 rounded"></div>
+          </div>
+        </div>
+      </nav>
+    );
+  }
 
   return (
     <nav className="w-full bg-[#0A1A3D] text-white sticky top-0 z-50 shadow-lg">
@@ -27,6 +52,8 @@ const Navbar = () => {
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           className="md:hidden absolute left-4 text-gray-200 hover:text-white transition"
+          aria-label="Toggle menu"
+          disabled={logoutMutation.isPending}
         >
           {menuOpen ? (
             <svg
@@ -120,19 +147,25 @@ const Navbar = () => {
           
           {/* Conditional Login/Logout */}
           {isAuthenticated ? (
-            <>
-              <li className="flex items-center space-x-4">
-                <span className="text-gray-300">
-                  Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md transition-colors"
-                >
-                  Logout
-                </button>
-              </li>
-            </>
+            <li className="flex items-center space-x-4">
+              <span className="text-gray-300">
+                Welcome, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'}
+              </span>
+              <button
+                onClick={handleLogout}
+                disabled={logoutMutation.isPending}
+                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {logoutMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Logging out...
+                  </>
+                ) : (
+                  "Logout"
+                )}
+              </button>
+            </li>
           ) : (
             <li>
               <NavLink
@@ -162,6 +195,7 @@ const Navbar = () => {
           <button
             onClick={() => setMenuOpen(false)}
             className="text-gray-200 hover:text-white"
+            aria-label="Close menu"
           >
             <svg
               className="w-7 h-7"
@@ -188,9 +222,17 @@ const Navbar = () => {
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full bg-red-600 hover:bg-red-700 px-4 py-3 rounded-md transition-colors text-white font-medium"
+                disabled={logoutMutation.isPending}
+                className="w-full bg-red-600 hover:bg-red-700 px-4 py-3 rounded-md transition-colors text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Logout
+                {logoutMutation.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Logging out...
+                  </>
+                ) : (
+                  "Logout"
+                )}
               </button>
             </div>
           )}
