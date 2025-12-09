@@ -43,7 +43,7 @@ import Footer from './layouts/Footer';
 import Navbar from './layouts/Navbar';
 
 // Pages
-import Home from './pages/Home';
+import Home from './layouts/Home';
 import GigCreate from './layouts/pages/GigCreate';
 import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
@@ -54,6 +54,8 @@ import OAuthSuccess from './components/OAuthSuccess';
 
 // Hooks
 import { useAuthSync } from "./hooks/useAuthSync";
+import CategoryPage from './layouts/pages/CategoryPage';
+import GigListingsPage from './layouts/pages/GigListingPage';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -69,6 +71,8 @@ const App = () => {
         <Route path='/sign-in' element={<Signin />} />
         <Route path='/sign-up' element={<Signup />} />
         <Route path='/oauth-success' element={<OAuthSuccess />} />
+        <Route path='/categories/:categoryId' element={<CategoryPage/>}/>
+        <Route path="/gigs" element={<GigListingsPage />} />
       </Routes>
       <Footer />
     </BrowserRouter>
