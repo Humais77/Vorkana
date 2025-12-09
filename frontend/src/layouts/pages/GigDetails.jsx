@@ -18,7 +18,17 @@ import {
   Mail,
   Clock,
   Users,
-  CheckCircle
+  CheckCircle,
+  DollarSign,
+  Target,
+  TrendingUp,
+  Award,
+  Globe,
+  Zap,
+  Briefcase,
+  FileCheck,
+  AlertCircle,
+  Eye
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -37,20 +47,29 @@ const GigDetails = () => {
   
   // TanStack Query hook for gig data
   const { 
-    data: gig, 
+    data: gigResponse, 
     isLoading: loading, 
     error, 
     refetch 
   } = useGig(id);
 
+  // Extract gig data from response
+  const gig = gigResponse?.gig || gigResponse;
+  
   // Local state
   const [isLiked, setIsLiked] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
+  const [proposalsCount, setProposalsCount] = useState(0);
+  const [viewCount, setViewCount] = useState(0);
 
   // Update gig details in store when data loads
   useEffect(() => {
     if (gig) {
       setGigDetails(gig);
+      // Set derived state
+      setProposalsCount(gig.proposals?.length || 0);
+      // Simulate view count (in a real app, this would come from backend)
+      setViewCount(Math.floor(Math.random() * 500) + 100);
     }
   }, [gig, setGigDetails]);
 
@@ -67,7 +86,34 @@ const GigDetails = () => {
       navigate('/sign-in');
       return;
     }
-    toast.success('Opening chat with seller...');
+    
+    if (gig?.createdBy?._id === user?._id) {
+      toast.error('You cannot contact yourself');
+      return;
+    }
+    
+    toast.success('Opening chat with client...');
+    // In a real app, navigate to chat with gig creator
+  };
+
+  const handleSubmitProposal = () => {
+    if (!isAuthenticated) {
+      toast.error('Please login to submit a proposal');
+      navigate('/sign-in');
+      return;
+    }
+    
+    if (gig?.createdBy?._id === user?._id) {
+      toast.error('You cannot submit proposal to your own gig');
+      return;
+    }
+    
+    if (gig?.status !== 'open') {
+      toast.error('This gig is no longer accepting proposals');
+      return;
+    }
+    
+    navigate(`/gig/${id}/submit-proposal`);
   };
 
   const handleShare = async () => {
@@ -92,7 +138,7 @@ const GigDetails = () => {
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: gig?.currency || 'USD',
       minimumFractionDigits: 0,
     }).format(price);
   };
@@ -113,9 +159,40 @@ const GigDetails = () => {
           />
         ))}
         <span className="ml-2 font-semibold">{rating}</span>
-        <span className="ml-1 text-gray-600">({gigData?.reviews?.length || 0})</span>
       </div>
     );
+  };
+
+  const getUrgencyColor = (urgency) => {
+    switch (urgency) {
+      case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'low': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'open': return 'bg-green-100 text-green-800 border-green-200';
+      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'assigned': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'completed': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const calculateTimeAgo = (date) => {
+    const now = new Date();
+    const past = new Date(date);
+    const diffInHours = Math.floor((now - past) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}d ago`;
+    return `${Math.floor(diffInHours / 168)}w ago`;
   };
 
   if (loading) {
@@ -149,10 +226,12 @@ const GigDetails = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="text-red-500 text-6xl mb-4">⚠️</div>
           <h3 className="text-2xl font-bold text-gray-900 mb-4">
-            Service Not Found
+            {error?.response?.status === 404 ? 'Gig Not Found' : 'Error Loading Gig'}
           </h3>
           <p className="text-gray-600 mb-8 max-w-md mx-auto">
-            {error?.message || "The service you're looking for doesn't exist or has been removed."}
+            {error?.response?.data?.message || 
+             error?.message || 
+             "The gig you're looking for doesn't exist or has been removed."}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
@@ -165,7 +244,7 @@ const GigDetails = () => {
               onClick={() => navigate('/gigs')}
               className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
             >
-              Browse Services
+              Browse Gigs
             </button>
           </div>
         </div>
@@ -173,23 +252,17 @@ const GigDetails = () => {
     );
   }
 
-  // Format gig data for display
-  const gigData = {
-    ...gig,
-    images: gig.attachments?.filter(file => 
-      file.type?.includes('image') || 
-      file.name?.match(/\.(jpg|jpeg|png|gif)$/i)
-    ) || [],
-    seller: gig.user || {
-      firstName: gig.fullName?.split(' ')[0] || 'Seller',
-      lastName: gig.fullName?.split(' ')[1] || '',
-      profilePicture: '',
-      rating: 4.8,
-      completedOrders: 0,
-      isVerified: true
-    },
-    reviews: gig.reviews || []
-  };
+  // Get attachments that are images
+  const imageAttachments = gig.attachments?.filter(attachment => 
+    typeof attachment === 'string' && 
+    /\.(jpg|jpeg|png|gif|webp)$/i.test(attachment)
+  ) || [];
+
+  // Calculate derived values
+  const timeAgo = calculateTimeAgo(gig.createdAt);
+  const deadlineDate = gig.deadline ? new Date(gig.deadline) : null;
+  const daysUntilDeadline = deadlineDate ? 
+    Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
@@ -209,11 +282,17 @@ const GigDetails = () => {
                 onClick={() => navigate('/gigs')}
                 className="text-gray-500 hover:text-gray-700 transition-colors"
               >
-                Services
+                Gigs
               </button>
+              {gig.projectCategory && (
+                <>
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                  <span className="text-gray-500">{gig.projectCategory.name}</span>
+                </>
+              )}
               <ChevronRight className="h-4 w-4 text-gray-400" />
               <span className="text-emerald-600 font-medium truncate max-w-xs">
-                {gigData.title || 'Service Details'}
+                {gig.title}
               </span>
             </nav>
             
@@ -234,9 +313,27 @@ const GigDetails = () => {
             {/* Title and Actions */}
             <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
               <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
-                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4">
-                  {gigData.title || 'Service Title'}
-                </h1>
+                <div>
+                  <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2">
+                    {gig.title}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(gig.status)}`}>
+                      {gig.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getUrgencyColor(gig.urgency)}`}>
+                      {gig.urgency.toUpperCase()} PRIORITY
+                    </span>
+                    <span className="flex items-center text-gray-500 text-sm">
+                      <Eye className="h-4 w-4 mr-1" />
+                      {viewCount} views
+                    </span>
+                    <span className="flex items-center text-gray-500 text-sm">
+                      <Users className="h-4 w-4 mr-1" />
+                      {proposalsCount} proposals
+                    </span>
+                  </div>
+                </div>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => setIsLiked(!isLiked)}
@@ -266,16 +363,16 @@ const GigDetails = () => {
                 </div>
               </div>
 
-              {/* Seller Info */}
+              {/* Client Info */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                 <div className="flex items-center space-x-4">
                   <div className="relative">
                     <img
-                      src={gigData.seller.profilePicture || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
-                      alt={gigData.seller.firstName}
+                      src={gig.createdBy?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                      alt={gig.createdBy?.fullName || gig.createdBy?.username}
                       className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
                     />
-                    {gigData.seller.isVerified && (
+                    {gig.createdBy?.isVerified && (
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
                         <CheckCircle className="h-3 w-3 text-white" />
                       </div>
@@ -284,69 +381,116 @@ const GigDetails = () => {
                   <div>
                     <div className="flex items-center space-x-2 mb-2">
                       <span className="font-bold text-gray-900 text-lg">
-                        {gigData.seller.firstName} {gigData.seller.lastName}
+                        {gig.createdBy?.fullName || gig.createdBy?.username || 'Client'}
+                      </span>
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                        Client
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                      {renderStars(gigData.seller.rating || 4.8)}
+                      {gig.createdBy?.rating && renderStars(gig.createdBy.rating)}
                       <span className="flex items-center">
-                        <Users className="h-4 w-4 mr-1" />
-                        {gigData.seller.completedOrders || 0} orders
+                        <Calendar className="h-4 w-4 mr-1" />
+                        Member since {new Date(gig.createdBy?.createdAt).getFullYear() || '2022'}
                       </span>
                       <span className="flex items-center">
-                        <Shield className="h-4 w-4 mr-1" />
-                        100% Success
+                        <Globe className="h-4 w-4 mr-1" />
+                        {gig.country}
                       </span>
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={handleContactSeller}
-                  className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
-                >
-                  <MessageCircle className="h-5 w-5" />
-                  Contact Seller
-                </button>
+                {isAuthenticated && user?._id !== gig.createdBy?._id && (
+                  <button
+                    onClick={handleContactSeller}
+                    className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                  >
+                    <MessageCircle className="h-5 w-5" />
+                    Contact Client
+                  </button>
+                )}
               </div>
 
-              {/* Budget Info */}
-              <div className="mb-8 p-6 bg-emerald-50 rounded-xl border border-emerald-100">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Project Budget</h3>
-                    <p className="text-gray-600">Fixed price project</p>
+              {/* Budget & Deadline Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      <DollarSign className="h-5 w-5 text-emerald-600" />
+                      Project Budget
+                    </h3>
+                    <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
+                      Fixed Price
+                    </span>
                   </div>
-                  <div className="text-left sm:text-right">
-                    <div className="text-3xl font-bold text-emerald-600">
-                      {formatPrice(gig.budget || 100)}
+                  <div className="text-left">
+                    <div className="text-3xl font-bold text-emerald-600 mb-1">
+                      {formatPrice(gig.budget)}
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">Total project cost</p>
+                    <p className="text-sm text-gray-500">
+                      Total project cost • {gig.currency}
+                    </p>
+                    <div className="mt-3 text-xs text-gray-600">
+                      <span className="inline-block px-2 py-1 bg-white rounded border">
+                        Min: {formatPrice(5)}
+                      </span>
+                      <span className="inline-block px-2 py-1 bg-white rounded border ml-2">
+                        Max: {formatPrice(100000)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-blue-50 rounded-xl border border-blue-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-blue-600" />
+                      Project Timeline
+                    </h3>
+                    {daysUntilDeadline !== null && daysUntilDeadline > 0 && (
+                      <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+                        {daysUntilDeadline} days left
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <div className="text-2xl font-bold text-blue-600 mb-1">
+                      {gig.timeline}
+                    </div>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Expected delivery timeline
+                    </p>
+                    {gig.deadline && (
+                      <div className="text-xs text-gray-600">
+                        Deadline: {new Date(gig.deadline).toLocaleDateString()}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Image Gallery */}
-              {gigData.images.length > 0 && (
+              {imageAttachments.length > 0 && (
                 <div className="mb-8">
                   <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
                     <img
-                      src={gigData.images[activeImage]?.url || gigData.images[activeImage]}
-                      alt={gigData.title}
+                      src={imageAttachments[activeImage]}
+                      alt={gig.title}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
                       }}
                     />
-                    {gigData.images.length > 1 && (
+                    {imageAttachments.length > 1 && (
                       <>
                         <button
-                          onClick={() => setActiveImage((prev) => (prev === 0 ? gigData.images.length - 1 : prev - 1))}
+                          onClick={() => setActiveImage((prev) => (prev === 0 ? imageAttachments.length - 1 : prev - 1))}
                           className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/90 p-3 rounded-full shadow-lg hover:bg-white transition-colors"
                         >
                           <ChevronLeft className="h-6 w-6 text-gray-700" />
                         </button>
                         <button
-                          onClick={() => setActiveImage((prev) => (prev === gigData.images.length - 1 ? 0 : prev + 1))}
+                          onClick={() => setActiveImage((prev) => (prev === imageAttachments.length - 1 ? 0 : prev + 1))}
                           className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/90 p-3 rounded-full shadow-lg hover:bg-white transition-colors"
                         >
                           <ChevronRight className="h-6 w-6 text-gray-700" />
@@ -354,9 +498,9 @@ const GigDetails = () => {
                       </>
                     )}
                   </div>
-                  {gigData.images.length > 1 && (
+                  {imageAttachments.length > 1 && (
                     <div className="flex space-x-3 overflow-x-auto pb-3">
-                      {gigData.images.map((image, index) => (
+                      {imageAttachments.map((image, index) => (
                         <button
                           key={index}
                           onClick={() => setActiveImage(index)}
@@ -367,8 +511,8 @@ const GigDetails = () => {
                           }`}
                         >
                           <img
-                            src={image.url || image}
-                            alt={`${gigData.title} ${index + 1}`}
+                            src={image}
+                            alt={`${gig.title} ${index + 1}`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                               e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
@@ -385,201 +529,331 @@ const GigDetails = () => {
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                   <FileText className="h-6 w-6 text-emerald-600" />
-                  About This Service
+                  Project Description
                 </h2>
                 <div className="prose max-w-none">
                   <div className="bg-gray-50 rounded-xl p-6">
                     <p className="text-gray-700 whitespace-pre-line leading-relaxed">
-                      {gigData.description || 'No description provided.'}
+                      {gig.description}
                     </p>
                   </div>
                 </div>
               </div>
 
+              {/* Skills Required */}
+              {gig.skillsRequired && gig.skillsRequired.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <Target className="h-6 w-6 text-emerald-600" />
+                    Required Skills
+                  </h2>
+                  <div className="flex flex-wrap gap-3">
+                    {gig.skillsRequired.map((skill, index) => (
+                      <span
+                        key={index}
+                        className="px-4 py-2 bg-emerald-100 text-emerald-800 rounded-full font-medium flex items-center gap-2"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Deliverables */}
+              {gig.deliverables && gig.deliverables.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <FileCheck className="h-6 w-6 text-emerald-600" />
+                    Expected Deliverables
+                  </h2>
+                  <div className="space-y-3">
+                    {gig.deliverables.map((deliverable, index) => (
+                      <div key={index} className="flex items-start bg-gray-50 p-4 rounded-xl">
+                        <div className="flex-shrink-0 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center mr-3 mt-1">
+                          <CheckCircle className="h-3 w-3 text-white" />
+                        </div>
+                        <span className="text-gray-700">{deliverable}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Last Updated */}
               <div className="pt-6 border-t border-gray-200">
-                <p className="text-sm text-gray-500">
-                  Last updated: {new Date(gig.updatedAt || gig.createdAt).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </p>
+                <div className="flex flex-wrap justify-between items-center gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">
+                      Posted {timeAgo} • Last updated: {new Date(gig.updatedAt).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Gig ID: {gig._id}
+                    </p>
+                  </div>
+                  <div className="flex items-center text-sm text-gray-500">
+                    <span className="flex items-center mr-4">
+                      <Package className="h-4 w-4 mr-1" />
+                      {gig.projectCategory?.name}
+                    </span>
+                    {gig.subcategory && (
+                      <span className="flex items-center">
+                        <ChevronRight className="h-4 w-4 mr-1" />
+                        {gig.subcategory.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right Column - Gig Info */}
+          {/* Right Column - Gig Info & Actions */}
           <div className="lg:col-span-1">
             <div className="sticky top-8 space-y-8">
-              {/* Project Details */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">
-                  Project Details
-                </h3>
+              {/* Submit Proposal Card */}
+              <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-8 shadow-2xl text-white">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Briefcase className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">Submit Your Proposal</h3>
+                  <p className="text-emerald-100">
+                    {gig.status === 'open' 
+                      ? 'Apply now to get this project'
+                      : 'This gig is no longer accepting proposals'}
+                  </p>
+                </div>
 
-                <div className="space-y-6">
-                  {/* Category */}
-                  {gig.projectCategory?.name && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Category</h4>
-                      <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
-                        <Package className="h-5 w-5 text-emerald-600 mr-3" />
-                        <span className="font-semibold text-gray-900">{gig.projectCategory.name}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Timeline */}
-                  {gig.timeline && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Timeline</h4>
-                      <div className="flex items-center p-3 bg-blue-50 rounded-lg">
-                        <Clock className="h-5 w-5 text-blue-600 mr-3" />
-                        <span className="font-semibold text-gray-900">{gig.timeline}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Location */}
-                  {gig.country && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Location</h4>
-                      <div className="flex items-center p-3 bg-purple-50 rounded-lg">
-                        <MapPin className="h-5 w-5 text-purple-600 mr-3" />
-                        <span className="font-semibold text-gray-900">{gig.country}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Communication */}
-                  {gig.communication && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Communication</h4>
-                      <div className="flex items-center p-3 bg-teal-50 rounded-lg">
-                        {gig.communication === 'Phone' ? (
-                          <Phone className="h-5 w-5 text-teal-600 mr-3" />
-                        ) : gig.communication === 'Email' ? (
-                          <Mail className="h-5 w-5 text-teal-600 mr-3" />
-                        ) : (
-                          <MessageCircle className="h-5 w-5 text-teal-600 mr-3" />
-                        )}
-                        <span className="font-semibold text-gray-900">{gig.communication}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Posted Date */}
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">Posted</h4>
-                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      <Calendar className="h-5 w-5 text-gray-600 mr-3" />
-                      <span className="font-semibold text-gray-900">
-                        {new Date(gig.createdAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    </div>
+                <div className="space-y-4 mb-6">
+                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+                    <span>Project Budget</span>
+                    <span className="font-bold">{formatPrice(gig.budget)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+                    <span>Proposals Received</span>
+                    <span className="font-bold">{proposalsCount}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+                    <span>Timeline</span>
+                    <span className="font-bold">{gig.timeline}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+                    <span>Urgency</span>
+                    <span className="font-bold capitalize">{gig.urgency}</span>
                   </div>
                 </div>
 
-                {/* Contact Button */}
-                <div className="mt-8 pt-8 border-t border-gray-200">
-                  <button
-                    onClick={handleContactSeller}
-                    className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-bold shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
-                    disabled={!isAuthenticated}
-                  >
-                    <MessageCircle className="h-5 w-5" />
-                    {isAuthenticated ? 'Contact Seller' : 'Login to Contact'}
-                  </button>
-                </div>
+                {gig.status === 'open' && (
+                  <>
+                    <button
+                      onClick={handleSubmitProposal}
+                      className="w-full py-4 bg-white text-emerald-700 rounded-xl hover:bg-emerald-50 transition-all font-bold shadow-lg hover:shadow-xl mb-4"
+                      disabled={!isAuthenticated || gig.createdBy?._id === user?._id}
+                    >
+                      {isAuthenticated 
+                        ? gig.createdBy?._id === user?._id 
+                          ? 'Your Own Gig'
+                          : 'Submit Proposal'
+                        : 'Login to Apply'}
+                    </button>
+                    
+                    {isAuthenticated && gig.createdBy?._id === user?._id && (
+                      <div className="text-center text-emerald-200 text-sm">
+                        <AlertCircle className="h-4 w-4 inline mr-1" />
+                        You cannot apply to your own gig
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <button
+                  onClick={handleContactSeller}
+                  className="w-full py-3 bg-emerald-800/50 text-white rounded-xl hover:bg-emerald-800 transition-all font-medium border border-emerald-500/50"
+                  disabled={!isAuthenticated || gig.createdBy?._id === user?._id}
+                >
+                  <MessageCircle className="h-4 w-4 inline mr-2" />
+                  {isAuthenticated ? 'Contact Client' : 'Login to Contact'}
+                </button>
               </div>
 
-              {/* Seller Stats */}
+              {/* Project Quick Stats */}
               <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                  <User className="h-6 w-6 text-emerald-600" />
-                  Seller Information
-                </h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Project Stats</h3>
                 <div className="space-y-5">
                   <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Response Time</span>
-                    <span className="font-semibold text-gray-900">Within 24 hours</span>
+                    <span className="text-gray-600">Status</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(gig.status)}`}>
+                      {gig.status.replace('_', ' ').toUpperCase()}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Completed Orders</span>
-                    <span className="font-semibold text-emerald-600">{gigData.seller.completedOrders || 0}</span>
+                    <span className="text-gray-600">Urgency</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getUrgencyColor(gig.urgency)}`}>
+                      {gig.urgency.toUpperCase()}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Rating</span>
-                    <span className="font-semibold text-yellow-600">{gigData.seller.rating || 4.8}/5</span>
+                    <span className="text-gray-600">Proposals</span>
+                    <span className="font-semibold text-emerald-600">{proposalsCount}</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Member Since</span>
-                    <span className="font-semibold text-gray-900">2022</span>
+                    <span className="text-gray-600">Views</span>
+                    <span className="font-semibold text-blue-600">{viewCount}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <span className="text-gray-600">Posted</span>
+                    <span className="font-semibold text-gray-900">{timeAgo}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <span className="text-gray-600">Communication</span>
+                    <span className="font-semibold text-gray-900">{gig.communication}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Trust Badges */}
+              {/* Category & Tags */}
               <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Why Choose This Service</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Category & Tags</h3>
                 <div className="space-y-4">
-                  <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                    <Shield className="h-8 w-8 text-emerald-600 mr-3" />
+                  {gig.projectCategory && (
                     <div>
-                      <h4 className="font-semibold text-gray-900">Secure Communication</h4>
-                      <p className="text-sm text-gray-600">All messages are encrypted</p>
+                      <h4 className="text-sm font-medium text-gray-600 mb-2">Main Category</h4>
+                      <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
+                        <Package className="h-5 w-5 text-emerald-600 mr-3" />
+                        <div>
+                          <span className="font-semibold text-gray-900 block">{gig.projectCategory.name}</span>
+                          {gig.projectCategory.description && (
+                            <p className="text-xs text-gray-500 mt-1">{gig.projectCategory.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {gig.subcategory && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-600 mb-2">Subcategory</h4>
+                      <div className="flex items-center p-3 bg-blue-50 rounded-lg">
+                        <ChevronRight className="h-5 w-5 text-blue-600 mr-3" />
+                        <span className="font-semibold text-gray-900">{gig.subcategory.name}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {gig.skillsRequired && gig.skillsRequired.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-600 mb-2">Required Skills</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {gig.skillsRequired.map((skill, index) => (
+                          <span
+                            key={index}
+                            className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Client Information */}
+              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Client Information</h3>
+                <div className="space-y-4">
+                  {gig.fullName && (
+                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                      <User className="h-5 w-5 text-gray-600 mr-3" />
+                      <div>
+                        <h4 className="font-semibold text-gray-900">Name</h4>
+                        <p className="text-sm text-gray-600">{gig.fullName}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {gig.country && (
+                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                      <MapPin className="h-5 w-5 text-gray-600 mr-3" />
+                      <div>
+                        <h4 className="font-semibold text-gray-900">Location</h4>
+                        <p className="text-sm text-gray-600">{gig.country}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {gig.communication && (
+                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                      {gig.communication === 'Phone' ? (
+                        <Phone className="h-5 w-5 text-gray-600 mr-3" />
+                      ) : gig.communication === 'Email' ? (
+                        <Mail className="h-5 w-5 text-gray-600 mr-3" />
+                      ) : (
+                        <MessageCircle className="h-5 w-5 text-gray-600 mr-3" />
+                      )}
+                      <div>
+                        <h4 className="font-semibold text-gray-900">Preferred Contact</h4>
+                        <p className="text-sm text-gray-600">{gig.communication}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {gig.createdBy?.rating && (
+                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                      <TrendingUp className="h-5 w-5 text-gray-600 mr-3" />
+                      <div>
+                        <h4 className="font-semibold text-gray-900">Client Rating</h4>
+                        <div className="flex items-center">
+                          {renderStars(gig.createdBy.rating)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Safety Tips */}
+              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                  <Shield className="h-6 w-6 text-emerald-600" />
+                  Safety Tips
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 text-sm">Secure Communication</h4>
+                      <p className="text-xs text-gray-600">Keep all communication on the platform</p>
                     </div>
                   </div>
-                  <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                    <CheckCircle className="h-8 w-8 text-green-600 mr-3" />
+                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                      <Award className="h-4 w-4 text-emerald-600" />
+                    </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Verified Seller</h4>
-                      <p className="text-sm text-gray-600">Identity confirmed</p>
+                      <h4 className="font-semibold text-gray-900 text-sm">Verified Identity</h4>
+                      <p className="text-xs text-gray-600">Client identity is verified</p>
                     </div>
                   </div>
-                  <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                    <Clock className="h-8 w-8 text-blue-600 mr-3" />
+                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                      <Zap className="h-4 w-4 text-emerald-600" />
+                    </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">24/7 Support</h4>
-                      <p className="text-sm text-gray-600">Always here to help</p>
+                      <h4 className="font-semibold text-gray-900 text-sm">Fast Response</h4>
+                      <p className="text-xs text-gray-600">Client typically responds within 24 hours</p>
                     </div>
                   </div>
                 </div>
               </div>
-
-              {/* Additional Info */}
-              {gig.fullName || gig.oauthEmail ? (
-                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                  <h3 className="text-xl font-bold text-gray-900 mb-6">Client Information</h3>
-                  <div className="space-y-4">
-                    {gig.fullName && (
-                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                        <User className="h-5 w-5 text-gray-600 mr-3" />
-                        <div>
-                          <h4 className="font-semibold text-gray-900">Name</h4>
-                          <p className="text-sm text-gray-600">{gig.fullName}</p>
-                        </div>
-                      </div>
-                    )}
-                    {gig.oauthEmail && (
-                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                        <Mail className="h-5 w-5 text-gray-600 mr-3" />
-                        <div>
-                          <h4 className="font-semibold text-gray-900">Contact Email</h4>
-                          <p className="text-sm text-gray-600">{gig.oauthEmail}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>

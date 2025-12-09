@@ -28,7 +28,8 @@ import {
   Star,
   Save,
   ChevronDown,
-  ArrowRight
+  ArrowRight,
+  Type
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -65,6 +66,7 @@ const GigCreate = () => {
 
   // Local state
   const [formData, setFormData] = useState({
+    title: "", // Added missing title field
     fullName: "",
     oauthEmail: "",
     country: "",
@@ -72,8 +74,12 @@ const GigCreate = () => {
     projectCategory: "",
     description: "",
     budget: "",
+    currency: "USD", // Added missing currency field
     timeline: "",
+    timelineUnit: "days", // Added missing timelineUnit field
     communication: "Email",
+    urgency: "medium", // Added missing urgency field
+    skillsRequired: [] // Added skills array
   });
 
   const [attachments, setAttachments] = useState([]);
@@ -83,17 +89,16 @@ const GigCreate = () => {
   const [success, setSuccess] = useState(false);
   const [createdGigId, setCreatedGigId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // API URL configuration
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+  const [skillsInput, setSkillsInput] = useState("");
 
   // Initialize form data with user info when authenticated
   useEffect(() => {
     if (currentUser) {
       setFormData(prev => ({
         ...prev,
-        fullName: currentUser.name || "",
-        oauthEmail: currentUser.email || ""
+        fullName: currentUser.name || currentUser.fullName || "",
+        oauthEmail: currentUser.email || "",
+        title: prev.title || "" // Ensure title exists
       }));
     }
   }, [currentUser]);
@@ -121,10 +126,8 @@ const GigCreate = () => {
       setActiveStep(5);
       setLastCreatedGigId(createdGigData._id);
 
-      // Show success toast
       toast.success("Gig created successfully!");
       
-      // Navigate to gig page after 3 seconds
       const timer = setTimeout(() => {
         navigate(`/gig/${createdGigData._id}`);
       }, 3000);
@@ -163,7 +166,6 @@ const GigCreate = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
@@ -175,12 +177,14 @@ const GigCreate = () => {
     const newErrors = { ...errors };
 
     for (const file of files) {
-      const isValidType = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/zip']
+      const isValidType = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 
+                          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          'application/zip', 'application/x-rar-compressed']
         .includes(file.type);
       const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB
 
       if (!isValidType) {
-        newErrors.attachments = `File ${file.name} has invalid type. Only JPG, PNG, PDF, ZIP are allowed.`;
+        newErrors.attachments = `File ${file.name} has invalid type. Only JPG, PNG, PDF, DOC, ZIP, RAR are allowed.`;
         toast.error(`Invalid file type: ${file.name}`);
         continue;
       }
@@ -191,11 +195,9 @@ const GigCreate = () => {
         continue;
       }
 
-      // Simulate upload progress
       setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
       validFiles.push(file);
 
-      // Animate upload progress
       let progress = 0;
       const interval = setInterval(() => {
         progress += 20;
@@ -209,7 +211,6 @@ const GigCreate = () => {
     setErrors(newErrors);
     setAttachments(prev => [...prev, ...validFiles]);
     
-    // Reset file input
     e.target.value = '';
   }, [errors]);
 
@@ -223,6 +224,24 @@ const GigCreate = () => {
     });
   }, [attachments]);
 
+  const addSkill = useCallback(() => {
+    if (skillsInput.trim() && formData.skillsRequired.length < 10) {
+      const skill = skillsInput.trim().substring(0, 50);
+      setFormData(prev => ({
+        ...prev,
+        skillsRequired: [...prev.skillsRequired, skill]
+      }));
+      setSkillsInput("");
+    }
+  }, [skillsInput, formData.skillsRequired]);
+
+  const removeSkill = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      skillsRequired: prev.skillsRequired.filter((_, i) => i !== index)
+    }));
+  }, []);
+
   const validateStep = useCallback((step) => {
     const newErrors = {};
 
@@ -231,9 +250,13 @@ const GigCreate = () => {
         newErrors.fullName = "Full name must be at least 3 characters.";
       }
 
-      // Check if user is authenticated
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!formData.oauthEmail || !emailRegex.test(formData.oauthEmail)) {
+        newErrors.oauthEmail = "Please enter a valid email address.";
+      }
+
       if (!isAuthenticated) {
-        newErrors.oauthEmail = "Please sign in to continue.";
+        newErrors.auth = "Please sign in to continue.";
       }
     }
 
@@ -242,14 +265,16 @@ const GigCreate = () => {
         newErrors.country = "Country is required.";
       }
 
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-      const cleanPhone = formData.phone.replace(/[^0-9+]/g, '');
-      if (!formData.phone || !phoneRegex.test(cleanPhone)) {
-        newErrors.phone = "Please enter a valid phone number.";
+      if (!formData.phone || formData.phone.trim().length < 5) {
+        newErrors.phone = "Phone number is required.";
       }
     }
 
     if (step === 3) {
+      if (!formData.title || formData.title.trim().length < 5) {
+        newErrors.title = "Title must be at least 5 characters.";
+      }
+
       if (!formData.projectCategory) {
         newErrors.projectCategory = "Please select a project category.";
       }
@@ -286,82 +311,95 @@ const GigCreate = () => {
     }
   }, [activeStep]);
 
-  const handleGoogleSignIn = useCallback(() => {
-    const redirectUrl = encodeURIComponent(`${window.location.origin}/oauth-success`);
-    window.location.href = `${API_URL}/api/auth/google?redirect=${redirectUrl}`;
-  }, [API_URL]);
-
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    // Check if user is authenticated
-    if (!isAuthenticated) {
-      setErrors(prev => ({
-        ...prev,
-        form: "Please sign in to create a gig."
-      }));
-      setActiveStep(1);
-      toast.error("Please sign in first");
-      setIsSubmitting(false);
-      return;
-    }
+  if (!isAuthenticated) {
+    setErrors(prev => ({
+      ...prev,
+      form: "Please sign in to create a gig."
+    }));
+    setActiveStep(1);
+    toast.error("Please sign in first");
+    setIsSubmitting(false);
+    return;
+  }
 
-    if (!validateStep(4)) {
-      setActiveStep(4);
-      setIsSubmitting(false);
-      return;
-    }
+  if (!validateStep(4)) {
+    setActiveStep(4);
+    setIsSubmitting(false);
+    return;
+  }
 
-    try {
-      // Create FormData object
-      const formDataObj = new FormData();
+  try {
+    // Create FormData object
+    const formDataObj = new FormData();
 
-      // Append all form data
-      Object.keys(formData).forEach(key => {
-        if (formData[key] !== null && formData[key] !== undefined && formData[key] !== '') {
-          formDataObj.append(key, formData[key]);
-        }
-      });
+    // Prepare data according to backend model
+    const gigData = {
+      title: formData.title.trim(),
+      fullName: formData.fullName.trim(),
+      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+      country: formData.country.trim(),
+      phone: formData.phone.trim(),
+      projectCategory: formData.projectCategory,
+      description: formData.description.trim(),
+      budget: parseFloat(formData.budget),
+      currency: formData.currency,
+      timeline: formData.timeline.trim(),
+      timelineUnit: formData.timelineUnit,
+      communication: formData.communication,
+      urgency: formData.urgency,
+    };
 
-      // Append attachments
-      attachments.forEach((file) => {
-        formDataObj.append("attachments", file);
-      });
-
-      // Debug log
-      if (process.env.NODE_ENV === 'development') {
-        console.log("Sending gig data:");
-        for (let [key, value] of formDataObj.entries()) {
-          console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-        }
+    // Append all data to FormData
+    Object.keys(gigData).forEach(key => {
+      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+        formDataObj.append(key, gigData[key]);
       }
+    });
 
-      // Reset previous errors
-      setErrors({});
-
-      // Call create gig mutation
-      createGig(formDataObj);
-
-    } catch (error) {
-      console.error("Error creating gig:", error);
-      toast.error("Failed to create gig. Please try again.");
-      setErrors(prev => ({
-        ...prev,
-        form: error.message || "Something went wrong. Please try again."
-      }));
-    } finally {
-      setIsSubmitting(false);
+    // Append skills array properly
+    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+      formData.skillsRequired.forEach((skill, index) => {
+        formDataObj.append(`skillsRequired[${index}]`, skill);
+      });
     }
-  }, [formData, attachments, isAuthenticated, validateStep, createGig]);
 
-  // Handle category refresh
+    // Append files as attachments
+    attachments.forEach((file) => {
+      formDataObj.append("attachments", file);
+    });
+
+    // Log FormData entries for debugging
+    console.log("=== FORM DATA BEING SENT ===");
+    for (let [key, value] of formDataObj.entries()) {
+      console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+    }
+
+    setErrors({});
+
+    // Call create gig mutation
+    createGig(formDataObj);
+
+  } catch (error) {
+    console.error("Error in handleSubmit:", error);
+    toast.error("Failed to prepare gig data. Please try again.");
+    setErrors(prev => ({
+      ...prev,
+      form: error.message || "Something went wrong. Please try again."
+    }));
+  } finally {
+    setIsSubmitting(false);
+  }
+}, [formData, attachments, isAuthenticated, validateStep, createGig]);
+
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
     toast.success("Refreshing categories...");
   }, [refetchCategories]);
 
-  // Combine errors from different sources
   const allErrors = {
     ...errors,
     form: errors.form || gigError?.message || authError || categoryError?.message
@@ -375,86 +413,20 @@ const GigCreate = () => {
     { number: 5, title: "Complete", icon: CheckCircle },
   ];
 
-  // Information panels for each step
-  const stepInformation = {
-    1: {
-      title: "Authentication Required",
-      description: "Sign in with Google to create and manage your gigs securely.",
-      tips: [
-        {
-          icon: Shield,
-          title: "Secure & Verified",
-          description: "Google authentication ensures your identity is verified and secure."
-        },
-        {
-          icon: User,
-          title: "Automatic Profile",
-          description: "Your Google profile information helps freelancers know who they're working with."
-        }
-      ]
-    },
-    2: {
-      title: "Contact Details",
-      description: "This helps freelancers communicate effectively with you about the project.",
-      tips: [
-        {
-          icon: Globe,
-          title: "Time Zone Awareness",
-          description: "Knowing your country helps freelancers align with your working hours."
-        },
-        {
-          icon: Phone,
-          title: "Direct Communication",
-          description: "Phone numbers are only shared after you approve a freelancer's proposal."
-        }
-      ]
-    },
-    3: {
-      title: "Project Scope",
-      description: "Define your project's requirements to attract the right freelancers.",
-      tips: [
-        {
-          icon: DollarSign,
-          title: "Budget Guidance",
-          description: "Setting a realistic budget helps filter freelancers who match your requirements."
-        },
-        {
-          icon: Target,
-          title: "Category Precision",
-          description: "Accurate categorization ensures your gig reaches specialized professionals."
-        }
-      ]
-    },
-    4: {
-      title: "Project Details",
-      description: "Detailed information helps freelancers understand exactly what you need.",
-      tips: [
-        {
-          icon: FileText,
-          title: "Clear Requirements",
-          description: "Detailed descriptions receive 3x more relevant proposals."
-        },
-        {
-          icon: Clock,
-          title: "Timeline Matters",
-          description: "Realistic timelines help freelancers plan their work effectively."
-        },
-        {
-          icon: FileCheck,
-          title: "File Attachments",
-          description: "Visual references improve understanding by 40% compared to text-only descriptions."
-        }
-      ]
-    }
-  };
-
-  // Format budget for display
   const formatBudget = (budget) => {
     const num = parseFloat(budget);
     return isNaN(num) ? "0" : num.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2
     });
+  };
+
+  // Get category name for display
+  const getCategoryName = () => {
+    if (!formData.projectCategory) return "";
+    const categoryList = storedCategories.length > 0 ? storedCategories : categoriesData || [];
+    const category = categoryList.find(c => c._id === formData.projectCategory);
+    return category?.name || "";
   };
 
   return (
@@ -597,11 +569,15 @@ const GigCreate = () => {
                 <div className="flex items-center mb-4">
                   <Info className="mr-3" size={20} />
                   <h2 className="text-xl md:text-2xl font-bold">
-                    {stepInformation[activeStep]?.title || "Complete Your Gig"}
+                    {activeStep < 5 ? `Step ${activeStep}: ${steps[activeStep - 1]?.title}` : "Complete Your Gig"}
                   </h2>
                 </div>
                 <p className="text-emerald-100 text-sm md:text-base">
-                  {stepInformation[activeStep]?.description || "Your gig is ready to be published! Review your information before submitting."}
+                  {activeStep === 1 && "Sign in and provide your basic information to get started."}
+                  {activeStep === 2 && "Share your contact details so freelancers can reach you."}
+                  {activeStep === 3 && "Define your project scope with budget and category."}
+                  {activeStep === 4 && "Add detailed project requirements and attachments."}
+                  {activeStep === 5 && "Your gig is ready to be published! Review your information before submitting."}
                 </p>
               </div>
 
@@ -611,124 +587,67 @@ const GigCreate = () => {
                   <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 md:p-5">
                     <h3 className="font-bold text-lg mb-3 flex items-center">
                       <Lightbulb className="mr-2" size={18} />
-                      What you'll need:
+                      Information entered:
                     </h3>
-                    <ul className="space-y-2 text-sm md:text-base">
-                      {activeStep === 1 && (
+                    <ul className="space-y-2 text-sm">
+                      {activeStep >= 1 && (
                         <>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Google account for authentication</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Name:</span>
+                            <span className="font-medium truncate max-w-[150px]">
+                              {formData.fullName || "Not entered"}
+                            </span>
                           </li>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Verified email from Google OAuth</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Email:</span>
+                            <span className="font-medium truncate max-w-[150px]">
+                              {formData.oauthEmail || "Not entered"}
+                            </span>
                           </li>
                         </>
                       )}
-                      {activeStep === 2 && (
+                      {activeStep >= 2 && (
                         <>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Country of residence</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Country:</span>
+                            <span className="font-medium">{formData.country || "Not entered"}</span>
                           </li>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Active phone number for urgent communications</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Phone:</span>
+                            <span className="font-medium">{formData.phone || "Not entered"}</span>
                           </li>
                         </>
                       )}
-                      {activeStep === 3 && (
+                      {activeStep >= 3 && (
                         <>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Select the most relevant gig category</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Project Title:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {formData.title || "Not entered"}
+                            </span>
                           </li>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Realistic budget range for your gig</span>
+                          <li className="flex justify-between">
+                            <span className="text-emerald-100">Category:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {getCategoryName() || "Not selected"}
+                            </span>
                           </li>
+                          {formData.budget && (
+                            <li className="flex justify-between">
+                              <span className="text-emerald-100">Budget:</span>
+                              <span className="font-medium">${formatBudget(formData.budget)}</span>
+                            </li>
+                          )}
                         </>
                       )}
-                      {activeStep === 4 && (
-                        <>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Detailed gig description</span>
-                          </li>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Gig timeline expectation</span>
-                          </li>
-                          <li className="flex items-start">
-                            <div className="w-2 h-2 bg-white rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                            <span>Preferred communication method</span>
-                          </li>
-                        </>
+                      {activeStep >= 4 && formData.description && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Description:</span>
+                          <span className="font-medium">{formData.description.length} chars</span>
+                        </li>
                       )}
                     </ul>
                   </div>
-
-                  {/* Tips Section */}
-                  {stepInformation[activeStep]?.tips && (
-                    <div>
-                      <h3 className="font-bold text-lg mb-4">Why this matters:</h3>
-                      <div className="space-y-4">
-                        {stepInformation[activeStep].tips.map((tip, index) => (
-                          <div key={index} className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                            <div className="flex items-start mb-2">
-                              <tip.icon className="mr-3 flex-shrink-0" size={18} />
-                              <h4 className="font-semibold text-sm md:text-base">{tip.title}</h4>
-                            </div>
-                            <p className="text-sm text-emerald-100 md:text-sm">{tip.description}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Show entered data preview */}
-                  {activeStep > 1 && (
-                    <div className="mt-6 md:mt-8 pt-4 md:pt-6 border-t border-white/20">
-                      <h3 className="font-bold text-lg mb-3">Information entered:</h3>
-                      <div className="space-y-2 text-sm">
-                        {activeStep >= 1 && currentUser && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-emerald-100">Name:</span>
-                              <span className="font-medium">{currentUser.name}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-emerald-100">Email:</span>
-                              <span className="font-medium truncate max-w-[150px]">{currentUser.email}</span>
-                            </div>
-                          </>
-                        )}
-                        {activeStep >= 2 && formData.country && (
-                          <div className="flex justify-between">
-                            <span className="text-emerald-100">Country:</span>
-                            <span className="font-medium">{formData.country}</span>
-                          </div>
-                        )}
-                        {activeStep >= 3 && formData.budget && (
-                          <div className="flex justify-between">
-                            <span className="text-emerald-100">Budget:</span>
-                            <span className="font-medium">${formatBudget(formData.budget)}</span>
-                          </div>
-                        )}
-                        {activeStep >= 3 && formData.projectCategory && (
-                          <div className="flex justify-between">
-                            <span className="text-emerald-100">Category:</span>
-                            <span className="font-medium truncate max-w-[120px]">
-                              {(storedCategories.length > 0
-                                ? storedCategories.find(c => c._id === formData.projectCategory)?.name
-                                : categoriesData?.find(c => c._id === formData.projectCategory)?.name) || "Selected"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -793,12 +712,12 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Step 1: Authentication */}
+                  {/* Step 1: Authentication & Basic Info */}
                   {activeStep === 1 && (
                     <div className="space-y-6">
                       <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
                         <LogIn className="mr-3 text-emerald-600" size={20} />
-                        Sign In Required
+                        Sign In & Basic Information
                       </h2>
 
                       {!isAuthenticated ? (
@@ -809,66 +728,28 @@ const GigCreate = () => {
                               <div>
                                 <h3 className="font-semibold text-amber-800 mb-2">Authentication Required</h3>
                                 <p className="text-amber-700 text-sm md:text-base">
-                                  You need to sign in with Google to create a gig. This ensures secure communication and helps build trust with freelancers.
+                                  You need to sign in to create a gig. This ensures secure communication and helps build trust with freelancers.
                                 </p>
                               </div>
                             </div>
                           </div>
 
-                          <div className="space-y-4">
-                            <div>
-                              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                                Why Google Sign In?
-                              </h3>
-                              <div className="space-y-3">
-                                <div className="flex items-start">
-                                  <div className="bg-emerald-100 p-2 rounded-lg mr-3">
-                                    <Shield className="text-emerald-600" size={16} />
-                                  </div>
-                                  <div>
-                                    <h4 className="font-medium text-gray-800">Secure & Verified</h4>
-                                    <p className="text-sm text-gray-600">Google verifies your identity, preventing fake accounts</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-start">
-                                  <div className="bg-green-100 p-2 rounded-lg mr-3">
-                                    <Mail className="text-green-600" size={16} />
-                                  </div>
-                                  <div>
-                                    <h4 className="font-medium text-gray-800">Verified Email</h4>
-                                    <p className="text-sm text-gray-600">Freelancers know they're communicating with a real person</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-start">
-                                  <div className="bg-teal-100 p-2 rounded-lg mr-3">
-                                    <User className="text-teal-600" size={16} />
-                                  </div>
-                                  <div>
-                                    <h4 className="font-medium text-gray-800">Instant Profile</h4>
-                                    <p className="text-sm text-gray-600">Your Google profile automatically fills in your information</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="pt-4">
-                              <button
-                                type="button"
-                                onClick={handleGoogleSignIn}
-                                className="w-full py-3 md:py-4 px-6 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 flex items-center justify-center text-gray-800 font-semibold shadow-sm hover:shadow-md"
-                                disabled={gigLoading}
-                              >
-                                <img
-                                  src="https://www.google.com/favicon.ico"
-                                  alt="Google"
-                                  className="w-4 h-4 md:w-5 md:h-5 mr-2"
-                                />
-                                Sign in with Google
-                              </button>
-                              <p className="text-center text-xs md:text-sm text-gray-500 mt-2">
-                                You'll be redirected to Google for authentication
-                              </p>
-                            </div>
+                          <div className="pt-4">
+                            <button
+                              type="button"
+                              className="w-full py-3 md:py-4 px-6 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 flex items-center justify-center text-gray-800 font-semibold shadow-sm hover:shadow-md"
+                              disabled={gigLoading}
+                            >
+                              <img
+                                src="https://www.google.com/favicon.ico"
+                                alt="Google"
+                                className="w-4 h-4 md:w-5 md:h-5 mr-2"
+                              />
+                              Sign in with Google
+                            </button>
+                            <p className="text-center text-xs md:text-sm text-gray-500 mt-2">
+                              You'll be redirected to Google for authentication
+                            </p>
                           </div>
                         </div>
                       ) : (
@@ -889,7 +770,7 @@ const GigCreate = () => {
                             <div className="bg-gray-50 rounded-xl p-4 md:p-5">
                               <div className="flex items-center mb-3">
                                 <User className="text-gray-600 mr-2" size={16} />
-                                <h4 className="font-semibold text-gray-800 text-sm md:text-base">Your Name</h4>
+                                <h4 className="font-semibold text-gray-800 text-sm md:text-base">Your Name *</h4>
                               </div>
                               <input
                                 type="text"
@@ -898,16 +779,18 @@ const GigCreate = () => {
                                 onChange={handleInputChange}
                                 className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 text-sm md:text-base"
                                 placeholder="Full Name"
+                                disabled={gigLoading}
                               />
                               {errors.fullName && (
                                 <p className="mt-2 text-sm text-red-600">{errors.fullName}</p>
                               )}
+                              <p className="mt-1 text-xs text-gray-500">Minimum 3 characters</p>
                             </div>
 
                             <div className="bg-gray-50 rounded-xl p-4 md:p-5">
                               <div className="flex items-center mb-3">
                                 <Mail className="text-gray-600 mr-2" size={16} />
-                                <h4 className="font-semibold text-gray-800 text-sm md:text-base">Your Email</h4>
+                                <h4 className="font-semibold text-gray-800 text-sm md:text-base">Your Email *</h4>
                               </div>
                               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                                 <div className="flex items-center">
@@ -955,7 +838,6 @@ const GigCreate = () => {
                           </p>
                           <button
                             type="button"
-                            onClick={handleGoogleSignIn}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google
@@ -1017,7 +899,7 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Step 3: Project Scope */}
+                  {/* Step 3: Project Scope - FIXED LAYOUT */}
                   {activeStep === 3 && (
                     <div className="space-y-6">
                       <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
@@ -1033,7 +915,6 @@ const GigCreate = () => {
                           </h3>
                           <button
                             type="button"
-                            onClick={handleGoogleSignIn}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google to Continue
@@ -1041,9 +922,33 @@ const GigCreate = () => {
                         </div>
                       ) : (
                         <div className="space-y-6">
+                          {/* Project Title */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                              <Type className="mr-2" size={14} />
+                              Project Title *
+                            </label>
+                            <input
+                              type="text"
+                              name="title"
+                              value={formData.title}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
+                              placeholder="e.g., Build a responsive e-commerce website"
+                              disabled={gigLoading}
+                            />
+                            <p className="mt-2 text-xs md:text-sm text-gray-500">
+                              Be specific and descriptive (5-200 characters)
+                            </p>
+                            {errors.title && (
+                              <p className="mt-2 text-sm text-red-600">{errors.title}</p>
+                            )}
+                          </div>
+
+                          {/* Project Category - FIXED LAYOUT */}
                           <div>
                             <div className="flex justify-between items-center mb-2">
-                              <label className="text-sm font-semibold text-gray-700 flex items-center">
+                              <label className="text-sm font-semibold text-gray-700">
                                 Project Category *
                               </label>
                               {categoryError && (
@@ -1070,8 +975,7 @@ const GigCreate = () => {
                                 ) : (
                                   (storedCategories.length > 0 ? storedCategories : categoriesData || []).map((category) => (
                                     <option key={category._id} value={category._id}>
-                                      {category.icon} {category.name}
-                                      {category.description && ` - ${category.description}`}
+                                      {category.name}
                                     </option>
                                   ))
                                 )}
@@ -1088,7 +992,7 @@ const GigCreate = () => {
                             )}
                             {categoryError && !categoryLoading && (
                               <p className="mt-2 text-sm text-red-600">
-                                Failed to load categories. {categoryError.message}
+                                Failed to load categories. Please try refreshing.
                               </p>
                             )}
                             {errors.projectCategory && (
@@ -1096,6 +1000,7 @@ const GigCreate = () => {
                             )}
                           </div>
 
+                          {/* Budget - FIXED LAYOUT */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <DollarSign className="mr-2" size={14} />
@@ -1130,12 +1035,34 @@ const GigCreate = () => {
                               <p className="mt-2 text-sm text-red-600">{errors.budget}</p>
                             )}
                           </div>
+
+                          {/* Currency */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2">
+                              Currency
+                            </label>
+                            <select
+                              name="currency"
+                              value={formData.currency}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white transition-all text-sm md:text-base"
+                              disabled={gigLoading}
+                            >
+                              <option value="USD">USD - US Dollar</option>
+                              <option value="EUR">EUR - Euro</option>
+                              <option value="GBP">GBP - British Pound</option>
+                              <option value="CAD">CAD - Canadian Dollar</option>
+                              <option value="AUD">AUD - Australian Dollar</option>
+                              <option value="INR">INR - Indian Rupee</option>
+                              <option value="PKR">PKR - Pakistani Rupee</option>
+                            </select>
+                          </div>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Step 4: Project Details */}
+                  {/* Step 4: Project Details - FIXED LAYOUT */}
                   {activeStep === 4 && (
                     <div className="space-y-6">
                       <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
@@ -1154,7 +1081,6 @@ const GigCreate = () => {
                           </p>
                           <button
                             type="button"
-                            onClick={handleGoogleSignIn}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
                             Sign in with Google to Finish
@@ -1162,6 +1088,7 @@ const GigCreate = () => {
                         </div>
                       ) : (
                         <div className="space-y-6">
+                          {/* Timeline */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <Calendar className="mr-2" size={14} />
@@ -1176,21 +1103,38 @@ const GigCreate = () => {
                               placeholder="e.g., 2 weeks, 1 month, ASAP"
                               disabled={gigLoading}
                             />
-                            <p className="mt-2 text-xs md:text-sm text-gray-500">
-                              Be specific about your deadline expectations
-                            </p>
+                            <div className="mt-2 flex flex-col md:flex-row md:items-center gap-2">
+                              <p className="text-xs md:text-sm text-gray-500">
+                                Be specific about your deadline expectations
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-700">Time unit:</span>
+                                <select
+                                  name="timelineUnit"
+                                  value={formData.timelineUnit}
+                                  onChange={handleInputChange}
+                                  className="text-sm border border-gray-300 rounded-lg p-2"
+                                  disabled={gigLoading}
+                                >
+                                  <option value="days">Days</option>
+                                  <option value="weeks">Weeks</option>
+                                  <option value="months">Months</option>
+                                </select>
+                              </div>
+                            </div>
                             {errors.timeline && (
                               <p className="mt-2 text-sm text-red-600">{errors.timeline}</p>
                             )}
                           </div>
 
+                          {/* Communication Preference - FIXED LAYOUT */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <MessageSquare className="mr-2" size={14} />
                               Communication Preference
                             </label>
-                            <div className="flex flex-wrap gap-3">
-                              {['Email', 'Phone', 'Video Call'].map((method) => (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+                              {['Email', 'Phone', 'Video Call', 'Any'].map((method) => (
                                 <label key={method} className="flex items-center cursor-pointer">
                                   <input
                                     type="radio"
@@ -1202,7 +1146,7 @@ const GigCreate = () => {
                                     disabled={gigLoading}
                                   />
                                   <div className={`
-                                    px-3 md:px-4 py-2 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base
+                                    w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center
                                     ${formData.communication === method
                                       ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
                                       : 'border-gray-200 hover:border-gray-300'
@@ -1216,6 +1160,42 @@ const GigCreate = () => {
                             </div>
                           </div>
 
+                          {/* Urgency Level - FIXED LAYOUT */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2">
+                              Urgency Level
+                            </label>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+                              {['low', 'medium', 'high', 'urgent'].map((level) => (
+                                <label key={level} className="flex items-center cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="urgency"
+                                    value={level}
+                                    checked={formData.urgency === level}
+                                    onChange={handleInputChange}
+                                    className="sr-only disabled:cursor-not-allowed"
+                                    disabled={gigLoading}
+                                  />
+                                  <div className={`
+                                    w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center capitalize
+                                    ${formData.urgency === level
+                                      ? level === 'urgent' ? 'border-red-500 bg-red-50 text-red-600'
+                                      : level === 'high' ? 'border-orange-500 bg-orange-50 text-orange-600'
+                                      : level === 'medium' ? 'border-yellow-500 bg-yellow-50 text-yellow-600'
+                                      : 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                                      : 'border-gray-200 hover:border-gray-300'
+                                    }
+                                    ${gigLoading ? 'opacity-50 cursor-not-allowed' : ''}
+                                  `}>
+                                    {level}
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Description - FIXED LAYOUT */}
                           <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
                               Project Description *
@@ -1233,18 +1213,18 @@ const GigCreate = () => {
 • Any examples or references"
                               disabled={gigLoading}
                             />
-                            <div className="flex justify-between mt-2">
+                            <div className="flex flex-col md:flex-row justify-between mt-2 gap-2">
                               <div>
                                 <p className="text-xs text-gray-500">
                                   Minimum 20 characters required
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                  Detailed descriptions receive better proposals
+                                  Maximum 5000 characters allowed
                                 </p>
                               </div>
                               <span className={`text-sm font-medium ${formData.description.length < 20 ? 'text-red-500' : 'text-emerald-500'
                                 }`}>
-                                {formData.description.length}/20
+                                {formData.description.length}/5000
                               </span>
                             </div>
                             {errors.description && (
@@ -1252,6 +1232,53 @@ const GigCreate = () => {
                             )}
                           </div>
 
+                          {/* Skills Required - FIXED LAYOUT */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2">
+                              Required Skills (Optional)
+                            </label>
+                            <div className="flex flex-col md:flex-row gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={skillsInput}
+                                onChange={(e) => setSkillsInput(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
+                                className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
+                                placeholder="e.g., React, Node.js, MongoDB"
+                                disabled={gigLoading}
+                              />
+                              <button
+                                type="button"
+                                onClick={addSkill}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm whitespace-nowrap"
+                                disabled={gigLoading}
+                              >
+                                Add Skill
+                              </button>
+                            </div>
+                            {formData.skillsRequired.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {formData.skillsRequired.map((skill, index) => (
+                                  <div key={index} className="flex items-center bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm">
+                                    {skill}
+                                    <button
+                                      type="button"
+                                      onClick={() => removeSkill(index)}
+                                      className="ml-2 text-emerald-600 hover:text-emerald-800"
+                                      disabled={gigLoading}
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <p className="mt-2 text-xs text-gray-500">
+                              Add relevant skills to attract the right freelancers
+                            </p>
+                          </div>
+
+                          {/* Attachments - FIXED LAYOUT */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <Upload className="mr-2" size={14} />
@@ -1263,13 +1290,13 @@ const GigCreate = () => {
                                 Drag & drop files or click to browse
                               </p>
                               <p className="text-xs md:text-sm text-gray-500 mb-4">
-                                JPG, PNG, PDF, ZIP (Max 10MB each)
+                                JPG, PNG, PDF, DOC, ZIP, RAR (Max 10MB each)
                               </p>
                               <input
                                 type="file"
                                 multiple
                                 onChange={handleFileChange}
-                                accept=".jpg,.jpeg,.png,.pdf,.zip"
+                                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip,.rar"
                                 className="hidden"
                                 id="file-upload"
                                 disabled={gigLoading}
