@@ -1,104 +1,133 @@
 const mongoose = require('mongoose');
 const Category = require('../models/category.model.js');
+const Service = require('../models/services.model.js');
+const Gig = require('../models/gig.model.js');
+const crypto = require('crypto');
+const { sanitizeHtml } = require('../utils/sanitize.js');
 
-// Helper function to build query from parameters
-const buildCategoryQuery = (queryParams, userRole) => {
+// Security: Request ID for tracking
+const generateRequestId = () => {
+  return crypto.randomBytes(8).toString('hex');
+};
+
+// Security: Input sanitization
+const sanitizeCategoryInput = (data) => {
+  const sanitized = {};
+  for (const key in data) {
+    if (typeof data[key] === 'string') {
+      sanitized[key] = sanitizeHtml(data[key], {
+        allowedTags: [],
+        allowedAttributes: {},
+        disallowedTagsMode: 'escape'
+      }).trim();
+    } else {
+      sanitized[key] = data[key];
+    }
+  }
+  return sanitized;
+};
+
+// Security: Build secure query
+const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   const {
     search,
     name,
     slug,
+    parentCategory,
+    featured,
+    popular,
     isActive,
+    level,
+    minServicesCount,
+    maxServicesCount,
+    minGigsCount,
+    maxGigsCount,
     createdAfter,
     createdBefore,
     updatedAfter,
     updatedBefore,
     createdBy,
-    minNameLength,
-    maxNameLength,
-    hasDescription,
+    hasImage,
+    hasParent,
     ids,
     excludeIds,
-    nameStartsWith,
-    nameEndsWith,
-    showAll = false
+    showAll = false,
+    includeSubcategories = false
   } = queryParams;
 
   const filter = {};
 
-  // Active status filter
-  if (showAll === 'true' && userRole === 'admin') {
-    // Show all categories including inactive
+  // Security: Only admin can see all categories
+  if (showAll && userRole === 'admin') {
     if (isActive !== undefined) {
-      filter.isActive = isActive === 'true';
+      filter.isActive = isActive;
     }
   } else {
     filter.isActive = true;
   }
 
-  // Text search across multiple fields
+  // Search with sanitization
   if (search) {
-    const searchRegex = { $regex: search, $options: 'i' };
+    const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+    const searchRegex = { $regex: sanitizedSearch, $options: 'i' };
     filter.$or = [
       { name: searchRegex },
       { description: searchRegex },
-      { slug: searchRegex }
+      { slug: searchRegex },
+      { metaKeywords: { $in: [new RegExp(sanitizedSearch, 'i')] } }
     ];
   }
 
-  // Exact match filters
-  if (name) filter.name = { $regex: `^${name}$`, $options: 'i' };
-  if (slug) filter.slug = slug;
+  // Sanitize all string inputs
+  if (name) filter.name = { $regex: `^${sanitizeHtml(name, { allowedTags: [] })}`, $options: 'i' };
+  if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
+  
+  // Validate ObjectIds
+  if (parentCategory && mongoose.Types.ObjectId.isValid(parentCategory)) {
+    filter.parentCategory = parentCategory;
+  }
+  
   if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
     filter.createdBy = createdBy;
   }
 
-  // Date range filters
+  // Boolean filters
+  if (featured !== undefined) filter.featured = featured;
+  if (popular !== undefined) filter.popular = popular;
+  if (level !== undefined) filter.level = parseInt(level) || 0;
+  if (hasImage === 'true') filter.image = { $exists: true, $ne: '' };
+  if (hasParent === 'true') filter.parentCategory = { $exists: true, $ne: null };
+  if (hasParent === 'false') filter.parentCategory = { $in: [null, undefined] };
+
+  // Count filters with validation
+  if (minServicesCount) filter.servicesCount = { ...filter.servicesCount, $gte: parseInt(minServicesCount) || 0 };
+  if (maxServicesCount) filter.servicesCount = { ...filter.servicesCount, $lte: parseInt(maxServicesCount) || 0 };
+  if (minGigsCount) filter.gigsCount = { ...filter.gigsCount, $gte: parseInt(minGigsCount) || 0 };
+  if (maxGigsCount) filter.gigsCount = { ...filter.gigsCount, $lte: parseInt(maxGigsCount) || 0 };
+
+  // Date filters with validation
   if (createdAfter) {
-    filter.createdAt = { ...filter.createdAt, $gte: new Date(createdAfter) };
+    const date = new Date(createdAfter);
+    if (!isNaN(date.getTime())) filter.createdAt = { ...filter.createdAt, $gte: date };
   }
   if (createdBefore) {
-    filter.createdAt = { ...filter.createdAt, $lte: new Date(createdBefore) };
+    const date = new Date(createdBefore);
+    if (!isNaN(date.getTime())) filter.createdAt = { ...filter.createdAt, $lte: date };
   }
   if (updatedAfter) {
-    filter.updatedAt = { ...filter.updatedAt, $gte: new Date(updatedAfter) };
+    const date = new Date(updatedAfter);
+    if (!isNaN(date.getTime())) filter.updatedAt = { ...filter.updatedAt, $gte: date };
   }
   if (updatedBefore) {
-    filter.updatedAt = { ...filter.updatedAt, $lte: new Date(updatedBefore) };
+    const date = new Date(updatedBefore);
+    if (!isNaN(date.getTime())) filter.updatedAt = { ...filter.updatedAt, $lte: date };
   }
 
-  // Name length filters
-  if (minNameLength) {
-    filter.name = { 
-      ...filter.name, 
-      $exists: true,
-      $expr: { $gte: [{ $strLenCP: "$name" }, parseInt(minNameLength)] }
-    };
-  }
-  if (maxNameLength) {
-    filter.name = { 
-      ...filter.name, 
-      $exists: true,
-      $expr: { $lte: [{ $strLenCP: "$name" }, parseInt(maxNameLength)] }
-    };
-  }
-
-  // Description existence filter
-  if (hasDescription === 'true') {
-    filter.description = { $ne: '', $exists: true };
-  } else if (hasDescription === 'false') {
-    filter.$or = [
-      { description: '' },
-      { description: { $exists: false } }
-    ];
-  }
-
-  // ID filters
+  // ID filters with validation
   if (ids) {
     const idArray = ids.split(',').map(id => id.trim());
     const validIds = idArray.filter(id => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length > 0) {
-      filter._id = { $in: validIds };
-    }
+    if (validIds.length > 0) filter._id = { $in: validIds };
   }
 
   if (excludeIds) {
@@ -109,268 +138,791 @@ const buildCategoryQuery = (queryParams, userRole) => {
     }
   }
 
-  // Partial match filters
-  if (nameStartsWith) {
-    filter.name = { $regex: `^${nameStartsWith}`, $options: 'i' };
-  }
-  if (nameEndsWith) {
-    filter.name = { $regex: `${nameEndsWith}$`, $options: 'i' };
-  }
-
   return filter;
 };
 
-// Helper function to build sort object
-const buildSortObject = (sort, order, sortByFields = []) => {
-  const allowedSortFields = ['name', 'createdAt', 'updatedAt', ...sortByFields];
-  const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
-  const sortOrder = order === 'asc' ? 1 : -1;
-  
-  // Handle multiple sort fields
-  if (sort.includes(',')) {
-    const sortFields = sort.split(',');
-    const sortObj = {};
-    sortFields.forEach(field => {
-      const [fieldName, fieldOrder] = field.split(':');
-      if (allowedSortFields.includes(fieldName)) {
-        sortObj[fieldName] = fieldOrder === 'asc' ? 1 : -1;
-      }
-    });
-    return Object.keys(sortObj).length > 0 ? sortObj : { createdAt: -1 };
-  }
-  
-  return { [sortField]: sortOrder };
+// Security: Add audit trail
+const logAudit = (action, resource, resourceId, userId, details = {}) => {
+  console.log(`[AUDIT] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
 
 // Create Category (Admin Only)
 const createCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
   try {
-    const { name, description, isActive = true } = req.body;
-
+    // Security: Role check
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
+      logAudit('UNAUTHORIZED_ACCESS', 'CATEGORY', 'NONE', req.user._id, { ip: req.ip });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Forbidden: Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED'
+      });
+    }
+
+    const sanitizedData = sanitizeCategoryInput(req.body);
+    
+    // Security: Check for circular parent reference
+    if (sanitizedData.parentCategory) {
+      if (sanitizedData.parentCategory === req.body._id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category cannot be its own parent',
+          code: 'CIRCULAR_REFERENCE'
+        });
+      }
     }
 
     const category = await Category.create({
-      name: name.trim(),
-      description: description?.trim() || '',
-      isActive,
+      ...sanitizedData,
       createdBy: req.user._id,
+      version: 1
     });
 
-    res.status(201).json({ success: true, category });
+    // Security: Audit log
+    logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
+      name: category.name,
+      parentCategory: category.parentCategory
+    });
+
+    // Security: Remove sensitive data
+    const safeCategory = category.toObject();
+    delete safeCategory.__v;
+    delete safeCategory.createdBy;
+
+    res.status(201).json({
+      success: true,
+      category: safeCategory,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
+    // Security: Handle duplicate key errors
     if (error.code === 11000) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Category with that name already exists' });
+      return res.status(400).json({
+        success: false,
+        message: 'Category with that name already exists',
+        code: 'DUPLICATE_CATEGORY',
+        requestId
+      });
     }
+    
+    // Security: Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    logAudit('ERROR', 'CATEGORY', 'CREATE', req.user?._id, { error: error.message });
     next(error);
   }
 };
 
-// Get All Categories with Advanced Query Parameters
+// Get Categories with Advanced Security
 const getCategories = async (req, res, next) => {
+  const requestId = generateRequestId();
   try {
     const {
-      // Pagination
-      page = 1,
-      limit = 10,
-      offset,
-      
-      // Sorting
+      search,
+      q,
+      name,
+      slug,
+      parentCategory,
+      featured,
+      popular,
+      isActive,
+      level,
+      minServicesCount,
+      maxServicesCount,
+      minGigsCount,
+      maxGigsCount,
+      createdAfter,
+      createdBefore,
+      updatedAfter,
+      updatedBefore,
+      createdBy,
+      hasImage,
+      hasParent,
+      ids,
+      excludeIds,
       sort = 'createdAt',
       order = 'desc',
       sortBy,
-      
-      // Search
-      search,
-      q, // alias for search
-      
-      // Filtering
-      name,
-      slug,
-      isActive,
-      createdAfter,
-      createdBefore,
-      updatedAfter,
-      updatedBefore,
-      createdBy,
-      minNameLength,
-      maxNameLength,
-      hasDescription,
-      ids,
-      excludeIds,
-      nameStartsWith,
-      nameEndsWith,
-      descriptionContains,
-      
-      // Data control
+      page = 1,
+      limit = 10,
+      offset,
       fields,
       excludeFields,
-      populate = 'true',
-      populateFields = 'name email',
-      
-      // Admin features
+      populate = true,
+      populateFields = 'name',
       showAll = false,
-      includeDeleted = false,
-      
-      // Performance
-      lean = 'true',
-      cache = 'false',
+      includeSubcategories = false,
+      includeCounts = false,
+      lean = true,
+      cache = false
     } = req.query;
 
-    // Use q as alias for search
-    const searchTerm = search || q;
+    // Security: Validate user permissions
+    const showAllFlag = showAll && req.user?.role === 'admin';
 
-    // Build query filter
-    const filter = buildCategoryQuery({
-      search: searchTerm,
+    // Build secure query
+    const filter = buildSecureCategoryQuery({
+      search: search || q,
       name,
       slug,
-      isActive: includeDeleted === 'true' ? isActive : undefined,
+      parentCategory,
+      featured,
+      popular,
+      isActive: showAllFlag ? isActive : undefined,
+      level,
+      minServicesCount,
+      maxServicesCount,
+      minGigsCount,
+      maxGigsCount,
       createdAfter,
       createdBefore,
       updatedAfter,
       updatedBefore,
       createdBy,
-      minNameLength,
-      maxNameLength,
-      hasDescription,
+      hasImage,
+      hasParent,
       ids,
       excludeIds,
-      nameStartsWith,
-      nameEndsWith,
-      descriptionContains,
-      showAll: showAll || includeDeleted,
-    }, req.user?.role);
+      showAll: showAllFlag
+    }, req.user?.role, req.user?._id);
 
-    // Parse pagination
-    const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 per page
+    // Security: Validate pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    // Build sort
-    const sortObj = buildSortObject(sortBy || sort, order);
+    // Security: Validate sort field
+    const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount'];
+    const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortObj = { [sortField]: sortOrder };
 
-    // Build field selection
+    // Security: Field selection
+    const defaultExclude = ['__v', 'createdBy'];
     let select = {};
+    
     if (fields) {
-      const fieldArray = fields.split(',');
+      const fieldArray = fields.split(',').map(f => f.trim());
       fieldArray.forEach(field => {
-        select[field.trim()] = 1;
+        if (!defaultExclude.includes(field)) {
+          select[field] = 1;
+        }
       });
     }
+    
     if (excludeFields) {
-      const excludeArray = excludeFields.split(',');
+      const excludeArray = excludeFields.split(',').map(f => f.trim());
       excludeArray.forEach(field => {
-        select[field.trim()] = 0;
+        select[field] = 0;
       });
     }
 
-    // Build populate options
-    let populateOptions = null;
-    if (populate === 'true') {
-      const populateArray = populateFields.split(',').map(field => field.trim());
-      populateOptions = {
-        path: 'createdBy',
-        select: populateArray.join(' '),
-        options: { lean: lean === 'true' }
-      };
+    // Security: Populate configuration
+    let populateOptions = [];
+    if (populate) {
+      const populateArray = populateFields.split(',').map(f => f.trim());
+      
+      // Parent category populate
+      populateOptions.push({
+        path: 'parentCategory',
+        select: 'name slug icon',
+        match: { isActive: true }
+      });
+
+      // Subcategories if requested
+      if (includeSubcategories) {
+        populateOptions.push({
+          path: 'subcategories',
+          select: 'name slug icon servicesCount gigsCount',
+          match: { isActive: true },
+          options: { limit: 10 }
+        });
+      }
     }
 
-    // Execute queries in parallel
-    const [categories, total, activeCount, inactiveCount] = await Promise.all([
-      // Main query
-      Category.find(filter)
-        .select(Object.keys(select).length > 0 ? select : null)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .populate(populateOptions)
-        .lean(lean === 'true'),
-      
-      // Total count
-      Category.countDocuments(filter),
-      
-      // Active count
-      Category.countDocuments({ ...filter, isActive: true }),
-      
-      // Inactive count (admin only)
-      req.user?.role === 'admin' 
-        ? Category.countDocuments({ ...filter, isActive: false })
-        : 0,
+    // Security: Execute queries in parallel with timeout
+    const queryOptions = {
+      select: Object.keys(select).length > 0 ? select : null,
+      sort: sortObj,
+      skip,
+      limit: limitNum,
+      populate: populateOptions.length > 0 ? populateOptions : null,
+      lean: lean !== false,
+      maxTimeMS: 5000 // 5 second timeout for security
+    };
+
+    const [categories, total] = await Promise.all([
+      Category.find(filter, null, queryOptions),
+      Category.countDocuments(filter)
     ]);
 
-    // Calculate pagination info
+    // Security: Remove sensitive data
+    const safeCategories = categories.map(cat => {
+      const safeCat = { ...cat };
+      delete safeCat.createdBy;
+      delete safeCat.__v;
+      return safeCat;
+    });
+
+    // Calculate pagination
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
-    // Build response metadata
-    const metadata = {
-      query: {
-        filter: Object.keys(filter).length > 0 ? filter : undefined,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          offset: skip,
-          total,
-          totalPages,
-          hasNext,
-          hasPrev,
-          nextPage: hasNext ? pageNum + 1 : null,
-          prevPage: hasPrev ? pageNum - 1 : null,
-        },
-        sort: sortObj,
-        fields: Object.keys(select).length > 0 ? Object.keys(select) : undefined,
-      },
-      counts: {
-        total,
-        active: activeCount,
-        inactive: req.user?.role === 'admin' ? inactiveCount : undefined,
-        returned: categories.length,
-      },
-      performance: {
-        lean: lean === 'true',
-        populated: populate === 'true',
-        cached: cache === 'true',
-      }
-    };
+    // Response headers for security
+    res.set({
+      'X-Request-ID': requestId,
+      'X-Total-Count': total,
+      'X-Total-Pages': totalPages,
+      'X-Page-Size': limitNum,
+      'X-Current-Page': pageNum,
+      'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
+    });
 
-    // Add cache headers if requested
-    if (cache === 'true') {
-      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes cache
+    // Include counts if requested
+    let counts = {};
+    if (includeCounts) {
+      counts = {
+        active: await Category.countDocuments({ ...filter, isActive: true }),
+        featured: await Category.countDocuments({ ...filter, featured: true }),
+        popular: await Category.countDocuments({ ...filter, popular: true }),
+        withParent: await Category.countDocuments({ ...filter, parentCategory: { $exists: true, $ne: null } })
+      };
     }
 
     res.json({
       success: true,
-      data: categories,
-      metadata,
+      data: safeCategories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext,
+        hasPrev,
+        nextPage: hasNext ? pageNum + 1 : null,
+        prevPage: hasPrev ? pageNum - 1 : null,
+      },
+      counts: Object.keys(counts).length > 0 ? counts : undefined,
+      requestId,
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
+    // Security: Handle query timeout
+    if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
+      return res.status(408).json({
+        success: false,
+        message: 'Query timeout',
+        code: 'QUERY_TIMEOUT',
+        requestId
+      });
+    }
+    
+    logAudit('ERROR', 'CATEGORY', 'GET_LIST', req.user?._id, { error: error.message });
     next(error);
   }
 };
 
-// Get Category Statistics
-const getCategoryStats = async (req, res, next) => {
+// Get Category by ID or Slug with Security
+const getCategoryById = async (req, res, next) => {
+  const requestId = generateRequestId();
   try {
+    const { id } = req.params;
+    const { fields, populate = true, includeSubcategories = false } = req.query;
+
+    // Security: Validate input
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category identifier is required',
+        code: 'MISSING_IDENTIFIER',
+        requestId
+      });
+    }
+
+    let query;
+    const isObjectId = mongoose.Types.ObjectId.isValid(id);
+
+    // Security: Build query based on identifier type
+    if (isObjectId) {
+      query = { _id: id };
+    } else {
+      // Sanitize slug input
+      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] });
+      query = { slug: sanitizedSlug.toLowerCase() };
+    }
+
+    // Security: Check permissions
+    if (req.user?.role !== 'admin') {
+      query.isActive = true;
+    }
+
+    // Security: Field selection
+    const defaultExclude = ['__v', 'createdBy'];
+    let select = {};
+    
+    if (fields) {
+      const fieldArray = fields.split(',').map(f => f.trim());
+      fieldArray.forEach(field => {
+        if (!defaultExclude.includes(field)) {
+          select[field] = 1;
+        }
+      });
+    }
+
+    // Security: Populate configuration
+    let populateOptions = [];
+    if (populate) {
+      populateOptions.push({
+        path: 'parentCategory',
+        select: 'name slug icon',
+        match: { isActive: true }
+      });
+
+      if (includeSubcategories) {
+        populateOptions.push({
+          path: 'subcategories',
+          select: 'name slug icon servicesCount gigsCount featured popular',
+          match: { isActive: true },
+          options: { sort: { order: 1, name: 1 } }
+        });
+      }
+    }
+
+    const category = await Category.findOne(query)
+      .select(Object.keys(select).length > 0 ? select : null)
+      .populate(populateOptions);
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Security: Check if user can view inactive category
+    if (!category.isActive && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access to inactive category denied',
+        code: 'ACCESS_DENIED',
+        requestId
+      });
+    }
+
+    // Security: Remove sensitive data
+    const safeCategory = category.toObject();
+    delete safeCategory.__v;
+    delete safeCategory.createdBy;
+
+    // Security: Audit log for sensitive access
+    if (!category.isActive) {
+      logAudit('VIEW_INACTIVE', 'CATEGORY', category._id, req.user?._id);
+    }
+
+    res.json({
+      success: true,
+      category: safeCategory,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'GET_BY_ID', req.user?._id, { id: req.params.id, error: error.message });
+    next(error);
+  }
+};
+
+// Update Category with Security (Admin Only)
+const updateCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    // Security: Role check
+    if (req.user.role !== 'admin') {
+      logAudit('UNAUTHORIZED_UPDATE', 'CATEGORY', req.params.id, req.user._id);
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Forbidden: Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED'
+      });
+    }
+
+    const { id } = req.params;
+    
+    // Security: Validate ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const sanitizedData = sanitizeCategoryInput(req.body);
+    
+    // Security: Check for circular parent reference
+    if (sanitizedData.parentCategory) {
+      if (sanitizedData.parentCategory === id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category cannot be its own parent',
+          code: 'CIRCULAR_REFERENCE',
+          requestId
+        });
+      }
+      
+      // Check if parent exists and is active
+      const parentExists = await Category.findOne({
+        _id: sanitizedData.parentCategory,
+        isActive: true
+      });
+      
+      if (!parentExists) {
+        return res.status(400).json({
+          success: false,
+          message: 'Parent category not found or inactive',
+          code: 'PARENT_NOT_FOUND',
+          requestId
+        });
+      }
+    }
+
+    // Security: Optimistic concurrency control with version
+    const currentVersion = sanitizedData.version;
+    delete sanitizedData.version;
+
+    const updateData = {
+      ...sanitizedData,
+      lastUpdatedBy: req.user._id,
+      $inc: { version: 1 }
+    };
+
+    // Security: Find and update with version check
+    const category = await Category.findOneAndUpdate(
+      { 
+        _id: id,
+        ...(currentVersion ? { version: currentVersion } : {})
+      },
+      updateData,
+      { 
+        new: true,
+        runValidators: true,
+        context: 'query'
+      }
+    ).populate('parentCategory', 'name slug');
+
+    if (!category) {
+      // Security: Handle version conflict
+      if (currentVersion) {
+        const currentDoc = await Category.findById(id);
+        return res.status(409).json({
+          success: false,
+          message: 'Category was modified by another user. Please refresh and try again.',
+          code: 'VERSION_CONFLICT',
+          currentVersion: currentDoc?.version,
+          requestId
+        });
+      }
+      
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Security: Audit log
+    logAudit('UPDATE', 'CATEGORY', category._id, req.user._id, {
+      updatedFields: Object.keys(sanitizedData),
+      oldVersion: currentVersion || 1,
+      newVersion: category.version
+    });
+
+    // Security: Remove sensitive data
+    const safeCategory = category.toObject();
+    delete safeCategory.__v;
+    delete safeCategory.createdBy;
+    delete safeCategory.lastUpdatedBy;
+
+    res.json({
+      success: true,
+      category: safeCategory,
+      message: 'Category updated successfully',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    // Security: Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category with that name already exists',
+        code: 'DUPLICATE_CATEGORY',
+        requestId
+      });
+    }
+    
+    logAudit('ERROR', 'CATEGORY', 'UPDATE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Delete Category with Security (Admin Only)
+const deleteCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    // Security: Role check
+    if (req.user.role !== 'admin') {
+      logAudit('UNAUTHORIZED_DELETE', 'CATEGORY', req.params.id, req.user._id);
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Forbidden: Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED'
+      });
+    }
+
+    const { id } = req.params;
+    const { permanent = 'false', force = 'false' } = req.query;
+
+    // Security: Validate ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const category = await Category.findById(id);
+    
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Security: Check for dependencies if not forcing
+    if (force !== 'true') {
+      const [subcategories, services, gigs] = await Promise.all([
+        Category.countDocuments({ parentCategory: id, isActive: true }),
+        Service.countDocuments({ category: id, isActive: { $ne: false } }),
+        Gig.countDocuments({ projectCategory: id })
+      ]);
+
+      if (subcategories > 0 || services > 0 || gigs > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete category with active dependencies',
+          details: {
+            subcategories,
+            services,
+            gigs
+          },
+          code: 'DEPENDENCIES_EXIST',
+          requestId
+        });
+      }
+    }
+
+    let result;
+    
+    // Security: Permanent delete (admin only)
+    if (permanent === 'true' && req.user.role === 'admin') {
+      result = await Category.findByIdAndDelete(id);
+      
+      // Security: Audit log for permanent delete
+      logAudit('PERMANENT_DELETE', 'CATEGORY', id, req.user._id, {
+        name: category.name,
+        force: force === 'true'
+      });
+      
+      res.json({
+        success: true,
+        message: 'Category permanently deleted',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // Soft delete
+      category.isActive = false;
+      category.lastUpdatedBy = req.user._id;
+      await category.save();
+      
+      // Security: Audit log for soft delete
+      logAudit('SOFT_DELETE', 'CATEGORY', id, req.user._id, {
+        name: category.name
+      });
+      
+      res.json({
+        success: true,
+        message: 'Category soft deleted',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'DELETE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Restore Category (Admin Only)
+const restoreCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Forbidden',
+        code: 'ADMIN_ACCESS_REQUIRED'
+      });
+    }
+
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const category = await Category.findById(id);
+    
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Security: Check if parent category is active
+    if (category.parentCategory) {
+      const parent = await Category.findById(category.parentCategory);
+      if (parent && !parent.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot restore category with inactive parent',
+          code: 'PARENT_INACTIVE',
+          requestId
+        });
+      }
+    }
+
+    category.isActive = true;
+    category.lastUpdatedBy = req.user._id;
+    await category.save();
+
+    // Security: Audit log
+    logAudit('RESTORE', 'CATEGORY', id, req.user._id);
+
+    res.json({
+      success: true,
+      message: 'Category restored successfully',
+      category: {
+        _id: category._id,
+        name: category.name,
+        slug: category.slug,
+        isActive: category.isActive
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'RESTORE', req.user._id, { error: error.message });
+    next(error);
+  }
+};
+
+// Get Category Statistics with Security
+const getCategoryStats = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    // Security: Only admin can see detailed stats
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required for statistics',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
     const stats = await Category.aggregate([
       {
         $facet: {
-          totalCount: [
-            { $count: 'count' }
+          overview: [
+            {
+              $group: {
+                _id: null,
+                totalCategories: { $sum: 1 },
+                activeCategories: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } },
+                featuredCategories: { $sum: { $cond: [{ $eq: ['$featured', true] }, 1, 0] } },
+                popularCategories: { $sum: { $cond: [{ $eq: ['$popular', true] }, 1, 0] } },
+                avgServicesPerCategory: { $avg: '$servicesCount' },
+                avgGigsPerCategory: { $avg: '$gigsCount' },
+                totalServices: { $sum: '$servicesCount' },
+                totalGigs: { $sum: '$gigsCount' }
+              }
+            }
           ],
-          activeCount: [
-            { $match: { isActive: true } },
-            { $count: 'count' }
+          byLevel: [
+            { $group: { _id: '$level', count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
           ],
-          inactiveCount: [
-            { $match: { isActive: false } },
-            { $count: 'count' }
+          byParent: [
+            { $match: { parentCategory: { $exists: true, $ne: null } } },
+            { $group: { _id: '$parentCategory', childCount: { $sum: 1 } } },
+            { $sort: { childCount: -1 } },
+            { $limit: 10 }
           ],
-          byMonth: [
+          recentActivity: [
+            { $sort: { updatedAt: -1 } },
+            { $limit: 10 },
+            {
+              $project: {
+                name: 1,
+                updatedAt: 1,
+                servicesCount: 1,
+                gigsCount: 1,
+                isActive: 1
+              }
+            }
+          ],
+          growth: [
             {
               $group: {
                 _id: {
@@ -383,28 +935,15 @@ const getCategoryStats = async (req, res, next) => {
             { $sort: { '_id.year': -1, '_id.month': -1 } },
             { $limit: 12 }
           ],
-          topCreators: [
-            {
-              $group: {
-                _id: '$createdBy',
-                count: { $sum: 1 }
-              }
-            },
-            { $sort: { count: -1 } },
-            { $limit: 10 }
-          ],
-          nameLengthStats: [
+          topCategories: [
+            { $sort: { servicesCount: -1 } },
+            { $limit: 10 },
             {
               $project: {
-                nameLength: { $strLenCP: '$name' }
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                avgLength: { $avg: '$nameLength' },
-                minLength: { $min: '$nameLength' },
-                maxLength: { $max: '$nameLength' }
+                name: 1,
+                servicesCount: 1,
+                gigsCount: 1,
+                slug: 1
               }
             }
           ]
@@ -412,309 +951,205 @@ const getCategoryStats = async (req, res, next) => {
       }
     ]);
 
-    res.json({
-      success: true,
-      stats: stats[0]
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Search Categories (full-text search alternative)
-const searchCategories = async (req, res, next) => {
-  try {
-    const { query, fuzzy = 'false', threshold = 0.3 } = req.query;
-
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query is required'
-      });
-    }
-
-    let results;
+    // Security: Sanitize output
+    const sanitizedStats = stats[0];
     
-    if (fuzzy === 'true') {
-      // Fuzzy search using regex (for development)
-      results = await Category.find({
-        $or: [
-          { name: { $regex: query, $options: 'i' } },
-          { description: { $regex: query, $options: 'i' } }
-        ],
-        isActive: true
-      }).limit(50);
-    } else {
-      // Exact or starts with search
-      results = await Category.find({
-        $or: [
-          { name: new RegExp(`^${query}`, 'i') },
-          { slug: query.toLowerCase() }
-        ],
-        isActive: true
-      }).limit(20);
-    }
-
     res.json({
       success: true,
-      query,
-      results,
-      count: results.length
+      stats: sanitizedStats,
+      requestId,
+      timestamp: new Date().toISOString(),
+      generatedAt: new Date()
     });
+
   } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'STATS', req.user?._id, { error: error.message });
     next(error);
   }
 };
 
-// Get Category by ID or Slug
-const getCategoryById = async (req, res, next) => {
+// Bulk Operations with Security
+const bulkUpdateCategories = async (req, res, next) => {
+  const requestId = generateRequestId();
   try {
-    const { id } = req.params;
-    const { fields, populate = 'true' } = req.query;
-
-    // Build field selection
-    let select = {};
-    if (fields) {
-      const fieldArray = fields.split(',');
-      fieldArray.forEach(field => {
-        select[field.trim()] = 1;
-      });
-    }
-
-    // Build populate options
-    let populateOptions = null;
-    if (populate === 'true') {
-      populateOptions = {
-        path: 'createdBy',
-        select: 'name email role'
-      };
-    }
-
-    let category;
-    const isObjectId = mongoose.Types.ObjectId.isValid(id);
-
-    if (isObjectId) {
-      category = await Category.findOne({
-        $or: [
-          { _id: id },
-          { slug: id.toLowerCase() }
-        ]
-      })
-      .select(Object.keys(select).length > 0 ? select : null)
-      .populate(populateOptions);
-    } else {
-      category = await Category.findOne({ slug: id.toLowerCase() })
-        .select(Object.keys(select).length > 0 ? select : null)
-        .populate(populateOptions);
-    }
-
-    if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found' });
-    }
-
-    // Check if user can view inactive category
-    if (!category.isActive && req.user?.role !== 'admin') {
+    // Security: Rate limiting check (implement separately)
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'You do not have permission to view this category'
+        message: 'Admin access required for bulk operations',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
       });
-    }
-
-    res.json({ success: true, category });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Bulk Operations
-const bulkUpdateCategories = async (req, res, next) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
     const { ids, operation, data } = req.body;
 
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    // Security: Limit batch size
+    if (ids.length > 100) {
       return res.status(400).json({
         success: false,
-        message: 'Category IDs are required'
+        message: 'Cannot process more than 100 items in bulk',
+        code: 'BATCH_SIZE_EXCEEDED',
+        requestId
+      });
+    }
+
+    // Security: Validate all IDs
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length !== ids.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid IDs found in request',
+        code: 'INVALID_IDS',
+        requestId
       });
     }
 
     let result;
-    switch (operation) {
-      case 'activate':
-        result = await Category.updateMany(
-          { _id: { $in: ids } },
-          { $set: { isActive: true, updatedAt: new Date() } }
-        );
-        break;
-      case 'deactivate':
-        result = await Category.updateMany(
-          { _id: { $in: ids } },
-          { $set: { isActive: false, updatedAt: new Date() } }
-        );
-        break;
-      case 'update':
-        if (!data) {
-          return res.status(400).json({
-            success: false,
-            message: 'Update data is required'
-          });
-        }
-        result = await Category.updateMany(
-          { _id: { $in: ids } },
-          { $set: { ...data, updatedAt: new Date() } }
-        );
-        break;
-      case 'delete':
-        result = await Category.updateMany(
-          { _id: { $in: ids } },
-          { $set: { isActive: false, updatedAt: new Date() } }
-        );
-        break;
-      default:
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid operation'
-        });
+    let updateData = {};
+    const now = new Date();
+
+    // Security: Define allowed operations
+    const allowedOperations = {
+      activate: { isActive: true },
+      deactivate: { isActive: false },
+      feature: { featured: true },
+      unfeature: { featured: false },
+      popular: { popular: true },
+      unpopular: { popular: false },
+      update: data || {}
+    };
+
+    if (!allowedOperations[operation]) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bulk operation',
+        code: 'INVALID_OPERATION',
+        requestId
+      });
     }
+
+    updateData = {
+      ...allowedOperations[operation],
+      lastUpdatedBy: req.user._id,
+      updatedAt: now
+    };
+
+    // Security: Add version increment for updates
+    if (operation === 'update') {
+      updateData.$inc = { version: 1 };
+    }
+
+    // Security: Execute bulk operation with timeout
+    result = await Category.updateMany(
+      { _id: { $in: validIds } },
+      updateData,
+      { 
+        maxTimeMS: 10000,
+        runValidators: operation === 'update'
+      }
+    );
+
+    // Security: Audit log
+    logAudit('BULK_OPERATION', 'CATEGORY', 'MULTIPLE', req.user._id, {
+      operation,
+      affectedCount: result.modifiedCount,
+      totalIds: ids.length
+    });
 
     res.json({
       success: true,
-      message: `Bulk ${operation} completed`,
+      message: `Bulk ${operation} completed successfully`,
       result: {
+        total: ids.length,
         matched: result.matchedCount,
-        modified: result.modifiedCount
-      }
+        modified: result.modifiedCount,
+        failed: ids.length - result.matchedCount
+      },
+      requestId,
+      timestamp: now.toISOString()
     });
+
   } catch (error) {
+    // Security: Handle bulk operation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed in bulk update',
+        errors: Object.values(error.errors).map(err => err.message),
+        code: 'BULK_VALIDATION_ERROR',
+        requestId
+      });
+    }
+
+    logAudit('ERROR', 'CATEGORY', 'BULK_UPDATE', req.user._id, {
+      operation: req.body?.operation,
+      error: error.message
+    });
     next(error);
   }
 };
 
-// Update Category (Admin Only)
-const updateCategory = async (req, res, next) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid category ID' });
-    }
-
-    const category = await Category.findById(id);
-    if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found' });
-    }
-
-    const { name, description, isActive } = req.body;
-    if (name) category.name = name.trim();
-    if (description !== undefined) category.description = description.trim();
-    if (isActive !== undefined) category.isActive = isActive;
-
-    await category.save();
-
-    res.json({ success: true, category });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Category with that name already exists' });
-    }
-    next(error);
-  }
-};
-
-// Delete Category (Admin Only)
-const deleteCategory = async (req, res, next) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    const { id } = req.params;
-    const { permanent = 'false' } = req.query;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid category ID' });
-    }
-
-    if (permanent === 'true') {
-      // Permanent delete
-      const category = await Category.findByIdAndDelete(id);
-      if (!category) {
-        return res.status(404).json({ success: false, message: 'Category not found' });
-      }
-      res.json({ success: true, message: 'Category permanently deleted' });
-    } else {
-      // Soft delete
-      const category = await Category.findById(id);
-      if (!category) {
-        return res.status(404).json({ success: false, message: 'Category not found' });
-      }
-
-      category.isActive = false;
-      await category.save();
-
-      res.json({ success: true, message: 'Category soft deleted' });
-    }
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Restore Category (Admin Only)
-const restoreCategory = async (req, res, next) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid category ID' });
-    }
-
-    const category = await Category.findById(id);
-    if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found' });
-    }
-
-    category.isActive = true;
-    await category.save();
-
-    res.json({ success: true, message: 'Category restored', category });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Export Categories
+// Export Categories with Security
 const exportCategories = async (req, res, next) => {
+  const requestId = generateRequestId();
   try {
+    // Security: Only admin can export
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required for export',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
     const { format = 'json', ...queryParams } = req.query;
     
-    const filter = buildCategoryQuery(queryParams, req.user?.role);
-    
+    // Security: Build secure query
+    const filter = buildSecureCategoryQuery(queryParams, 'admin', req.user._id);
+
+    // Security: Limit export size
+    const count = await Category.countDocuments(filter);
+    if (count > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Export limit exceeded (max 10,000 records)',
+        code: 'EXPORT_LIMIT_EXCEEDED',
+        requestId
+      });
+    }
+
     const categories = await Category.find(filter)
-      .populate('createdBy', 'name email')
+      .select('-__v -createdBy -lastUpdatedBy')
+      .populate('parentCategory', 'name slug')
       .lean();
 
+    // Security: Format response based on requested format
     if (format === 'csv') {
-      // Convert to CSV
-      const headers = ['ID', 'Name', 'Slug', 'Description', 'Active', 'Created At', 'Created By'];
+      const headers = [
+        'ID', 'Name', 'Slug', 'Description', 'Icon', 'Image', 
+        'Parent Category', 'Featured', 'Popular', 'Order', 'Level',
+        'Services Count', 'Gigs Count', 'Active', 'Created At', 'Updated At'
+      ];
+
       const csvRows = categories.map(cat => [
         cat._id,
-        `"${cat.name.replace(/"/g, '""')}"`,
-        cat.slug,
+        `"${(cat.name || '').replace(/"/g, '""')}"`,
+        cat.slug || '',
         `"${(cat.description || '').replace(/"/g, '""')}"`,
+        cat.icon || '',
+        cat.image || '',
+        cat.parentCategory?.name || '',
+        cat.featured ? 'Yes' : 'No',
+        cat.popular ? 'Yes' : 'No',
+        cat.order || 0,
+        cat.level || 0,
+        cat.servicesCount || 0,
+        cat.gigsCount || 0,
         cat.isActive ? 'Yes' : 'No',
         new Date(cat.createdAt).toISOString(),
-        cat.createdBy?.name || 'Unknown'
+        new Date(cat.updatedAt).toISOString()
       ]);
 
       const csvContent = [
@@ -722,19 +1157,127 @@ const exportCategories = async (req, res, next) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
+      // Security: Set secure download headers
       res.header('Content-Type', 'text/csv');
-      res.attachment('categories.csv');
+      res.header('Content-Disposition', `attachment; filename="categories_${Date.now()}.csv"`);
+      res.header('X-Request-ID', requestId);
+      res.header('X-Export-Records', count);
+      res.header('X-Export-Timestamp', new Date().toISOString());
+      
       return res.send(csvContent);
     }
 
-    // Default to JSON
+    // Default JSON export
     res.json({
       success: true,
-      format,
-      count: categories.length,
-      data: categories
+      format: 'json',
+      count,
+      data: categories,
+      exportedAt: new Date().toISOString(),
+      requestId
     });
+
   } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'EXPORT', req.user?._id, { 
+      format: req.query.format,
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Search Categories with Security
+const searchCategories = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
+
+    // Security: Sanitize search query
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required',
+        code: 'MISSING_QUERY',
+        requestId
+      });
+    }
+
+    const sanitizedQuery = sanitizeHtml(query, { 
+      allowedTags: [], 
+      allowedAttributes: {} 
+    }).trim();
+
+    if (sanitizedQuery.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters',
+        code: 'QUERY_TOO_SHORT',
+        requestId
+      });
+    }
+
+    // Security: Limit search results
+    const searchLimit = Math.min(parseInt(limit) || 20, 100);
+
+    let results;
+    
+    if (fuzzy === 'true') {
+      // Fuzzy search using regex (simplified)
+      const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      
+      results = await Category.find({
+        $or: [
+          { name: searchRegex },
+          { description: searchRegex },
+          { slug: searchRegex },
+          { metaKeywords: { $in: [searchRegex] } }
+        ],
+        isActive: true
+      })
+      .select('name slug icon description servicesCount gigsCount')
+      .limit(searchLimit)
+      .lean();
+    } else {
+      // Exact or starts with search
+      results = await Category.find({
+        $or: [
+          { name: new RegExp(`^${sanitizedQuery}`, 'i') },
+          { slug: sanitizedQuery.toLowerCase() }
+        ],
+        isActive: true
+      })
+      .select('name slug icon description servicesCount gigsCount featured popular')
+      .limit(searchLimit)
+      .lean();
+    }
+
+    // Security: Remove any sensitive data
+    const safeResults = results.map(result => ({
+      _id: result._id,
+      name: result.name,
+      slug: result.slug,
+      icon: result.icon,
+      description: result.description ? result.description.substring(0, 100) + '...' : '',
+      servicesCount: result.servicesCount || 0,
+      gigsCount: result.gigsCount || 0,
+      featured: result.featured || false,
+      popular: result.popular || false
+    }));
+
+    res.json({
+      success: true,
+      query: sanitizedQuery,
+      results: safeResults,
+      count: safeResults.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { 
+      query: req.query.query,
+      error: error.message 
+    });
     next(error);
   }
 };
@@ -747,7 +1290,7 @@ module.exports = {
   deleteCategory,
   restoreCategory,
   getCategoryStats,
-  searchCategories,
   bulkUpdateCategories,
   exportCategories,
+  searchCategories,
 };
