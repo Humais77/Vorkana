@@ -1,5 +1,5 @@
 import React from 'react'
-import Hero from '../layouts/Hero'
+import Hero from './Hero'
 import CategoryGrid from '../components/categories/CategoryGrid'
 import PopularServices from '../components/services/PopularService'
 const Home = () => {

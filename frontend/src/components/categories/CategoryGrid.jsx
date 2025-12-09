@@ -1,8 +1,8 @@
 import React, { useRef } from "react";
 import { Link } from "react-router-dom";
-import { 
-  Code2, Palette, TrendingUp, FileText, 
-  Film, Cpu, Music, Briefcase, 
+import {
+  Code2, Palette, TrendingUp, FileText,
+  Film, Cpu, Music, Briefcase,
   Users, Camera, Smartphone, Search,
   ChevronLeft, ChevronRight
 } from "lucide-react";
@@ -77,7 +77,7 @@ const CategoryGrid = () => {
             {categories.map((cat) => (
               <Link
                 key={cat.id}
-                to={`/categories/${cat.id}`}
+                to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.name.toLowerCase().replace(/\s+/g, '-')}`}
                 className="group flex-shrink-0 w-48 h-40 bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-blue-100 hover:scale-[1.02] relative overflow-hidden"
               >
                 {/* Card Content */}
