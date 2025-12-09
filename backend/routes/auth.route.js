@@ -36,42 +36,49 @@
 const express = require("express");
 const passport = require("passport");
 const session = require("express-session");
+const { register, login, getProfile, updateProfile, forgotPassword, resetPassword } = require("../controllers/auth.controller.js");
+const { protect } = require("../middleware/auth.middleware.js");
 
 const router = express.Router();
 
-// Configure session (still needed for Passport)
 router.use(session({
   secret: process.env.JWT_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000 
   }
 }));
 
-// Initialize Passport
 router.use(passport.initialize());
 router.use(passport.session());
 
-// Step 1: Redirect to Google
+router.post("/register", register);
+
+router.post("/login", login);
+
+router.get("/profile", protect, getProfile);
+
+router.put("/profile", protect, updateProfile);
+
+router.post("/forgot-password", forgotPassword);
+
+router.post("/reset-password", resetPassword);
+
 router.get("/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-// Step 2: Callback URL - Modified to work with JWT
-router.get(
-  "/google/callback",
-  passport.authenticate("google", { 
+router.get("/google/callback",
+  passport.authenticate("google", {
     failureRedirect: `${process.env.FRONTEND_URL}/login`,
-    session: false // Disable sessions since we're using JWT
+    session: false 
   }),
   (req, res) => {
-    // req.user should contain the user object with token from passport strategy
     if (!req.user || !req.user.token) {
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
     }
 
-    // Redirect to frontend with JWT token and user data
     const userData = encodeURIComponent(JSON.stringify({
       token: req.user.token,
       user: {

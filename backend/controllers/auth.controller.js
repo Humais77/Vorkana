@@ -80,6 +80,7 @@
 const User = require('../models/user.model.js');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require("bcryptjs");
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -135,51 +136,36 @@ const register = async (req, res) => {
 };
 
 // Login with email/password
-const login = async (req, res) => {
+const login = async (req, res, next) => {
+  const { email, password } = req.body;
+
   try {
-    const { email, password } = req.body;
-
-    // Check if user exists
     const user = await User.findOne({ email }).select('+password');
-    if (!user) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid credentials',
       });
     }
 
-    // Check password
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
+    const token = jwt.sign(
+      { user: { id: user._id } },
+      process.env.JWT_SECRET,
+      { expiresIn: '40h' }
+    );
 
-    // Generate token
-    const token = generateToken(user._id);
-
-    // Remove password from response
-    user.password = undefined;
-
-    res.json({
+    res.status(200).json({
       success: true,
-      token,
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
-        picture: user.picture
-      }
+        role: user.role || 'user',
+      },
+      token,
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during login'
-    });
+    next(error);
   }
 };
 
