@@ -82,19 +82,16 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require("bcryptjs");
 
-// Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '7d'
   });
 };
 
-// Register with email/password
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -103,17 +100,14 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user
     const user = await User.create({
       name,
       email,
       password
     });
 
-    // Generate token
     const token = generateToken(user._id);
 
-    // Remove password from response
     user.password = undefined;
 
     res.status(201).json({
@@ -135,7 +129,6 @@ const register = async (req, res) => {
   }
 };
 
-// Login with email/password
 const login = async (req, res, next) => {
   const { email, password } = req.body;
 
@@ -148,11 +141,8 @@ const login = async (req, res, next) => {
       });
     }
 
-    const token = jwt.sign(
-      { user: { id: user._id } },
-      process.env.JWT_SECRET,
-      { expiresIn: '40h' }
-    );
+    // FIX: Generate token with just id, not nested object
+    const token = generateToken(user._id);
 
     res.status(200).json({
       success: true,
@@ -169,7 +159,6 @@ const login = async (req, res, next) => {
   }
 };
 
-// Get current user profile
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -194,12 +183,10 @@ const getProfile = async (req, res) => {
   }
 };
 
-// Update user profile
 const updateProfile = async (req, res) => {
   try {
     const { name, email } = req.body;
     
-    // Check if email is already taken
     if (email && email !== req.user.email) {
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -235,7 +222,6 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Forgot password
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -248,18 +234,16 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = crypto
       .createHash('sha256')
       .update(resetToken)
       .digest('hex');
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
     
     await user.save();
 
-    // In production, send email with reset token
-    console.log('Reset token:', resetToken); // For development only
+    console.log('Reset token:', resetToken);
 
     res.json({
       success: true,
@@ -274,7 +258,6 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// Reset password
 const resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
@@ -302,7 +285,6 @@ const resetPassword = async (req, res) => {
     
     await user.save();
 
-    // Generate new token
     const authToken = generateToken(user._id);
 
     res.json({
