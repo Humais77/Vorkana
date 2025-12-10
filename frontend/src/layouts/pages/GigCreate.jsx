@@ -29,7 +29,10 @@ import {
   Save,
   ChevronDown,
   ArrowRight,
-  Type
+  Type,
+  Package,
+  Layers,
+  Lock
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -38,6 +41,8 @@ import { useGigStore } from "../../store/useGigStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
 import { useCategories } from "../../hooks/useCategories";
 import { useCreateGig } from "../../hooks/useGigs";
+
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 const GigCreate = () => {
   const navigate = useNavigate();
@@ -66,23 +71,28 @@ const GigCreate = () => {
 
   // Local state
   const [formData, setFormData] = useState({
-    title: "", // Added missing title field
+    title: "",
     fullName: "",
     oauthEmail: "",
     country: "",
     phone: "",
     projectCategory: "",
+    subcategory: "",
     description: "",
     budget: "",
-    currency: "USD", // Added missing currency field
+    currency: "USD",
     timeline: "",
-    timelineUnit: "days", // Added missing timelineUnit field
+    timelineUnit: "days",
     communication: "Email",
-    urgency: "medium", // Added missing urgency field
-    skillsRequired: [] // Added skills array
+    urgency: "medium",
+    visibility: "public",
+    skillsRequired: [],
+    deliverables: []
   });
 
   const [attachments, setAttachments] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [errors, setErrors] = useState({});
   const [activeStep, setActiveStep] = useState(1);
   const [uploadProgress, setUploadProgress] = useState({});
@@ -90,6 +100,19 @@ const GigCreate = () => {
   const [createdGigId, setCreatedGigId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skillsInput, setSkillsInput] = useState("");
+  const [deliverableInput, setDeliverableInput] = useState("");
+  const [showLoginMessage, setShowLoginMessage] = useState(true);
+  const [loginForm, setLoginForm] = useState({
+    email: "",
+    password: ""
+  });
+  const [registerForm, setRegisterForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: ""
+  });
+  const [authMode, setAuthMode] = useState("login");
 
   // Initialize form data with user info when authenticated
   useEffect(() => {
@@ -98,7 +121,7 @@ const GigCreate = () => {
         ...prev,
         fullName: currentUser.name || currentUser.fullName || "",
         oauthEmail: currentUser.email || "",
-        title: prev.title || "" // Ensure title exists
+        title: prev.title || ""
       }));
     }
   }, [currentUser]);
@@ -110,6 +133,26 @@ const GigCreate = () => {
     }
   }, [categoriesData, setCategories]);
 
+  // Update subcategories when category changes
+  useEffect(() => {
+    if (formData.projectCategory && categoriesData) {
+      const category = Array.isArray(categoriesData) 
+        ? categoriesData.find(c => c._id === formData.projectCategory)
+        : null;
+      
+      const subs = category?.children || category?.subcategories || [];
+      setSubcategories(subs);
+      
+      // Reset subcategory if parent category changes and subcategory is not valid
+      if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
+        setFormData(prev => ({ ...prev, subcategory: "" }));
+      }
+    } else {
+      setSubcategories([]);
+      setFormData(prev => ({ ...prev, subcategory: "" }));
+    }
+  }, [formData.projectCategory, categoriesData]);
+
   // Cleanup when component unmounts
   useEffect(() => {
     return () => {
@@ -120,19 +163,23 @@ const GigCreate = () => {
 
   // Handle successful gig creation
   useEffect(() => {
-    if (gigSuccess && createdGigData && createdGigData._id) {
-      setCreatedGigId(createdGigData._id);
-      setSuccess(true);
-      setActiveStep(5);
-      setLastCreatedGigId(createdGigData._id);
-
-      toast.success("Gig created successfully!");
+    if (gigSuccess && createdGigData) {
+      const gigId = createdGigData.data?._id || createdGigData.gig?._id || createdGigData._id;
       
-      const timer = setTimeout(() => {
-        navigate(`/gig/${createdGigData._id}`);
-      }, 3000);
+      if (gigId) {
+        setCreatedGigId(gigId);
+        setSuccess(true);
+        setActiveStep(5);
+        setLastCreatedGigId(gigId);
 
-      return () => clearTimeout(timer);
+        toast.success(createdGigData.message || "Gig created successfully!");
+        
+        const timer = setTimeout(() => {
+          navigate(`/gig/${gigId}`);
+        }, 3000);
+
+        return () => clearTimeout(timer);
+      }
     }
   }, [gigSuccess, createdGigData, navigate, setLastCreatedGigId]);
 
@@ -156,7 +203,10 @@ const GigCreate = () => {
     if (!isAuthenticated && activeStep > 1) {
       setActiveStep(1);
       setErrors({});
-      toast.info("Please sign in to continue creating your gig");
+      setShowLoginMessage(true);
+      toast("Please sign in to continue creating your gig", {
+        icon: '🔐',
+      });
     }
   }, [isAuthenticated, activeStep]);
 
@@ -171,37 +221,52 @@ const GigCreate = () => {
     }
   }, [errors]);
 
-  const handleFileChange = useCallback((e) => {
-    const files = Array.from(e.target.files);
+  const handleLoginChange = (e) => {
+    const { name, value } = e.target;
+    setLoginForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleRegisterChange = (e) => {
+    const { name, value } = e.target;
+    setRegisterForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleFileChange = useCallback((e, fileType = 'attachments') => {
+    const filesArray = Array.from(e.target.files);
     const validFiles = [];
     const newErrors = { ...errors };
 
-    for (const file of files) {
-      const isValidType = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 
-                          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                          'application/zip', 'application/x-rar-compressed']
-        .includes(file.type);
+    for (const file of filesArray) {
+      const isValidType = [
+        'image/jpeg', 'image/jpg', 'image/png', 
+        'application/pdf', 'application/msword', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip', 'application/x-rar-compressed'
+      ].includes(file.type);
+      
       const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB
 
       if (!isValidType) {
-        newErrors.attachments = `File ${file.name} has invalid type. Only JPG, PNG, PDF, DOC, ZIP, RAR are allowed.`;
+        newErrors[fileType] = `File ${file.name} has invalid type. Only JPG, PNG, PDF, DOC, ZIP, RAR are allowed.`;
         toast.error(`Invalid file type: ${file.name}`);
         continue;
       }
 
       if (!isValidSize) {
-        newErrors.attachments = `File ${file.name} is too large. Maximum size is 10MB.`;
+        newErrors[fileType] = `File ${file.name} is too large. Maximum size is 10MB.`;
         toast.error(`File too large: ${file.name}`);
         continue;
       }
 
-      setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
+      // Start upload simulation
+      setUploadProgress(prev => ({ ...prev, [`${fileType}-${file.name}`]: 0 }));
       validFiles.push(file);
 
+      // Simulate upload progress
       let progress = 0;
       const interval = setInterval(() => {
         progress += 20;
-        setUploadProgress(prev => ({ ...prev, [file.name]: progress }));
+        setUploadProgress(prev => ({ ...prev, [`${fileType}-${file.name}`]: progress }));
         if (progress >= 100) {
           clearInterval(interval);
         }
@@ -209,20 +274,35 @@ const GigCreate = () => {
     }
 
     setErrors(newErrors);
-    setAttachments(prev => [...prev, ...validFiles]);
+    
+    if (fileType === 'attachments') {
+      setAttachments(prev => [...prev, ...validFiles]);
+    } else if (fileType === 'files') {
+      setFiles(prev => [...prev, ...validFiles]);
+    }
     
     e.target.value = '';
   }, [errors]);
 
-  const removeFile = useCallback((index) => {
-    const fileToRemove = attachments[index];
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-    setUploadProgress(prev => {
-      const newProgress = { ...prev };
-      delete newProgress[fileToRemove.name];
-      return newProgress;
-    });
-  }, [attachments]);
+  const removeFile = useCallback((index, fileType = 'attachments') => {
+    if (fileType === 'attachments') {
+      const fileToRemove = attachments[index];
+      setAttachments(prev => prev.filter((_, i) => i !== index));
+      setUploadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[`attachments-${fileToRemove.name}`];
+        return newProgress;
+      });
+    } else if (fileType === 'files') {
+      const fileToRemove = files[index];
+      setFiles(prev => prev.filter((_, i) => i !== index));
+      setUploadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[`files-${fileToRemove.name}`];
+        return newProgress;
+      });
+    }
+  }, [attachments, files]);
 
   const addSkill = useCallback(() => {
     if (skillsInput.trim() && formData.skillsRequired.length < 10) {
@@ -241,6 +321,111 @@ const GigCreate = () => {
       skillsRequired: prev.skillsRequired.filter((_, i) => i !== index)
     }));
   }, []);
+
+  const addDeliverable = useCallback(() => {
+    if (deliverableInput.trim() && formData.deliverables.length < 10) {
+      const deliverable = deliverableInput.trim().substring(0, 200);
+      setFormData(prev => ({
+        ...prev,
+        deliverables: [...prev.deliverables, deliverable]
+      }));
+      setDeliverableInput("");
+    }
+  }, [deliverableInput, formData.deliverables]);
+
+  const removeDeliverable = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      deliverables: prev.deliverables.filter((_, i) => i !== index)
+    }));
+  }, []);
+
+  // Handle Google OAuth
+  const handleGoogleSignIn = () => {
+    window.location.href = `${API_URL}/api/auth/google`;
+  };
+
+  // Handle Email/Password Login
+  const handleEmailLogin = async (e) => {
+    e.preventDefault();
+    
+    if (!loginForm.email || !loginForm.password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: loginForm.email,
+          password: loginForm.password
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        toast.success("Login successful!");
+        window.location.reload(); // Reload to update auth state
+      } else {
+        toast.error(data.message || "Login failed");
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error("Login failed. Please try again.");
+    }
+  };
+
+  // Handle Registration
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    
+    if (registerForm.password !== registerForm.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    if (registerForm.password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: registerForm.name,
+          email: registerForm.email,
+          password: registerForm.password
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        toast.success("Registration successful!");
+        setAuthMode("login");
+      } else {
+        toast.error(data.message || "Registration failed");
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error("Registration failed. Please try again.");
+    }
+  };
 
   const validateStep = useCallback((step) => {
     const newErrors = {};
@@ -302,6 +487,7 @@ const GigCreate = () => {
   const nextStep = useCallback(() => {
     if (validateStep(activeStep)) {
       setActiveStep(prev => Math.min(prev + 1, 5));
+      setShowLoginMessage(false);
     }
   }, [activeStep, validateStep]);
 
@@ -312,88 +498,114 @@ const GigCreate = () => {
   }, [activeStep]);
 
   const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
+    e.preventDefault();
+    setIsSubmitting(true);
 
-  if (!isAuthenticated) {
-    setErrors(prev => ({
-      ...prev,
-      form: "Please sign in to create a gig."
-    }));
-    setActiveStep(1);
-    toast.error("Please sign in first");
-    setIsSubmitting(false);
-    return;
-  }
+    if (!isAuthenticated) {
+      setErrors(prev => ({
+        ...prev,
+        form: "Please sign in to create a gig."
+      }));
+      setActiveStep(1);
+      toast.error("Please sign in first");
+      setIsSubmitting(false);
+      return;
+    }
 
-  if (!validateStep(4)) {
-    setActiveStep(4);
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    // Create FormData object
-    const formDataObj = new FormData();
-
-    // Prepare data according to backend model
-    const gigData = {
-      title: formData.title.trim(),
-      fullName: formData.fullName.trim(),
-      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-      country: formData.country.trim(),
-      phone: formData.phone.trim(),
-      projectCategory: formData.projectCategory,
-      description: formData.description.trim(),
-      budget: parseFloat(formData.budget),
-      currency: formData.currency,
-      timeline: formData.timeline.trim(),
-      timelineUnit: formData.timelineUnit,
-      communication: formData.communication,
-      urgency: formData.urgency,
-    };
-
-    // Append all data to FormData
-    Object.keys(gigData).forEach(key => {
-      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-        formDataObj.append(key, gigData[key]);
+    // Validate all steps
+    let hasError = false;
+    for (let step = 1; step <= 4; step++) {
+      if (!validateStep(step)) {
+        setActiveStep(step);
+        hasError = true;
+        break;
       }
-    });
+    }
 
-    // Append skills array properly
-    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-      formData.skillsRequired.forEach((skill, index) => {
-        formDataObj.append(`skillsRequired[${index}]`, skill);
+    if (hasError) {
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const formDataObj = new FormData();
+
+      // Prepare data according to backend model
+      const gigData = {
+        title: formData.title.trim(),
+        fullName: formData.fullName.trim(),
+        oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+        country: formData.country.trim(),
+        phone: formData.phone.trim(),
+        projectCategory: formData.projectCategory,
+        subcategory: formData.subcategory || undefined,
+        description: formData.description.trim(),
+        budget: parseFloat(formData.budget),
+        currency: formData.currency,
+        timeline: formData.timeline.trim(),
+        timelineUnit: formData.timelineUnit,
+        communication: formData.communication,
+        urgency: formData.urgency,
+        visibility: formData.visibility,
+      };
+
+      // Append all data to FormData
+      Object.keys(gigData).forEach(key => {
+        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+          if (typeof gigData[key] === 'object') {
+            formDataObj.append(key, JSON.stringify(gigData[key]));
+          } else {
+            formDataObj.append(key, gigData[key]);
+          }
+        }
       });
+
+      // Append skills array properly
+      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+        formData.skillsRequired.forEach((skill, index) => {
+          formDataObj.append(`skillsRequired[${index}]`, skill);
+        });
+      }
+
+      // Append deliverables array properly
+      if (formData.deliverables && formData.deliverables.length > 0) {
+        formData.deliverables.forEach((deliverable, index) => {
+          formDataObj.append(`deliverables[${index}]`, deliverable);
+        });
+      }
+
+      // Append attachments
+      attachments.forEach((file) => {
+        formDataObj.append("attachments", file);
+      });
+
+      // Append other files
+      files.forEach((file) => {
+        formDataObj.append("files", file);
+      });
+
+      // Log FormData entries for debugging
+      console.log("=== FORM DATA BEING SENT ===");
+      for (let [key, value] of formDataObj.entries()) {
+        console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+      }
+
+      setErrors({});
+
+      // Call create gig mutation
+      createGig(formDataObj);
+
+    } catch (error) {
+      console.error("Error in handleSubmit:", error);
+      toast.error("Failed to prepare gig data. Please try again.");
+      setErrors(prev => ({
+        ...prev,
+        form: error.message || "Something went wrong. Please try again."
+      }));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Append files as attachments
-    attachments.forEach((file) => {
-      formDataObj.append("attachments", file);
-    });
-
-    // Log FormData entries for debugging
-    console.log("=== FORM DATA BEING SENT ===");
-    for (let [key, value] of formDataObj.entries()) {
-      console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-    }
-
-    setErrors({});
-
-    // Call create gig mutation
-    createGig(formDataObj);
-
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    toast.error("Failed to prepare gig data. Please try again.");
-    setErrors(prev => ({
-      ...prev,
-      form: error.message || "Something went wrong. Please try again."
-    }));
-  } finally {
-    setIsSubmitting(false);
-  }
-}, [formData, attachments, isAuthenticated, validateStep, createGig]);
+  }, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
@@ -424,9 +636,43 @@ const GigCreate = () => {
   // Get category name for display
   const getCategoryName = () => {
     if (!formData.projectCategory) return "";
-    const categoryList = storedCategories.length > 0 ? storedCategories : categoriesData || [];
+    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0 
+      ? storedCategories 
+      : (Array.isArray(categoriesData) ? categoriesData : []);
     const category = categoryList.find(c => c._id === formData.projectCategory);
     return category?.name || "";
+  };
+
+  // Get subcategory name for display
+  const getSubcategoryName = () => {
+    if (!formData.subcategory) return "";
+    const subcategory = subcategories.find(s => s._id === formData.subcategory);
+    return subcategory?.name || "";
+  };
+
+  // Handle Enter key press for skills and deliverables
+  const handleKeyPress = (e, type) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (type === 'skill') addSkill();
+      if (type === 'deliverable') addDeliverable();
+    }
+  };
+
+  // Render upload progress for files
+  const renderFileProgress = (fileName, progress) => {
+    return (
+      <div className="flex items-center space-x-2">
+        {progress < 100 && (
+          <div className="w-16 md:w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 transition-all duration-300"
+              style={{ width: `${progress || 0}%` }}
+            />
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -632,6 +878,14 @@ const GigCreate = () => {
                               {getCategoryName() || "Not selected"}
                             </span>
                           </li>
+                          {formData.subcategory && (
+                            <li className="flex justify-between">
+                              <span className="text-emerald-100">Subcategory:</span>
+                              <span className="font-medium truncate max-w-[120px]">
+                                {getSubcategoryName()}
+                              </span>
+                            </li>
+                          )}
                           {formData.budget && (
                             <li className="flex justify-between">
                               <span className="text-emerald-100">Budget:</span>
@@ -644,6 +898,24 @@ const GigCreate = () => {
                         <li className="flex justify-between">
                           <span className="text-emerald-100">Description:</span>
                           <span className="font-medium">{formData.description.length} chars</span>
+                        </li>
+                      )}
+                      {activeStep >= 4 && formData.skillsRequired.length > 0 && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Skills:</span>
+                          <span className="font-medium">{formData.skillsRequired.length} added</span>
+                        </li>
+                      )}
+                      {activeStep >= 4 && formData.deliverables.length > 0 && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Deliverables:</span>
+                          <span className="font-medium">{formData.deliverables.length} added</span>
+                        </li>
+                      )}
+                      {activeStep >= 4 && (attachments.length > 0 || files.length > 0) && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Files:</span>
+                          <span className="font-medium">{attachments.length + files.length} uploaded</span>
                         </li>
                       )}
                     </ul>
@@ -734,9 +1006,163 @@ const GigCreate = () => {
                             </div>
                           </div>
 
-                          <div className="pt-4">
+                          {/* Auth Tabs */}
+                          <div className="border-b border-gray-200">
+                            <nav className="-mb-px flex space-x-8">
+                              <button
+                                type="button"
+                                onClick={() => setAuthMode("login")}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                  authMode === "login"
+                                    ? "border-emerald-500 text-emerald-600"
+                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                }`}
+                              >
+                                Sign In
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAuthMode("register")}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                  authMode === "register"
+                                    ? "border-emerald-500 text-emerald-600"
+                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                }`}
+                              >
+                                Sign Up
+                              </button>
+                            </nav>
+                          </div>
+
+                          {/* Login Form */}
+                          {authMode === "login" && (
+                            <div className="space-y-4">
+                              <form onSubmit={handleEmailLogin} className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Email Address
+                                  </label>
+                                  <input
+                                    type="email"
+                                    name="email"
+                                    value={loginForm.email}
+                                    onChange={handleLoginChange}
+                                    placeholder="your@email.com"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Password
+                                  </label>
+                                  <input
+                                    type="password"
+                                    name="password"
+                                    value={loginForm.password}
+                                    onChange={handleLoginChange}
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <button
+                                  type="submit"
+                                  className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center justify-center"
+                                >
+                                  <Lock className="w-4 h-4 mr-2" />
+                                  Sign In
+                                </button>
+                              </form>
+                            </div>
+                          )}
+
+                          {/* Register Form */}
+                          {authMode === "register" && (
+                            <div className="space-y-4">
+                              <form onSubmit={handleRegister} className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Full Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    name="name"
+                                    value={registerForm.name}
+                                    onChange={handleRegisterChange}
+                                    placeholder="John Doe"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Email Address
+                                  </label>
+                                  <input
+                                    type="email"
+                                    name="email"
+                                    value={registerForm.email}
+                                    onChange={handleRegisterChange}
+                                    placeholder="your@email.com"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Password
+                                  </label>
+                                  <input
+                                    type="password"
+                                    name="password"
+                                    value={registerForm.password}
+                                    onChange={handleRegisterChange}
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Confirm Password
+                                  </label>
+                                  <input
+                                    type="password"
+                                    name="confirmPassword"
+                                    value={registerForm.confirmPassword}
+                                    onChange={handleRegisterChange}
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                    required
+                                  />
+                                </div>
+                                <button
+                                  type="submit"
+                                  className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center justify-center"
+                                >
+                                  <User className="w-4 h-4 mr-2" />
+                                  Create Account
+                                </button>
+                              </form>
+                            </div>
+                          )}
+
+                          {/* OR Divider */}
+                          <div className="relative py-4">
+                            <div className="absolute inset-0 flex items-center">
+                              <div className="w-full border-t border-gray-300"></div>
+                            </div>
+                            <div className="relative flex justify-center text-sm">
+                              <span className="px-2 bg-white text-gray-500">Or continue with</span>
+                            </div>
+                          </div>
+
+                          {/* Google Sign In Button */}
+                          <div className="pt-2">
                             <button
                               type="button"
+                              onClick={handleGoogleSignIn}
                               className="w-full py-3 md:py-4 px-6 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-200 flex items-center justify-center text-gray-800 font-semibold shadow-sm hover:shadow-md"
                               disabled={gigLoading}
                             >
@@ -812,6 +1238,9 @@ const GigCreate = () => {
                               <p className="mt-2 text-xs text-gray-500">
                                 This email is from your Google account
                               </p>
+                              {errors.oauthEmail && (
+                                <p className="mt-2 text-sm text-red-600">{errors.oauthEmail}</p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -838,9 +1267,10 @@ const GigCreate = () => {
                           </p>
                           <button
                             type="button"
+                            onClick={() => setActiveStep(1)}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
-                            Sign in with Google
+                            Go Back to Sign In
                           </button>
                         </div>
                       ) : (
@@ -899,7 +1329,7 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Step 3: Project Scope - FIXED LAYOUT */}
+                  {/* Step 3: Project Scope */}
                   {activeStep === 3 && (
                     <div className="space-y-6">
                       <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
@@ -915,9 +1345,10 @@ const GigCreate = () => {
                           </h3>
                           <button
                             type="button"
+                            onClick={() => setActiveStep(1)}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
-                            Sign in with Google to Continue
+                            Go Back to Sign In
                           </button>
                         </div>
                       ) : (
@@ -945,7 +1376,7 @@ const GigCreate = () => {
                             )}
                           </div>
 
-                          {/* Project Category - FIXED LAYOUT */}
+                          {/* Project Category */}
                           <div>
                             <div className="flex justify-between items-center mb-2">
                               <label className="text-sm font-semibold text-gray-700">
@@ -973,7 +1404,7 @@ const GigCreate = () => {
                                 {categoryLoading ? (
                                   <option value="" disabled>Loading categories...</option>
                                 ) : (
-                                  (storedCategories.length > 0 ? storedCategories : categoriesData || []).map((category) => (
+                                  (Array.isArray(storedCategories) && storedCategories.length > 0 ? storedCategories : (Array.isArray(categoriesData) ? categoriesData : [])).map((category) => (
                                     <option key={category._id} value={category._id}>
                                       {category.name}
                                     </option>
@@ -1000,7 +1431,39 @@ const GigCreate = () => {
                             )}
                           </div>
 
-                          {/* Budget - FIXED LAYOUT */}
+                          {/* Subcategory */}
+                          {subcategories.length > 0 && (
+                            <div>
+                              <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                                <Layers className="mr-2" size={14} />
+                                Subcategory (Optional)
+                              </label>
+                              <div className="relative">
+                                <select
+                                  name="subcategory"
+                                  value={formData.subcategory}
+                                  onChange={handleInputChange}
+                                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                                  disabled={!formData.projectCategory || gigLoading}
+                                >
+                                  <option value="">Select a subcategory (optional)</option>
+                                  {subcategories.map((subcategory) => (
+                                    <option key={subcategory._id} value={subcategory._id}>
+                                      {subcategory.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                  <ChevronDown className="h-4 w-4" />
+                                </div>
+                              </div>
+                              <p className="mt-2 text-xs text-gray-500">
+                                Optional - helps freelancers understand your project better
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Budget */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <DollarSign className="mr-2" size={14} />
@@ -1062,7 +1525,7 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Step 4: Project Details - FIXED LAYOUT */}
+                  {/* Step 4: Project Details */}
                   {activeStep === 4 && (
                     <div className="space-y-6">
                       <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
@@ -1081,9 +1544,10 @@ const GigCreate = () => {
                           </p>
                           <button
                             type="button"
+                            onClick={() => setActiveStep(1)}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                           >
-                            Sign in with Google to Finish
+                            Go Back to Sign In
                           </button>
                         </div>
                       ) : (
@@ -1127,7 +1591,7 @@ const GigCreate = () => {
                             )}
                           </div>
 
-                          {/* Communication Preference - FIXED LAYOUT */}
+                          {/* Communication Preference */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <MessageSquare className="mr-2" size={14} />
@@ -1160,7 +1624,7 @@ const GigCreate = () => {
                             </div>
                           </div>
 
-                          {/* Urgency Level - FIXED LAYOUT */}
+                          {/* Urgency Level */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2">
                               Urgency Level
@@ -1195,7 +1659,45 @@ const GigCreate = () => {
                             </div>
                           </div>
 
-                          {/* Description - FIXED LAYOUT */}
+                          {/* Visibility */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                              <Shield className="mr-2" size={14} />
+                              Gig Visibility
+                            </label>
+                            <div className="grid grid-cols-3 gap-2 md:gap-3">
+                              {[
+                                { value: 'public', label: 'Public', desc: 'Visible to all' },
+                                { value: 'private', label: 'Private', desc: 'Only you' },
+                                { value: 'invite_only', label: 'Invite Only', desc: 'Selected users' }
+                              ].map((visibility) => (
+                                <label key={visibility.value} className="flex items-center cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="visibility"
+                                    value={visibility.value}
+                                    checked={formData.visibility === visibility.value}
+                                    onChange={handleInputChange}
+                                    className="sr-only disabled:cursor-not-allowed"
+                                    disabled={gigLoading}
+                                  />
+                                  <div className={`
+                                    w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm text-center
+                                    ${formData.visibility === visibility.value
+                                      ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                                      : 'border-gray-200 hover:border-gray-300'
+                                    }
+                                    ${gigLoading ? 'opacity-50 cursor-not-allowed' : ''}
+                                  `}>
+                                    <div className="font-medium">{visibility.label}</div>
+                                    <div className="text-xs text-gray-500 mt-1">{visibility.desc}</div>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Description */}
                           <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
                               Project Description *
@@ -1232,7 +1734,7 @@ const GigCreate = () => {
                             )}
                           </div>
 
-                          {/* Skills Required - FIXED LAYOUT */}
+                          {/* Skills Required */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2">
                               Required Skills (Optional)
@@ -1242,7 +1744,7 @@ const GigCreate = () => {
                                 type="text"
                                 value={skillsInput}
                                 onChange={(e) => setSkillsInput(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
+                                onKeyPress={(e) => handleKeyPress(e, 'skill')}
                                 className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
                                 placeholder="e.g., React, Node.js, MongoDB"
                                 disabled={gigLoading}
@@ -1251,13 +1753,13 @@ const GigCreate = () => {
                                 type="button"
                                 onClick={addSkill}
                                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm whitespace-nowrap"
-                                disabled={gigLoading}
+                                disabled={gigLoading || !skillsInput.trim()}
                               >
                                 Add Skill
                               </button>
                             </div>
                             {formData.skillsRequired.length > 0 && (
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-2 mb-2">
                                 {formData.skillsRequired.map((skill, index) => (
                                   <div key={index} className="flex items-center bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm">
                                     {skill}
@@ -1274,11 +1776,58 @@ const GigCreate = () => {
                               </div>
                             )}
                             <p className="mt-2 text-xs text-gray-500">
-                              Add relevant skills to attract the right freelancers
+                              Add relevant skills to attract the right freelancers (max 10)
                             </p>
                           </div>
 
-                          {/* Attachments - FIXED LAYOUT */}
+                          {/* Expected Deliverables */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                              <Package className="mr-2" size={14} />
+                              Expected Deliverables (Optional)
+                            </label>
+                            <div className="flex flex-col md:flex-row gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={deliverableInput}
+                                onChange={(e) => setDeliverableInput(e.target.value)}
+                                onKeyPress={(e) => handleKeyPress(e, 'deliverable')}
+                                className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
+                                placeholder="e.g., Website design mockups, Source code, Documentation"
+                                disabled={gigLoading}
+                              />
+                              <button
+                                type="button"
+                                onClick={addDeliverable}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm whitespace-nowrap"
+                                disabled={gigLoading || !deliverableInput.trim()}
+                              >
+                                Add Deliverable
+                              </button>
+                            </div>
+                            {formData.deliverables.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {formData.deliverables.map((deliverable, index) => (
+                                  <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                                    {deliverable}
+                                    <button
+                                      type="button"
+                                      onClick={() => removeDeliverable(index)}
+                                      className="ml-2 text-blue-600 hover:text-blue-800"
+                                      disabled={gigLoading}
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <p className="mt-2 text-xs text-gray-500">
+                              List specific items you expect to receive from the freelancer (max 10)
+                            </p>
+                          </div>
+
+                          {/* Attachments */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <Upload className="mr-2" size={14} />
@@ -1295,14 +1844,14 @@ const GigCreate = () => {
                               <input
                                 type="file"
                                 multiple
-                                onChange={handleFileChange}
+                                onChange={(e) => handleFileChange(e, 'attachments')}
                                 accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip,.rar"
                                 className="hidden"
-                                id="file-upload"
+                                id="attachments-upload"
                                 disabled={gigLoading}
                               />
                               <label
-                                htmlFor="file-upload"
+                                htmlFor="attachments-upload"
                                 className={`inline-block px-4 md:px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
                               >
                                 Browse Files
@@ -1318,24 +1867,76 @@ const GigCreate = () => {
                                       <div className="min-w-0">
                                         <p className="font-medium text-gray-800 truncate text-sm">{file.name}</p>
                                         <p className="text-xs text-gray-500">
-                                          {(file.size / 1024 / 1024).toFixed(2)} MB • {
-                                            uploadProgress[file.name] === 100 ? 'Ready' : 'Processing...'
-                                          }
+                                          {(file.size / 1024 / 1024).toFixed(2)} MB
                                         </p>
                                       </div>
                                     </div>
                                     <div className="flex items-center space-x-2">
-                                      {uploadProgress[file.name] < 100 && (
-                                        <div className="w-16 md:w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                          <div
-                                            className="h-full bg-emerald-500 transition-all duration-300"
-                                            style={{ width: `${uploadProgress[file.name] || 0}%` }}
-                                          />
-                                        </div>
-                                      )}
+                                      {renderFileProgress(file.name, uploadProgress[`attachments-${file.name}`] || 0)}
                                       <button
                                         type="button"
-                                        onClick={() => removeFile(index)}
+                                        onClick={() => removeFile(index, 'attachments')}
+                                        className="p-1 hover:bg-gray-200 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={gigLoading}
+                                      >
+                                        <X size={16} className="text-gray-500" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Additional Files */}
+                          <div>
+                            <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                              <FileCheck className="mr-2" size={14} />
+                              Additional Files (Optional)
+                            </label>
+                            <div className={`border-2 border-dashed border-gray-300 rounded-xl p-4 md:p-8 text-center transition-colors ${gigLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-emerald-400'}`}>
+                              <FileCheck className="w-8 h-8 md:w-12 md:h-12 text-gray-400 mx-auto mb-2 md:mb-4" />
+                              <p className="text-gray-600 text-sm md:text-base mb-2">
+                                Add additional supporting files
+                              </p>
+                              <p className="text-xs md:text-sm text-gray-500 mb-4">
+                                JPG, PNG, PDF, DOC, ZIP, RAR (Max 10MB each)
+                              </p>
+                              <input
+                                type="file"
+                                multiple
+                                onChange={(e) => handleFileChange(e, 'files')}
+                                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip,.rar"
+                                className="hidden"
+                                id="files-upload"
+                                disabled={gigLoading}
+                              />
+                              <label
+                                htmlFor="files-upload"
+                                className={`inline-block px-4 md:px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+                              >
+                                Browse Files
+                              </label>
+                            </div>
+
+                            {files.length > 0 && (
+                              <div className="mt-4 space-y-3">
+                                {files.map((file, index) => (
+                                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center min-w-0">
+                                      <FileText className="text-gray-500 mr-3 flex-shrink-0" size={18} />
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-gray-800 truncate text-sm">{file.name}</p>
+                                        <p className="text-xs text-gray-500">
+                                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      {renderFileProgress(file.name, uploadProgress[`files-${file.name}`] || 0)}
+                                      <button
+                                        type="button"
+                                        onClick={() => removeFile(index, 'files')}
                                         className="p-1 hover:bg-gray-200 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
                                         disabled={gigLoading}
                                       >
