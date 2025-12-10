@@ -3,28 +3,17 @@ const Category = require('../models/category.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const crypto = require('crypto');
-const { sanitizeHtml } = require('../utils/sanitize.js');
+const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 
 // Security: Request ID for tracking
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
-// Security: Input sanitization
+// Security: Input sanitization for categories
 const sanitizeCategoryInput = (data) => {
-  const sanitized = {};
-  for (const key in data) {
-    if (typeof data[key] === 'string') {
-      sanitized[key] = sanitizeHtml(data[key], {
-        allowedTags: [],
-        allowedAttributes: {},
-        disallowedTagsMode: 'escape'
-      }).trim();
-    } else {
-      sanitized[key] = data[key];
-    }
-  }
-  return sanitized;
+  const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];
+  return sanitizeObject(data, skipKeys);
 };
 
 // Security: Build secure query
@@ -51,8 +40,7 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
     hasParent,
     ids,
     excludeIds,
-    showAll = false,
-    includeSubcategories = false
+    showAll = false
   } = queryParams;
 
   const filter = {};
@@ -79,8 +67,14 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   }
 
   // Sanitize all string inputs
-  if (name) filter.name = { $regex: `^${sanitizeHtml(name, { allowedTags: [] })}`, $options: 'i' };
-  if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
+  if (name) {
+    const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
+    filter.name = { $regex: `^${sanitizedName}`, $options: 'i' };
+  }
+  
+  if (slug) {
+    filter.slug = sanitizeHtml(slug, { allowedTags: [] });
+  }
   
   // Validate ObjectIds
   if (parentCategory && mongoose.Types.ObjectId.isValid(parentCategory)) {
@@ -95,43 +89,76 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   if (featured !== undefined) filter.featured = featured;
   if (popular !== undefined) filter.popular = popular;
   if (level !== undefined) filter.level = parseInt(level) || 0;
-  if (hasImage === 'true') filter.image = { $exists: true, $ne: '' };
-  if (hasParent === 'true') filter.parentCategory = { $exists: true, $ne: null };
-  if (hasParent === 'false') filter.parentCategory = { $in: [null, undefined] };
+  
+  if (hasImage === 'true' || hasImage === true) {
+    filter.image = { $exists: true, $ne: '' };
+  }
+  
+  if (hasParent === 'true' || hasParent === true) {
+    filter.parentCategory = { $exists: true, $ne: null };
+  }
+  
+  if (hasParent === 'false' || hasParent === false) {
+    filter.parentCategory = { $in: [null, undefined] };
+  }
 
   // Count filters with validation
-  if (minServicesCount) filter.servicesCount = { ...filter.servicesCount, $gte: parseInt(minServicesCount) || 0 };
-  if (maxServicesCount) filter.servicesCount = { ...filter.servicesCount, $lte: parseInt(maxServicesCount) || 0 };
-  if (minGigsCount) filter.gigsCount = { ...filter.gigsCount, $gte: parseInt(minGigsCount) || 0 };
-  if (maxGigsCount) filter.gigsCount = { ...filter.gigsCount, $lte: parseInt(maxGigsCount) || 0 };
+  if (minServicesCount !== undefined) {
+    filter.servicesCount = { ...filter.servicesCount, $gte: parseInt(minServicesCount) || 0 };
+  }
+  
+  if (maxServicesCount !== undefined) {
+    filter.servicesCount = { ...filter.servicesCount, $lte: parseInt(maxServicesCount) || 0 };
+  }
+  
+  if (minGigsCount !== undefined) {
+    filter.gigsCount = { ...filter.gigsCount, $gte: parseInt(minGigsCount) || 0 };
+  }
+  
+  if (maxGigsCount !== undefined) {
+    filter.gigsCount = { ...filter.gigsCount, $lte: parseInt(maxGigsCount) || 0 };
+  }
 
   // Date filters with validation
   if (createdAfter) {
     const date = new Date(createdAfter);
-    if (!isNaN(date.getTime())) filter.createdAt = { ...filter.createdAt, $gte: date };
+    if (!isNaN(date.getTime())) {
+      filter.createdAt = { ...filter.createdAt, $gte: date };
+    }
   }
+  
   if (createdBefore) {
     const date = new Date(createdBefore);
-    if (!isNaN(date.getTime())) filter.createdAt = { ...filter.createdAt, $lte: date };
+    if (!isNaN(date.getTime())) {
+      filter.createdAt = { ...filter.createdAt, $lte: date };
+    }
   }
+  
   if (updatedAfter) {
     const date = new Date(updatedAfter);
-    if (!isNaN(date.getTime())) filter.updatedAt = { ...filter.updatedAt, $gte: date };
+    if (!isNaN(date.getTime())) {
+      filter.updatedAt = { ...filter.updatedAt, $gte: date };
+    }
   }
+  
   if (updatedBefore) {
     const date = new Date(updatedBefore);
-    if (!isNaN(date.getTime())) filter.updatedAt = { ...filter.updatedAt, $lte: date };
+    if (!isNaN(date.getTime())) {
+      filter.updatedAt = { ...filter.updatedAt, $lte: date };
+    }
   }
 
   // ID filters with validation
   if (ids) {
-    const idArray = ids.split(',').map(id => id.trim());
+    const idArray = Array.isArray(ids) ? ids : ids.split(',').map(id => id.trim());
     const validIds = idArray.filter(id => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length > 0) filter._id = { $in: validIds };
+    if (validIds.length > 0) {
+      filter._id = { $in: validIds };
+    }
   }
 
   if (excludeIds) {
-    const excludeArray = excludeIds.split(',').map(id => id.trim());
+    const excludeArray = Array.isArray(excludeIds) ? excludeIds : excludeIds.split(',').map(id => id.trim());
     const validExcludeIds = excludeArray.filter(id => mongoose.Types.ObjectId.isValid(id));
     if (validExcludeIds.length > 0) {
       filter._id = { ...filter._id, $nin: validExcludeIds };
@@ -149,6 +176,8 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
 // Create Category (Admin Only)
 const createCategory = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Role check
     if (req.user.role !== 'admin') {
@@ -156,7 +185,8 @@ const createCategory = async (req, res, next) => {
       return res.status(403).json({ 
         success: false, 
         message: 'Forbidden: Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED'
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
       });
     }
 
@@ -168,7 +198,8 @@ const createCategory = async (req, res, next) => {
         return res.status(400).json({
           success: false,
           message: 'Category cannot be its own parent',
-          code: 'CIRCULAR_REFERENCE'
+          code: 'CIRCULAR_REFERENCE',
+          requestId
         });
       }
     }
@@ -189,12 +220,18 @@ const createCategory = async (req, res, next) => {
     const safeCategory = category.toObject();
     delete safeCategory.__v;
     delete safeCategory.createdBy;
+    delete safeCategory.deletedAt;
+    delete safeCategory.deletedBy;
 
+    const responseTime = Date.now() - startTime;
+    
     res.status(201).json({
       success: true,
-      category: safeCategory,
+      data: safeCategory,
+      message: 'Category created successfully',
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
   } catch (error) {
     // Security: Handle duplicate key errors
@@ -227,6 +264,8 @@ const createCategory = async (req, res, next) => {
 // Get Categories with Advanced Security
 const getCategories = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const {
       search,
@@ -300,16 +339,16 @@ const getCategories = async (req, res, next) => {
     // Security: Validate pagination
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
-    const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
+    const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
 
     // Security: Validate sort field
-    const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount'];
+    const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount', 'level', 'featured', 'popular'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
     // Security: Field selection
-    const defaultExclude = ['__v', 'createdBy'];
+    const defaultExclude = ['__v', 'createdBy', 'deletedAt', 'deletedBy'];
     let select = {};
     
     if (fields) {
@@ -318,6 +357,11 @@ const getCategories = async (req, res, next) => {
         if (!defaultExclude.includes(field)) {
           select[field] = 1;
         }
+      });
+    } else {
+      // Default select all except excluded
+      defaultExclude.forEach(field => {
+        select[field] = 0;
       });
     }
     
@@ -369,10 +413,25 @@ const getCategories = async (req, res, next) => {
 
     // Security: Remove sensitive data
     const safeCategories = categories.map(cat => {
-      const safeCat = { ...cat };
-      delete safeCat.createdBy;
-      delete safeCat.__v;
-      return safeCat;
+      if (lean) {
+        // For lean documents
+        const safeCat = { ...cat };
+        delete safeCat.createdBy;
+        delete safeCat.__v;
+        delete safeCat.deletedAt;
+        delete safeCat.deletedBy;
+        delete safeCat.version;
+        return safeCat;
+      } else {
+        // For mongoose documents
+        const safeCat = cat.toObject();
+        delete safeCat.createdBy;
+        delete safeCat.__v;
+        delete safeCat.deletedAt;
+        delete safeCat.deletedBy;
+        delete safeCat.version;
+        return safeCat;
+      }
     });
 
     // Calculate pagination
@@ -387,6 +446,7 @@ const getCategories = async (req, res, next) => {
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
+      'X-Response-Time': `${Date.now() - startTime}ms`,
       'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
     });
 
@@ -401,6 +461,8 @@ const getCategories = async (req, res, next) => {
       };
     }
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       data: safeCategories,
@@ -416,7 +478,8 @@ const getCategories = async (req, res, next) => {
       },
       counts: Object.keys(counts).length > 0 ? counts : undefined,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -438,6 +501,8 @@ const getCategories = async (req, res, next) => {
 // Get Category by ID or Slug with Security
 const getCategoryById = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { id } = req.params;
     const { fields, populate = true, includeSubcategories = false } = req.query;
@@ -470,7 +535,7 @@ const getCategoryById = async (req, res, next) => {
     }
 
     // Security: Field selection
-    const defaultExclude = ['__v', 'createdBy'];
+    const defaultExclude = ['__v', 'createdBy', 'deletedAt', 'deletedBy', 'version'];
     let select = {};
     
     if (fields) {
@@ -479,6 +544,11 @@ const getCategoryById = async (req, res, next) => {
         if (!defaultExclude.includes(field)) {
           select[field] = 1;
         }
+      });
+    } else {
+      // Default exclude sensitive fields
+      defaultExclude.forEach(field => {
+        select[field] = 0;
       });
     }
 
@@ -528,17 +598,23 @@ const getCategoryById = async (req, res, next) => {
     const safeCategory = category.toObject();
     delete safeCategory.__v;
     delete safeCategory.createdBy;
+    delete safeCategory.deletedAt;
+    delete safeCategory.deletedBy;
+    delete safeCategory.version;
 
     // Security: Audit log for sensitive access
     if (!category.isActive) {
       logAudit('VIEW_INACTIVE', 'CATEGORY', category._id, req.user?._id);
     }
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      category: safeCategory,
+      data: safeCategory,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -550,6 +626,8 @@ const getCategoryById = async (req, res, next) => {
 // Update Category with Security (Admin Only)
 const updateCategory = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Role check
     if (req.user.role !== 'admin') {
@@ -557,7 +635,8 @@ const updateCategory = async (req, res, next) => {
       return res.status(403).json({ 
         success: false, 
         message: 'Forbidden: Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED'
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
       });
     }
 
@@ -659,13 +738,19 @@ const updateCategory = async (req, res, next) => {
     delete safeCategory.__v;
     delete safeCategory.createdBy;
     delete safeCategory.lastUpdatedBy;
+    delete safeCategory.deletedAt;
+    delete safeCategory.deletedBy;
+    delete safeCategory.version;
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      category: safeCategory,
+      data: safeCategory,
       message: 'Category updated successfully',
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -690,6 +775,8 @@ const updateCategory = async (req, res, next) => {
 // Delete Category with Security (Admin Only)
 const deleteCategory = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Role check
     if (req.user.role !== 'admin') {
@@ -697,7 +784,8 @@ const deleteCategory = async (req, res, next) => {
       return res.status(403).json({ 
         success: false, 
         message: 'Forbidden: Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED'
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
       });
     }
 
@@ -725,12 +813,22 @@ const deleteCategory = async (req, res, next) => {
       });
     }
 
+    // Check if already deleted
+    if (!category.isActive && category.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
+    }
+
     // Security: Check for dependencies if not forcing
     if (force !== 'true') {
       const [subcategories, services, gigs] = await Promise.all([
-        Category.countDocuments({ parentCategory: id, isActive: true }),
+        Category.countDocuments({ parentCategory: id, isActive: true, deletedAt: null }),
         Service.countDocuments({ category: id, isActive: { $ne: false } }),
-        Gig.countDocuments({ projectCategory: id })
+        Gig.countDocuments({ projectCategory: id, isActive: true })
       ]);
 
       if (subcategories > 0 || services > 0 || gigs > 0) {
@@ -749,6 +847,7 @@ const deleteCategory = async (req, res, next) => {
     }
 
     let result;
+    const now = new Date();
     
     // Security: Permanent delete (admin only)
     if (permanent === 'true' && req.user.role === 'admin') {
@@ -760,15 +859,20 @@ const deleteCategory = async (req, res, next) => {
         force: force === 'true'
       });
       
+      const responseTime = Date.now() - startTime;
+      
       res.json({
         success: true,
         message: 'Category permanently deleted',
         requestId,
-        timestamp: new Date().toISOString()
+        timestamp: now.toISOString(),
+        responseTime: `${responseTime}ms`
       });
     } else {
       // Soft delete
       category.isActive = false;
+      category.deletedAt = now;
+      category.deletedBy = req.user._id;
       category.lastUpdatedBy = req.user._id;
       await category.save();
       
@@ -777,11 +881,21 @@ const deleteCategory = async (req, res, next) => {
         name: category.name
       });
       
+      const responseTime = Date.now() - startTime;
+      
       res.json({
         success: true,
-        message: 'Category soft deleted',
+        message: 'Category soft deleted successfully',
+        data: {
+          _id: category._id,
+          name: category.name,
+          slug: category.slug,
+          isActive: category.isActive,
+          deletedAt: category.deletedAt
+        },
         requestId,
-        timestamp: new Date().toISOString()
+        timestamp: now.toISOString(),
+        responseTime: `${responseTime}ms`
       });
     }
 
@@ -797,12 +911,15 @@ const deleteCategory = async (req, res, next) => {
 // Restore Category (Admin Only)
 const restoreCategory = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
-        message: 'Forbidden',
-        code: 'ADMIN_ACCESS_REQUIRED'
+        message: 'Forbidden: Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
       });
     }
 
@@ -828,6 +945,16 @@ const restoreCategory = async (req, res, next) => {
       });
     }
 
+    // Check if already active
+    if (category.isActive && !category.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category is already active',
+        code: 'ALREADY_ACTIVE',
+        requestId
+      });
+    }
+
     // Security: Check if parent category is active
     if (category.parentCategory) {
       const parent = await Category.findById(category.parentCategory);
@@ -842,23 +969,28 @@ const restoreCategory = async (req, res, next) => {
     }
 
     category.isActive = true;
+    category.deletedAt = null;
+    category.deletedBy = null;
     category.lastUpdatedBy = req.user._id;
     await category.save();
 
     // Security: Audit log
     logAudit('RESTORE', 'CATEGORY', id, req.user._id);
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       message: 'Category restored successfully',
-      category: {
+      data: {
         _id: category._id,
         name: category.name,
         slug: category.slug,
         isActive: category.isActive
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -870,6 +1002,8 @@ const restoreCategory = async (req, res, next) => {
 // Get Category Statistics with Security
 const getCategoryStats = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Only admin can see detailed stats
     if (req.user?.role !== 'admin') {
@@ -954,12 +1088,15 @@ const getCategoryStats = async (req, res, next) => {
     // Security: Sanitize output
     const sanitizedStats = stats[0];
     
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      stats: sanitizedStats,
+      data: sanitizedStats,
       requestId,
       timestamp: new Date().toISOString(),
-      generatedAt: new Date()
+      generatedAt: new Date(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -971,6 +1108,8 @@ const getCategoryStats = async (req, res, next) => {
 // Bulk Operations with Security
 const bulkUpdateCategories = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Rate limiting check (implement separately)
     if (req.user.role !== 'admin') {
@@ -983,6 +1122,16 @@ const bulkUpdateCategories = async (req, res, next) => {
     }
 
     const { ids, operation, data } = req.body;
+
+    // Security: Validate required fields
+    if (!ids || !operation) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs and operation are required',
+        code: 'MISSING_REQUIRED_FIELDS',
+        requestId
+      });
+    }
 
     // Security: Limit batch size
     if (ids.length > 100) {
@@ -1035,7 +1184,7 @@ const bulkUpdateCategories = async (req, res, next) => {
       updatedAt: now
     };
 
-    // Security: Add version increment for updates
+    // Add version increment for updates
     if (operation === 'update') {
       updateData.$inc = { version: 1 };
     }
@@ -1057,17 +1206,20 @@ const bulkUpdateCategories = async (req, res, next) => {
       totalIds: ids.length
     });
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       message: `Bulk ${operation} completed successfully`,
-      result: {
+      data: {
         total: ids.length,
         matched: result.matchedCount,
         modified: result.modifiedCount,
         failed: ids.length - result.matchedCount
       },
       requestId,
-      timestamp: now.toISOString()
+      timestamp: now.toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -1093,6 +1245,8 @@ const bulkUpdateCategories = async (req, res, next) => {
 // Export Categories with Security
 const exportCategories = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     // Security: Only admin can export
     if (req.user?.role !== 'admin') {
@@ -1121,7 +1275,7 @@ const exportCategories = async (req, res, next) => {
     }
 
     const categories = await Category.find(filter)
-      .select('-__v -createdBy -lastUpdatedBy')
+      .select('-__v -createdBy -lastUpdatedBy -deletedAt -deletedBy -version')
       .populate('parentCategory', 'name slug')
       .lean();
 
@@ -1163,18 +1317,22 @@ const exportCategories = async (req, res, next) => {
       res.header('X-Request-ID', requestId);
       res.header('X-Export-Records', count);
       res.header('X-Export-Timestamp', new Date().toISOString());
+      res.header('X-Response-Time', `${Date.now() - startTime}ms`);
       
       return res.send(csvContent);
     }
 
     // Default JSON export
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       format: 'json',
       count,
       data: categories,
       exportedAt: new Date().toISOString(),
-      requestId
+      requestId,
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -1189,6 +1347,8 @@ const exportCategories = async (req, res, next) => {
 // Search Categories with Security
 const searchCategories = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
 
@@ -1264,13 +1424,16 @@ const searchCategories = async (req, res, next) => {
       popular: result.popular || false
     }));
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       query: sanitizedQuery,
-      results: safeResults,
+      data: safeResults,
       count: safeResults.length,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {

@@ -2,73 +2,150 @@ const Joi = require('joi');
 const mongoose = require('mongoose');
 const { sanitizeHtml } = require('../../utils/sanitize');
 
-
 const objectId = Joi.string().custom((value, helpers) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     return helpers.error('any.invalid');
   }
   return value;
-}, 'ObjectId validation');
+}, 'ObjectId validation').messages({
+  'any.invalid': 'Invalid ID format'
+});
 
-// XSS Prevention helper
-const sanitizeInput = (data) => {
+// XSS Prevention helper with safe HTML options
+const sanitizeInput = (data, options = {}) => {
   if (typeof data === 'string') {
-    return sanitizeHtml(data, {
-      allowedTags: [],
+    const sanitizationOptions = {
+      allowedTags: options.allowHtml ? ['b', 'i', 'em', 'strong', 'u', 'br', 'p'] : [],
       allowedAttributes: {},
       disallowedTagsMode: 'escape'
-    }).trim();
+    };
+    return sanitizeHtml(data.trim(), sanitizationOptions);
   }
   return data;
 };
 
+// Common validation rules
+const nameValidation = Joi.string()
+  .min(2)
+  .max(50)
+  .custom((value, helpers) => {
+    const sanitized = sanitizeInput(value);
+    if (sanitized.length < 2) {
+      return helpers.error('string.min');
+    }
+    // Prevent SQL/NoSQL injection patterns
+    const injectionPatterns = [
+      /\$where/i,
+      /\$ne/i,
+      /\$nin/i,
+      /\$regex/i,
+      /select.*from/i,
+      /insert.*into/i,
+      /update.*set/i,
+      /delete.*from/i,
+      /union.*select/i,
+      /or.*=.*or/i,
+      /'|"|`/,
+      /--/,
+      /;/,
+      /\/\*.*\*\//,
+      /<script/i,
+      /javascript:/i,
+      /on\w+\s*=/
+    ];
+    
+    for (const pattern of injectionPatterns) {
+      if (pattern.test(sanitized)) {
+        return helpers.error('any.invalid');
+      }
+    }
+    
+    return sanitized;
+  }, 'XSS and injection prevention')
+  .messages({
+    'string.empty': 'Category name is required',
+    'string.min': 'Category name must be at least 2 characters',
+    'string.max': 'Category name cannot exceed 50 characters',
+    'any.invalid': 'Category name contains invalid characters',
+  });
+
+const descriptionValidation = Joi.string()
+  .allow('')
+  .max(1000)
+  .custom((value) => sanitizeInput(value, { allowHtml: true }), 'XSS prevention')
+  .optional();
+
+const imageValidation = Joi.string()
+  .uri({ 
+    allowRelative: true,
+    scheme: ['http', 'https', 'data']
+  })
+  .pattern(/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
+  .custom((value, helpers) => {
+    // Prevent path traversal
+    if (value.includes('..') || value.includes('//')) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }, 'Path traversal prevention')
+  .optional()
+  .messages({
+    'string.pattern.base': 'Invalid image URL format',
+    'any.invalid': 'Invalid image path'
+  });
+
+const metaKeywordsValidation = Joi.array()
+  .items(
+    Joi.string()
+      .max(30)
+      .custom((value) => sanitizeInput(value), 'XSS prevention')
+      .messages({
+        'string.max': 'Keyword cannot exceed 30 characters'
+      })
+  )
+  .max(20)
+  .optional()
+  .messages({
+    'array.max': 'Cannot have more than 20 keywords'
+  });
+
 // Create schema
 const createSchema = Joi.object({
-  name: Joi.string()
-    .required()
-    .min(2)
-    .max(50)
-    .custom((value, helpers) => {
-      const sanitized = sanitizeInput(value);
-      if (sanitized.length < 2) {
-        return helpers.error('string.min');
-      }
-      return sanitized;
-    }, 'XSS prevention')
-    .messages({
-      'string.empty': 'Category name is required',
-      'string.min': 'Category name must be at least 2 characters',
-      'string.max': 'Category name cannot exceed 50 characters',
-    }),
+  name: nameValidation.required(),
   
-  description: Joi.string()
-    .allow('')
-    .max(1000)
-    .custom((value) => sanitizeInput(value), 'XSS prevention')
-    .optional(),
+  description: descriptionValidation,
   
   icon: Joi.string()
     .max(50)
-    .pattern(/^[a-zA-Z0-9\-]+$/)
-    .optional(),
+    .pattern(/^[a-zA-Z0-9\-_]+$/)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Icon can only contain letters, numbers, hyphens and underscores'
+    }),
   
-  image: Joi.string()
-    .uri({ allowRelative: true })
-    .pattern(/^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
-    .optional(),
+  image: imageValidation,
   
   parentCategory: objectId
     .optional()
-    .allow(null),
+    .allow(null)
+    .messages({
+      'any.invalid': 'Invalid parent category ID'
+    }),
   
-  featured: Joi.boolean().optional(),
+  featured: Joi.boolean().optional().default(false),
   
-  popular: Joi.boolean().optional(),
+  popular: Joi.boolean().optional().default(false),
   
   order: Joi.number()
     .integer()
     .min(0)
-    .optional(),
+    .max(1000)
+    .optional()
+    .default(0)
+    .messages({
+      'number.min': 'Order cannot be negative',
+      'number.max': 'Order cannot exceed 1000'
+    }),
   
   metaTitle: Joi.string()
     .max(60)
@@ -80,47 +157,29 @@ const createSchema = Joi.object({
     .custom((value) => sanitizeInput(value), 'XSS prevention')
     .optional(),
   
-  metaKeywords: Joi.array()
-    .items(
-      Joi.string()
-        .max(30)
-        .custom((value) => sanitizeInput(value), 'XSS prevention')
-    )
-    .max(20)
-    .optional(),
+  metaKeywords: metaKeywordsValidation,
   
-  isActive: Joi.boolean().optional(),
-}).options({ stripUnknown: true });
+  isActive: Joi.boolean().optional().default(true),
+  
+  createdBy: objectId.optional(), // Will be set by middleware
+  
+}).options({ 
+  stripUnknown: true,
+  abortEarly: false 
+});
 
 // Update schema
 const updateSchema = Joi.object({
-  name: Joi.string()
-    .min(2)
-    .max(50)
-    .custom((value, helpers) => {
-      const sanitized = sanitizeInput(value);
-      if (sanitized.length < 2) {
-        return helpers.error('string.min');
-      }
-      return sanitized;
-    }, 'XSS prevention')
-    .optional(),
+  name: nameValidation.optional(),
   
-  description: Joi.string()
-    .allow('')
-    .max(1000)
-    .custom((value) => sanitizeInput(value), 'XSS prevention')
-    .optional(),
+  description: descriptionValidation,
   
   icon: Joi.string()
     .max(50)
-    .pattern(/^[a-zA-Z0-9\-]+$/)
+    .pattern(/^[a-zA-Z0-9\-_]+$/)
     .optional(),
   
-  image: Joi.string()
-    .uri({ allowRelative: true })
-    .pattern(/^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
-    .optional(),
+  image: imageValidation,
   
   parentCategory: objectId
     .optional()
@@ -133,6 +192,7 @@ const updateSchema = Joi.object({
   order: Joi.number()
     .integer()
     .min(0)
+    .max(1000)
     .optional(),
   
   metaTitle: Joi.string()
@@ -145,19 +205,24 @@ const updateSchema = Joi.object({
     .custom((value) => sanitizeInput(value), 'XSS prevention')
     .optional(),
   
-  metaKeywords: Joi.array()
-    .items(
-      Joi.string()
-        .max(30)
-        .custom((value) => sanitizeInput(value), 'XSS prevention')
-    )
-    .max(20)
-    .optional(),
+  metaKeywords: metaKeywordsValidation,
   
   isActive: Joi.boolean().optional(),
   
-  version: Joi.number().integer().min(1).optional(),
-}).options({ stripUnknown: true });
+  version: Joi.number()
+    .integer()
+    .min(1)
+    .optional()
+    .messages({
+      'number.min': 'Version must be at least 1'
+    }),
+    
+  lastUpdatedBy: objectId.optional(), // Will be set by middleware
+  
+}).options({ 
+  stripUnknown: true,
+  abortEarly: false 
+});
 
 // Bulk operations schema
 const bulkSchema = Joi.object({
@@ -170,6 +235,7 @@ const bulkSchema = Joi.object({
       'array.base': 'IDs must be an array',
       'array.min': 'At least one ID is required',
       'array.max': 'Cannot process more than 100 items at once',
+      'any.invalid': 'Invalid ID format in array'
     }),
   
   operation: Joi.string()
@@ -186,32 +252,37 @@ const bulkSchema = Joi.object({
       then: updateSchema.required(),
       otherwise: Joi.object().optional(),
     }),
-}).options({ stripUnknown: true });
+}).options({ 
+  stripUnknown: true,
+  abortEarly: false 
+});
 
 // Query validation schema
 const querySchema = Joi.object({
   // Pagination
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(10),
+  limit: Joi.number().integer().min(1).max(200).default(10),
   offset: Joi.number().integer().min(0),
   
   // Sorting
-  sort: Joi.string().valid('name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount').default('createdAt'),
-  order: Joi.string().valid('asc', 'desc').default('desc'),
-  sortBy: Joi.string(),
+  sort: Joi.string()
+    .valid('name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount', 'level', 'featured', 'popular')
+    .default('createdAt'),
+  order: Joi.string().valid('asc', 'desc', '1', '-1').default('desc'),
+  sortBy: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   
   // Search
-  search: Joi.string().trim().max(100),
-  q: Joi.string().trim().max(100),
+  search: Joi.string().trim().max(100).custom((value) => sanitizeInput(value), 'XSS prevention'),
+  q: Joi.string().trim().max(100).custom((value) => sanitizeInput(value), 'XSS prevention'),
   
   // Filtering
-  name: Joi.string().trim(),
-  slug: Joi.string().trim(),
+  name: Joi.string().trim().max(100).custom((value) => sanitizeInput(value), 'XSS prevention'),
+  slug: Joi.string().trim().max(100),
   parentCategory: objectId,
   featured: Joi.boolean(),
   popular: Joi.boolean(),
-  isActive: Joi.boolean(),
-  level: Joi.number().integer().min(0).max(5),
+  isActive: Joi.boolean().default(true),
+  level: Joi.number().integer().min(0).max(10),
   minServicesCount: Joi.number().integer().min(0),
   maxServicesCount: Joi.number().integer().min(0),
   minGigsCount: Joi.number().integer().min(0),
@@ -223,6 +294,7 @@ const querySchema = Joi.object({
   createdBy: objectId,
   hasImage: Joi.boolean(),
   hasParent: Joi.boolean(),
+  deleted: Joi.boolean(),
   
   // Data control
   fields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
@@ -231,6 +303,7 @@ const querySchema = Joi.object({
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   includeSubcategories: Joi.boolean(),
   includeCounts: Joi.boolean(),
+  depth: Joi.number().integer().min(1).max(5).default(1),
   
   // Security
   showAll: Joi.boolean(),
@@ -239,83 +312,202 @@ const querySchema = Joi.object({
   cache: Joi.boolean().default(false),
   
   // Export
-  format: Joi.string().valid('json', 'csv'),
-}).options({ stripUnknown: true });
-
-// Rate limiting for bulk operations
-const rateLimitSchema = Joi.object({
-  windowMs: Joi.number().integer().min(60000).max(3600000).default(900000),
-  max: Joi.number().integer().min(1).max(50).default(10),
-}).optional();
-
-// Middleware functions
-const validateCreate = (req, res, next) => {
-  const { error, value } = createSchema.validate(req.body, { abortEarly: false });
+  format: Joi.string().valid('json', 'csv', 'excel'),
   
-  if (error) {
-    const messages = error.details.map(detail => detail.message);
-    return res.status(400).json({
+  // Performance
+  timeout: Joi.number().integer().min(1000).max(30000),
+  
+}).options({ 
+  stripUnknown: true,
+  abortEarly: false,
+  convert: true 
+});
+
+// Middleware functions with improved error handling
+const validateCreate = (req, res, next) => {
+  try {
+    const { error, value } = createSchema.validate(req.body, { 
+      abortEarly: false,
+      allowUnknown: false 
+    });
+    
+    if (error) {
+      const messages = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        type: detail.type
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Add createdBy from auth middleware if not provided
+    if (!value.createdBy && req.user) {
+      value.createdBy = req.user._id;
+    }
+    
+    req.body = value;
+    next();
+  } catch (err) {
+    return res.status(500).json({
       success: false,
-      message: 'Validation failed',
-      errors: messages,
-      code: 'VALIDATION_ERROR',
+      message: 'Validation server error',
+      code: 'VALIDATION_SERVER_ERROR'
     });
   }
-  
-  // Sanitize all inputs
-  req.body = value;
-  next();
 };
 
 const validateUpdate = (req, res, next) => {
-  const { error, value } = updateSchema.validate(req.body, { abortEarly: false });
-  
-  if (error) {
-    const messages = error.details.map(detail => detail.message);
-    return res.status(400).json({
+  try {
+    const { error, value } = updateSchema.validate(req.body, { 
+      abortEarly: false,
+      allowUnknown: false 
+    });
+    
+    if (error) {
+      const messages = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        type: detail.type
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Add lastUpdatedBy from auth middleware
+    if (req.user) {
+      value.lastUpdatedBy = req.user._id;
+    }
+    
+    // Validate version if provided
+    if (value.version !== undefined) {
+      value.version = parseInt(value.version);
+    }
+    
+    req.body = value;
+    next();
+  } catch (err) {
+    return res.status(500).json({
       success: false,
-      message: 'Validation failed',
-      errors: messages,
-      code: 'VALIDATION_ERROR',
+      message: 'Validation server error',
+      code: 'VALIDATION_SERVER_ERROR'
     });
   }
-  
-  req.body = value;
-  next();
 };
 
 const validateBulk = (req, res, next) => {
-  const { error, value } = bulkSchema.validate(req.body, { abortEarly: false });
-  
-  if (error) {
-    const messages = error.details.map(detail => detail.message);
-    return res.status(400).json({
+  try {
+    const { error, value } = bulkSchema.validate(req.body, { 
+      abortEarly: false,
+      allowUnknown: false 
+    });
+    
+    if (error) {
+      const messages = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        type: detail.type
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Bulk operation validation failed',
+        errors: messages,
+        code: 'BULK_VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Validate all IDs are unique
+    const uniqueIds = [...new Set(value.ids)];
+    if (uniqueIds.length !== value.ids.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate IDs found in bulk operation',
+        code: 'DUPLICATE_IDS_ERROR'
+      });
+    }
+    
+    req.body = value;
+    next();
+  } catch (err) {
+    return res.status(500).json({
       success: false,
-      message: 'Validation failed',
-      errors: messages,
-      code: 'VALIDATION_ERROR',
+      message: 'Validation server error',
+      code: 'VALIDATION_SERVER_ERROR'
     });
   }
-  
-  req.body = value;
-  next();
 };
 
 const validateQuery = (req, res, next) => {
-  const { error, value } = querySchema.validate(req.query, { abortEarly: false });
-  
-  if (error) {
-    const messages = error.details.map(detail => detail.message);
-    return res.status(400).json({
+  try {
+    const { error, value } = querySchema.validate(req.query, { 
+      abortEarly: false,
+      allowUnknown: false,
+      convert: true 
+    });
+    
+    if (error) {
+      const messages = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        type: detail.type
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid query parameters',
+        errors: messages,
+        code: 'QUERY_VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Handle sorting
+    if (value.sortBy) {
+      value.sort = value.sortBy;
+      delete value.sortBy;
+    }
+    
+    // Convert order string to number for MongoDB
+    if (value.order === 'asc' || value.order === '1') {
+      value.order = 1;
+    } else if (value.order === 'desc' || value.order === '-1') {
+      value.order = -1;
+    }
+    
+    // Set timeout if provided
+    if (value.timeout) {
+      req.queryTimeout = value.timeout;
+      delete value.timeout;
+    }
+    
+    // Security: Limit max results for non-admin users
+    if (!req.user?.isAdmin && value.limit > 50) {
+      value.limit = 50;
+    }
+    
+    req.query = value;
+    next();
+  } catch (err) {
+    return res.status(500).json({
       success: false,
-      message: 'Invalid query parameters',
-      errors: messages,
-      code: 'QUERY_VALIDATION_ERROR',
+      message: 'Query validation server error',
+      code: 'QUERY_VALIDATION_SERVER_ERROR'
     });
   }
-  
-  req.query = value;
-  next();
 };
 
 module.exports = {
@@ -323,7 +515,6 @@ module.exports = {
   updateSchema,
   bulkSchema,
   querySchema,
-  rateLimitSchema,
   validateCreate,
   validateUpdate,
   validateBulk,
