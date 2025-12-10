@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth.route.js');
 const categoryRoutes = require('./routes/category.route.js');
 const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
+const userRoutes = require('./routes/user.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
@@ -41,6 +42,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(passport.initialize());
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
