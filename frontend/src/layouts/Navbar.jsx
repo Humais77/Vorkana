@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Menu, X, Search, Bell, MessageSquare, User, Briefcase, Globe } from "lucide-react";
+import { Menu, X, Search, User, Briefcase, Globe } from "lucide-react";
 import Logo from "../assets/logo.png";
 
 const Navbar = () => {
@@ -113,22 +113,6 @@ const Navbar = () => {
               <Globe className="w-4 h-4" />
               Categories
             </NavLink>
-            
-            <NavLink
-              to="/services"
-              className={({ isActive }) =>
-                `flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
-                  isActive
-                    ? "text-green-600 bg-gradient-to-r from-green-50 to-green-100 border border-green-200 font-semibold"
-                    : "text-gray-700 hover:text-green-600 hover:bg-green-50/50"
-                }`
-              }
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Services
-            </NavLink>
           </div>
 
           {/* Right Section - Actions */}
@@ -137,20 +121,6 @@ const Navbar = () => {
               <>
                 {/* Desktop Actions */}
                 <div className="hidden lg:flex items-center space-x-3">
-                  <button className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative">
-                    <Bell className="w-5 h-5" />
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      3
-                    </span>
-                  </button>
-                  
-                  <button className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all relative">
-                    <MessageSquare className="w-5 h-5" />
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
-                      5
-                    </span>
-                  </button>
-                  
                   {/* User Profile */}
                   <div className="relative group">
                     <button className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 border border-gray-200 transition-all">
@@ -179,10 +149,6 @@ const Navbar = () => {
                           <User className="w-4 h-4" />
                           My Profile
                         </Link>
-                        <Link to="/dashboard" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg">
-                          <Briefcase className="w-4 h-4" />
-                          Dashboard
-                        </Link>
                         <button
                           onClick={handleLogout}
                           disabled={logoutMutation.isPending}
@@ -205,13 +171,6 @@ const Navbar = () => {
                       </div>
                     </div>
                   </div>
-                  
-                  <Link
-                    to="/create-project"
-                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-xl shadow-sm hover:shadow transition-all duration-300"
-                  >
-                    Post a Project
-                  </Link>
                 </div>
 
                 {/* Mobile Menu Toggle */}
@@ -317,12 +276,12 @@ const Navbar = () => {
               {isAuthenticated ? (
                 <>
                   <Link
-                    to="/dashboard"
+                    to="/profile"
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 font-medium"
                   >
-                    <Briefcase className="w-5 h-5" />
-                    Dashboard
+                    <User className="w-5 h-5" />
+                    My Profile
                   </Link>
                   
                   <div className="space-y-1 mt-4">
@@ -331,10 +290,6 @@ const Navbar = () => {
                     {[
                       { to: "/", label: "Find Work", icon: Briefcase },
                       { to: "/categories", label: "Categories", icon: Globe },
-                      { to: "/services", label: "Services", icon: "services" },
-                      { to: "/messages", label: "Messages", icon: MessageSquare, badge: 5 },
-                      { to: "/notifications", label: "Notifications", icon: Bell, badge: 3 },
-                      { to: "/profile", label: "My Profile", icon: User },
                     ].map((item) => (
                       <NavLink
                         key={item.to}
@@ -349,32 +304,11 @@ const Navbar = () => {
                         }
                       >
                         <div className="flex items-center gap-3">
-                          {item.icon === "services" ? (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
-                          ) : (
-                            <item.icon className="w-5 h-5" />
-                          )}
+                          <item.icon className="w-5 h-5" />
                           <span>{item.label}</span>
                         </div>
-                        {item.badge && (
-                          <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-600 rounded-full">
-                            {item.badge}
-                          </span>
-                        )}
                       </NavLink>
                     ))}
-                  </div>
-                  
-                  <div className="mt-6 pt-6 border-t border-gray-100">
-                    <Link
-                      to="/create-project"
-                      onClick={() => setMenuOpen(false)}
-                      className="block w-full py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl text-center shadow-sm hover:shadow transition-all"
-                    >
-                      Post a Project
-                    </Link>
                   </div>
                 </>
               ) : (
@@ -382,9 +316,6 @@ const Navbar = () => {
                   {[
                     { to: "/", label: "Find Work", icon: Briefcase },
                     { to: "/categories", label: "Categories", icon: Globe },
-                    { to: "/services", label: "Services", icon: "services" },
-                    { to: "/how-it-works", label: "How it Works", icon: "guide" },
-                    { to: "/pricing", label: "Pricing", icon: "pricing" },
                   ].map((item) => (
                     <NavLink
                       key={item.to}
@@ -398,21 +329,7 @@ const Navbar = () => {
                         }`
                       }
                     >
-                      {item.icon === "services" ? (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      ) : item.icon === "guide" ? (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      ) : item.icon === "pricing" ? (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      ) : (
-                        <item.icon className="w-5 h-5" />
-                      )}
+                      <item.icon className="w-5 h-5" />
                       <span>{item.label}</span>
                     </NavLink>
                   ))}
