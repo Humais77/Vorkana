@@ -36,7 +36,7 @@
 const express = require("express");
 const passport = require("passport");
 const session = require("express-session");
-const { register, login, getProfile, updateProfile, forgotPassword, resetPassword } = require("../controllers/auth.controller.js");
+const { register, login, getProfile, updateProfile, forgotPassword, resetPassword ,fixExistingSeller} = require("../controllers/auth.controller.js");
 const { protect } = require("../middleware/auth.middleware.js");
 
 const router = express.Router();
@@ -56,7 +56,8 @@ router.use(passport.session());
 router.post("/register", register);
 
 router.post("/login", login);
-
+// Add this to your auth routes temporarily
+router.post('/fix-seller',fixExistingSeller);
 router.get("/profile", protect, getProfile);
 
 router.put("/profile", protect, updateProfile);
