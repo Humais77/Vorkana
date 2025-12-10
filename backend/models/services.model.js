@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const slugify = require('slugify');
+const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js'); // Updated import
 
 const serviceSchema = new mongoose.Schema({
   title: {
@@ -8,6 +9,33 @@ const serviceSchema = new mongoose.Schema({
     trim: true,
     minlength: [5, 'Title must be at least 5 characters'],
     maxlength: [200, 'Title cannot exceed 200 characters'],
+    index: true,
+    validate: {
+      validator: function(v) {
+        // Security: Prevent injection patterns
+        const injectionPatterns = [
+          /\$where/i,
+          /\$ne/i,
+          /\$nin/i,
+          /\$regex/i,
+          /select.*from/i,
+          /insert.*into/i,
+          /update.*set/i,
+          /delete.*from/i,
+          /union.*select/i,
+          /or.*=.*or/i,
+          /'|"|`/,
+          /--/,
+          /;/,
+          /\/\*.*\*\//,
+          /<script/i,
+          /javascript:/i,
+          /on\w+\s*=/
+        ];
+        return !injectionPatterns.some(pattern => pattern.test(v));
+      },
+      message: 'Title contains invalid characters'
+    }
   },
   slug: {
     type: String,
@@ -32,22 +60,50 @@ const serviceSchema = new mongoose.Schema({
     ref: 'Category',
     required: [true, 'Category is required'],
     index: true,
+    validate: {
+      validator: async function(v) {
+        const Category = mongoose.model('Category');
+        const category = await Category.findById(v);
+        return category && category.isActive;
+      },
+      message: 'Invalid or inactive category'
+    }
   },
   subcategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
+    index: true,
+    validate: {
+      validator: async function(v) {
+        if (!v) return true; // Subcategory is optional
+        const Category = mongoose.model('Category');
+        const subcategory = await Category.findById(v);
+        return subcategory && subcategory.isActive && subcategory.parentCategory && 
+               subcategory.parentCategory.equals(this.category);
+      },
+      message: 'Invalid subcategory or does not belong to the selected category'
+    }
   },
   seller: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: [true, 'Seller is required'],
     index: true,
+    validate: {
+      validator: async function(v) {
+        const User = mongoose.model('User');
+        const user = await User.findById(v);
+        return user && user.isActive && user.role === 'seller';
+      },
+      message: 'Invalid or inactive seller'
+    }
   },
   price: {
     type: Number,
     required: [true, 'Price is required'],
     min: [1, 'Minimum price is $1'],
     max: [100000, 'Maximum price is $100,000'],
+    index: true,
   },
   currency: {
     type: String,
@@ -75,9 +131,9 @@ const serviceSchema = new mongoose.Schema({
     type: String,
     validate: {
       validator: function(v) {
-        return /^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v);
+        return /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v) && !v.includes('..');
       },
-      message: 'Invalid image URL format',
+      message: 'Invalid image URL format or path traversal detected',
     },
   }],
   thumbnail: {
@@ -85,15 +141,16 @@ const serviceSchema = new mongoose.Schema({
     validate: {
       validator: function(v) {
         if (!v) return true;
-        return /^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v);
+        return /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v) && !v.includes('..');
       },
-      message: 'Invalid thumbnail URL format',
+      message: 'Invalid thumbnail URL format or path traversal detected',
     },
   },
   tags: [{
     type: String,
     trim: true,
     maxlength: [30, 'Tag cannot exceed 30 characters'],
+    index: true,
   }],
   features: [{
     title: {
@@ -241,6 +298,7 @@ const serviceSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [30, 'Keyword cannot exceed 30 characters'],
+    index: true,
   }],
   metaTitle: {
     type: String,
@@ -260,6 +318,15 @@ const serviceSchema = new mongoose.Schema({
   lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    validate: {
+      validator: async function(v) {
+        if (!v) return true;
+        const User = mongoose.model('User');
+        const user = await User.findById(v);
+        return user && user.isActive;
+      },
+      message: 'Invalid or inactive user'
+    }
   },
   version: {
     type: Number,
@@ -270,113 +337,268 @@ const serviceSchema = new mongoose.Schema({
   },
   expiresAt: {
     type: Date,
+    index: true,
+    validate: {
+      validator: function(v) {
+        return !v || v > Date.now();
+      },
+      message: 'Expiry date must be in the future'
+    }
+  },
+  deletedAt: {
+    type: Date,
+    default: null,
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
   },
 }, { 
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toJSON: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.__v;
+      delete ret.deletedAt;
+      delete ret.deletedBy;
+      delete ret.version;
+      return ret;
+    }
+  },
+  toObject: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.__v;
+      delete ret.deletedAt;
+      delete ret.deletedBy;
+      delete ret.version;
+      return ret;
+    }
+  }
 });
 
-// Virtual for reviews
+// Virtuals
 serviceSchema.virtual('reviews', {
   ref: 'Review',
   localField: '_id',
   foreignField: 'service',
+  match: { isActive: true }
 });
 
-// Virtual for orders
 serviceSchema.virtual('orders', {
   ref: 'Order',
   localField: '_id',
   foreignField: 'service',
+  match: { isActive: true }
 });
 
-// Pre-save middleware - FIXED
-// serviceSchema.pre('save', function(next) {
-//   // Generate slug
-//   if (this.isModified('title')) {
-//     this.slug = slugify(this.title, { 
-//       lower: true, 
-//       strict: true,
-//       locale: 'en',
-//       trim: true
-//     }) + '-' + Date.now().toString().slice(-6);
-//   }
-  
-//   // Set published date when status becomes active
-//   if (this.isModified('status') && this.status === 'active' && !this.publishedAt) {
-//     this.publishedAt = new Date();
-//   }
-  
-//   // Set expiration date (30 days from publication)
-//   if (this.isModified('publishedAt') && this.publishedAt && !this.expiresAt) {
-//     this.expiresAt = new Date(this.publishedAt);
-//     this.expiresAt.setDate(this.expiresAt.getDate() + 30);
-//   }
-  
-//   next();
-// });
+serviceSchema.virtual('categoryDetails', {
+  ref: 'Category',
+  localField: 'category',
+  foreignField: '_id',
+  justOne: true
+});
 
-// Update category service count - FIXED
-serviceSchema.post('save', async function(doc) {
+serviceSchema.virtual('sellerDetails', {
+  ref: 'User',
+  localField: 'seller',
+  foreignField: '_id',
+  justOne: true
+});
+
+serviceSchema.virtual('isDeleted').get(function() {
+  return !!this.deletedAt;
+});
+
+// Pre-save middleware
+serviceSchema.pre('save', async function () {
+  // Store original status for post-save logic
+  if (this.isNew) this._originalStatus = null;
+  if (!this._originalStatus) this._originalStatus = this.status;
+
+  // Sanitize fields
+  const fieldsToSanitize = ['title', 'description', 'shortDescription', 'metaTitle', 'metaDescription'];
+  fieldsToSanitize.forEach(field => {
+    if (this[field] && typeof this[field] === 'string') {
+      this[field] = sanitizeText(this[field]);
+    }
+  });
+
+  // Sanitize arrays and nested objects
+  ['tags', 'searchKeywords'].forEach(arr => {
+    if (Array.isArray(this[arr])) {
+      this[arr] = this[arr].map(sanitizeText);
+    }
+  });
+
+  if (Array.isArray(this.features)) {
+    this.features = this.features.map(f => ({
+      ...f,
+      title: sanitizeText(f.title || ''),
+      description: sanitizeText(f.description || '')
+    }));
+  }
+
+  if (Array.isArray(this.faqs)) {
+    this.faqs = this.faqs.map(f => ({
+      ...f,
+      question: sanitizeText(f.question || ''),
+      answer: sanitizeText(f.answer || '')
+    }));
+  }
+
+  if (Array.isArray(this.requirements)) {
+    this.requirements = this.requirements.map(r => ({
+      ...r,
+      question: sanitizeText(r.question || ''),
+      options: r.options ? r.options.map(sanitizeText) : []
+    }));
+  }
+
+  if (Array.isArray(this.packages)) {
+    this.packages = this.packages.map(p => ({
+      ...p,
+      name: sanitizeText(p.name || ''),
+      description: sanitizeText(p.description || ''),
+      features: p.features ? p.features.map(sanitizeText) : []
+    }));
+  }
+
+  // Generate unique slug
+  if (this.isModified('title') || this.isNew) {
+    let baseSlug = slugify(this.title, { lower: true, strict: true, locale: 'en', trim: true });
+    let slug = baseSlug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.constructor.findOne({ slug, _id: { $ne: this._id } });
+      if (!existing) break;
+      slug = `${baseSlug}-${Date.now().toString().slice(-6)}-${counter++}`;
+      if (counter > 10) throw new Error('Could not generate unique slug');
+    }
+    this.slug = slug;
+  }
+
+  // Published & expiry logic
+  if (this.isModified('status') && this.status === 'active' && !this.publishedAt) {
+    this.publishedAt = new Date();
+  }
+
+  if (this.isModified('publishedAt') && this.publishedAt && !this.expiresAt) {
+    const expiry = new Date(this.publishedAt);
+    expiry.setDate(expiry.getDate() + 30);
+    this.expiresAt = expiry;
+  }
+
+  if (this.isModified('status') && this.status !== 'active') {
+    this.expiresAt = null;
+  }
+
+  // Version increment
+  if (!this.isNew && this.isModified()) {
+    this.version += 1;
+  }
+});
+
+// FIXED post-save – no next()
+serviceSchema.post('save', async function (doc) {
   try {
-    if (doc.status === 'active') {
-      await mongoose.model('Category').incrementServicesCount(doc.category);
+    const Category = mongoose.model('Category');
+
+    if (doc.isNew && doc.status === 'active') {
+      await Category.incrementServicesCount(doc.category);
+    } else if (this.isModified('status')) {
+      const wasActive = this._originalStatus === 'active';
+      const isNowActive = doc.status === 'active';
+
+      if (wasActive && !isNowActive) {
+        await Category.decrementServicesCount(doc.category);
+      } else if (!wasActive && isNowActive) {
+        await Category.incrementServicesCount(doc.category);
+      }
     }
   } catch (error) {
     console.error('Error updating category service count:', error);
   }
 });
 
-// Update category service count on delete - FIXED
-serviceSchema.post('findOneAndDelete', async function(doc) {
-  try {
-    if (doc && doc.status === 'active') {
+// FIXED post-remove
+serviceSchema.post('findOneAndDelete', async function (doc) {
+  if (doc && doc.status === 'active') {
+    try {
       await mongoose.model('Category').decrementServicesCount(doc.category);
+    } catch (error) {
+      console.error('Error decrementing service count on delete:', error);
     }
-  } catch (error) {
-    console.error('Error decrementing category service count:', error);
   }
 });
 
-// Indexes
-serviceSchema.index({ slug: 1 });
-serviceSchema.index({ category: 1, status: 1 });
-serviceSchema.index({ seller: 1, status: 1 });
-serviceSchema.index({ price: 1 });
-serviceSchema.index({ rating: -1 });
-serviceSchema.index({ ordersCount: -1 });
-serviceSchema.index({ views: -1 });
-serviceSchema.index({ isFeatured: 1, status: 1 });
-serviceSchema.index({ isRecommended: 1, status: 1 });
-serviceSchema.index({ isPopular: 1, status: 1 });
-serviceSchema.index({ status: 1, publishedAt: -1 });
-serviceSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// Indexes (compound indexes only)
+serviceSchema.index({ category: 1, status: 1 }, { name: 'category_status_idx' });
+serviceSchema.index({ seller: 1, status: 1 }, { name: 'seller_status_idx' });
+serviceSchema.index({ status: 1, publishedAt: -1 }, { name: 'status_published_desc_idx' });
+serviceSchema.index({ isFeatured: 1, status: 1 }, { name: 'featured_status_idx' });
+serviceSchema.index({ isRecommended: 1, status: 1 }, { name: 'recommended_status_idx' });
+serviceSchema.index({ isPopular: 1, status: 1 }, { name: 'popular_status_idx' });
+serviceSchema.index({ rating: -1, ordersCount: -1 }, { name: 'rating_orders_desc_idx' });
 serviceSchema.index({ 
   title: 'text', 
   description: 'text', 
   tags: 'text', 
   searchKeywords: 'text',
   shortDescription: 'text'
+}, {
+  name: 'service_search_idx',
+  weights: {
+    title: 10,
+    searchKeywords: 5,
+    tags: 3,
+    description: 2,
+    shortDescription: 1
+  }
 });
 
+// Additional useful indexes
+serviceSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
+serviceSchema.index({ price: 1, status: 1 }, { name: 'price_status_idx' });
+serviceSchema.index({ deliveryTime: 1, status: 1 }, { name: 'delivery_status_idx' });
+serviceSchema.index({ gigType: 1, status: 1 }, { name: 'gigtype_status_idx' });
+serviceSchema.index({ sellerLevel: 1, status: 1 }, { name: 'sellerlevel_status_idx' });
+serviceSchema.index({ views: -1, status: 1 }, { name: 'views_status_desc_idx' });
+serviceSchema.index({ ordersCount: -1, status: 1 }, { name: 'orders_status_desc_idx' });
+
+// Query helpers
+serviceSchema.query.active = function() {
+  return this.where({ isActive: true, deletedAt: null });
+};
+
+serviceSchema.query.public = function() {
+  return this.where({ 
+    status: 'active', 
+    isActive: true,
+    deletedAt: null 
+  });
+};
+
+serviceSchema.query.bySeller = function(sellerId) {
+  return this.where({ seller: sellerId });
+};
+
+serviceSchema.query.byCategory = function(categoryId) {
+  return this.where({ category: categoryId });
+};
+
+serviceSchema.query.featured = function() {
+  return this.where({ 
+    isFeatured: true,
+    status: 'active',
+    isActive: true,
+    deletedAt: null 
+  });
+};
+
 // Static methods
-serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { ordersCount: 1 } },
-    { new: true }
-  );
-};
-
-serviceSchema.statics.incrementViews = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { views: 1 } },
-    { new: true }
-  );
-};
-
 serviceSchema.statics.incrementLikes = async function(serviceId) {
   return this.findByIdAndUpdate(
     serviceId,
@@ -393,56 +615,69 @@ serviceSchema.statics.decrementLikes = async function(serviceId) {
   );
 };
 
-serviceSchema.statics.updateRating = async function(serviceId) {
-  const reviews = await mongoose.model('Review').find({ service: serviceId });
-  
-  if (reviews.length === 0) {
-    return this.findByIdAndUpdate(
-      serviceId,
-      { rating: 0, reviewsCount: 0 },
-      { new: true }
-    );
-  }
-  
-  const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-  const averageRating = totalRating / reviews.length;
-  
+serviceSchema.statics.incrementViews = async function(serviceId) {
+  return this.findByIdAndUpdate(
+    serviceId,
+    { $inc: { views: 1 } },
+    { new: true }
+  );
+};
+
+serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
+  return this.findByIdAndUpdate(
+    serviceId,
+    { $inc: { ordersCount: 1 } },
+    { new: true }
+  );
+};
+
+serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
+  return this.findByIdAndUpdate(
+    serviceId,
+    { $inc: { ordersCount: -1 } },
+    { new: true }
+  );
+};
+
+serviceSchema.statics.updateRating = async function(serviceId, newRating) {
   return this.findByIdAndUpdate(
     serviceId,
     { 
-      rating: parseFloat(averageRating.toFixed(1)),
-      reviewsCount: reviews.length 
+      $inc: { reviewsCount: 1 },
+      $set: { 
+        rating: newRating,
+        lastUpdatedAt: new Date()
+      }
     },
     { new: true }
   );
 };
 
-// Query helpers
-serviceSchema.query.active = function() {
-  return this.where({ 
+serviceSchema.statics.findExpired = function() {
+  const now = new Date();
+  return this.find({
     status: 'active',
-    isActive: true 
+    expiresAt: { $lt: now },
+    isActive: true
   });
 };
 
-serviceSchema.query.bySeller = function(sellerId) {
-  return this.where({ seller: sellerId });
-};
-
-serviceSchema.query.byCategory = function(categoryId) {
-  return this.where({ category: categoryId });
-};
-
-serviceSchema.query.featured = function() {
-  return this.where({ isFeatured: true });
-};
-
-serviceSchema.query.recommended = function() {
-  return this.where({ isRecommended: true });
-};
-
-serviceSchema.query.popular = function() {
-  return this.where({ isPopular: true });
+serviceSchema.statics.closeExpired = async function() {
+  const expiredServices = await this.findExpired();
+  const results = [];
+  
+  for (const service of expiredServices) {
+    service.status = 'paused';
+    service.lastUpdatedBy = service.seller;
+    await service.save();
+    
+    // Decrement category count
+    await mongoose.model('Category').decrementServicesCount(service.category);
+    
+    results.push(service._id);
+  }
+  
+  return results;
 };
 
 const Service = mongoose.model('Service', serviceSchema);

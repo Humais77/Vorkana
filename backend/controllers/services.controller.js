@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const Service = require('../models/services.model.js');
 const Category = require('../models/category.model.js');
 const User = require('../models/user.model.js');
@@ -10,9 +12,11 @@ const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
-// Security: Input sanitization
-const sanitizeServiceInput = (data) => {
+// Security: Input sanitization with file support
+const sanitizeServiceInput = (data, files = {}) => {
   const sanitized = {};
+  
+  // Handle regular data fields
   for (const key in data) {
     if (typeof data[key] === 'string') {
       sanitized[key] = sanitizeHtml(data[key], {
@@ -55,7 +59,77 @@ const sanitizeServiceInput = (data) => {
       sanitized[key] = data[key];
     }
   }
+  
+  // Handle file uploads if present
+  if (files && Array.isArray(files)) {
+    const imageUrls = files.map(file => {
+      // Security: Validate file path and prevent path traversal
+      const safePath = file.path.replace(/\\/g, '/');
+      const relativePath = `/uploads/${path.basename(safePath)}`;
+      
+      // Security: Check if file exists and is within uploads directory
+      const absolutePath = path.join(__dirname, '../../public', relativePath);
+      if (!fs.existsSync(absolutePath)) {
+        throw new Error(`Uploaded file not found: ${relativePath}`);
+      }
+      
+      // Security: Validate file is within uploads directory
+      const normalizedAbsolute = path.normalize(absolutePath);
+      const uploadsDir = path.join(__dirname, '../../public/uploads');
+      if (!normalizedAbsolute.startsWith(uploadsDir)) {
+        throw new Error(`File path traversal detected: ${relativePath}`);
+      }
+      
+      return relativePath;
+    });
+    
+    if (imageUrls.length > 0) {
+      sanitized.images = imageUrls;
+      
+      // Set thumbnail as first image if not specified
+      if (!sanitized.thumbnail && imageUrls.length > 0) {
+        sanitized.thumbnail = imageUrls[0];
+      }
+    }
+  }
+  
   return sanitized;
+};
+
+// Security: Clean up orphaned files
+const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
+  try {
+    if (!files || !Array.isArray(files)) return;
+    
+    for (const file of files) {
+      // Check if this file is in the uploadedImagePaths
+      const isUsed = uploadedImagePaths.some(imgPath => 
+        file.path.includes(path.basename(imgPath))
+      );
+      
+      if (!isUsed && fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up uploaded files:', error);
+  }
+};
+
+// Security: Delete image files
+const deleteImageFiles = (imagePaths) => {
+  try {
+    if (!Array.isArray(imagePaths)) return;
+    
+    for (const imagePath of imagePaths) {
+      const fullPath = path.join(__dirname, '../../public', imagePath);
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting image files:', error);
+  }
 };
 
 // Security: Build secure query
@@ -223,9 +297,11 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:SERVICE] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
 
-// Create Service
+// Create Service with File Handling
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
+  let uploadedFiles = [];
+  
   try {
     // Security: Only sellers and admins can create services
     if (!['seller', 'admin'].includes(req.user.role)) {
@@ -238,7 +314,12 @@ const createService = async (req, res, next) => {
       });
     }
 
-    const sanitizedData = sanitizeServiceInput(req.body);
+    // Get uploaded files
+    if (req.files) {
+      uploadedFiles = req.files;
+    }
+    
+    const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
     
     // Verify category exists and is active
     if (sanitizedData.category) {
@@ -248,6 +329,7 @@ const createService = async (req, res, next) => {
       });
       
       if (!category) {
+        await cleanupUploadedFiles(uploadedFiles);
         return res.status(400).json({
           success: false,
           message: 'Category not found or inactive',
@@ -266,6 +348,7 @@ const createService = async (req, res, next) => {
       });
       
       if (!subcategory) {
+        await cleanupUploadedFiles(uploadedFiles);
         return res.status(400).json({
           success: false,
           message: 'Subcategory not found or does not belong to the selected category',
@@ -285,7 +368,8 @@ const createService = async (req, res, next) => {
     logAudit('CREATE', 'SERVICE', service._id, req.user._id, {
       title: service.title,
       category: service.category,
-      status: service.status
+      status: service.status,
+      imagesCount: sanitizedData.images?.length || 0
     });
 
     // Security: Remove sensitive data
@@ -302,6 +386,9 @@ const createService = async (req, res, next) => {
     });
 
   } catch (error) {
+    // Clean up uploaded files on error
+    await cleanupUploadedFiles(uploadedFiles);
+    
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -747,9 +834,11 @@ const getServiceById = async (req, res, next) => {
   }
 };
 
-// Update Service with Security
+// Update Service with Security and File Handling
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
+  let uploadedFiles = [];
+  
   try {
     const { id } = req.params;
     
@@ -788,8 +877,13 @@ const updateService = async (req, res, next) => {
       });
     }
 
+    // Get uploaded files
+    if (req.files) {
+      uploadedFiles = req.files;
+    }
+    
     // Security: Admins can update any field, sellers have restrictions
-    const sanitizedData = sanitizeServiceInput(req.body);
+    const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
     
     if (!isAdmin) {
       // Sellers cannot update certain fields
@@ -813,6 +907,7 @@ const updateService = async (req, res, next) => {
       });
       
       if (!category) {
+        await cleanupUploadedFiles(uploadedFiles);
         return res.status(400).json({
           success: false,
           message: 'Category not found or inactive',
@@ -831,6 +926,7 @@ const updateService = async (req, res, next) => {
       });
       
       if (!subcategory) {
+        await cleanupUploadedFiles(uploadedFiles);
         return res.status(400).json({
           success: false,
           message: 'Subcategory not found or does not belong to the category',
@@ -863,6 +959,10 @@ const updateService = async (req, res, next) => {
       }
     }
 
+    // Get existing images to compare
+    const existingImages = service.images || [];
+    const newImages = sanitizedData.images || [];
+    
     const updatedService = await Service.findOneAndUpdate(
       { 
         _id: id,
@@ -877,6 +977,8 @@ const updateService = async (req, res, next) => {
     ).populate('category', 'name slug').populate('seller', 'username fullName');
 
     if (!updatedService) {
+      await cleanupUploadedFiles(uploadedFiles, newImages);
+      
       if (currentVersion) {
         const currentDoc = await Service.findById(id);
         return res.status(409).json({
@@ -896,12 +998,23 @@ const updateService = async (req, res, next) => {
       });
     }
 
+    // Clean up old images that were replaced
+    try {
+      const removedImages = existingImages.filter(img => !newImages.includes(img));
+      if (removedImages.length > 0) {
+        deleteImageFiles(removedImages);
+      }
+    } catch (cleanupError) {
+      console.error('Error cleaning up old images:', cleanupError);
+    }
+
     // Security: Audit log
     logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
       oldVersion: currentVersion || service.version,
       newVersion: updatedService.version,
-      statusChanged: sanitizedData.status ? sanitizedData.status !== service.status : false
+      statusChanged: sanitizedData.status ? sanitizedData.status !== service.status : false,
+      imagesUpdated: newImages.length > 0
     });
 
     // Security: Remove sensitive data
@@ -923,6 +1036,9 @@ const updateService = async (req, res, next) => {
     });
 
   } catch (error) {
+    // Clean up uploaded files on error
+    await cleanupUploadedFiles(uploadedFiles);
+    
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -940,7 +1056,7 @@ const updateService = async (req, res, next) => {
   }
 };
 
-// Delete Service with Security
+// Delete Service with Security and File Cleanup
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -996,13 +1112,28 @@ const deleteService = async (req, res, next) => {
     
     // Security: Permanent delete (admin only)
     if (permanent === 'true' && isAdmin) {
+      // Clean up associated files
+      try {
+        if (service.images && Array.isArray(service.images)) {
+          deleteImageFiles(service.images);
+        }
+        
+        // Clean up thumbnail if it exists
+        if (service.thumbnail) {
+          deleteImageFiles([service.thumbnail]);
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up files during permanent delete:', cleanupError);
+      }
+      
       result = await Service.findByIdAndDelete(id);
       
       // Security: Audit log for permanent delete
       logAudit('PERMANENT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
         seller: service.seller,
-        force: force === 'true'
+        force: force === 'true',
+        imagesCleaned: service.images?.length || 0
       });
       
       res.json({
@@ -1849,6 +1980,399 @@ const getSimilarServices = async (req, res, next) => {
   }
 };
 
+// Upload Images Only
+const uploadImages = async (req, res, next) => {
+  const requestId = generateRequestId();
+  let uploadedFiles = [];
+  
+  try {
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const service = await Service.findById(id);
+    
+    if (!service) {
+      await cleanupUploadedFiles(uploadedFiles);
+      return res.status(404).json({
+        success: false,
+        message: 'Service not found',
+        code: 'SERVICE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check permissions
+    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      await cleanupUploadedFiles(uploadedFiles);
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own services',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Get uploaded files
+    if (req.files) {
+      uploadedFiles = req.files;
+    }
+
+    if (uploadedFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No images uploaded',
+        code: 'NO_IMAGES',
+        requestId
+      });
+    }
+
+    // Process uploaded files
+    const imageUrls = uploadedFiles.map(file => {
+      const safePath = file.path.replace(/\\/g, '/');
+      return `/uploads/${path.basename(safePath)}`;
+    });
+
+    // Add new images to service
+    const existingImages = service.images || [];
+    const updatedImages = [...existingImages, ...imageUrls];
+    
+    // Limit total images
+    if (updatedImages.length > 10) {
+      await cleanupUploadedFiles(uploadedFiles);
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot have more than 10 images',
+        code: 'MAX_IMAGES_EXCEEDED',
+        requestId
+      });
+    }
+
+    service.images = updatedImages;
+    service.lastUpdatedBy = req.user._id;
+    service.version += 1;
+    await service.save();
+
+    logAudit('UPLOAD_IMAGES', 'SERVICE', id, req.user._id, {
+      imagesAdded: imageUrls.length,
+      totalImages: updatedImages.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Images uploaded successfully',
+      images: imageUrls,
+      totalImages: updatedImages.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    await cleanupUploadedFiles(uploadedFiles);
+    logAudit('ERROR', 'SERVICE', 'UPLOAD_IMAGES', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Remove Image
+const removeImage = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    const { id, imageUrl } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    // Security: Validate image URL
+    const decodedImageUrl = decodeURIComponent(imageUrl);
+    if (!decodedImageUrl.startsWith('/uploads/')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid image URL',
+        code: 'INVALID_IMAGE_URL',
+        requestId
+      });
+    }
+
+    const service = await Service.findById(id);
+    
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service not found',
+        code: 'SERVICE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check permissions
+    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own services',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Check if image exists
+    const imageIndex = service.images.indexOf(decodedImageUrl);
+    if (imageIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Image not found in service',
+        code: 'IMAGE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Remove image from array
+    service.images.splice(imageIndex, 1);
+    
+    // If this was the thumbnail, set new thumbnail (first image or null)
+    if (service.thumbnail === decodedImageUrl) {
+      service.thumbnail = service.images.length > 0 ? service.images[0] : null;
+    }
+    
+    service.lastUpdatedBy = req.user._id;
+    service.version += 1;
+    await service.save();
+
+    // Delete the physical file
+    try {
+      deleteImageFiles([decodedImageUrl]);
+    } catch (cleanupError) {
+      console.error('Error deleting image file:', cleanupError);
+    }
+
+    logAudit('REMOVE_IMAGE', 'SERVICE', id, req.user._id, {
+      imageUrl: decodedImageUrl,
+      remainingImages: service.images.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Image removed successfully',
+      remainingImages: service.images.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'SERVICE', 'REMOVE_IMAGE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Set Thumbnail
+const setThumbnail = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    const { id, imageUrl } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    // Security: Validate image URL
+    const decodedImageUrl = decodeURIComponent(imageUrl);
+    if (!decodedImageUrl.startsWith('/uploads/')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid image URL',
+        code: 'INVALID_IMAGE_URL',
+        requestId
+      });
+    }
+
+    const service = await Service.findById(id);
+    
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service not found',
+        code: 'SERVICE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check permissions
+    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own services',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Check if image exists in service images
+    if (!service.images.includes(decodedImageUrl)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Image not found in service images',
+        code: 'IMAGE_NOT_IN_SERVICE',
+        requestId
+      });
+    }
+
+    // Set thumbnail
+    service.thumbnail = decodedImageUrl;
+    service.lastUpdatedBy = req.user._id;
+    service.version += 1;
+    await service.save();
+
+    logAudit('SET_THUMBNAIL', 'SERVICE', id, req.user._id, {
+      thumbnail: decodedImageUrl
+    });
+
+    res.json({
+      success: true,
+      message: 'Thumbnail set successfully',
+      thumbnail: decodedImageUrl,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'SERVICE', 'SET_THUMBNAIL', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Upload Thumbnail
+const uploadThumbnail = async (req, res, next) => {
+  const requestId = generateRequestId();
+  let uploadedFiles = [];
+  
+  try {
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const service = await Service.findById(id);
+    
+    if (!service) {
+      await cleanupUploadedFiles(uploadedFiles);
+      return res.status(404).json({
+        success: false,
+        message: 'Service not found',
+        code: 'SERVICE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check permissions
+    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      await cleanupUploadedFiles(uploadedFiles);
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own services',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Get uploaded files
+    if (req.files && req.files.length > 0) {
+      uploadedFiles = req.files;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No thumbnail uploaded',
+        code: 'NO_THUMBNAIL',
+        requestId
+      });
+    }
+
+    // Process uploaded thumbnail
+    const thumbnailFile = uploadedFiles[0];
+    const safePath = thumbnailFile.path.replace(/\\/g, '/');
+    const thumbnailUrl = `/uploads/${path.basename(safePath)}`;
+
+    // Delete old thumbnail if it exists
+    if (service.thumbnail && service.thumbnail !== thumbnailUrl) {
+      try {
+        deleteImageFiles([service.thumbnail]);
+      } catch (cleanupError) {
+        console.error('Error deleting old thumbnail:', cleanupError);
+      }
+    }
+
+    // Update service with new thumbnail
+    service.thumbnail = thumbnailUrl;
+    service.lastUpdatedBy = req.user._id;
+    service.version += 1;
+    await service.save();
+
+    logAudit('UPLOAD_THUMBNAIL', 'SERVICE', id, req.user._id, {
+      thumbnail: thumbnailUrl
+    });
+
+    res.json({
+      success: true,
+      message: 'Thumbnail uploaded successfully',
+      thumbnail: thumbnailUrl,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    await cleanupUploadedFiles(uploadedFiles);
+    logAudit('ERROR', 'SERVICE', 'UPLOAD_THUMBNAIL', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
 module.exports = {
   createService,
   getServices,
@@ -1862,4 +2386,8 @@ module.exports = {
   searchServices,
   toggleLike,
   getSimilarServices,
+  uploadImages,
+  removeImage,
+  setThumbnail,
+  uploadThumbnail
 };
