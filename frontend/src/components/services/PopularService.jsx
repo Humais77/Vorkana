@@ -138,14 +138,14 @@ const PopularServices = () => {
                 {/* Header Section */}
                 <div className="text-center mb-12">
                     
-                    <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
+                    <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 text-left">
                         Popular Services
                     </h2>
                     
-                    <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+                    {/* <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
                         Discover our most requested services from top-rated freelancers.
                         <span className="font-semibold text-gray-800"> Quality work, delivered on time.</span>
-                    </p>
+                    </p> */}
                 </div>
 
                 {/* Services Grid with Scroll Buttons */}
@@ -218,45 +218,7 @@ const PopularServices = () => {
                     </div>
                 </div>
 
-                {/* View All Services Button */}
-                <div className="text-center">
-                    <Link
-                        to="/services"
-                        className="
-                            group
-                            relative
-                            inline-flex
-                            items-center
-                            justify-center
-                            gap-3
-                            px-8
-                            py-3.5
-                            rounded-xl
-                            bg-gradient-to-r from-blue-600 to-purple-600
-                            hover:from-blue-700 hover:to-purple-700
-                            text-white
-                            font-semibold
-                            text-base
-                            shadow-lg
-                            hover:shadow-xl
-                            transition-all
-                            duration-300
-                            transform
-                            hover:-translate-y-0.5
-                            overflow-hidden
-                        "
-                    >
-                        {/* Animated Background */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-white/10 to-blue-500/0 animate-shimmer"></div>
-                        
-                        <span className="relative">Browse All Services</span>
-                        <ChevronRight className="relative w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
-                        
-                        {/* Glowing Effect */}
-                        <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500"></div>
-                    </Link>
-                </div>
-
+                
                 {/* Custom Scrollbar Style */}
                 <style jsx>{`
                     .scrollbar-hide::-webkit-scrollbar {
