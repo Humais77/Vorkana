@@ -172,6 +172,6 @@ router.post('/:id/proposals', protect, sellerOnly, proposalLimiter, validateProp
 router.put('/:id', protect, gigLimiter, upload.array('attachments', 5), handleMulterError, validateUpdate, updateGig);
 router.delete('/:id', protect, gigLimiter, deleteGig);
 router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
-router.get('/export/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
+router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
 
 module.exports = router;

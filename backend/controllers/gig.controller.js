@@ -1131,6 +1131,7 @@ const updateGig = async (req, res, next) => {
 };
 
 // Delete Gig with Security
+// Update the deleteGig function in gig.controller.js
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1195,10 +1196,14 @@ const deleteGig = async (req, res, next) => {
     const now = new Date();
     
     if (permanent === 'true' && isAdmin) {
-      result = await Gig.findByIdAndDelete(id);
+      // Bypass validation for permanent delete
+      result = await Gig.findByIdAndDelete(id, {
+        runValidators: false, // Disable validation
+        validateBeforeSave: false // Disable validation before save
+      });
       
       logAudit('PERMANENT_DELETE', 'GIG', id, req.user._id, {
-        title: gig.title,
+        title: gig.title || 'Unknown',
         createdBy: gig.createdBy,
         force: force === 'true'
       });
@@ -1213,15 +1218,21 @@ const deleteGig = async (req, res, next) => {
         responseTime: `${responseTime}ms`
       });
     } else {
-      // Soft delete
-      gig.isActive = false;
-      gig.deletedAt = now;
-      gig.deletedBy = req.user._id;
-      gig.lastUpdatedBy = req.user._id;
-      await gig.save();
+      // Soft delete - update without validation
+      await Gig.findByIdAndUpdate(id, {
+        $set: {
+          isActive: false,
+          deletedAt: now,
+          deletedBy: req.user._id,
+          lastUpdatedBy: req.user._id
+        }
+      }, {
+        runValidators: false, // Disable validation
+        new: true
+      });
       
       logAudit('SOFT_DELETE', 'GIG', id, req.user._id, {
-        title: gig.title,
+        title: gig.title || 'Unknown',
         createdBy: gig.createdBy
       });
       
@@ -1232,10 +1243,10 @@ const deleteGig = async (req, res, next) => {
         message: 'Gig deleted successfully',
         data: {
           _id: gig._id,
-          title: gig.title,
+          title: gig.title || 'Unknown',
           slug: gig.slug,
-          isActive: gig.isActive,
-          deletedAt: gig.deletedAt
+          isActive: false,
+          deletedAt: now
         },
         requestId,
         timestamp: now.toISOString(),
@@ -1244,10 +1255,23 @@ const deleteGig = async (req, res, next) => {
     }
 
   } catch (error) {
+    console.error('Delete gig error:', error);
     logAudit('ERROR', 'GIG', 'DELETE', req.user._id, { 
       id: req.params.id, 
       error: error.message 
     });
+    
+    // Handle validation errors specifically
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to delete gig due to data integrity issues',
+        code: 'DELETE_VALIDATION_ERROR',
+        details: error.message,
+        requestId
+      });
+    }
+    
     next(error);
   }
 };
@@ -1445,12 +1469,24 @@ const submitProposal = async (req, res, next) => {
 };
 
 // Get Gig Statistics
+// In gig.controller.js - replace the entire getGigStats function with this:
 const getGigStats = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    if (!['admin', 'seller'].includes(req.user?.role)) {
+    // Check authentication
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
+    // Check if user has permission to view stats
+    if (!['admin', 'seller', 'user'].includes(req.user?.role)) {
       return res.status(403).json({
         success: false,
         message: 'Access required for statistics',
@@ -1459,15 +1495,22 @@ const getGigStats = async (req, res, next) => {
       });
     }
 
-    const filter = req.user.role === 'seller' 
-      ? { 
-          $or: [
-            { createdBy: req.user._id, deletedAt: null },
-            { assignedTo: req.user._id, deletedAt: null }
-          ]
-        }
-      : { deletedAt: null };
+    // Build filter based on user role
+    let filter = { deletedAt: null };
+    
+    if (req.user.role === 'seller') {
+      filter = {
+        $or: [
+          { createdBy: req.user._id, deletedAt: null },
+          { assignedTo: req.user._id, deletedAt: null }
+        ]
+      };
+    } else if (req.user.role === 'user') {
+      filter = { createdBy: req.user._id, deletedAt: null };
+    }
+    // Admin can see all gigs (already set to { deletedAt: null })
 
+    // Execute aggregation
     const stats = await Gig.aggregate([
       { $match: filter },
       {
@@ -1566,7 +1609,7 @@ const getGigStats = async (req, res, next) => {
             }
           ],
           proposalStats: [
-            { $unwind: '$proposals' },
+            { $unwind: { path: '$proposals', preserveNullAndEmptyArrays: true } },
             {
               $group: {
                 _id: '$proposals.status',
@@ -1580,8 +1623,47 @@ const getGigStats = async (req, res, next) => {
       }
     ]);
 
-    const sanitizedStats = stats[0];
-    
+    // Handle empty results - ensure we always return valid structure
+    const sanitizedStats = stats[0] || {
+      overview: [{
+        totalGigs: 0,
+        openGigs: 0,
+        inProgressGigs: 0,
+        completedGigs: 0,
+        cancelledGigs: 0,
+        assignedGigs: 0,
+        closedGigs: 0,
+        totalBudget: 0,
+        avgBudget: 0,
+        totalProposals: 0,
+        avgProposalsPerGig: 0
+      }],
+      byCategory: [],
+      byStatus: [],
+      byUrgency: [],
+      topGigs: [],
+      growth: [],
+      budgetDistribution: [],
+      proposalStats: []
+    };
+
+    // Ensure overview array has at least one item
+    if (!sanitizedStats.overview || sanitizedStats.overview.length === 0) {
+      sanitizedStats.overview = [{
+        totalGigs: 0,
+        openGigs: 0,
+        inProgressGigs: 0,
+        completedGigs: 0,
+        cancelledGigs: 0,
+        assignedGigs: 0,
+        closedGigs: 0,
+        totalBudget: 0,
+        avgBudget: 0,
+        totalProposals: 0,
+        avgProposalsPerGig: 0
+      }];
+    }
+
     const responseTime = Date.now() - startTime;
     
     res.json({
@@ -1594,8 +1676,41 @@ const getGigStats = async (req, res, next) => {
     });
 
   } catch (error) {
-    logAudit('ERROR', 'GIG', 'STATS', req.user?._id, { error: error.message });
-    next(error);
+    console.error('Error in getGigStats:', error);
+    
+    // Even on error, return empty stats structure
+    const responseTime = Date.now() - startTime;
+    
+    res.status(500).json({
+      success: false,
+      data: {
+        overview: [{
+          totalGigs: 0,
+          openGigs: 0,
+          inProgressGigs: 0,
+          completedGigs: 0,
+          cancelledGigs: 0,
+          assignedGigs: 0,
+          closedGigs: 0,
+          totalBudget: 0,
+          avgBudget: 0,
+          totalProposals: 0,
+          avgProposalsPerGig: 0
+        }],
+        byCategory: [],
+        byStatus: [],
+        byUrgency: [],
+        topGigs: [],
+        growth: [],
+        budgetDistribution: [],
+        proposalStats: []
+      },
+      message: 'Error fetching statistics',
+      error: error.message,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
   }
 };
 
