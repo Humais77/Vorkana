@@ -18,20 +18,6 @@ const comparePassword = async (password, hashedPassword) => {
   return await bcrypt.compare(password, hashedPassword);
 };
 
-// Fix seller password (run this once to fix existing seller)
-const fixSellerPassword = async () => {
-  try {
-    const seller = await User.findOne({ email: 'seller@example.com' });
-    if (seller && seller.password === 'seller123') {
-      seller.password = await hashPassword('seller123');
-      await seller.save();
-      console.log('Seller password fixed');
-    }
-  } catch (error) {
-    console.error('Error fixing seller password:', error);
-  }
-};
-
 // Register new user
 const register = async (req, res) => {
   try {
@@ -80,7 +66,8 @@ const register = async (req, res) => {
       name,
       email,
       password,  // Raw password - will be hashed by pre-save hook
-      role
+      role,
+      isVerified: true, // Always active
     });
 
     console.log('User created:', user._id);
@@ -100,7 +87,6 @@ const register = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        isVerified: user.isVerified,
         picture: user.picture
       }
     });
@@ -134,7 +120,7 @@ const register = async (req, res) => {
   }
 };
 
-// Login user
+// Login user - REMOVED isActive check
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -157,13 +143,13 @@ const login = async (req, res) => {
       });
     }
 
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
-      });
-    }
+    // REMOVED: No isActive check - all accounts are active
+    // if (!user.isActive) {
+    //   return res.status(401).json({
+    //     success: false,
+    //     message: 'Account is deactivated. Please contact support.'
+    //   });
+    // }
 
     // Check password - handle both plain text (legacy) and hashed passwords
     let isPasswordValid = false;
@@ -209,7 +195,6 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        isVerified: user.isVerified,
         picture: user.picture,
         lastLogin: user.lastLogin
       }
@@ -225,7 +210,7 @@ const login = async (req, res) => {
   }
 };
 
-// Get user profile
+// Get user profile - REMOVED isActive from response
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('-password');
@@ -245,8 +230,6 @@ const getProfile = async (req, res) => {
         email: user.email,
         role: user.role,
         picture: user.picture,
-        isVerified: user.isVerified,
-        isActive: user.isActive,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         lastLogin: user.lastLogin
@@ -298,8 +281,7 @@ const updateProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        picture: user.picture,
-        isVerified: user.isVerified
+        picture: user.picture
       }
     });
   } catch (error) {
@@ -503,9 +485,7 @@ const createAdmin = async (req, res) => {
       name: name || 'Admin',
       email,
       password: hashedPassword,
-      role: 'admin',
-      isVerified: true,
-      isActive: true
+      role: 'admin'
     });
 
     const token = generateToken(admin._id);
@@ -530,24 +510,6 @@ const createAdmin = async (req, res) => {
   }
 };
 
-// Fix existing seller password (run this endpoint once)
-const fixExistingSeller = async (req, res) => {
-  try {
-    await fixSellerPassword();
-    
-    res.json({
-      success: true,
-      message: 'Seller password fixed. Try logging in again.'
-    });
-  } catch (error) {
-    console.error('Fix seller error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fixing seller password'
-    });
-  }
-};
-
 module.exports = {
   register,
   login,
@@ -556,6 +518,5 @@ module.exports = {
   changePassword,
   forgotPassword,
   resetPassword,
-  createAdmin,
-  fixExistingSeller
+  createAdmin
 };

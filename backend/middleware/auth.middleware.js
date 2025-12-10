@@ -42,13 +42,7 @@ const protect = async (req, res, next) => {
       });
     }
     
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'User account is deactivated',
-        code: 'USER_DEACTIVATED'
-      });
-    }
+    
     
     req.user = user;
     next();
@@ -136,7 +130,7 @@ const optionalAuth = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.id).select('-password');
       
-      if (user && user.isActive) {
+      if (user) {
         req.user = user;
       }
     }
