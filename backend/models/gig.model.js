@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const slugify = require('slugify');
-const { sanitizeHtml } = require('../utils/sanitize.js');
+const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js'); // Updated import
 
 const gigSchema = new mongoose.Schema({
   title: {
@@ -9,7 +9,7 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     minlength: [5, 'Title must be at least 5 characters'],
     maxlength: [200, 'Title cannot exceed 200 characters'],
-    set: sanitizeHtml,
+    index: true, // Added for faster searches
   },
   slug: {
     type: String,
@@ -23,7 +23,6 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     minlength: [3, 'Full name must be at least 3 characters'],
     maxlength: [60, 'Full name cannot exceed 60 characters'],
-    set: sanitizeHtml,
   },
   oauthEmail: {
     type: String,
@@ -32,31 +31,47 @@ const gigSchema = new mongoose.Schema({
     lowercase: true,
     maxlength: [100, 'Email cannot exceed 100 characters'],
     index: true,
-    set: sanitizeHtml,
   },
   country: {
     type: String,
     required: [true, 'Country is required'],
     trim: true,
     maxlength: [80, 'Country cannot exceed 80 characters'],
-    set: sanitizeHtml,
   },
   phone: {
     type: String,
     required: [true, 'Phone number is required'],
     trim: true,
     maxlength: [20, 'Phone cannot exceed 20 characters'],
-    set: sanitizeHtml,
   },
   projectCategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
     required: [true, 'Project category is required'],
     index: true,
+    validate: {
+      validator: async function(v) {
+        const Category = mongoose.model('Category');
+        const category = await Category.findById(v);
+        return category && category.isActive;
+      },
+      message: 'Invalid or inactive category'
+    }
   },
   subcategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
+    index: true,
+    validate: {
+      validator: async function(v) {
+        if (!v) return true; // Subcategory is optional
+        const Category = mongoose.model('Category');
+        const subcategory = await Category.findById(v);
+        return subcategory && subcategory.isActive && subcategory.parentCategory && 
+               subcategory.parentCategory.equals(this.projectCategory);
+      },
+      message: 'Invalid subcategory or does not belong to the selected category'
+    }
   },
   description: {
     type: String,
@@ -64,13 +79,13 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     minlength: [20, 'Description must be at least 20 characters'],
     maxlength: [5000, 'Description cannot exceed 5000 characters'],
-    set: sanitizeHtml,
   },
   budget: {
     type: Number,
     required: [true, 'Budget is required'],
     min: [5, 'Minimum budget is $5'],
     max: [100000, 'Maximum budget is $100,000'],
+    index: true,
   },
   currency: {
     type: String,
@@ -82,7 +97,6 @@ const gigSchema = new mongoose.Schema({
     required: [true, 'Timeline is required'],
     trim: true,
     maxlength: [100, 'Timeline cannot exceed 100 characters'],
-    set: sanitizeHtml,
   },
   timelineUnit: {
     type: String,
@@ -98,8 +112,8 @@ const gigSchema = new mongoose.Schema({
     type: String,
     trim: true,
     validate: {
-      validator: (v) => /^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v),
-      message: 'Invalid attachment filename',
+      validator: (v) => /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..'),
+      message: 'Invalid attachment filename or path traversal detected',
     },
   }],
   status: {
@@ -111,6 +125,7 @@ const gigSchema = new mongoose.Schema({
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    index: true,
   },
   proposals: [{
     seller: {
@@ -128,11 +143,13 @@ const gigSchema = new mongoose.Schema({
       type: Number,
       required: true,
       min: [5, 'Minimum proposal price is $5'],
+      max: [100000, 'Maximum proposal price is $100,000'],
     },
     deliveryTime: {
       type: Number,
       required: true,
       min: [1, 'Minimum delivery time is 1 day'],
+      max: [365, 'Maximum delivery time is 365 days'],
     },
     deliveryTimeUnit: {
       type: String,
@@ -151,6 +168,13 @@ const gigSchema = new mongoose.Schema({
   }],
   selectedProposal: {
     type: mongoose.Schema.Types.ObjectId,
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        return this.proposals.some(p => p._id.equals(v));
+      },
+      message: 'Selected proposal must be from the proposals array'
+    }
   },
   milestones: [{
     title: {
@@ -171,6 +195,12 @@ const gigSchema = new mongoose.Schema({
     },
     dueDate: {
       type: Date,
+      validate: {
+        validator: function(v) {
+          return !v || v > Date.now();
+        },
+        message: 'Due date must be in the future'
+      }
     },
     status: {
       type: String,
@@ -190,6 +220,7 @@ const gigSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'partial', 'completed', 'refunded', 'disputed'],
     default: 'pending',
+    index: true,
   },
   paymentAmount: {
     type: Number,
@@ -202,6 +233,12 @@ const gigSchema = new mongoose.Schema({
   },
   deadline: {
     type: Date,
+    validate: {
+      validator: function(v) {
+        return !v || v > Date.now();
+      },
+      message: 'Deadline must be in the future'
+    }
   },
   completionDate: {
     type: Date,
@@ -215,24 +252,22 @@ const gigSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
-    set: sanitizeHtml,
   },
   sellerReview: {
     type: String,
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
-    set: sanitizeHtml,
   },
   disputeReason: {
     type: String,
     trim: true,
     maxlength: [500, 'Dispute reason cannot exceed 500 characters'],
-    set: sanitizeHtml,
   },
   disputeStatus: {
     type: String,
     enum: ['none', 'open', 'resolved', 'escalated'],
     default: 'none',
+    index: true,
   },
   communicationHistory: [{
     user: {
@@ -245,13 +280,12 @@ const gigSchema = new mongoose.Schema({
       required: true,
       trim: true,
       maxlength: [2000, 'Message cannot exceed 2000 characters'],
-      set: sanitizeHtml,
     },
     attachment: {
       type: String,
       validate: {
-        validator: (v) => /^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v),
-        message: 'Invalid attachment filename',
+        validator: (v) => !v || (/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..')),
+        message: 'Invalid attachment filename or path traversal detected',
       },
     },
     sentAt: {
@@ -262,38 +296,48 @@ const gigSchema = new mongoose.Schema({
   files: [{
     type: String,
     validate: {
-      validator: (v) => /^\/uploads\/[a-f0-9]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v),
-      message: 'Invalid file filename',
+      validator: (v) => /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..'),
+      message: 'Invalid file filename or path traversal detected',
     },
   }],
   requirementsDocument: {
     type: String,
     validate: {
-      validator: (v) => /^\/uploads\/[a-f0-9]{20,64}\.(pdf|doc|docx)$/i.test(v),
-      message: 'Invalid requirements document filename',
+      validator: (v) => !v || (/^\/uploads\/[a-f0-9-]{20,64}\.(pdf|doc|docx)$/i.test(v) && !v.includes('..')),
+      message: 'Invalid requirements document filename or path traversal detected',
     },
   },
   visibility: {
     type: String,
     enum: ['public', 'private', 'invite_only'],
     default: 'public',
+    index: true,
   },
   urgency: {
     type: String,
     enum: ['low', 'medium', 'high', 'urgent'],
     default: 'medium',
+    index: true,
   },
   skillsRequired: [{
     type: String,
     trim: true,
     maxlength: [50, 'Skill cannot exceed 50 characters'],
-    set: sanitizeHtml,
+    index: true,
   }],
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
     index: true,
+    validate: {
+      validator: async function(v) {
+        const User = mongoose.model('User');
+        const user = await User.findById(v);
+        return user && user.isActive;
+      },
+      message: 'Invalid or inactive user'
+    }
   },
   isActive: {
     type: Boolean,
@@ -303,6 +347,15 @@ const gigSchema = new mongoose.Schema({
   lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    validate: {
+      validator: async function(v) {
+        if (!v) return true;
+        const User = mongoose.model('User');
+        const user = await User.findById(v);
+        return user && user.isActive;
+      },
+      message: 'Invalid or inactive user'
+    }
   },
   version: {
     type: Number,
@@ -311,16 +364,57 @@ const gigSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
     index: true,
+    validate: {
+      validator: function(v) {
+        return !v || v > Date.now();
+      },
+      message: 'Expiry date must be in the future'
+    }
+  },
+  deletedAt: {
+    type: Date,
+    default: null,
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
   },
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toJSON: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.__v;
+      delete ret.deletedAt;
+      delete ret.deletedBy;
+      delete ret.version;
+      return ret;
+    }
+  },
+  toObject: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.__v;
+      delete ret.deletedAt;
+      delete ret.deletedBy;
+      delete ret.version;
+      return ret;
+    }
+  }
 });
 
+// Virtuals
 gigSchema.virtual('category', {
   ref: 'Category',
   localField: 'projectCategory',
+  foreignField: '_id',
+  justOne: true,
+});
+
+gigSchema.virtual('subcategoryDetails', {
+  ref: 'Category',
+  localField: 'subcategory',
   foreignField: '_id',
   justOne: true,
 });
@@ -339,58 +433,131 @@ gigSchema.virtual('client', {
   justOne: true,
 });
 
-// gigSchema.pre('save', function(next) {
-//   if (this.isModified('title')) {
-//     this.slug = slugify(this.title, {
-//       lower: true,
-//       strict: true,
-//       locale: 'en',
-//       trim: true
-//     }) + '-' + Date.now().toString().slice(-6);
-//   }
-  
-//   if (this.isModified('status') && this.status === 'open' && !this.expiresAt) {
-//     const expiryDate = new Date();
-//     expiryDate.setDate(expiryDate.getDate() + 30);
-//     this.expiresAt = expiryDate;
-//   }
-  
-//   next();
-// });
+gigSchema.virtual('isDeleted').get(function() {
+  return !!this.deletedAt;
+});
 
-gigSchema.post('save', async function(doc) {
-  if (doc.status === 'open') {
-    await mongoose.model('Category').incrementGigsCount(doc.projectCategory);
+// Pre-save middleware
+gigSchema.pre('save', async function () {
+  // Store original status for post-save logic
+  if (this.isNew) this._originalStatus = null;
+  if (!this._originalStatus) this._originalStatus = this.status;
+
+  // Sanitize text fields
+  const fieldsToSanitize = ['title', 'fullName', 'oauthEmail', 'country', 'phone', 
+                           'description', 'timeline', 'clientReview', 'sellerReview', 'disputeReason'];
+  fieldsToSanitize.forEach(field => {
+    if (this[field] && typeof this[field] === 'string') {
+      this[field] = sanitizeText(this[field]);
+    }
+  });
+
+  if (Array.isArray(this.skillsRequired)) {
+    this.skillsRequired = this.skillsRequired.map(sanitizeText);
+  }
+  if (Array.isArray(this.deliverables)) {
+    this.deliverables = this.deliverables.map(sanitizeText);
+  }
+
+  // Generate unique slug
+  if (this.isModified('title') || this.isNew) {
+    let baseSlug = slugify(this.title, { lower: true, strict: true, locale: 'en', trim: true });
+    let slug = baseSlug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.constructor.findOne({ slug, _id: { $ne: this._id } });
+      if (!existing) break;
+      slug = `${baseSlug}-${Date.now().toString().slice(-6)}-${counter++}`;
+      if (counter > 10) throw new Error('Could not generate unique slug');
+    }
+    this.slug = slug;
+  }
+
+  // Expiry logic
+  if (this.isModified('status') && this.status === 'open' && !this.expiresAt) {
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + 30);
+    this.expiresAt = expiry;
+  }
+  if (this.isModified('status') && this.status !== 'open') {
+    this.expiresAt = null;
+  }
+
+  // Version increment
+  if (!this.isNew && this.isModified()) {
+    this.version += 1;
   }
 });
 
-gigSchema.post('findOneAndDelete', async function(doc) {
+// FIXED post-save – no next(), errors are logged only
+gigSchema.post('save', async function (doc) {
+  try {
+    const Category = mongoose.model('Category');
+
+    if (doc.isNew && doc.status === 'open') {
+      await Category.incrementGigsCount(doc.projectCategory);
+    } else if (this.isModified('status')) {
+      const wasOpen = this._originalStatus === 'open';
+      const isNowOpen = doc.status === 'open';
+
+      if (wasOpen && !isNowOpen) {
+        await Category.decrementGigsCount(doc.projectCategory);
+      } else if (!wasOpen && isNowOpen) {
+        await Category.incrementGigsCount(doc.projectCategory);
+      }
+    }
+  } catch (error) {
+    console.error('Error updating category gig count:', error);
+  }
+});
+
+// FIXED post-remove (query middleware) – no next needed
+gigSchema.post('findOneAndDelete', async function (doc) {
   if (doc && doc.status === 'open') {
-    await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
+    try {
+      await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
+    } catch (error) {
+      console.error('Error decrementing gig count on delete:', error);
+    }
   }
 });
 
-gigSchema.index({ slug: 1 });
-gigSchema.index({ projectCategory: 1, status: 1 });
-gigSchema.index({ createdBy: 1, status: 1 });
-gigSchema.index({ assignedTo: 1, status: 1 });
-gigSchema.index({ status: 1, createdAt: -1 });
-gigSchema.index({ budget: 1 });
-gigSchema.index({ urgency: 1, status: 1 });
-gigSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-gigSchema.index({
+// Indexes (only compound indexes, single indexes are at field level)
+gigSchema.index({ projectCategory: 1, status: 1 }, { name: 'category_status_idx' });
+gigSchema.index({ createdBy: 1, status: 1 }, { name: 'creator_status_idx' });
+gigSchema.index({ assignedTo: 1, status: 1 }, { name: 'assignee_status_idx' });
+gigSchema.index({ status: 1, createdAt: -1 }, { name: 'status_created_desc_idx' });
+gigSchema.index({ urgency: 1, status: 1 }, { name: 'urgency_status_idx' });
+gigSchema.index({ 
   title: 'text',
   description: 'text',
   skillsRequired: 'text',
   deliverables: 'text'
+}, {
+  name: 'gig_search_idx',
+  weights: {
+    title: 10,
+    description: 5,
+    skillsRequired: 3,
+    deliverables: 2
+  }
 });
 
+// Additional useful indexes
+gigSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
+gigSchema.index({ visibility: 1, status: 1 }, { name: 'visibility_status_idx' });
+gigSchema.index({ budget: 1, status: 1 }, { name: 'budget_status_idx' });
+gigSchema.index({ deadline: 1 }, { name: 'deadline_idx' });
+gigSchema.index({ 'proposals.seller': 1 }, { name: 'proposal_seller_idx' });
+
+// Query helpers
 gigSchema.query.active = function() {
-  return this.where({ isActive: true });
+  return this.where({ isActive: true, deletedAt: null });
 };
 
 gigSchema.query.open = function() {
-  return this.where({ status: 'open' });
+  return this.where({ status: 'open', isActive: true, deletedAt: null });
 };
 
 gigSchema.query.byClient = function(clientId) {
@@ -403,6 +570,38 @@ gigSchema.query.bySeller = function(sellerId) {
 
 gigSchema.query.byCategory = function(categoryId) {
   return this.where({ projectCategory: categoryId });
+};
+
+gigSchema.query.publicOnly = function() {
+  return this.where({ visibility: 'public', isActive: true, deletedAt: null });
+};
+
+// Static methods
+gigSchema.statics.findExpired = function() {
+  const now = new Date();
+  return this.find({
+    status: 'open',
+    expiresAt: { $lt: now },
+    isActive: true
+  });
+};
+
+gigSchema.statics.closeExpired = async function() {
+  const expiredGigs = await this.findExpired();
+  const results = [];
+  
+  for (const gig of expiredGigs) {
+    gig.status = 'closed';
+    gig.lastUpdatedBy = gig.createdBy;
+    await gig.save();
+    
+    // Decrement category count
+    await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+    
+    results.push(gig._id);
+  }
+  
+  return results;
 };
 
 const Gig = mongoose.model('Gig', gigSchema);

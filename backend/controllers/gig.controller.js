@@ -2,48 +2,18 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Gig = require('../models/gig.model.js');
 const Category = require('../models/category.model.js');
-const { sanitizeHtml } = require('../utils/sanitize.js');
+const User = require('../models/user.model.js');
+const { sanitizeHtml, sanitizeObject, sanitizeText } = require('../utils/sanitize.js');
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
 const sanitizeGigInput = (data) => {
-  const sanitized = {};
-  for (const key in data) {
-    if (typeof data[key] === 'string') {
-      sanitized[key] = sanitizeHtml(data[key], {
-        allowedTags: [],
-        allowedAttributes: {},
-        disallowedTagsMode: 'escape'
-      }).trim();
-    } else if (Array.isArray(data[key]) && data[key].length > 0 && typeof data[key][0] === 'string') {
-      sanitized[key] = data[key].map(item => sanitizeHtml(item, {
-        allowedTags: [],
-        allowedAttributes: {},
-        disallowedTagsMode: 'escape'
-      }).trim());
-    } else if (key === 'proposals' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(proposal => ({
-        ...proposal,
-        proposal: sanitizeHtml(proposal.proposal || '', { allowedTags: [], allowedAttributes: {} }).trim()
-      }));
-    } else if (key === 'milestones' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(milestone => ({
-        ...milestone,
-        title: sanitizeHtml(milestone.title || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        description: sanitizeHtml(milestone.description || '', { allowedTags: [], allowedAttributes: {} }).trim()
-      }));
-    } else if (key === 'communicationHistory' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(msg => ({
-        ...msg,
-        message: sanitizeHtml(msg.message || '', { allowedTags: [], allowedAttributes: {} }).trim()
-      }));
-    } else {
-      sanitized[key] = data[key];
-    }
-  }
-  return sanitized;
+  const skipKeys = ['projectCategory', 'subcategory', 'assignedTo', 'selectedProposal', 
+                   'createdBy', 'lastUpdatedBy', 'budget', 'price', 'amount', 
+                   'paymentAmount', 'depositPaid', 'rating', 'deliveryTime', 'version'];
+  return sanitizeObject(data, skipKeys);
 };
 
 const buildSecureGigQuery = (queryParams, userRole, userId) => {
@@ -80,34 +50,61 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   const filter = {};
 
+  // Security: Apply appropriate filters based on user role
   if (showAll && userRole === 'admin') {
+    // Admin can see everything
     if (status !== undefined) {
       filter.status = status;
     }
+    filter.deletedAt = null;
   } else if (userRole === 'seller' && userId) {
+    // Seller can see their assigned gigs, their own gigs, and public gigs
     filter.$or = [
-      { assignedTo: userId },
-      { createdBy: userId },
+      { assignedTo: userId, deletedAt: null },
+      { createdBy: userId, deletedAt: null },
       { 
         status: 'open',
         visibility: 'public',
-        isActive: true 
+        isActive: true,
+        deletedAt: null
+      }
+    ];
+  } else if (userRole === 'user' && userId) {
+    // Regular users can see their own gigs and public gigs
+    filter.$or = [
+      { createdBy: userId, deletedAt: null },
+      { 
+        status: 'open',
+        visibility: 'public',
+        isActive: true,
+        deletedAt: null
       }
     ];
   } else {
+    // Public/guest access
     filter.status = 'open';
     filter.visibility = 'public';
     filter.isActive = true;
+    filter.deletedAt = null;
   }
 
+  // Search with text index
   if (search) {
-    const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+    const sanitizedSearch = sanitizeText(search);
     filter.$text = { $search: sanitizedSearch };
   }
 
-  if (title) filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
-  if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
+  // Sanitize and apply string filters
+  if (title) {
+    const sanitizedName = sanitizeText(title);
+    filter.title = { $regex: `^${sanitizedName}`, $options: 'i' };
+  }
   
+  if (slug) {
+    filter.slug = sanitizeText(slug);
+  }
+  
+  // Validate and apply ObjectId filters
   if (projectCategory && mongoose.Types.ObjectId.isValid(projectCategory)) {
     filter.projectCategory = projectCategory;
   }
@@ -124,29 +121,41 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     filter.assignedTo = assignedTo;
   }
 
-  if (minBudget || maxBudget) {
+  // Numeric filters
+  if (minBudget !== undefined || maxBudget !== undefined) {
     filter.budget = {};
-    if (minBudget) filter.budget.$gte = parseFloat(minBudget);
-    if (maxBudget) filter.budget.$lte = parseFloat(maxBudget);
+    if (minBudget !== undefined) filter.budget.$gte = parseFloat(minBudget) || 0;
+    if (maxBudget !== undefined) filter.budget.$lte = parseFloat(maxBudget) || 100000;
   }
 
+  // Enum filters
   if (currency) filter.currency = currency;
   if (urgency) filter.urgency = urgency;
   if (visibility) filter.visibility = visibility;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (disputeStatus) filter.disputeStatus = disputeStatus;
   
-  if (hasAttachments === 'true') filter.attachments = { $exists: true, $ne: [] };
-  if (hasProposals === 'true') filter.proposals = { $exists: true, $ne: [] };
-  if (hasMilestones === 'true') filter.milestones = { $exists: true, $ne: [] };
+  // Boolean existence filters
+  if (hasAttachments === true || hasAttachments === 'true') {
+    filter.attachments = { $exists: true, $ne: [] };
+  }
   
+  if (hasProposals === true || hasProposals === 'true') {
+    filter.proposals = { $exists: true, $ne: [] };
+  }
+  
+  if (hasMilestones === true || hasMilestones === 'true') {
+    filter.milestones = { $exists: true, $ne: [] };
+  }
+  
+  // Array filters
   if (skillsRequired) {
-    const skillsArray = skillsRequired.split(',').map(skill => 
-      sanitizeHtml(skill.trim(), { allowedTags: [], allowedAttributes: {} })
-    );
+    const skillsArray = (Array.isArray(skillsRequired) ? skillsRequired : skillsRequired.split(','))
+      .map(skill => sanitizeText(skill.trim()));
     filter.skillsRequired = { $all: skillsArray };
   }
 
+  // Date filters
   const addDateFilter = (field, date, operator) => {
     if (date) {
       const parsedDate = new Date(date);
@@ -163,14 +172,17 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
   addDateFilter('deadline', deadlineAfter, '$gte');
   addDateFilter('deadline', deadlineBefore, '$lte');
 
+  // ID array filters
   if (ids) {
-    const idArray = ids.split(',').map(id => id.trim());
+    const idArray = Array.isArray(ids) ? ids : ids.split(',').map(id => id.trim());
     const validIds = idArray.filter(id => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length > 0) filter._id = { $in: validIds };
+    if (validIds.length > 0) {
+      filter._id = { $in: validIds };
+    }
   }
 
   if (excludeIds) {
-    const excludeArray = excludeIds.split(',').map(id => id.trim());
+    const excludeArray = Array.isArray(excludeIds) ? excludeIds : excludeIds.split(',').map(id => id.trim());
     const validExcludeIds = excludeArray.filter(id => mongoose.Types.ObjectId.isValid(id));
     if (validExcludeIds.length > 0) {
       filter._id = { ...filter._id, $nin: validExcludeIds };
@@ -186,6 +198,8 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
 
 const createGig = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     if (!req.user) {
       return res.status(401).json({ 
@@ -196,8 +210,19 @@ const createGig = async (req, res, next) => {
       });
     }
 
+    // Check if user can create gigs
+    if (req.user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not active. Cannot create gigs.',
+        code: 'ACCOUNT_INACTIVE',
+        requestId
+      });
+    }
+
     const sanitizedData = sanitizeGigInput(req.body);
     
+    // Validate category
     if (!sanitizedData.projectCategory) {
       return res.status(400).json({
         success: false,
@@ -230,6 +255,7 @@ const createGig = async (req, res, next) => {
       });
     }
 
+    // Validate subcategory if provided
     if (sanitizedData.subcategory) {
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory, 
@@ -250,14 +276,35 @@ const createGig = async (req, res, next) => {
     const gigData = {
       ...sanitizedData,
       title: sanitizedData.title || `Project ${Date.now()}`,
-      fullName: req.user.fullName || sanitizedData.fullName,
+      fullName: req.user.fullName || sanitizedData.fullName || req.user.username,
       oauthEmail: req.user.email || sanitizedData.oauthEmail,
       createdBy: req.user._id,
       version: 1
     };
 
+    // Process uploaded files
     if (req.files && req.files.length > 0) {
-      gigData.attachments = req.files.map(file => `/uploads/${file.filename}`);
+      const attachments = [];
+      const files = [];
+      
+      req.files.forEach(file => {
+        const filePath = `/uploads/${file.filename}`;
+        
+        // Distinguish between attachments and other files
+        if (file.fieldname === 'attachments') {
+          attachments.push(filePath);
+        } else {
+          files.push(filePath);
+        }
+      });
+      
+      if (attachments.length > 0) {
+        gigData.attachments = attachments;
+      }
+      
+      if (files.length > 0) {
+        gigData.files = files;
+      }
     }
 
     const gig = await Gig.create(gigData);
@@ -268,16 +315,29 @@ const createGig = async (req, res, next) => {
       budget: gig.budget
     });
 
+    // Populate category info for response
+    await gig.populate([
+      { path: 'projectCategory', select: 'name slug icon' },
+      { path: 'subcategory', select: 'name slug' }
+    ]);
+
     const safeGig = gig.toObject();
     delete safeGig.__v;
     delete safeGig.lastUpdatedBy;
+    delete safeGig.deletedAt;
+    delete safeGig.deletedBy;
+    delete safeGig.version;
+    delete safeGig.communicationHistory;
 
+    const responseTime = Date.now() - startTime;
+    
     res.status(201).json({
       success: true,
-      gig: safeGig,
+      data: safeGig,
       message: 'Gig created successfully',
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -306,8 +366,11 @@ const createGig = async (req, res, next) => {
   }
 };
 
+// Get Gigs with Advanced Security
 const getGigs = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const {
       search,
@@ -358,7 +421,7 @@ const getGigs = async (req, res, next) => {
     } = req.query;
 
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
-    const isSellerView = req.user?.role === 'seller';
+    const userRole = req.user?.role || 'guest';
 
     const filter = buildSecureGigQuery({
       search: search || q,
@@ -366,7 +429,7 @@ const getGigs = async (req, res, next) => {
       slug,
       projectCategory,
       subcategory,
-      createdBy: isSellerView ? req.user._id : createdBy,
+      createdBy,
       assignedTo,
       minBudget,
       maxBudget,
@@ -389,18 +452,18 @@ const getGigs = async (req, res, next) => {
       ids,
       excludeIds,
       showAll: showAllFlag
-    }, req.user?.role, req.user?._id);
+    }, userRole, req.user?._id);
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
-    const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
+    const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['budget', 'createdAt', 'updatedAt', 'deadline', 'urgency'];
+    const allowedSortFields = ['budget', 'createdAt', 'updatedAt', 'deadline', 'urgency', 'title'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    const defaultExclude = ['__v', 'lastUpdatedBy', 'communicationHistory'];
+    const defaultExclude = ['__v', 'lastUpdatedBy', 'deletedAt', 'deletedBy', 'version', 'communicationHistory'];
     let select = {};
     
     if (fields) {
@@ -409,6 +472,11 @@ const getGigs = async (req, res, next) => {
         if (!defaultExclude.includes(field)) {
           select[field] = 1;
         }
+      });
+    } else {
+      // Default exclude sensitive fields
+      defaultExclude.forEach(field => {
+        select[field] = 0;
       });
     }
     
@@ -431,11 +499,13 @@ const getGigs = async (req, res, next) => {
           match: { isActive: true }
         });
         
-        populateOptions.push({
-          path: 'subcategory',
-          select: 'name slug',
-          match: { isActive: true }
-        });
+        if (subcategory) {
+          populateOptions.push({
+            path: 'subcategory',
+            select: 'name slug',
+            match: { isActive: true }
+          });
+        }
       }
       
       if (includeClient) {
@@ -471,27 +541,65 @@ const getGigs = async (req, res, next) => {
     ]);
 
     const safeGigs = gigs.map(gig => {
-      const safeGig = { ...gig };
-      
-      if (safeGig.createdBy && safeGig.createdBy._id) {
-        delete safeGig.createdBy.email;
-        delete safeGig.createdBy.phone;
+      if (lean) {
+        // For lean documents
+        const safeGig = { ...gig };
+        
+        // Remove sensitive data
+        if (safeGig.createdBy && safeGig.createdBy._id) {
+          delete safeGig.createdBy.email;
+          delete safeGig.createdBy.phone;
+          delete safeGig.createdBy.password;
+        }
+        
+        if (safeGig.assignedTo && safeGig.assignedTo._id) {
+          delete safeGig.assignedTo.email;
+          delete safeGig.assignedTo.phone;
+          delete safeGig.assignedTo.password;
+        }
+        
+        delete safeGig.__v;
+        delete safeGig.lastUpdatedBy;
+        delete safeGig.deletedAt;
+        delete safeGig.deletedBy;
+        delete safeGig.version;
+        delete safeGig.communicationHistory;
+        
+        // Truncate description for list view
+        if (safeGig.description && safeGig.description.length > 200) {
+          safeGig.description = safeGig.description.substring(0, 200) + '...';
+        }
+        
+        return safeGig;
+      } else {
+        // For mongoose documents
+        const safeGig = gig.toObject();
+        
+        if (safeGig.createdBy) {
+          delete safeGig.createdBy.email;
+          delete safeGig.createdBy.phone;
+          delete safeGig.createdBy.password;
+        }
+        
+        if (safeGig.assignedTo) {
+          delete safeGig.assignedTo.email;
+          delete safeGig.assignedTo.phone;
+          delete safeGig.assignedTo.password;
+        }
+        
+        delete safeGig.__v;
+        delete safeGig.lastUpdatedBy;
+        delete safeGig.deletedAt;
+        delete safeGig.deletedBy;
+        delete safeGig.version;
+        delete safeGig.communicationHistory;
+        
+        if (safeGig.description && safeGig.description.length > 200) {
+          safeGig.description = safeGig.description.substring(0, 200) + '...';
+        }
+        
+        return safeGig;
       }
-      
-      if (safeGig.assignedTo && safeGig.assignedTo._id) {
-        delete safeGig.assignedTo.email;
-        delete safeGig.assignedTo.phone;
-      }
-      
-      delete safeGig.__v;
-      delete safeGig.lastUpdatedBy;
-      delete safeGig.communicationHistory;
-      
-      if (safeGig.description && safeGig.description.length > 200) {
-        safeGig.description = safeGig.description.substring(0, 200) + '...';
-      }
-      
-      return safeGig;
     });
 
     const totalPages = Math.ceil(total / limitNum);
@@ -504,9 +612,12 @@ const getGigs = async (req, res, next) => {
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
+      'X-Response-Time': `${Date.now() - startTime}ms`,
       'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
     });
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       data: safeGigs,
@@ -521,7 +632,8 @@ const getGigs = async (req, res, next) => {
         prevPage: hasPrev ? pageNum - 1 : null,
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -539,8 +651,113 @@ const getGigs = async (req, res, next) => {
   }
 };
 
+// Search Gigs
+const searchGigs = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required',
+        code: 'MISSING_QUERY',
+        requestId
+      });
+    }
+
+    const sanitizedQuery = sanitizeText(query);
+
+    if (sanitizedQuery.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters',
+        code: 'QUERY_TOO_SHORT',
+        requestId
+      });
+    }
+
+    const searchLimit = Math.min(parseInt(limit) || 20, 100);
+
+    let results;
+    
+    if (fuzzy === 'true') {
+      const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      
+      results = await Gig.find({
+        $or: [
+          { title: searchRegex },
+          { description: searchRegex },
+          { slug: searchRegex },
+          { skillsRequired: { $in: [searchRegex] } }
+        ],
+        isActive: true,
+        status: 'open',
+        visibility: 'public',
+        deletedAt: null
+      })
+      .select('title slug description budget currency projectCategory skillsRequired deliverables')
+      .limit(searchLimit)
+      .populate('projectCategory', 'name slug icon')
+      .lean();
+    } else {
+      results = await Gig.find({
+        $or: [
+          { title: new RegExp(`^${sanitizedQuery}`, 'i') },
+          { slug: sanitizedQuery.toLowerCase() }
+        ],
+        isActive: true,
+        status: 'open',
+        visibility: 'public',
+        deletedAt: null
+      })
+      .select('title slug description budget currency projectCategory skillsRequired deliverables urgency')
+      .limit(searchLimit)
+      .populate('projectCategory', 'name slug icon')
+      .lean();
+    }
+
+    const safeResults = results.map(result => ({
+      _id: result._id,
+      title: result.title,
+      slug: result.slug,
+      description: result.description ? result.description.substring(0, 100) + '...' : '',
+      budget: result.budget || 0,
+      currency: result.currency || 'USD',
+      category: result.projectCategory,
+      skillsRequired: result.skillsRequired || [],
+      deliverables: result.deliverables || [],
+      urgency: result.urgency || 'medium'
+    }));
+
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      query: sanitizedQuery,
+      data: safeResults,
+      count: safeResults.length,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'GIG', 'SEARCH', req.user?._id, { 
+      query: req.query.query,
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Get Gig by ID with Security
 const getGigById = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { id } = req.params;
     const { fields, populate = true } = req.query;
@@ -560,26 +777,44 @@ const getGigById = async (req, res, next) => {
     if (isObjectId) {
       query = { _id: id };
     } else {
-      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] });
+      const sanitizedSlug = sanitizeText(id);
       query = { slug: sanitizedSlug.toLowerCase() };
     }
 
-    if (req.user?.role !== 'admin' && req.user?.role !== 'seller') {
-      query.visibility = 'public';
-      query.isActive = true;
-    } else if (req.user?.role === 'seller') {
+    const userRole = req.user?.role || 'guest';
+    const userId = req.user?._id;
+
+    // Apply access controls
+    if (userRole === 'admin') {
+      query.deletedAt = null;
+    } else if (userRole === 'seller' && userId) {
       query.$or = [
-        { _id: query._id || query.slug, assignedTo: req.user._id },
-        { createdBy: req.user._id },
+        { _id: query._id, assignedTo: userId, deletedAt: null },
+        { _id: query._id, createdBy: userId, deletedAt: null },
         { 
           ...query, 
           visibility: 'public',
-          isActive: true 
+          isActive: true,
+          deletedAt: null 
         }
       ];
+    } else if (userRole === 'user' && userId) {
+      query.$or = [
+        { _id: query._id, createdBy: userId, deletedAt: null },
+        { 
+          ...query, 
+          visibility: 'public',
+          isActive: true,
+          deletedAt: null 
+        }
+      ];
+    } else {
+      query.visibility = 'public';
+      query.isActive = true;
+      query.deletedAt = null;
     }
 
-    const defaultExclude = ['__v', 'lastUpdatedBy'];
+    const defaultExclude = ['__v', 'lastUpdatedBy', 'deletedAt', 'deletedBy', 'version'];
     let select = {};
     
     if (fields) {
@@ -588,6 +823,10 @@ const getGigById = async (req, res, next) => {
         if (!defaultExclude.includes(field)) {
           select[field] = 1;
         }
+      });
+    } else {
+      defaultExclude.forEach(field => {
+        select[field] = 0;
       });
     }
 
@@ -630,8 +869,9 @@ const getGigById = async (req, res, next) => {
       });
     }
 
-    if (gig.visibility !== 'public' && req.user?.role !== 'admin') {
-      if (req.user?.role !== 'seller' && gig.createdBy._id.toString() !== req.user._id.toString()) {
+    // Additional access checks
+    if (gig.visibility !== 'public' && userRole !== 'admin') {
+      if (userRole !== 'seller' && gig.createdBy._id.toString() !== userId?.toString()) {
         return res.status(403).json({
           success: false,
           message: 'Access to this gig is restricted',
@@ -641,32 +881,50 @@ const getGigById = async (req, res, next) => {
       }
     }
 
+    // Log access to inactive gigs
     if (gig.status !== 'open') {
-      logAudit('VIEW_INACTIVE', 'GIG', gig._id, req.user?._id, {
+      logAudit('VIEW_INACTIVE', 'GIG', gig._id, userId, {
         status: gig.status
       });
     }
 
     const safeGig = gig.toObject();
     
+    // Remove sensitive data
     if (safeGig.createdBy) {
       delete safeGig.createdBy.email;
       delete safeGig.createdBy.phone;
+      delete safeGig.createdBy.password;
     }
     
     if (safeGig.assignedTo) {
       delete safeGig.assignedTo.email;
       delete safeGig.assignedTo.phone;
+      delete safeGig.assignedTo.password;
     }
     
     delete safeGig.__v;
     delete safeGig.lastUpdatedBy;
+    delete safeGig.deletedAt;
+    delete safeGig.deletedBy;
+    delete safeGig.version;
 
+    // Limit communication history for non-participants
+    if (safeGig.communicationHistory && 
+        userId !== safeGig.createdBy._id.toString() && 
+        userId !== safeGig.assignedTo?._id?.toString() && 
+        userRole !== 'admin') {
+      delete safeGig.communicationHistory;
+    }
+
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      gig: safeGig,
+      data: safeGig,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -675,8 +933,11 @@ const getGigById = async (req, res, next) => {
   }
 };
 
+// Update Gig with Security
 const updateGig = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { id } = req.params;
     
@@ -700,6 +961,16 @@ const updateGig = async (req, res, next) => {
       });
     }
 
+    // Check if gig is deleted
+    if (gig.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot update a deleted gig',
+        code: 'GIG_DELETED',
+        requestId
+      });
+    }
+
     const isOwner = gig.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     const isAssignedSeller = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
@@ -716,6 +987,7 @@ const updateGig = async (req, res, next) => {
 
     const sanitizedData = sanitizeGigInput(req.body);
     
+    // Restrict field updates based on role
     if (!isAdmin) {
       delete sanitizedData.status;
       delete sanitizedData.assignedTo;
@@ -727,8 +999,10 @@ const updateGig = async (req, res, next) => {
       delete sanitizedData.sellerReview;
       delete sanitizedData.disputeStatus;
       delete sanitizedData.disputeReason;
+      delete sanitizedData.selectedProposal;
     }
 
+    // Validate category if changed
     if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
       const category = await Category.findOne({ 
         _id: sanitizedData.projectCategory, 
@@ -745,6 +1019,7 @@ const updateGig = async (req, res, next) => {
       }
     }
 
+    // Validate subcategory if changed
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory, 
@@ -762,6 +1037,7 @@ const updateGig = async (req, res, next) => {
       }
     }
 
+    // Optimistic concurrency control
     const currentVersion = sanitizedData.version;
     delete sanitizedData.version;
 
@@ -771,13 +1047,29 @@ const updateGig = async (req, res, next) => {
       $inc: { version: 1 }
     };
 
+    // Process uploaded files
     if (req.files && req.files.length > 0) {
-      updateData.attachments = req.files.map(file => `/uploads/${file.filename}`);
+      const attachments = gig.attachments || [];
+      const files = gig.files || [];
+      
+      req.files.forEach(file => {
+        const filePath = `/uploads/${file.filename}`;
+        
+        if (file.fieldname === 'attachments') {
+          attachments.push(filePath);
+        } else {
+          files.push(filePath);
+        }
+      });
+      
+      updateData.attachments = attachments;
+      updateData.files = files;
     }
 
     const updatedGig = await Gig.findOneAndUpdate(
       { 
         _id: id,
+        deletedAt: null,
         ...(currentVersion ? { version: currentVersion } : {})
       },
       updateData,
@@ -817,18 +1109,25 @@ const updateGig = async (req, res, next) => {
     const safeGig = updatedGig.toObject();
     delete safeGig.__v;
     delete safeGig.lastUpdatedBy;
+    delete safeGig.deletedAt;
+    delete safeGig.deletedBy;
+    delete safeGig.version;
     
     if (safeGig.createdBy) {
       delete safeGig.createdBy.email;
       delete safeGig.createdBy.phone;
+      delete safeGig.createdBy.password;
     }
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      gig: safeGig,
+      data: safeGig,
       message: 'Gig updated successfully',
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -849,8 +1148,11 @@ const updateGig = async (req, res, next) => {
   }
 };
 
+// Delete Gig with Security
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
@@ -888,6 +1190,16 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
+    // Check if already deleted
+    if (gig.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gig is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
+    }
+
     if (force !== 'true' && gig.status === 'in_progress') {
       return res.status(400).json({
         success: false,
@@ -898,6 +1210,7 @@ const deleteGig = async (req, res, next) => {
     }
 
     let result;
+    const now = new Date();
     
     if (permanent === 'true' && isAdmin) {
       result = await Gig.findByIdAndDelete(id);
@@ -908,14 +1221,20 @@ const deleteGig = async (req, res, next) => {
         force: force === 'true'
       });
       
+      const responseTime = Date.now() - startTime;
+      
       res.json({
         success: true,
         message: 'Gig permanently deleted',
         requestId,
-        timestamp: new Date().toISOString()
+        timestamp: now.toISOString(),
+        responseTime: `${responseTime}ms`
       });
     } else {
+      // Soft delete
       gig.isActive = false;
+      gig.deletedAt = now;
+      gig.deletedBy = req.user._id;
       gig.lastUpdatedBy = req.user._id;
       await gig.save();
       
@@ -924,11 +1243,21 @@ const deleteGig = async (req, res, next) => {
         createdBy: gig.createdBy
       });
       
+      const responseTime = Date.now() - startTime;
+      
       res.json({
         success: true,
-        message: 'Gig deactivated',
+        message: 'Gig deleted successfully',
+        data: {
+          _id: gig._id,
+          title: gig.title,
+          slug: gig.slug,
+          isActive: gig.isActive,
+          deletedAt: gig.deletedAt
+        },
         requestId,
-        timestamp: new Date().toISOString()
+        timestamp: now.toISOString(),
+        responseTime: `${responseTime}ms`
       });
     }
 
@@ -941,8 +1270,101 @@ const deleteGig = async (req, res, next) => {
   }
 };
 
+// Restore Gig (Admin Only)
+const restoreGig = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Forbidden: Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const gig = await Gig.findById(id);
+    
+    if (!gig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gig not found',
+        code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    if (!gig.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gig is not deleted',
+        code: 'NOT_DELETED',
+        requestId
+      });
+    }
+
+    // Check if category is still active
+    if (gig.projectCategory) {
+      const category = await Category.findById(gig.projectCategory);
+      if (category && !category.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot restore gig with inactive category',
+          code: 'CATEGORY_INACTIVE',
+          requestId
+        });
+      }
+    }
+
+    gig.isActive = true;
+    gig.deletedAt = null;
+    gig.deletedBy = null;
+    gig.lastUpdatedBy = req.user._id;
+    await gig.save();
+
+    logAudit('RESTORE', 'GIG', id, req.user._id);
+
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      message: 'Gig restored successfully',
+      data: {
+        _id: gig._id,
+        title: gig.title,
+        slug: gig.slug,
+        isActive: gig.isActive,
+        status: gig.status
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'GIG', 'RESTORE', req.user._id, { error: error.message });
+    next(error);
+  }
+};
+
+// Submit Proposal
 const submitProposal = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { id } = req.params;
     const { proposal, price, deliveryTime, deliveryTimeUnit = 'days' } = req.body;
@@ -959,7 +1381,8 @@ const submitProposal = async (req, res, next) => {
     const gig = await Gig.findOne({ 
       _id: id, 
       status: 'open',
-      isActive: true 
+      isActive: true,
+      deletedAt: null
     });
 
     if (!gig) {
@@ -967,6 +1390,16 @@ const submitProposal = async (req, res, next) => {
         success: false,
         message: 'Gig not found or not open for proposals',
         code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check gig visibility
+    if (gig.visibility === 'private' && gig.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'This gig is private',
+        code: 'PRIVATE_GIG',
         requestId
       });
     }
@@ -980,6 +1413,7 @@ const submitProposal = async (req, res, next) => {
       });
     }
 
+    // Check if seller has already submitted a proposal
     const existingProposal = gig.proposals.find(p => p.seller.toString() === req.user._id.toString());
     if (existingProposal) {
       return res.status(400).json({
@@ -990,9 +1424,20 @@ const submitProposal = async (req, res, next) => {
       });
     }
 
+    // Check seller status
+    const seller = await User.findById(req.user._id);
+    if (!seller || seller.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not active. Cannot submit proposals.',
+        code: 'SELLER_INACTIVE',
+        requestId
+      });
+    }
+
     const newProposal = {
       seller: req.user._id,
-      proposal: sanitizeHtml(proposal, { allowedTags: [], allowedAttributes: {} }).trim(),
+      proposal: sanitizeText(proposal),
       price: parseFloat(price),
       deliveryTime: parseInt(deliveryTime),
       deliveryTimeUnit,
@@ -1009,12 +1454,15 @@ const submitProposal = async (req, res, next) => {
       deliveryTime: newProposal.deliveryTime
     });
 
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       message: 'Proposal submitted successfully',
-      proposal: newProposal,
+      data: newProposal,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -1026,8 +1474,11 @@ const submitProposal = async (req, res, next) => {
   }
 };
 
+// Get Gig Statistics
 const getGigStats = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     if (!['admin', 'seller'].includes(req.user?.role)) {
       return res.status(403).json({
@@ -1041,11 +1492,11 @@ const getGigStats = async (req, res, next) => {
     const filter = req.user.role === 'seller' 
       ? { 
           $or: [
-            { createdBy: req.user._id },
-            { assignedTo: req.user._id }
+            { createdBy: req.user._id, deletedAt: null },
+            { assignedTo: req.user._id, deletedAt: null }
           ]
         }
-      : {};
+      : { deletedAt: null };
 
     const stats = await Gig.aggregate([
       { $match: filter },
@@ -1061,21 +1512,25 @@ const getGigStats = async (req, res, next) => {
                 completedGigs: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
                 cancelledGigs: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
                 assignedGigs: { $sum: { $cond: [{ $eq: ['$status', 'assigned'] }, 1, 0] } },
+                closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
                 totalBudget: { $sum: '$budget' },
                 avgBudget: { $avg: '$budget' },
                 totalProposals: { $sum: { $size: '$proposals' } },
-                avgProposalsPerGig: { $avg: { $size: '$proposals' } }
+                avgProposalsPerGig: { $avg: { $size: '$proposals' } },
+                activeGigs: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } }
               }
             }
           ],
           byCategory: [
-            { $match: { status: 'open' } },
+            { $match: { status: 'open', isActive: true } },
             {
               $group: {
                 _id: '$projectCategory',
                 count: { $sum: 1 },
                 avgBudget: { $avg: '$budget' },
-                totalProposals: { $sum: { $size: '$proposals' } }
+                totalProposals: { $sum: { $size: '$proposals' } },
+                maxBudget: { $max: '$budget' },
+                minBudget: { $min: '$budget' }
               }
             },
             { $sort: { count: -1 } },
@@ -1102,7 +1557,7 @@ const getGigStats = async (req, res, next) => {
             { $sort: { count: -1 } }
           ],
           topGigs: [
-            { $match: { status: 'open' } },
+            { $match: { status: 'open', isActive: true } },
             { $sort: { budget: -1 } },
             { $limit: 10 },
             {
@@ -1110,7 +1565,8 @@ const getGigStats = async (req, res, next) => {
                 title: 1,
                 budget: 1,
                 proposalsCount: { $size: '$proposals' },
-                slug: 1
+                slug: 1,
+                projectCategory: 1
               }
             }
           ],
@@ -1139,6 +1595,17 @@ const getGigStats = async (req, res, next) => {
                 }
               }
             }
+          ],
+          proposalStats: [
+            { $unwind: '$proposals' },
+            {
+              $group: {
+                _id: '$proposals.status',
+                count: { $sum: 1 },
+                avgPrice: { $avg: '$proposals.price' },
+                avgDeliveryTime: { $avg: '$proposals.deliveryTime' }
+              }
+            }
           ]
         }
       }
@@ -1146,12 +1613,15 @@ const getGigStats = async (req, res, next) => {
 
     const sanitizedStats = stats[0];
     
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
-      stats: sanitizedStats,
+      data: sanitizedStats,
       requestId,
       timestamp: new Date().toISOString(),
-      generatedAt: new Date()
+      generatedAt: new Date(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
@@ -1160,12 +1630,115 @@ const getGigStats = async (req, res, next) => {
   }
 };
 
+// Export Gigs
+const exportGigs = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required for export',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const { format = 'json', ...queryParams } = req.query;
+    
+    const filter = buildSecureGigQuery(queryParams, 'admin', req.user._id);
+
+    const count = await Gig.countDocuments(filter);
+    if (count > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Export limit exceeded (max 10,000 records)',
+        code: 'EXPORT_LIMIT_EXCEEDED',
+        requestId
+      });
+    }
+
+    const gigs = await Gig.find(filter)
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -communicationHistory')
+      .populate('projectCategory', 'name slug')
+      .populate('createdBy', 'username fullName')
+      .lean();
+
+    if (format === 'csv') {
+      const headers = [
+        'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
+        'Category', 'Status', 'Urgency', 'Visibility', 'Created By',
+        'Assigned To', 'Created At', 'Updated At', 'Deadline',
+        'Proposals Count', 'Skills Required', 'Deliverables'
+      ];
+
+      const csvRows = gigs.map(gig => [
+        gig._id,
+        `"${(gig.title || '').replace(/"/g, '""')}"`,
+        gig.slug || '',
+        `"${(gig.description || '').replace(/"/g, '""')}"`,
+        gig.budget || 0,
+        gig.currency || 'USD',
+        gig.projectCategory?.name || '',
+        gig.status || 'open',
+        gig.urgency || 'medium',
+        gig.visibility || 'public',
+        gig.createdBy?.username || '',
+        gig.assignedTo?.username || '',
+        new Date(gig.createdAt).toISOString(),
+        new Date(gig.updatedAt).toISOString(),
+        gig.deadline ? new Date(gig.deadline).toISOString() : '',
+        gig.proposals?.length || 0,
+        `"${(gig.skillsRequired || []).join(', ').replace(/"/g, '""')}"`,
+        `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n');
+
+      res.header('Content-Type', 'text/csv');
+      res.header('Content-Disposition', `attachment; filename="gigs_${Date.now()}.csv"`);
+      res.header('X-Request-ID', requestId);
+      res.header('X-Export-Records', count);
+      res.header('X-Export-Timestamp', new Date().toISOString());
+      res.header('X-Response-Time', `${Date.now() - startTime}ms`);
+      
+      return res.send(csvContent);
+    }
+
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      format: 'json',
+      count,
+      data: gigs,
+      exportedAt: new Date().toISOString(),
+      requestId,
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'GIG', 'EXPORT', req.user?._id, { 
+      format: req.query.format,
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
 module.exports = {
   createGig,
   getGigs,
+  searchGigs,
   getGigById,
   updateGig,
   deleteGig,
+  restoreGig,
   submitProposal,
   getGigStats,
+  exportGigs,
 };
