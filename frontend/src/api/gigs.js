@@ -48,12 +48,11 @@
 // };
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 30000,
-  // Don't set Content-Type header here - it will be set automatically for FormData
 });
 
 // Request interceptor for auth token
@@ -66,30 +65,21 @@ axiosInstance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Add request ID for tracking
     config.headers['X-Request-ID'] = Math.random().toString(36).substring(7);
     
-    // Don't set Content-Type for FormData - let browser set it automatically
     if (config.data instanceof FormData) {
-      // Browser will set the correct Content-Type with boundary
       delete config.headers['Content-Type'];
     }
     
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Response interceptor for error handling
 axiosInstance.interceptors.response.use(
-  (response) => {
-    // Extract data from response
-    return response.data;
-  },
+  (response) => response.data,
   (error) => {
-    // Handle network errors
     if (!error.response) {
       error.response = {
         data: {
@@ -101,12 +91,10 @@ axiosInstance.interceptors.response.use(
       };
     }
     
-    // Handle specific error codes
     const errorMessage = error.response?.data?.message || 
                         error.message || 
                         'An unexpected error occurred';
     
-    // Create a formatted error object
     const formattedError = {
       ...error,
       message: errorMessage,
@@ -120,7 +108,7 @@ axiosInstance.interceptors.response.use(
 );
 
 export const gigsAPI = {
-  // Get all gigs with query parameters
+  // Get all gigs with query parameters - UPDATED
   getAll: async (params = {}) => {
     try {
       const response = await axiosInstance.get('/api/gigs', {
@@ -130,37 +118,52 @@ export const gigsAPI = {
           sort: params.sort || 'createdAt',
           order: params.order || 'desc',
           search: params.search,
-          category: params.category,
+          projectCategory: params.projectCategory,
+          subcategory: params.subcategory,
           minBudget: params.minBudget,
           maxBudget: params.maxBudget,
           status: params.status,
           urgency: params.urgency,
+          visibility: params.visibility,
+          paymentStatus: params.paymentStatus,
+          disputeStatus: params.disputeStatus,
           createdBy: params.createdBy,
           assignedTo: params.assignedTo,
+          hasAttachments: params.hasAttachments,
+          hasProposals: params.hasProposals,
+          hasMilestones: params.hasMilestones,
+          skillsRequired: params.skillsRequired,
+          createdAfter: params.createdAfter,
+          createdBefore: params.createdBefore,
+          deadlineAfter: params.deadlineAfter,
+          deadlineBefore: params.deadlineBefore,
+          ids: params.ids,
+          excludeIds: params.excludeIds,
           fields: params.fields,
-          populate: params.populate || true,
-          includeClient: params.includeClient || true,
-          includeCategory: params.includeCategory || true,
+          populate: params.populate !== false,
           showAll: params.showAll || false,
-          lean: params.lean || true,
-          ...params
+          includeCategory: params.includeCategory !== false,
+          includeClient: params.includeClient !== false,
+          includeSeller: params.includeSeller !== false,
+          lean: params.lean !== false,
+          cache: params.cache || false,
         },
         paramsSerializer: {
-          indexes: null // Don't serialize arrays with indexes
+          indexes: null
         }
       });
       
-      // Normalize response structure
       return {
         success: true,
-        data: response.data?.data || response.data || [],
-        pagination: response.data?.pagination || {
+        data: response.data || [],
+        pagination: response.pagination || {
           page: 1,
           limit: 10,
           total: 0,
           totalPages: 0
         },
-        metadata: response.data?.metadata,
+        requestId: response.requestId,
+        responseTime: response.responseTime,
         ...response
       };
     } catch (error) {
@@ -169,62 +172,33 @@ export const gigsAPI = {
     }
   },
   
-  // Get popular gigs
-  getPopular: async () => {
-    try {
-      const response = await axiosInstance.get('/api/gigs', {
-        params: {
-          page: 1,
-          limit: 8,
-          sort: 'budget',
-          order: 'desc',
-          status: 'open',
-          urgency: 'high',
-          fields: 'title,slug,budget,description,createdBy,category,urgency,createdAt',
-          populate: true,
-          includeClient: true,
-          includeCategory: true
-        }
-      });
-      
-      return {
-        success: true,
-        data: response.data?.data || response.data || [],
-        ...response
-      };
-    } catch (error) {
-      console.error('Error fetching popular gigs:', error);
-      throw error;
-    }
-  },
-  
-  // Get gig by ID or slug
+  // Get gig by ID or slug - UPDATED
   getById: async (id) => {
     try {
       if (!id || id === 'undefined') {
-        throw new Error('Invalid gig ID');
+        throw new Error('Invalid gig identifier');
       }
       
       const response = await axiosInstance.get(`/api/gigs/${id}`, {
         params: {
           populate: true,
-          incrementView: true
+          includeCategory: true,
+          includeClient: true,
+          includeSeller: true
         }
       });
       
-      // Normalize response
-      const gigData = response.gig || response.data || response;
-      
       return {
         success: true,
-        gig: gigData,
+        data: response.data,
+        gig: response.data,
+        requestId: response.requestId,
         ...response
       };
     } catch (error) {
       console.error(`Error fetching gig ${id}:`, error);
       
-      // Return a proper error structure
-      if (error.response?.status === 404) {
+      if (error.status === 404) {
         throw {
           message: 'Gig not found',
           code: 'GIG_NOT_FOUND',
@@ -235,140 +209,109 @@ export const gigsAPI = {
     }
   },
   
-  // Create a new gig
-  // Create a new gig
-create: async (gigData) => {
-  try {
-    // Check if gigData is FormData
-    const isFormData = gigData instanceof FormData;
-    
-    let formData;
-    
-    if (isFormData) {
-      // If it's already FormData, use it directly
-      formData = gigData;
-    } else {
-      // Otherwise create FormData and append data
-      formData = new FormData();
+  // Create a new gig - UPDATED for form data structure
+  create: async (gigData) => {
+    try {
+      const isFormData = gigData instanceof FormData;
+      let formData;
       
-      // Append all form data
-      Object.keys(gigData).forEach(key => {
-        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-          if (key === 'attachments' && Array.isArray(gigData[key])) {
-            // Handle file attachments
-            gigData[key].forEach((file, index) => {
-              if (file instanceof File) {
-                formData.append('attachments', file);
-              } else if (typeof file === 'string') {
-                formData.append(`attachments[${index}]`, file);
-              }
-            });
-          } else if (key === 'budget' || key === 'price') {
-            // Ensure numbers are properly formatted
-            formData.append(key, parseFloat(gigData[key]) || gigData[key]);
-          } else if (key === 'skillsRequired' && Array.isArray(gigData[key])) {
-            // Handle skills array properly
-            gigData[key].forEach((skill, index) => {
-              formData.append(`skillsRequired[${index}]`, skill);
-            });
-          } else if (typeof gigData[key] === 'object') {
-            // Stringify objects
-            formData.append(key, JSON.stringify(gigData[key]));
-          } else {
-            formData.append(key, gigData[key]);
+      if (isFormData) {
+        formData = gigData;
+      } else {
+        formData = new FormData();
+        
+        Object.keys(gigData).forEach(key => {
+          if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+            if (key === 'attachments' && Array.isArray(gigData[key])) {
+              gigData[key].forEach((file) => {
+                if (file instanceof File) {
+                  formData.append('attachments', file);
+                }
+              });
+            } else if (key === 'skillsRequired' && Array.isArray(gigData[key])) {
+              gigData[key].forEach((skill, index) => {
+                formData.append(`skillsRequired[${index}]`, skill);
+              });
+            } else if (key === 'deliverables' && Array.isArray(gigData[key])) {
+              gigData[key].forEach((deliverable, index) => {
+                formData.append(`deliverables[${index}]`, deliverable);
+              });
+            } else if (typeof gigData[key] === 'object') {
+              formData.append(key, JSON.stringify(gigData[key]));
+            } else {
+              formData.append(key, gigData[key]);
+            }
+          }
+        });
+      }
+      
+      const response = await axiosInstance.post('/api/gigs', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 60000,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.lengthComputable && progressEvent.total > 0) {
+            const percentComplete = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            console.log(`Upload progress: ${percentComplete}%`);
           }
         }
       });
-    }
-    
-    // Debug logging in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('=== SENDING FORM DATA ===');
-      if (isFormData) {
-        // Log FormData entries
-        for (let [key, value] of formData.entries()) {
-          console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-        }
-      } else {
-        console.log('Creating gig with data:', gigData);
-      }
-    }
-    
-    const response = await axiosInstance.post('/api/gigs', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      timeout: 60000, // 60 seconds for file uploads
-      onUploadProgress: (progressEvent) => {
-        if (progressEvent.lengthComputable) {
-          const percentComplete = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          console.log(`Upload progress: ${percentComplete}%`);
-        }
-      }
-    });
-    
-    // Normalize response
-    const createdGig = response.gig || response.data || response;
-    
-    return {
-      success: true,
-      gig: createdGig,
-      message: response.message || 'Gig created successfully',
-      ...response
-    };
-  } catch (error) {
-    console.error('Error creating gig:', error);
-    console.error('Error details:', error.response?.data);
-    
-    // Handle validation errors
-    if (error.response?.status === 400) {
-      const errorData = error.response.data;
-      throw {
-        message: errorData.message || 'Validation failed',
-        errors: errorData.errors,
-        code: errorData.code || 'VALIDATION_ERROR',
-        status: 400
+      
+      return {
+        success: true,
+        data: response.data,
+        gig: response.data,
+        message: response.message || 'Gig created successfully',
+        requestId: response.requestId,
+        ...response
       };
+    } catch (error) {
+      console.error('Error creating gig:', error);
+      
+      if (error.status === 400) {
+        throw {
+          message: error.data?.message || 'Validation failed',
+          errors: error.data?.errors,
+          code: error.data?.code || 'VALIDATION_ERROR',
+          status: 400
+        };
+      }
+      
+      if (error.status === 401 || error.status === 403) {
+        throw {
+          message: 'Authentication required. Please sign in.',
+          code: 'AUTH_REQUIRED',
+          status: error.status
+        };
+      }
+      
+      throw error;
     }
-    
-    // Handle authentication errors
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      throw {
-        message: 'Authentication required. Please sign in.',
-        code: 'AUTH_REQUIRED',
-        status: error.response.status
-      };
-    }
-    
-    throw error;
-  }
-},
+  },
   
-  // Update an existing gig
+  // Update an existing gig - UPDATED
   update: async (id, gigData) => {
     try {
       let dataToSend = gigData;
-      
-      // Check if we have files to upload
       const hasFiles = gigData.attachments && 
-                       Array.isArray(gigData.attachments) && 
-                       gigData.attachments.some(f => f instanceof File);
+                      Array.isArray(gigData.attachments) && 
+                      gigData.attachments.some(f => f instanceof File);
       
       if (hasFiles) {
-        // Use FormData for file uploads
         const formData = new FormData();
         
         Object.keys(gigData).forEach(key => {
           if (gigData[key] !== null && gigData[key] !== undefined) {
             if (key === 'attachments') {
-              gigData[key].forEach((file, index) => {
+              gigData[key].forEach((file) => {
                 if (file instanceof File) {
                   formData.append('attachments', file);
                 }
               });
-            } else if (typeof gigData[key] === 'object') {
+            } else if (typeof gigData[key] === 'object' && !Array.isArray(gigData[key])) {
               formData.append(key, JSON.stringify(gigData[key]));
             } else {
               formData.append(key, gigData[key]);
@@ -388,23 +331,39 @@ create: async (gigData) => {
       
       return {
         success: true,
-        gig: response.gig || response.data || response,
+        data: response.data,
+        gig: response.data,
         message: response.message || 'Gig updated successfully',
         ...response
       };
     } catch (error) {
       console.error(`Error updating gig ${id}:`, error);
+      
+      if (error.status === 409) {
+        throw {
+          message: 'Gig was modified by another user. Please refresh and try again.',
+          code: 'VERSION_CONFLICT',
+          status: 409
+        };
+      }
+      
       throw error;
     }
   },
   
-  // Delete a gig
-  delete: async (id) => {
+  // Delete a gig - UPDATED with parameters
+  delete: async (id, options = {}) => {
     try {
-      const response = await axiosInstance.delete(`/api/gigs/${id}`);
+      const response = await axiosInstance.delete(`/api/gigs/${id}`, {
+        params: {
+          permanent: options.permanent || false,
+          force: options.force || false
+        }
+      });
       
       return {
         success: true,
+        data: response.data,
         message: response.message || 'Gig deleted successfully',
         ...response
       };
@@ -421,7 +380,7 @@ create: async (gigData) => {
       
       return {
         success: true,
-        proposal: response.proposal || response.data,
+        data: response.data,
         message: response.message || 'Proposal submitted successfully',
         ...response
       };
@@ -438,7 +397,8 @@ create: async (gigData) => {
       
       return {
         success: true,
-        stats: response.stats || response.data,
+        data: response.data,
+        stats: response.data,
         ...response
       };
     } catch (error) {
@@ -447,22 +407,86 @@ create: async (gigData) => {
     }
   },
   
-  // Search gigs
-  search: async (searchParams) => {
+  // Search gigs - UPDATED
+  search: async (searchParams = {}) => {
     try {
       const response = await axiosInstance.get('/api/gigs/search', {
-        params: searchParams
+        params: {
+          query: searchParams.query,
+          fuzzy: searchParams.fuzzy || 'false',
+          threshold: searchParams.threshold || 0.3,
+          limit: searchParams.limit || 20,
+          ...searchParams
+        }
       });
       
       return {
         success: true,
-        data: response.data?.data || response.data || [],
-        pagination: response.data?.pagination,
+        data: response.data || [],
         query: searchParams.query,
+        count: response.count || response.data?.length || 0,
         ...response
       };
     } catch (error) {
       console.error('Error searching gigs:', error);
+      throw error;
+    }
+  },
+  
+  // Restore gig (admin only) - NEW
+  restore: async (id) => {
+    try {
+      const response = await axiosInstance.patch(`/api/gigs/${id}/restore`);
+      
+      return {
+        success: true,
+        data: response.data,
+        message: response.message || 'Gig restored successfully',
+        ...response
+      };
+    } catch (error) {
+      console.error(`Error restoring gig ${id}:`, error);
+      throw error;
+    }
+  },
+  
+  // Export gigs - UPDATED
+  exportGigs: async (params = {}) => {
+    try {
+      const response = await axiosInstance.get('/api/gigs/export', {
+        params: {
+          format: params.format || 'json',
+          ...params
+        },
+        responseType: params.format === 'csv' ? 'blob' : 'json'
+      });
+      
+      if (params.format === 'csv') {
+        const url = window.URL.createObjectURL(new Blob([response]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `gigs_export_${Date.now()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        
+        return { 
+          success: true, 
+          message: 'Export started',
+          filename: `gigs_export_${Date.now()}.csv`
+        };
+      }
+      
+      return {
+        success: true,
+        data: response.data,
+        format: 'json',
+        count: response.count,
+        ...response
+      };
+    } catch (error) {
+      console.error('Error exporting gigs:', error);
       throw error;
     }
   },
@@ -474,44 +498,11 @@ create: async (gigData) => {
       
       return {
         success: true,
-        data: response.data?.data || response.data || [],
+        data: response.data || [],
         ...response
       };
     } catch (error) {
       console.error(`Error fetching similar gigs for ${gigId}:`, error);
-      throw error;
-    }
-  },
-  
-  // Export gigs
-  exportGigs: async (params = {}) => {
-    try {
-      const response = await axiosInstance.get('/api/gigs/export', {
-        params,
-        responseType: params.format === 'csv' ? 'blob' : 'json'
-      });
-      
-      if (params.format === 'csv') {
-        // Handle CSV download
-        const url = window.URL.createObjectURL(new Blob([response]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `gigs_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-        
-        return { success: true, message: 'Export started' };
-      }
-      
-      return {
-        success: true,
-        data: response.data || response,
-        ...response
-      };
-    } catch (error) {
-      console.error('Error exporting gigs:', error);
       throw error;
     }
   }

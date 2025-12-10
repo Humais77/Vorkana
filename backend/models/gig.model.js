@@ -53,9 +53,9 @@ const gigSchema = new mongoose.Schema({
       validator: async function(v) {
         const Category = mongoose.model('Category');
         const category = await Category.findById(v);
-        return category && category.isActive;
+        return category; // Removed: && category.isActive
       },
-      message: 'Invalid or inactive category'
+      message: 'Invalid category'
     }
   },
   subcategory: {
@@ -67,8 +67,9 @@ const gigSchema = new mongoose.Schema({
         if (!v) return true; // Subcategory is optional
         const Category = mongoose.model('Category');
         const subcategory = await Category.findById(v);
-        return subcategory && subcategory.isActive && subcategory.parentCategory && 
+        return subcategory && subcategory.parentCategory && 
                subcategory.parentCategory.equals(this.projectCategory);
+        // Removed: && subcategory.isActive 
       },
       message: 'Invalid subcategory or does not belong to the selected category'
     }
@@ -334,9 +335,9 @@ const gigSchema = new mongoose.Schema({
       validator: async function(v) {
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user && user.isActive;
+        return user; // Removed: && user.isActive
       },
-      message: 'Invalid or inactive user'
+      message: 'Invalid user'
     }
   },
   isActive: {
@@ -352,9 +353,9 @@ const gigSchema = new mongoose.Schema({
         if (!v) return true;
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user && user.isActive;
+        return user; // Removed: && user.isActive
       },
-      message: 'Invalid or inactive user'
+      message: 'Invalid user'
     }
   },
   version: {

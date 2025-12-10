@@ -10,10 +10,17 @@ const generateRequestId = () => {
 };
 
 const sanitizeGigInput = (data) => {
+  // If it's FormData, return it as is - we'll handle it separately
+  if (data instanceof FormData) {
+    return data;
+  }
+  
   const skipKeys = ['projectCategory', 'subcategory', 'assignedTo', 'selectedProposal', 
                    'createdBy', 'lastUpdatedBy', 'budget', 'price', 'amount', 
                    'paymentAmount', 'depositPaid', 'rating', 'deliveryTime', 'version'];
-  return sanitizeObject(data, skipKeys);
+  
+  // Use the safe sanitize function
+  return safeSanitizeGigInput(data);
 };
 
 const buildSecureGigQuery = (queryParams, userRole, userId) => {
@@ -65,7 +72,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
       { 
         status: 'open',
         visibility: 'public',
-        isActive: true,
         deletedAt: null
       }
     ];
@@ -76,7 +82,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
       { 
         status: 'open',
         visibility: 'public',
-        isActive: true,
         deletedAt: null
       }
     ];
@@ -84,7 +89,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     // Public/guest access
     filter.status = 'open';
     filter.visibility = 'public';
-    filter.isActive = true;
     filter.deletedAt = null;
   }
 
@@ -210,26 +214,20 @@ const createGig = async (req, res, next) => {
       });
     }
 
-    // Check if user can create gigs
-    if (req.user.status !== 'active') {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account is not active. Cannot create gigs.',
-        code: 'ACCOUNT_INACTIVE',
-        requestId
-      });
-    }
 
-    const sanitizedData = sanitizeGigInput(req.body);
-    
-    // Validate category
-    if (!sanitizedData.projectCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Project category is required',
-        code: 'CATEGORY_REQUIRED',
-        requestId
-      });
+    let sanitizedData;
+    if (req.body instanceof FormData || req.is('multipart/form-data')) {
+      // For FormData, we need to extract fields manually
+      const formData = {};
+      if (req.body instanceof FormData) {
+        // In Node.js, FormData might be parsed differently
+        // You'll need to handle this based on your middleware
+      } else if (req.body) {
+        // If multer or similar middleware has already parsed it
+        sanitizedData = req.body;
+      }
+    } else {
+      sanitizedData = sanitizeGigInput(req.body);
     }
 
     if (!mongoose.Types.ObjectId.isValid(sanitizedData.projectCategory)) {
@@ -242,14 +240,14 @@ const createGig = async (req, res, next) => {
     }
 
     const category = await Category.findOne({ 
-      _id: sanitizedData.projectCategory, 
-      isActive: true 
+      _id: sanitizedData.projectCategory 
+      // Removed: , isActive: true 
     });
     
     if (!category) {
       return res.status(400).json({
         success: false,
-        message: 'Category not found or inactive',
+        message: 'Category not found',
         code: 'CATEGORY_NOT_FOUND',
         requestId
       });
@@ -258,8 +256,7 @@ const createGig = async (req, res, next) => {
     // Validate subcategory if provided
     if (sanitizedData.subcategory) {
       const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory, 
-        isActive: true,
+        _id: sanitizedData.subcategory,
         parentCategory: sanitizedData.projectCategory 
       });
       
@@ -495,15 +492,13 @@ const getGigs = async (req, res, next) => {
       if (includeCategory) {
         populateOptions.push({
           path: 'projectCategory',
-          select: 'name slug icon',
-          match: { isActive: true }
+          select: 'name slug icon'
         });
         
         if (subcategory) {
           populateOptions.push({
             path: 'subcategory',
-            select: 'name slug',
-            match: { isActive: true }
+            select: 'name slug'
           });
         }
       }
@@ -511,16 +506,14 @@ const getGigs = async (req, res, next) => {
       if (includeClient) {
         populateOptions.push({
           path: 'createdBy',
-          select: 'username fullName avatar rating',
-          match: { isActive: true }
+          select: 'username fullName avatar rating'
         });
       }
       
       if (includeSeller) {
         populateOptions.push({
           path: 'assignedTo',
-          select: 'username fullName avatar rating level',
-          match: { isActive: true }
+          select: 'username fullName avatar rating level'
         });
       }
     }
@@ -693,7 +686,6 @@ const searchGigs = async (req, res, next) => {
           { slug: searchRegex },
           { skillsRequired: { $in: [searchRegex] } }
         ],
-        isActive: true,
         status: 'open',
         visibility: 'public',
         deletedAt: null
@@ -708,7 +700,6 @@ const searchGigs = async (req, res, next) => {
           { title: new RegExp(`^${sanitizedQuery}`, 'i') },
           { slug: sanitizedQuery.toLowerCase() }
         ],
-        isActive: true,
         status: 'open',
         visibility: 'public',
         deletedAt: null
@@ -794,7 +785,6 @@ const getGigById = async (req, res, next) => {
         { 
           ...query, 
           visibility: 'public',
-          isActive: true,
           deletedAt: null 
         }
       ];
@@ -804,13 +794,11 @@ const getGigById = async (req, res, next) => {
         { 
           ...query, 
           visibility: 'public',
-          isActive: true,
           deletedAt: null 
         }
       ];
     } else {
       query.visibility = 'public';
-      query.isActive = true;
       query.deletedAt = null;
     }
 
@@ -835,23 +823,19 @@ const getGigById = async (req, res, next) => {
       populateOptions = [
         {
           path: 'projectCategory',
-          select: 'name slug icon description',
-          match: { isActive: true }
+          select: 'name slug icon description'
         },
         {
           path: 'subcategory',
-          select: 'name slug',
-          match: { isActive: true }
+          select: 'name slug'
         },
         {
           path: 'createdBy',
-          select: 'username fullName avatar rating joinDate',
-          match: { isActive: true }
+          select: 'username fullName avatar rating joinDate'
         },
         {
           path: 'assignedTo',
-          select: 'username fullName avatar rating level totalSales',
-          match: { isActive: true }
+          select: 'username fullName avatar rating level totalSales'
         }
       ];
     }
@@ -1005,14 +989,13 @@ const updateGig = async (req, res, next) => {
     // Validate category if changed
     if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
       const category = await Category.findOne({ 
-        _id: sanitizedData.projectCategory, 
-        isActive: true 
+        _id: sanitizedData.projectCategory 
       });
       
       if (!category) {
         return res.status(400).json({
           success: false,
-          message: 'Category not found or inactive',
+          message: 'Category not found',
           code: 'CATEGORY_NOT_FOUND',
           requestId
         });
@@ -1022,8 +1005,7 @@ const updateGig = async (req, res, next) => {
     // Validate subcategory if changed
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
       const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory, 
-        isActive: true,
+        _id: sanitizedData.subcategory,
         parentCategory: sanitizedData.projectCategory || gig.projectCategory 
       });
       
@@ -1316,14 +1298,14 @@ const restoreGig = async (req, res, next) => {
       });
     }
 
-    // Check if category is still active
+    // Check if category exists
     if (gig.projectCategory) {
       const category = await Category.findById(gig.projectCategory);
-      if (category && !category.isActive) {
+      if (!category) {
         return res.status(400).json({
           success: false,
-          message: 'Cannot restore gig with inactive category',
-          code: 'CATEGORY_INACTIVE',
+          message: 'Cannot restore gig with non-existent category',
+          code: 'CATEGORY_NOT_FOUND',
           requestId
         });
       }
@@ -1381,7 +1363,6 @@ const submitProposal = async (req, res, next) => {
     const gig = await Gig.findOne({ 
       _id: id, 
       status: 'open',
-      isActive: true,
       deletedAt: null
     });
 
@@ -1420,17 +1401,6 @@ const submitProposal = async (req, res, next) => {
         success: false,
         message: 'You have already submitted a proposal for this gig',
         code: 'DUPLICATE_PROPOSAL',
-        requestId
-      });
-    }
-
-    // Check seller status
-    const seller = await User.findById(req.user._id);
-    if (!seller || seller.status !== 'active') {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account is not active. Cannot submit proposals.',
-        code: 'SELLER_INACTIVE',
         requestId
       });
     }
@@ -1516,13 +1486,12 @@ const getGigStats = async (req, res, next) => {
                 totalBudget: { $sum: '$budget' },
                 avgBudget: { $avg: '$budget' },
                 totalProposals: { $sum: { $size: '$proposals' } },
-                avgProposalsPerGig: { $avg: { $size: '$proposals' } },
-                activeGigs: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } }
+                avgProposalsPerGig: { $avg: { $size: '$proposals' } }
               }
             }
           ],
           byCategory: [
-            { $match: { status: 'open', isActive: true } },
+            { $match: { status: 'open' } },
             {
               $group: {
                 _id: '$projectCategory',
@@ -1557,7 +1526,7 @@ const getGigStats = async (req, res, next) => {
             { $sort: { count: -1 } }
           ],
           topGigs: [
-            { $match: { status: 'open', isActive: true } },
+            { $match: { status: 'open' } },
             { $sort: { budget: -1 } },
             { $limit: 10 },
             {

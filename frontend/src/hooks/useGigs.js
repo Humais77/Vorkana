@@ -55,13 +55,14 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { gigsAPI } from '../api/gigs';
 import { useGigStore } from '../store/useGigStore';
+import toast from 'react-hot-toast';
 
 export const useGigs = (queryParams = {}) => {
   return useQuery({
-    queryKey: ['gigs', queryParams],
+    queryKey: ['gigs', 'list', queryParams],
     queryFn: () => gigsAPI.getAll(queryParams),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
     retry: 2,
     retryDelay: 1000,
   });
@@ -74,8 +75,9 @@ export const useInfiniteGigs = (queryParams = {}) => {
       gigsAPI.getAll({ ...queryParams, page: pageParam }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
-      if (lastPage.pagination?.hasNext) {
-        return lastPage.pagination.page + 1;
+      const pagination = lastPage.pagination || lastPage.data?.pagination;
+      if (pagination?.hasNext) {
+        return pagination.page + 1;
       }
       return undefined;
     },
@@ -87,7 +89,16 @@ export const useInfiniteGigs = (queryParams = {}) => {
 export const usePopularGigs = () => {
   return useQuery({
     queryKey: ['gigs', 'popular'],
-    queryFn: gigsAPI.getPopular,
+    queryFn: () => gigsAPI.getAll({
+      page: 1,
+      limit: 8,
+      sort: 'budget',
+      order: 'desc',
+      status: 'open',
+      urgency: 'high',
+      includeCategory: true,
+      includeClient: true
+    }),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
@@ -100,16 +111,15 @@ export const useGig = (id) => {
     queryKey: ['gigs', 'detail', id],
     queryFn: () => gigsAPI.getById(id),
     enabled: !!id && id !== 'undefined',
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
     retry: (failureCount, error) => {
-      // Don't retry on 404 errors
-      if (error.response?.status === 404) return false;
+      if (error.status === 404) return false;
       return failureCount < 3;
     },
     onSuccess: (data) => {
-      if (data?.gig) {
-        setGigDetails(data.gig);
+      if (data?.gig || data?.data) {
+        setGigDetails(data.gig || data.data);
       }
     },
   });
@@ -122,88 +132,71 @@ export const useCreateGig = () => {
   return useMutation({
     mutationFn: gigsAPI.create,
     onMutate: async (newGig) => {
-      // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['gigs'] });
       
-      // Snapshot the previous value
-      const previousGigs = queryClient.getQueryData(['gigs']);
+      const previousGigs = queryClient.getQueryData(['gigs', 'list']);
       
-      // Optimistically update to the new value
-      queryClient.setQueryData(['gigs'], (old) => {
-        if (!old) return { data: [newGig] };
-        return {
+      if (previousGigs) {
+        queryClient.setQueryData(['gigs', 'list'], (old) => ({
           ...old,
-          data: [newGig, ...old.data],
-        };
-      });
+          data: old.data ? [newGig, ...old.data] : [newGig]
+        }));
+      }
       
       return { previousGigs };
     },
-    onSuccess: (data, variables, context) => {
-      // Invalidate and refetch
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['gigs'] });
       queryClient.invalidateQueries({ queryKey: ['gigs', 'popular'] });
       
-      // Set last created gig ID
-      if (data?.gig?._id || data?._id) {
-        const gigId = data.gig?._id || data._id;
+      const gigId = data.data?._id || data.gig?._id;
+      if (gigId) {
         setLastCreatedGigId(gigId);
       }
       
-      // Show success toast
-      toast.success('Gig created successfully!');
+      toast.success(data.message || 'Gig created successfully!');
     },
     onError: (error, variables, context) => {
-      console.error('=== GIG CREATION ERROR DETAILS ===');
-      console.error('Error object:', error);
-      console.error('Error response:', error.response);
-      console.error('Error data:', error.response?.data);
-      console.error('Error message:', error.message);
+      console.error('Gig creation error:', error);
       
-      // Rollback on error
       if (context?.previousGigs) {
-        queryClient.setQueryData(['gigs'], context.previousGigs);
+        queryClient.setQueryData(['gigs', 'list'], context.previousGigs);
       }
       
-      // Show error toast with more details
-      const errorMessage = error.response?.data?.message || 
-                          error.message || 
-                          'Failed to create gig';
+      const errorMessage = error.data?.message || error.message || 'Failed to create gig';
       toast.error(errorMessage);
       
-      // Log validation errors if any
-      if (error.response?.data?.errors) {
-        console.error('Validation errors:', error.response.data.errors);
+      if (error.data?.errors) {
+        console.error('Validation errors:', error.data.errors);
       }
     },
     onSettled: () => {
-      // Always refetch after error or success
       queryClient.invalidateQueries({ queryKey: ['gigs'] });
     },
   });
 };
+
 export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: ({ id, data }) => gigsAPI.update(id, data),
     onSuccess: (data, variables) => {
-      // Invalidate the specific gig and list
       queryClient.invalidateQueries({ 
         queryKey: ['gigs', 'detail', variables.id] 
       });
-      queryClient.invalidateQueries({ queryKey: ['gigs'] });
+      queryClient.invalidateQueries({ queryKey: ['gigs', 'list'] });
       
-      // Show success toast if available
-      if (typeof window !== 'undefined' && window.toast?.success) {
-        window.toast.success('Gig updated successfully!');
-      }
+      toast.success(data.message || 'Gig updated successfully!');
     },
     onError: (error) => {
-      if (typeof window !== 'undefined' && window.toast?.error) {
-        window.toast.error(error.response?.data?.message || 'Failed to update gig');
-      }
       console.error('Gig update error:', error);
+      
+      if (error.code === 'VERSION_CONFLICT') {
+        toast.error('This gig was modified by another user. Please refresh and try again.');
+      } else {
+        toast.error(error.data?.message || error.message || 'Failed to update gig');
+      }
     },
   });
 };
@@ -212,22 +205,43 @@ export const useDeleteGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id) => gigsAPI.delete(id),
+    mutationFn: ({ id, options = {} }) => gigsAPI.delete(id, options),
     onSuccess: (data, variables) => {
-      // Invalidate and refetch
-      queryClient.invalidateQueries({ queryKey: ['gigs'] });
+      queryClient.invalidateQueries({ queryKey: ['gigs', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['gigs', 'popular'] });
       
-      // Show success toast if available
-      if (typeof window !== 'undefined' && window.toast?.success) {
-        window.toast.success('Gig deleted successfully!');
+      if (variables.options?.permanent) {
+        queryClient.invalidateQueries({ queryKey: ['gigs', 'detail', variables.id] });
       }
+      
+      toast.success(data.message || 'Gig deleted successfully!');
     },
     onError: (error) => {
-      if (typeof window !== 'undefined' && window.toast?.error) {
-        window.toast.error(error.response?.data?.message || 'Failed to delete gig');
-      }
       console.error('Gig deletion error:', error);
+      
+      if (error.code === 'GIG_IN_PROGRESS') {
+        toast.error('Cannot delete gig that is in progress. Use force delete if necessary.');
+      } else {
+        toast.error(error.data?.message || error.message || 'Failed to delete gig');
+      }
+    },
+  });
+};
+
+export const useRestoreGig = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id) => gigsAPI.restore(id),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['gigs', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['gigs', 'detail', variables] });
+      
+      toast.success(data.message || 'Gig restored successfully!');
+    },
+    onError: (error) => {
+      console.error('Gig restoration error:', error);
+      toast.error(error.data?.message || error.message || 'Failed to restore gig');
     },
   });
 };
@@ -236,8 +250,9 @@ export const useGigStats = () => {
   return useQuery({
     queryKey: ['gigs', 'stats'],
     queryFn: gigsAPI.getStats,
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    enabled: false,
   });
 };
 
@@ -245,8 +260,56 @@ export const useSearchGigs = (searchParams = {}) => {
   return useQuery({
     queryKey: ['gigs', 'search', searchParams],
     queryFn: () => gigsAPI.search(searchParams),
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    gcTime: 5 * 60 * 1000, // 5 minutes
-    enabled: Object.keys(searchParams).length > 0,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: Boolean(searchParams.query?.trim()),
+  });
+};
+
+export const useSubmitProposal = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ gigId, proposalData }) => gigsAPI.submitProposal(gigId, proposalData),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ 
+        queryKey: ['gigs', 'detail', variables.gigId] 
+      });
+      
+      toast.success(data.message || 'Proposal submitted successfully!');
+    },
+    onError: (error) => {
+      console.error('Proposal submission error:', error);
+      
+      if (error.code === 'DUPLICATE_PROPOSAL') {
+        toast.error('You have already submitted a proposal for this gig.');
+      } else if (error.code === 'PRIVATE_GIG') {
+        toast.error('This gig is private and not accepting proposals.');
+      } else {
+        toast.error(error.data?.message || error.message || 'Failed to submit proposal');
+      }
+    },
+  });
+};
+
+export const useExportGigs = () => {
+  return useMutation({
+    mutationFn: (params) => gigsAPI.exportGigs(params),
+    onSuccess: (data) => {
+      if (data.format === 'csv') {
+        toast.success('CSV export started. Check your downloads.');
+      } else {
+        toast.success('Gigs exported successfully!');
+      }
+    },
+    onError: (error) => {
+      console.error('Export error:', error);
+      
+      if (error.code === 'EXPORT_LIMIT_EXCEEDED') {
+        toast.error('Export limit exceeded. Please use filters to reduce the number of records.');
+      } else {
+        toast.error(error.data?.message || error.message || 'Failed to export gigs');
+      }
+    },
   });
 };

@@ -37,6 +37,53 @@ const sanitizeText = (str) => {
 };
 
 /**
+ * Check if object has property (safe for all object types)
+ * @param {Object} obj - Object to check
+ * @param {string} key - Property key
+ * @returns {boolean} True if object has property
+ */
+const hasProperty = (obj, key) => {
+  // Handle null/undefined
+  if (obj == null) return false;
+  
+  // Handle FormData and other special objects
+  if (obj instanceof FormData) {
+    return obj.has(key);
+  }
+  
+  // Handle regular objects
+  return Object.prototype.hasOwnProperty.call(obj, key);
+};
+
+/**
+ * Safely iterate over object properties
+ * @param {Object} obj - Object to iterate
+ * @param {Function} callback - Callback function (key, value)
+ */
+const forEachProperty = (obj, callback) => {
+  if (!obj || typeof obj !== 'object') return;
+  
+  // Handle FormData
+  if (obj instanceof FormData) {
+    // FormData doesn't have direct iteration, but we can handle it differently
+    return;
+  }
+  
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    obj.forEach((value, index) => callback(index.toString(), value));
+    return;
+  }
+  
+  // Handle regular objects
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      callback(key, obj[key]);
+    }
+  }
+};
+
+/**
  * Sanitize an entire object recursively
  * @param {Object} obj - Object to sanitize
  * @param {Array} skipKeys - Keys to skip sanitization for
@@ -44,34 +91,37 @@ const sanitizeText = (str) => {
  * @returns {Object} Sanitized object
  */
 const sanitizeObject = (obj, skipKeys = [], options = {}) => {
+  // Handle FormData - return as is since it's already being processed
+  if (obj instanceof FormData) {
+    return obj;
+  }
+  
+  // Handle non-objects
   if (!obj || typeof obj !== 'object') return obj;
   
   const sanitized = Array.isArray(obj) ? [] : {};
   
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      const value = obj[key];
-      
-      // Skip specified keys (like IDs, references, etc.)
-      if (skipKeys.includes(key)) {
-        sanitized[key] = value;
-        continue;
-      }
-      
-      // Recursively sanitize nested objects
-      if (value && typeof value === 'object' && !(value instanceof Date)) {
-        sanitized[key] = sanitizeObject(value, skipKeys, options);
-      } 
-      // Sanitize strings
-      else if (typeof value === 'string') {
-        sanitized[key] = sanitizeHtml(value, options);
-      }
-      // Keep other types as is
-      else {
-        sanitized[key] = value;
-      }
+  // Use safe iteration
+  forEachProperty(obj, (key, value) => {
+    // Skip specified keys (like IDs, references, etc.)
+    if (skipKeys.includes(key)) {
+      sanitized[key] = value;
+      return;
     }
-  }
+    
+    // Recursively sanitize nested objects
+    if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File)) {
+      sanitized[key] = sanitizeObject(value, skipKeys, options);
+    } 
+    // Sanitize strings
+    else if (typeof value === 'string') {
+      sanitized[key] = sanitizeHtml(value, options);
+    }
+    // Keep other types as is (including File objects)
+    else {
+      sanitized[key] = value;
+    }
+  });
   
   return sanitized;
 };
@@ -83,64 +133,67 @@ const sanitizeObject = (obj, skipKeys = [], options = {}) => {
  * @returns {Object} Sanitized object
  */
 const deepSanitize = (data, fieldRules = {}) => {
+  // Handle FormData - return as is
+  if (data instanceof FormData) {
+    return data;
+  }
+  
+  // Handle non-objects
   if (!data || typeof data !== 'object') return data;
   
   const sanitized = Array.isArray(data) ? [] : {};
   
-  for (const key in data) {
-    if (data.hasOwnProperty(key)) {
-      const value = data[key];
-      const rules = fieldRules[key] || {};
-      
-      // Handle nested objects/arrays recursively
-      if (value && typeof value === 'object' && !(value instanceof Date)) {
-        sanitized[key] = deepSanitize(value, rules.nested || {});
-      }
-      // Handle strings based on rules
-      else if (typeof value === 'string') {
-        if (rules.allowHtml) {
-          sanitized[key] = sanitizeHtml(value, { 
-            allowedTags: rules.allowedTags || [] 
-          });
-        } else if (rules.preventInjection) {
-          // Additional injection prevention
-          const sanitizedValue = sanitizeHtml(value);
-          // Check for common injection patterns
-          const injectionPatterns = [
-            /\$where/i,
-            /\$ne/i,
-            /\$nin/i,
-            /\$regex/i,
-            /select.*from/i,
-            /insert.*into/i,
-            /update.*set/i,
-            /delete.*from/i,
-            /union.*select/i,
-            /or.*=.*or/i,
-            /'|"|`/,
-            /--/,
-            /;/,
-            /\/\*.*\*\//,
-            /<script/i,
-            /javascript:/i,
-            /on\w+\s*=/
-          ];
-          
-          if (injectionPatterns.some(pattern => pattern.test(sanitizedValue))) {
-            throw new Error(`Field "${key}" contains potentially dangerous content`);
-          }
-          
-          sanitized[key] = sanitizedValue;
-        } else {
-          sanitized[key] = sanitizeText(value);
+  forEachProperty(data, (key, value) => {
+    const rules = fieldRules[key] || {};
+    
+    // Handle nested objects/arrays recursively
+    if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File)) {
+      sanitized[key] = deepSanitize(value, rules.nested || {});
+    }
+    // Handle strings based on rules
+    else if (typeof value === 'string') {
+      if (rules.allowHtml) {
+        sanitized[key] = sanitizeHtml(value, { 
+          allowedTags: rules.allowedTags || [] 
+        });
+      } else if (rules.preventInjection) {
+        // Additional injection prevention
+        const sanitizedValue = sanitizeHtml(value);
+        // Check for common injection patterns
+        const injectionPatterns = [
+          /\$where/i,
+          /\$ne/i,
+          /\$nin/i,
+          /\$regex/i,
+          /select.*from/i,
+          /insert.*into/i,
+          /update.*set/i,
+          /delete.*from/i,
+          /union.*select/i,
+          /or.*=.*or/i,
+          /'|"|`/,
+          /--/,
+          /;/,
+          /\/\*.*\*\//,
+          /<script/i,
+          /javascript:/i,
+          /on\w+\s*=/
+        ];
+        
+        if (injectionPatterns.some(pattern => pattern.test(sanitizedValue))) {
+          throw new Error(`Field "${key}" contains potentially dangerous content`);
         }
-      }
-      // Keep other types as is
-      else {
-        sanitized[key] = value;
+        
+        sanitized[key] = sanitizedValue;
+      } else {
+        sanitized[key] = sanitizeText(value);
       }
     }
-  }
+    // Keep other types as is (including File objects)
+    else {
+      sanitized[key] = value;
+    }
+  });
   
   return sanitized;
 };
@@ -185,7 +238,7 @@ const sanitizeArray = (arr, options = {}) => {
     if (typeof item === 'string') {
       return sanitizeHtml(item, options);
     }
-    if (typeof item === 'object' && item !== null) {
+    if (typeof item === 'object' && item !== null && !(item instanceof File)) {
       return sanitizeObject(item, [], options);
     }
     return item;
@@ -203,28 +256,24 @@ const sanitizeQuery = (query) => {
   const sanitized = {};
   const skipKeys = ['$and', '$or', '$in', '$nin', '$gt', '$gte', '$lt', '$lte', '$ne', '$regex'];
   
-  for (const key in query) {
-    if (query.hasOwnProperty(key)) {
-      const value = query[key];
-      
-      // Skip MongoDB operators
-      if (skipKeys.includes(key) || key.startsWith('$')) {
-        sanitized[key] = value;
-      }
-      // Recursively sanitize nested queries
-      else if (value && typeof value === 'object' && !(value instanceof Date)) {
-        sanitized[key] = sanitizeQuery(value);
-      }
-      // Sanitize string values in queries
-      else if (typeof value === 'string') {
-        sanitized[key] = sanitizeText(value);
-      }
-      // Keep other types as is
-      else {
-        sanitized[key] = value;
-      }
+  forEachProperty(query, (key, value) => {
+    // Skip MongoDB operators
+    if (skipKeys.includes(key) || key.startsWith('$')) {
+      sanitized[key] = value;
     }
-  }
+    // Recursively sanitize nested queries
+    else if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File)) {
+      sanitized[key] = sanitizeQuery(value);
+    }
+    // Sanitize string values in queries
+    else if (typeof value === 'string') {
+      sanitized[key] = sanitizeText(value);
+    }
+    // Keep other types as is
+    else {
+      sanitized[key] = value;
+    }
+  });
   
   return sanitized;
 };
@@ -236,6 +285,11 @@ const sanitizeQuery = (query) => {
  * @returns {any} Sanitized input
  */
 const sanitize = (input, type = 'text') => {
+  // Handle FormData - return as is
+  if (input instanceof FormData) {
+    return input;
+  }
+  
   switch (type) {
     case 'html':
       return typeof input === 'string' ? sanitizeHtml(input) : input;
@@ -254,6 +308,29 @@ const sanitize = (input, type = 'text') => {
   }
 };
 
+/**
+ * Safe sanitize for gig creation (handles FormData)
+ * @param {any} data - Input data to sanitize
+ * @returns {any} Sanitized data
+ */
+const safeSanitizeGigInput = (data) => {
+  // If it's FormData, we need to handle it differently
+  if (data instanceof FormData) {
+    // For FormData, we should process it in the controller, not here
+    return data;
+  }
+  
+  // For regular objects, use normal sanitization
+  if (data && typeof data === 'object') {
+    const skipKeys = ['projectCategory', 'subcategory', 'assignedTo', 'selectedProposal', 
+                     'createdBy', 'lastUpdatedBy', 'budget', 'price', 'amount', 
+                     'paymentAmount', 'depositPaid', 'rating', 'deliveryTime', 'version'];
+    return sanitizeObject(data, skipKeys);
+  }
+  
+  return data;
+};
+
 module.exports = {
   sanitizeHtml,
   sanitizeText,
@@ -262,5 +339,8 @@ module.exports = {
   sanitizeUrl,
   sanitizeArray,
   sanitizeQuery,
-  sanitize
+  sanitize,
+  hasProperty,
+  forEachProperty,
+  safeSanitizeGigInput
 };

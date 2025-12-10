@@ -358,7 +358,6 @@ const querySchema = Joi.object({
   populate: Joi.boolean().default(true),
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   showAll: Joi.boolean(),
-  includeInactive: Joi.boolean(),
   includeCategory: Joi.boolean().default(true),
   includeClient: Joi.boolean().default(true),
   includeSeller: Joi.boolean().default(true),
