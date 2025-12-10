@@ -2,16 +2,19 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Menu, X, Search, User, Briefcase, Globe } from "lucide-react";
+import { useSwitchRole } from "../hooks/useUser";
+import { Menu, X, Search, User, Briefcase, Globe, Store, ArrowRightLeft } from "lucide-react";
 import Logo from "../assets/logo.png";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const navigate = useNavigate();
   
   const { isAuthenticated, user, loading } = useAuthStore();
   const logoutMutation = useLogout();
+  const switchRoleMutation = useSwitchRole();
 
   const handleLogout = async () => {
     try {
@@ -20,6 +23,31 @@ const Navbar = () => {
       navigate("/");
     } catch (error) {
       console.error("Logout failed:", error);
+    }
+  };
+
+  const handleSwitchRole = async (newRole) => {
+    try {
+      await switchRoleMutation.mutateAsync(newRole);
+      setRoleMenuOpen(false);
+      
+      // Navigate to home page after switching role
+      navigate('/');
+      
+      // Reload the page to reflect role changes throughout the app
+      window.location.reload();
+    } catch (error) {
+      console.error("Role switch failed:", error);
+    }
+  };
+
+  const handleStartSelling = () => {
+    if (user?.role === 'seller') {
+      // Already a seller, navigate to seller dashboard
+      navigate('/seller/dashboard');
+    } else {
+      // Show role switch modal
+      setRoleMenuOpen(true);
     }
   };
 
@@ -113,6 +141,17 @@ const Navbar = () => {
               <Globe className="w-4 h-4" />
               Categories
             </NavLink>
+
+            {/* Start Selling Button - For users who are not sellers */}
+            {isAuthenticated && user?.role !== 'seller' && (
+              <button
+                onClick={handleStartSelling}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm hover:shadow"
+              >
+                <Store className="w-4 h-4" />
+                Start Selling
+              </button>
+            )}
           </div>
 
           {/* Right Section - Actions */}
@@ -124,31 +163,79 @@ const Navbar = () => {
                   {/* User Profile */}
                   <div className="relative group">
                     <button className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 border border-gray-200 transition-all">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+                        user?.role === 'seller' 
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                          : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                      }`}>
                         {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                       </div>
                       <div className="text-left">
                         <div className="text-sm font-medium text-gray-800">
                           {user?.name?.split(' ')[0] || 'User'}
                         </div>
-                        <div className="text-xs text-gray-500">Freelancer</div>
+                        <div className="text-xs text-gray-500">
+                          {user?.role === 'seller' ? 'Seller' : 'User'}
+                        </div>
                       </div>
                       <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
                     
-                    {/* Dropdown Menu */}
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                    {/* Profile Dropdown Menu */}
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                       <div className="p-4 border-b border-gray-100">
                         <div className="font-medium text-gray-800">{user?.name}</div>
                         <div className="text-sm text-gray-500">{user?.email}</div>
+                        <div className="mt-1">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            user?.role === 'seller' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {user?.role === 'seller' ? 'Seller' : 'User'}
+                          </span>
+                        </div>
                       </div>
                       <div className="p-2">
                         <Link to="/profile" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg">
                           <User className="w-4 h-4" />
                           My Profile
                         </Link>
+                        {user?.role === 'seller' && (
+                          <>
+                            <Link to="/seller/dashboard" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg">
+                              <Store className="w-4 h-4" />
+                              Seller Dashboard
+                            </Link>
+                            <Link to="/create-service" className="flex items-center gap-3 px-3 py-2.5 text-gray-700 hover:bg-green-50 hover:text-green-600 rounded-lg">
+                              <Store className="w-4 h-4" />
+                              Create Service
+                            </Link>
+                          </>
+                        )}
+                        {/* Switch Role Option - Only show if user can switch */}
+                        {user?.role === 'user' && (
+                          <button
+                            onClick={() => handleSwitchRole('seller')}
+                            disabled={switchRoleMutation.isPending}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-green-600 hover:bg-green-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                            {switchRoleMutation.isPending ? 'Switching...' : 'Switch to Seller'}
+                          </button>
+                        )}
+                        {user?.role === 'seller' && (
+                          <button
+                            onClick={() => handleSwitchRole('user')}
+                            disabled={switchRoleMutation.isPending}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                            {switchRoleMutation.isPending ? 'Switching...' : 'Switch to User'}
+                          </button>
+                        )}
                         <button
                           onClick={handleLogout}
                           disabled={logoutMutation.isPending}
@@ -257,15 +344,38 @@ const Navbar = () => {
             {isAuthenticated && (
               <div className="mt-6">
                 <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${
+                    user?.role === 'seller' 
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                      : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                  }`}>
                     {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                   </div>
                   <div className="flex-1">
                     <div className="font-semibold text-gray-800">{user?.name}</div>
                     <div className="text-sm text-gray-500">{user?.email}</div>
-                    <div className="text-xs text-purple-600 font-medium mt-1">⭐ Premium Member</div>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        user?.role === 'seller' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {user?.role === 'seller' ? 'Seller' : 'User'}
+                      </span>
+                    </div>
                   </div>
                 </div>
+                
+                {/* Start Selling Button in Mobile */}
+                {user?.role !== 'seller' && (
+                  <button
+                    onClick={handleStartSelling}
+                    className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium hover:from-green-600 hover:to-emerald-700 transition-all"
+                  >
+                    <Store className="w-5 h-5" />
+                    Start Selling
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -283,6 +393,55 @@ const Navbar = () => {
                     <User className="w-5 h-5" />
                     My Profile
                   </Link>
+                  
+                  {user?.role === 'seller' && (
+                    <>
+                      <Link
+                        to="/seller/dashboard"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-green-50 to-green-100 text-green-700 font-medium"
+                      >
+                        <Store className="w-5 h-5" />
+                        Seller Dashboard
+                      </Link>
+                      <Link
+                        to="/create-service"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-green-50 to-green-100 text-green-700 font-medium"
+                      >
+                        <Store className="w-5 h-5" />
+                        Create Service
+                      </Link>
+                    </>
+                  )}
+                  
+                  {/* Switch Role Options in Mobile Menu */}
+                  {user?.role === 'user' && (
+                    <button
+                      onClick={() => {
+                        handleSwitchRole('seller');
+                        setMenuOpen(false);
+                      }}
+                      disabled={switchRoleMutation.isPending}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-green-50 to-green-100 text-green-700 font-medium hover:from-green-100 hover:to-green-200 transition-all disabled:opacity-50"
+                    >
+                      <ArrowRightLeft className="w-5 h-5" />
+                      {switchRoleMutation.isPending ? 'Switching...' : 'Switch to Seller'}
+                    </button>
+                  )}
+                  {user?.role === 'seller' && (
+                    <button
+                      onClick={() => {
+                        handleSwitchRole('user');
+                        setMenuOpen(false);
+                      }}
+                      disabled={switchRoleMutation.isPending}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-blue-100 text-blue-700 font-medium hover:from-blue-100 hover:to-blue-200 transition-all disabled:opacity-50"
+                    >
+                      <ArrowRightLeft className="w-5 h-5" />
+                      {switchRoleMutation.isPending ? 'Switching...' : 'Switch to User'}
+                    </button>
+                  )}
                   
                   <div className="space-y-1 mt-4">
                     <div className="text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-2">Navigation</div>
@@ -359,7 +518,10 @@ const Navbar = () => {
           <div className="p-6 border-t border-gray-100">
             {isAuthenticated ? (
               <button
-                onClick={handleLogout}
+                onClick={() => {
+                  handleLogout();
+                  setMenuOpen(false);
+                }}
                 disabled={logoutMutation.isPending}
                 className="w-full flex items-center justify-center gap-3 py-3.5 text-red-600 hover:bg-red-50 font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -392,6 +554,60 @@ const Navbar = () => {
           className="lg:hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
           onClick={() => setMenuOpen(false)}
         />
+      )}
+
+      {/* Role Switch Modal for Mobile */}
+      {roleMenuOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900">Switch to Seller Mode</h3>
+                <button
+                  onClick={() => setRoleMenuOpen(false)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-gray-600 mb-6">
+                Switch to Seller Mode to start offering your services. As a seller, you can create service listings, manage orders, and earn money.
+              </p>
+              <div className="space-y-4">
+                <div className="flex items-start gap-4 p-4 bg-green-50 rounded-xl">
+                  <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                    <Store className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900">Seller Benefits</h4>
+                    <ul className="mt-2 text-sm text-gray-600 space-y-1">
+                      <li>• Create and manage service listings</li>
+                      <li>• Receive service requests</li>
+                      <li>• Set your own pricing</li>
+                      <li>• Build your seller reputation</li>
+                    </ul>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setRoleMenuOpen(false)}
+                    className="flex-1 py-3 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleSwitchRole('seller')}
+                    disabled={switchRoleMutation.isPending}
+                    className="flex-1 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-medium rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all disabled:opacity-50"
+                  >
+                    {switchRoleMutation.isPending ? 'Switching...' : 'Switch to Seller'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </nav>
   );

@@ -44,6 +44,7 @@ export const useAuthStore = create(
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
       
+      // Set both user and token
       setAuth: (user, token) => {
         set({ 
           user, 
@@ -57,6 +58,37 @@ export const useAuthStore = create(
         if (user) {
           localStorage.setItem("userInfo", JSON.stringify(user));
         }
+        if (token) {
+          localStorage.setItem("userToken", token);
+        }
+      },
+      
+      // NEW: Set only user (useful for role updates)
+      setUser: (user) => {
+        const currentState = get();
+        set({ 
+          user: { ...currentState.user, ...user },
+          loading: false,
+          error: null 
+        });
+        
+        // Update localStorage
+        if (user) {
+          const currentUser = currentState.user || {};
+          const updatedUser = { ...currentUser, ...user };
+          localStorage.setItem("userInfo", JSON.stringify(updatedUser));
+        }
+      },
+      
+      // NEW: Set only token
+      setToken: (token) => {
+        set({ 
+          token, 
+          isAuthenticated: !!token,
+          loading: false,
+          error: null 
+        });
+        
         if (token) {
           localStorage.setItem("userToken", token);
         }
