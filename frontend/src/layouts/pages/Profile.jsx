@@ -1,5 +1,6 @@
+// Profile.jsx - Complete updated file
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus,
   Trash2,
@@ -15,7 +16,19 @@ import {
   AlertTriangle,
   X,
   Award,
-  User
+  User,
+  Briefcase,
+  Grid3x3,
+  LayoutGrid,
+  List,
+  Eye,
+  EyeOff,
+  Filter,
+  Search,
+  Edit,
+  MoreVertical,
+  Star,
+  HelpCircle
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { 
@@ -25,25 +38,55 @@ import {
   useGigStats,
   extractGigsFromResponse
 } from '../../hooks/useGigs';
+import { useMyServices, useDeleteService } from '../../hooks/useServices';
 import { useSwitchRole } from '../../hooks/useUser';
 import { toast } from 'react-hot-toast';
 import ProfileSidebar from '../../components/ProfileSidebar';
 
 const Profile = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
   const switchRoleMutation = useSwitchRole();
-  const [selectedGigs, setSelectedGigs] = useState([]);
-  const [allSelected, setAllSelected] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [showSwitchDialog, setShowSwitchDialog] = useState(false);
-  const [switchDirection, setSwitchDirection] = useState(''); 
   
+  // Parse tab from URL
+  const searchParams = new URLSearchParams(location.search);
+  const urlTab = searchParams.get('tab');
+  
+  const [selectedGigs, setSelectedGigs] = useState([]);
+  const [selectedServices, setSelectedServices] = useState([]);
+  const [allSelected, setAllSelected] = useState(false);
+  const [allServicesSelected, setAllServicesSelected] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState(urlTab || 'services');
+  const [viewMode, setViewMode] = useState('grid');
+  const [showSwitchDialog, setShowSwitchDialog] = useState(false);
+  const [switchDirection, setSwitchDirection] = useState('');
+  
+  // Use services hook for seller
+  const { 
+    data: servicesResponse, 
+    isLoading: servicesLoading, 
+    error: servicesError, 
+    refetch: refetchServices 
+  } = useMyServices({
+    status: serviceStatusFilter === 'all' ? undefined : serviceStatusFilter,
+    limit: 50,
+    sort: 'createdAt',
+    order: 'desc'
+  });
+
+  const services = useMemo(() => 
+    servicesResponse?.data || [], 
+    [servicesResponse]
+  );
+
   const { 
     data: gigsResponse, 
-    isLoading, 
-    error, 
-    refetch 
+    isLoading: gigsLoading, 
+    error: gigsError, 
+    refetch: refetchGigs 
   } = useMyGigs({
     status: statusFilter === 'all' ? undefined : statusFilter,
     limit: 50,
@@ -57,8 +100,8 @@ const Profile = () => {
   );
 
   const deleteMultipleGigsMutation = useDeleteMultipleGigs();
-  
   const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
+  const deleteServiceMutation = useDeleteService();
   
   const { data: statsResponse, isLoading: statsLoading } = useGigStats();
   
@@ -69,7 +112,11 @@ const Profile = () => {
       totalOrders: 0,
       totalBudget: 0,
       avgBudget: 0,
-      averageRating: 4.8
+      averageRating: 4.8,
+      totalServices: 0,
+      activeServices: 0,
+      serviceOrders: 0,
+      totalEarnings: 0
     };
 
     if (statsLoading || !statsResponse) {
@@ -90,7 +137,11 @@ const Profile = () => {
           totalOrders: overview.totalOrders || 0,
           totalBudget: overview.totalBudget || 0,
           avgBudget: overview.avgBudget || 0,
-          averageRating: overview.averageRating || 4.8
+          averageRating: overview.averageRating || 4.8,
+          totalServices: services.length,
+          activeServices: services.filter(s => s.status === 'active').length,
+          serviceOrders: services.reduce((sum, service) => sum + (service.ordersCount || 0), 0),
+          totalEarnings: services.reduce((sum, service) => sum + (service.price || 0) * (service.ordersCount || 0), 0)
         };
       }
     }
@@ -102,21 +153,50 @@ const Profile = () => {
       totalBudget: gigs.reduce((sum, gig) => sum + (gig.budget || gig.price || 0), 0),
       avgBudget: gigs.length > 0 ? 
         gigs.reduce((sum, gig) => sum + (gig.budget || gig.price || 0), 0) / gigs.length : 0,
-      averageRating: 4.8
+      averageRating: 4.8,
+      totalServices: services.length,
+      activeServices: services.filter(s => s.status === 'active').length,
+      serviceOrders: services.reduce((sum, service) => sum + (service.ordersCount || 0), 0),
+      totalEarnings: services.reduce((sum, service) => sum + (service.price || 0) * (service.ordersCount || 0), 0)
     };
-  }, [statsResponse, statsLoading, gigs]);
+  }, [statsResponse, statsLoading, gigs, services]);
 
   const resetSelection = useCallback(() => {
     setSelectedGigs([]);
+    setSelectedServices([]);
     setAllSelected(false);
+    setAllServicesSelected(false);
   }, []);
 
   useEffect(() => {
     resetSelection();
-  }, [gigs, resetSelection]);
+  }, [gigs, services, resetSelection]);
+
+  // Sync URL with tab state
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const currentTab = searchParams.get('tab') || 'services';
+    if (currentTab !== activeTab) {
+      setActiveTab(currentTab);
+    }
+  }, [location.search, activeTab]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    // Update URL without reloading page
+    navigate(`/profile?tab=${tab}`, { replace: true });
+  };
+
+  const handleCreateService = () => {
+    navigate('/services/create');
+  };
 
   const handleCreateGig = () => {
     navigate('/create-gig');
+  };
+
+  const handleServiceClick = (serviceId) => {
+    navigate(`/services/${serviceId}`);
   };
 
   const handleGigClick = (gigId) => {
@@ -133,11 +213,29 @@ const Profile = () => {
     setAllSelected(!allSelected);
   };
 
+  const handleSelectAllServices = () => {
+    if (allServicesSelected) {
+      setSelectedServices([]);
+    } else {
+      const filteredServices = filterServices(services);
+      setSelectedServices(filteredServices.map(service => service._id));
+    }
+    setAllServicesSelected(!allServicesSelected);
+  };
+
   const handleSelectGig = (gigId) => {
     setSelectedGigs(prev =>
       prev.includes(gigId)
         ? prev.filter(id => id !== gigId)
         : [...prev, gigId]
+    );
+  };
+
+  const handleSelectService = (serviceId) => {
+    setSelectedServices(prev =>
+      prev.includes(serviceId)
+        ? prev.filter(id => id !== serviceId)
+        : [...prev, serviceId]
     );
   };
 
@@ -155,10 +253,35 @@ const Profile = () => {
       resetSelection();
       toast.success('Gigs deleted successfully!');
     } catch (error) {
+      toast.error('Failed to delete gigs');
     }
   };
 
-  const handleUpdateStatus = async (status) => {
+  const handleDeleteServices = async () => {
+    if (selectedServices.length === 0) {
+      toast.error('Please select services to delete');
+      return;
+    }
+
+    const confirmed = window.confirm(`Are you sure you want to delete ${selectedServices.length} service(s)? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      // Delete services one by one
+      const deletePromises = selectedServices.map(serviceId => 
+        deleteServiceMutation.mutateAsync({ id: serviceId })
+      );
+      
+      await Promise.all(deletePromises);
+      resetSelection();
+      refetchServices();
+      toast.success('Services deleted successfully!');
+    } catch (error) {
+      toast.error('Failed to delete services');
+    }
+  };
+
+  const handleUpdateGigStatus = async (status) => {
     if (selectedGigs.length === 0) {
       toast.error('Please select gigs to update');
       return;
@@ -172,7 +295,18 @@ const Profile = () => {
       resetSelection();
       toast.success(`Gigs marked as ${status}`);
     } catch (error) {
+      toast.error('Failed to update gigs status');
     }
+  };
+
+  const handleUpdateServiceStatus = async (status) => {
+    if (selectedServices.length === 0) {
+      toast.error('Please select services to update');
+      return;
+    }
+
+    toast.info('Service status update feature coming soon');
+    // TODO: Implement service status update
   };
 
   const handleSwitchRole = async () => {
@@ -187,7 +321,7 @@ const Profile = () => {
         window.location.reload();
       }, 1500);
     } catch (error) {
-      console.error('Role switch failed:', error);
+      toast.error('Failed to switch role');
     }
   };
 
@@ -206,17 +340,26 @@ const Profile = () => {
     return gigsToFilter.filter(gig => gig.status === statusFilter);
   }, [statusFilter]);
 
+  const filterServices = useCallback((servicesToFilter) => {
+    if (serviceStatusFilter === 'all') return servicesToFilter;
+    return servicesToFilter.filter(service => service.status === serviceStatusFilter);
+  }, [serviceStatusFilter]);
+
   const filteredGigs = useMemo(() => filterGigs(gigs), [gigs, filterGigs]);
+  const filteredServices = useMemo(() => filterServices(services), [services, filterServices]);
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'open':
-      case 'active': return 'bg-green-100 text-green-800';
+      case 'active':
+      case 'open': return 'bg-green-100 text-green-800';
       case 'draft': return 'bg-yellow-100 text-yellow-800';
       case 'paused': 
-      case 'cancelled': return 'bg-orange-100 text-orange-800';
+      case 'cancelled': 
+      case 'denied': 
+      case 'suspended': return 'bg-orange-100 text-orange-800';
       case 'completed': 
-      case 'closed': return 'bg-blue-100 text-blue-800';
+      case 'closed': 
+      case 'pending': return 'bg-blue-100 text-blue-800';
       case 'in_progress': return 'bg-purple-100 text-purple-800';
       case 'assigned': return 'bg-indigo-100 text-indigo-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -225,13 +368,16 @@ const Profile = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'open':
-      case 'active': return <CheckCircle className="w-4 h-4" />;
+      case 'active':
+      case 'open': return <CheckCircle className="w-4 h-4" />;
       case 'draft': return <FileText className="w-4 h-4" />;
       case 'paused': 
-      case 'cancelled': return <EyeOff className="w-4 h-4" />;
+      case 'cancelled': 
+      case 'denied': 
+      case 'suspended': return <EyeOff className="w-4 h-4" />;
       case 'completed': 
-      case 'closed': return <Award className="w-4 h-4" />;
+      case 'closed': 
+      case 'pending': return <Award className="w-4 h-4" />;
       case 'in_progress': return <Loader2 className="w-4 h-4 animate-spin" />;
       case 'assigned': return <User className="w-4 h-4" />;
       default: return null;
@@ -254,22 +400,9 @@ const Profile = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error loading gigs</h2>
-          <p className="text-gray-600 mb-6">{error.message || 'Failed to load your gigs'}</p>
-          <button
-            onClick={() => refetch()}
-            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const isLoading = activeTab === 'services' ? servicesLoading : gigsLoading;
+  const error = activeTab === 'services' ? servicesError : gigsError;
+  const refetch = activeTab === 'services' ? refetchServices : refetchGigs;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
@@ -289,43 +422,68 @@ const Profile = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">
-                    {user?.role === 'seller' ? 'My Gigs' : 'My Profile'}
+                    {user?.role === 'seller' ? 'Seller Dashboard' : 'My Profile'}
                   </h2>
                   <p className="text-gray-600 mt-1">
                     {user?.role === 'seller' 
-                      ? 'Manage your freelance services' 
+                      ? 'Manage your services and gigs' 
                       : 'View your profile information'}
                   </p>
                 </div>
                 {user?.role === 'seller' && (
-                  <button
-                    onClick={handleCreateGig}
-                    disabled={isLoading}
-                    className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus className="w-5 h-5 mr-2" />
-                    Create New Gig
-                  </button>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={handleCreateGig}
+                      disabled={isLoading}
+                      className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-5 h-5 mr-2" />
+                      Create Gig
+                    </button>
+                    <button
+                      onClick={handleCreateService}
+                      disabled={isLoading}
+                      className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-5 h-5 mr-2" />
+                      Create Service
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
 
             {user?.role === 'seller' ? (
-              <SellerGigsView 
+              <SellerDashboard 
+                activeTab={activeTab}
+                handleTabChange={handleTabChange}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
                 selectedGigs={selectedGigs}
+                selectedServices={selectedServices}
                 allSelected={allSelected}
+                allServicesSelected={allServicesSelected}
                 statusFilter={statusFilter}
+                serviceStatusFilter={serviceStatusFilter}
                 filteredGigs={filteredGigs}
+                filteredServices={filteredServices}
                 isLoading={isLoading}
                 stats={stats}
                 statsLoading={statsLoading}
                 handleSelectAll={handleSelectAll}
+                handleSelectAllServices={handleSelectAllServices}
                 handleSelectGig={handleSelectGig}
-                handleUpdateStatus={handleUpdateStatus}
+                handleSelectService={handleSelectService}
+                handleUpdateGigStatus={handleUpdateGigStatus}
+                handleUpdateServiceStatus={handleUpdateServiceStatus}
                 handleDeleteGigs={handleDeleteGigs}
+                handleDeleteServices={handleDeleteServices}
                 handleGigClick={handleGigClick}
+                handleServiceClick={handleServiceClick}
                 handleCreateGig={handleCreateGig}
+                handleCreateService={handleCreateService}
                 setStatusFilter={setStatusFilter}
+                setServiceStatusFilter={setServiceStatusFilter}
                 getStatusColor={getStatusColor}
                 getStatusIcon={getStatusIcon}
                 deleteMultipleGigsMutation={deleteMultipleGigsMutation}
@@ -339,7 +497,7 @@ const Profile = () => {
                 <h3 className="text-xl font-bold text-gray-900 mb-3">You're in User Mode</h3>
                 <p className="text-gray-600 mb-6 max-w-md mx-auto">
                   As a user, you can browse and purchase services from sellers. 
-                  Switch to seller mode to create and manage your own gigs.
+                  Switch to seller mode to create and manage your own services.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <button
@@ -373,135 +531,585 @@ const Profile = () => {
   );
 };
 
-const SellerGigsView = ({
+const SellerDashboard = ({
+  activeTab,
+  handleTabChange,
+  viewMode,
+  setViewMode,
   selectedGigs,
+  selectedServices,
   allSelected,
+  allServicesSelected,
   statusFilter,
+  serviceStatusFilter,
   filteredGigs,
+  filteredServices,
   isLoading,
   stats,
   statsLoading,
   handleSelectAll,
+  handleSelectAllServices,
   handleSelectGig,
-  handleUpdateStatus,
+  handleSelectService,
+  handleUpdateGigStatus,
+  handleUpdateServiceStatus,
   handleDeleteGigs,
+  handleDeleteServices,
   handleGigClick,
+  handleServiceClick,
   handleCreateGig,
+  handleCreateService,
   setStatusFilter,
+  setServiceStatusFilter,
   getStatusColor,
   getStatusIcon,
   deleteMultipleGigsMutation,
   updateMultipleGigsStatusMutation
-}) => (
-  <>
-    {selectedGigs.length > 0 && (
-      <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200 p-4 mb-6">
+}) => {
+  const hasSelectedItems = activeTab === 'services' 
+    ? selectedServices.length > 0 
+    : selectedGigs.length > 0;
+  const selectedCount = activeTab === 'services' 
+    ? selectedServices.length 
+    : selectedGigs.length;
+  const items = activeTab === 'services' ? filteredServices : filteredGigs;
+
+  return (
+    <>
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center">
-            <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
-            <span className="font-medium text-blue-900">
-              {selectedGigs.length} gig(s) selected
+          <div className="flex items-center space-x-4">
+            <div className="flex border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => handleTabChange('services')}
+                className={`px-5 py-2 font-medium transition-all ${
+                  activeTab === 'services'
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Briefcase className="w-4 h-4" />
+                  Services ({stats.totalServices})
+                </div>
+              </button>
+              <button
+                onClick={() => handleTabChange('gigs')}
+                className={`px-5 py-2 font-medium transition-all ${
+                  activeTab === 'gigs'
+                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Gigs ({stats.totalGigs})
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 ${viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+              >
+                <Grid3x3 className="w-5 h-5 text-gray-600" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 ${viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+              >
+                <List className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <button
+              onClick={activeTab === 'services' ? handleCreateService : handleCreateGig}
+              disabled={isLoading}
+              className="inline-flex items-center px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Create {activeTab === 'services' ? 'Service' : 'Gig'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bulk Actions Bar */}
+      {hasSelectedItems && (
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200 p-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center">
+              <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
+              <span className="font-medium text-blue-900">
+                {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeTab === 'gigs' ? (
+                <>
+                  <button
+                    onClick={() => handleUpdateGigStatus('active')}
+                    disabled={updateMultipleGigsStatusMutation.isPending}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
+                  </button>
+                  <button
+                    onClick={() => handleUpdateGigStatus('paused')}
+                    disabled={updateMultipleGigsStatusMutation.isPending}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
+                  </button>
+                  <button
+                    onClick={handleDeleteGigs}
+                    disabled={deleteMultipleGigsMutation.isPending}
+                    className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleUpdateServiceStatus('active')}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                  >
+                    Activate
+                  </button>
+                  <button
+                    onClick={() => handleUpdateServiceStatus('paused')}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors"
+                  >
+                    Pause
+                  </button>
+                  <button
+                    onClick={handleDeleteServices}
+                    className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <button
+                onClick={activeTab === 'services' ? handleSelectAllServices : handleSelectAll}
+                disabled={isLoading || items.length === 0}
+                className="flex items-center mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {activeTab === 'services' 
+                  ? allServicesSelected
+                    ? <CheckSquare className="w-5 h-5 text-blue-600" />
+                    : <Square className="w-5 h-5 text-gray-400" />
+                  : allSelected
+                    ? <CheckSquare className="w-5 h-5 text-blue-600" />
+                    : <Square className="w-5 h-5 text-gray-400" />
+                }
+              </button>
+              <span className="text-gray-600">Select All</span>
+            </div>
+            <span className="text-gray-500">
+              {items.length} {activeTab === 'services' ? 'service' : 'gig'}{items.length !== 1 ? 's' : ''} found
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handleUpdateStatus('active')}
-              disabled={updateMultipleGigsStatusMutation.isPending}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="flex items-center space-x-4">
+            <select
+              value={activeTab === 'services' ? serviceStatusFilter : statusFilter}
+              onChange={(e) => activeTab === 'services' 
+                ? setServiceStatusFilter(e.target.value)
+                : setStatusFilter(e.target.value)
+              }
+              disabled={isLoading}
+              className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
             >
-              {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
-            </button>
-            <button
-              onClick={() => handleUpdateStatus('paused')}
-              disabled={updateMultipleGigsStatusMutation.isPending}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
-            </button>
-            <button
-              onClick={handleDeleteGigs}
-              disabled={deleteMultipleGigsMutation.isPending}
-              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
-            </button>
+              <option value="all">All Status</option>
+              {activeTab === 'services' ? (
+                <>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="denied">Denied</option>
+                  <option value="suspended">Suspended</option>
+                </>
+              ) : (
+                <>
+                  <option value="open">Open</option>
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                  <option value="paused">Paused</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="closed">Closed</option>
+                </>
+              )}
+            </select>
           </div>
         </div>
       </div>
-    )}
 
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center">
-            <button
-              onClick={handleSelectAll}
-              disabled={isLoading || filteredGigs.length === 0}
-              className="flex items-center mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {allSelected ? (
-                <CheckSquare className="w-5 h-5 text-blue-600" />
-              ) : (
-                <Square className="w-5 h-5 text-gray-400" />
-              )}
-            </button>
-            <span className="text-gray-600">Select All</span>
+      {/* Content Area */}
+      {activeTab === 'services' ? (
+        viewMode === 'grid' ? (
+          <ServicesGridView 
+            services={filteredServices}
+            isLoading={isLoading}
+            selectedServices={selectedServices}
+            handleSelectService={handleSelectService}
+            handleServiceClick={handleServiceClick}
+            getStatusColor={getStatusColor}
+            getStatusIcon={getStatusIcon}
+          />
+        ) : (
+          <ServicesListView 
+            services={filteredServices}
+            isLoading={isLoading}
+            selectedServices={selectedServices}
+            handleSelectService={handleSelectService}
+            handleServiceClick={handleServiceClick}
+            handleCreateService={handleCreateService}
+            serviceStatusFilter={serviceStatusFilter}
+            getStatusColor={getStatusColor}
+            getStatusIcon={getStatusIcon}
+          />
+        )
+      ) : (
+        viewMode === 'grid' ? (
+          <GigsGridView 
+            gigs={filteredGigs}
+            isLoading={isLoading}
+            selectedGigs={selectedGigs}
+            handleSelectGig={handleSelectGig}
+            handleGigClick={handleGigClick}
+            getStatusColor={getStatusColor}
+            getStatusIcon={getStatusIcon}
+          />
+        ) : (
+          <GigsListView 
+            gigs={filteredGigs}
+            isLoading={isLoading}
+            selectedGigs={selectedGigs}
+            handleSelectGig={handleSelectGig}
+            handleGigClick={handleGigClick}
+            handleDeleteGigs={handleDeleteGigs}
+            handleCreateGig={handleCreateGig}
+            statusFilter={statusFilter}
+            getStatusColor={getStatusColor}
+            getStatusIcon={getStatusIcon}
+          />
+        )
+      )}
+
+      <StatsSummary stats={stats} statsLoading={statsLoading} activeTab={activeTab} />
+    </>
+  );
+};
+
+const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your services...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (services.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Briefcase className="w-8 h-8 text-gray-400" />
           </div>
-          <span className="text-gray-500">
-            {filteredGigs.length} gig{filteredGigs.length !== 1 ? 's' : ''} found
-          </span>
-        </div>
-        <div className="flex items-center space-x-4">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            disabled={isLoading}
-            className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
+          <p className="text-gray-600 mb-6">You haven't created any services yet</p>
+          <button
+            onClick={() => window.location.href = '/services/create'}
+            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
           >
-            <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="active">Active</option>
-            <option value="draft">Draft</option>
-            <option value="paused">Paused</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="closed">Closed</option>
-          </select>
+            <Plus className="w-5 h-5 mr-2" />
+            Create Your First Service
+          </button>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {services.map((service) => (
+        <div
+          key={service._id}
+          className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
+        >
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center">
+                <button
+                  onClick={() => handleSelectService(service._id)}
+                  className="mr-3"
+                >
+                  {selectedServices.includes(service._id) ? (
+                    <CheckSquare className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <Square className="w-5 h-5 text-gray-400" />
+                  )}
+                </button>
+                <div>
+                  <h4 
+                    className="font-medium text-gray-900 hover:text-green-600 cursor-pointer line-clamp-1"
+                    onClick={() => handleServiceClick(service._id)}
+                  >
+                    {service.title || 'Untitled Service'}
+                  </h4>
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(service.status)}`}>
+                    {getStatusIcon(service.status)}
+                    <span className="ml-1">
+                      {service.status ? 
+                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
+                        : 'Draft'
+                      }
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+              {service.shortDescription || service.description || 'No description available'}
+            </p>
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
+                <span className="font-bold text-gray-900">
+                  ${service.price || 0}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <FileText className="w-4 h-4 text-gray-600 mr-1" />
+                <span className="text-sm text-gray-600">{service.ordersCount || 0} orders</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Tag className="w-3 h-3 text-gray-400 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {service.category?.name || 'Uncategorized'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleServiceClick(service._id)}
+                  className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                  title="View Details"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {/* Edit service */}}
+                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Edit"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ServicesListView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, handleCreateService, serviceStatusFilter, getStatusColor, getStatusIcon }) => {
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your services...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (services.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Briefcase className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
+          <p className="text-gray-600 mb-6">
+            {serviceStatusFilter === 'all' 
+              ? "You haven't created any services yet"
+              : `No services with status "${serviceStatusFilter}" found`}
+          </p>
+          <button
+            onClick={handleCreateService}
+            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Create Your First Service
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Service</span>
+              </th>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
+              </th>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
+              </th>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Orders</span>
+              </th>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Rating</span>
+              </th>
+              <th className="py-4 px-6 text-left">
+                <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {services.map((service) => (
+              <tr
+                key={service._id}
+                className="hover:bg-gray-50 transition-colors"
+              >
+                <td className="py-4 px-6">
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => handleSelectService(service._id)}
+                      className="mr-3"
+                    >
+                      {selectedServices.includes(service._id) ? (
+                        <CheckSquare className="w-5 h-5 text-green-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+                    <div 
+                      className="cursor-pointer"
+                      onClick={() => handleServiceClick(service._id)}
+                    >
+                      <h4 className="font-medium text-gray-900 hover:text-green-600">
+                        {service.title || 'Untitled Service'}
+                      </h4>
+                      <div className="flex items-center mt-1">
+                        <Tag className="w-3 h-3 text-gray-400 mr-1" />
+                        <span className="text-sm text-gray-600">
+                          {service.category?.name || 'Uncategorized'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-4 px-6">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
+                    {getStatusIcon(service.status)}
+                    <span className="ml-1">
+                      {service.status ? 
+                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
+                        : 'Draft'
+                      }
+                    </span>
+                  </span>
+                </td>
+                <td className="py-4 px-6">
+                  <div className="flex items-center">
+                    <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
+                    <span className="font-medium">
+                      ${service.price || 0}
+                    </span>
+                  </div>
+                </td>
+                <td className="py-4 px-6">
+                  <div className="flex items-center">
+                    <FileText className="w-4 h-4 text-gray-600 mr-1" />
+                    <span>{service.ordersCount || 0}</span>
+                  </div>
+                </td>
+                <td className="py-4 px-6">
+                  <div className="flex items-center">
+                    <Star className="w-4 h-4 text-yellow-400 mr-1" />
+                    <span>{service.rating || 'N/A'}</span>
+                  </div>
+                </td>
+                <td className="py-4 px-6">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleServiceClick(service._id)}
+                      className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="View Details"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {/* Edit service */}}
+                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectService(service._id);
+                        if (window.confirm('Are you sure you want to delete this service?')) {
+                          // Handle service deletion
+                        }
+                      }}
+                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
+  );
+};
 
-    <GigsTable 
-      filteredGigs={filteredGigs}
-      isLoading={isLoading}
-      selectedGigs={selectedGigs}
-      handleSelectGig={handleSelectGig}
-      handleGigClick={handleGigClick}
-      handleDeleteGigs={handleDeleteGigs}
-      handleCreateGig={handleCreateGig}
-      statusFilter={statusFilter}
-      getStatusColor={getStatusColor}
-      getStatusIcon={getStatusIcon}
-    />
-
-    <StatsSummary stats={stats} statsLoading={statsLoading} />
-  </>
-);
-
-const GigsTable = ({
-  filteredGigs,
-  isLoading,
-  selectedGigs,
-  handleSelectGig,
-  handleGigClick,
-  handleDeleteGigs,
-  handleCreateGig,
-  statusFilter,
-  getStatusColor,
-  getStatusIcon
-}) => {
+const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
@@ -513,7 +1121,121 @@ const GigsTable = ({
     );
   }
 
-  if (filteredGigs.length === 0) {
+  if (gigs.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FileText className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No gigs found</h3>
+          <p className="text-gray-600 mb-6">You haven't created any gigs yet</p>
+          <button
+            onClick={() => window.location.href = '/create-gig'}
+            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Create Your First Gig
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {gigs.map((gig) => (
+        <div
+          key={gig._id}
+          className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
+        >
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center">
+                <button
+                  onClick={() => handleSelectGig(gig._id)}
+                  className="mr-3"
+                >
+                  {selectedGigs.includes(gig._id) ? (
+                    <CheckSquare className="w-5 h-5 text-blue-600" />
+                  ) : (
+                    <Square className="w-5 h-5 text-gray-400" />
+                  )}
+                </button>
+                <div>
+                  <h4 
+                    className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer line-clamp-1"
+                    onClick={() => handleGigClick(gig._id)}
+                  >
+                    {gig.title || 'Untitled Gig'}
+                  </h4>
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(gig.status)}`}>
+                    {getStatusIcon(gig.status)}
+                    <span className="ml-1">
+                      {gig.status ? 
+                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
+                        : 'Draft'
+                      }
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+              {gig.description || 'No description available'}
+            </p>
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
+                <span className="font-bold text-gray-900">
+                  ${gig.budget || gig.price || 0}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <User className="w-4 h-4 text-gray-600 mr-1" />
+                <span className="text-sm text-gray-600">{gig.proposals?.length || 0} proposals</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Tag className="w-3 h-3 text-gray-400 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {gig.category?.name || 'Uncategorized'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleGigClick(gig._id)}
+                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="View Details"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, handleDeleteGigs, handleCreateGig, statusFilter, getStatusColor, getStatusIcon }) => {
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your gigs...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (gigs.length === 0) {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
         <div className="p-12 text-center">
@@ -551,10 +1273,10 @@ const GigsTable = ({
                 <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
               </th>
               <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
+                <span className="text-sm font-semibold text-gray-700 uppercase">Budget</span>
               </th>
               <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Orders</span>
+                <span className="text-sm font-semibold text-gray-700 uppercase">Proposals</span>
               </th>
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
@@ -562,7 +1284,7 @@ const GigsTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {filteredGigs.map((gig) => (
+            {gigs.map((gig) => (
               <tr
                 key={gig._id}
                 className="hover:bg-gray-50 transition-colors"
@@ -570,10 +1292,7 @@ const GigsTable = ({
                 <td className="py-4 px-6">
                   <div className="flex items-center">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectGig(gig._id);
-                      }}
+                      onClick={() => handleSelectGig(gig._id)}
                       className="mr-3"
                     >
                       {selectedGigs.includes(gig._id) ? (
@@ -592,7 +1311,7 @@ const GigsTable = ({
                       <div className="flex items-center mt-1">
                         <Tag className="w-3 h-3 text-gray-400 mr-1" />
                         <span className="text-sm text-gray-600">
-                          {gig.category || gig.projectCategory?.name || 'Uncategorized'}
+                          {gig.category?.name || 'Uncategorized'}
                         </span>
                       </div>
                     </div>
@@ -603,9 +1322,7 @@ const GigsTable = ({
                     {getStatusIcon(gig.status)}
                     <span className="ml-1">
                       {gig.status ? 
-                        gig.status.split('_').map(word => 
-                          word.charAt(0).toUpperCase() + word.slice(1)
-                        ).join(' ') 
+                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
                         : 'Draft'
                       }
                     </span>
@@ -615,14 +1332,14 @@ const GigsTable = ({
                   <div className="flex items-center">
                     <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
                     <span className="font-medium">
-                      ${gig.price || gig.budget || 0}
+                      ${gig.budget || gig.price || 0}
                     </span>
                   </div>
                 </td>
                 <td className="py-4 px-6">
                   <div className="flex items-center">
-                    <FileText className="w-4 h-4 text-gray-600 mr-1" />
-                    <span>{gig.orders || gig.proposals?.length || 0}</span>
+                    <User className="w-4 h-4 text-gray-600 mr-1" />
+                    <span>{gig.proposals?.length || 0}</span>
                   </div>
                 </td>
                 <td className="py-4 px-6">
@@ -633,19 +1350,6 @@ const GigsTable = ({
                       title="View Details"
                     >
                       <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectGig(gig._id);
-                        if (window.confirm('Are you sure you want to delete this gig?')) {
-                          handleDeleteGigs([gig._id]);
-                        }
-                      }}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>
@@ -658,30 +1362,34 @@ const GigsTable = ({
   );
 };
 
-const StatsSummary = ({ stats, statsLoading }) => (
+const StatsSummary = ({ stats, statsLoading, activeTab }) => (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
     <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-blue-800">Total Gigs</p>
+          <p className="text-sm text-blue-800">Total {activeTab === 'services' ? 'Services' : 'Gigs'}</p>
           <p className="text-2xl font-bold text-blue-900 mt-1">
-            {stats.totalGigs}
+            {activeTab === 'services' ? stats.totalServices : stats.totalGigs}
           </p>
           {statsLoading && (
             <p className="text-xs text-blue-600 mt-1">Loading...</p>
           )}
         </div>
-        <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
-          <FileText className="w-6 h-6 text-white" />
+        <div className={`w-12 h-12 ${activeTab === 'services' ? 'bg-green-500' : 'bg-blue-500'} rounded-full flex items-center justify-center`}>
+          {activeTab === 'services' ? (
+            <Briefcase className="w-6 h-6 text-white" />
+          ) : (
+            <FileText className="w-6 h-6 text-white" />
+          )}
         </div>
       </div>
     </div>
     <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-2xl p-6 border border-green-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-green-800">Active Gigs</p>
+          <p className="text-sm text-green-800">Active {activeTab === 'services' ? 'Services' : 'Gigs'}</p>
           <p className="text-2xl font-bold text-green-900 mt-1">
-            {stats.activeGigs}
+            {activeTab === 'services' ? stats.activeServices : stats.activeGigs}
           </p>
           {statsLoading && (
             <p className="text-xs text-green-600 mt-1">Loading...</p>
@@ -697,7 +1405,7 @@ const StatsSummary = ({ stats, statsLoading }) => (
         <div>
           <p className="text-sm text-purple-800">Total Orders</p>
           <p className="text-2xl font-bold text-purple-900 mt-1">
-            {stats.totalOrders}
+            {activeTab === 'services' ? stats.serviceOrders : stats.totalOrders}
           </p>
           {statsLoading && (
             <p className="text-xs text-purple-600 mt-1">Loading...</p>
@@ -763,7 +1471,7 @@ const RoleSwitchDialog = ({
                   <>
                     <div className="flex items-start gap-2">
                       <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
-                      <span className="text-sm text-gray-700">Lose access to gig creation and management</span>
+                      <span className="text-sm text-gray-700">Lose access to service creation and management</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
@@ -778,7 +1486,7 @@ const RoleSwitchDialog = ({
                   <>
                     <div className="flex items-start gap-2">
                       <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">Create and manage gigs/services</span>
+                      <span className="text-sm text-gray-700">Create and manage services</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
@@ -843,6 +1551,20 @@ const styles = `
   
   .animate-fadeIn {
     animation: fadeIn 0.3s ease-out;
+  }
+
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 `;
 
