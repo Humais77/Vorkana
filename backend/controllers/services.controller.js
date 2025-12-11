@@ -2372,10 +2372,248 @@ const uploadThumbnail = async (req, res, next) => {
     next(error);
   }
 };
+// Get Seller's Services
+const getMyServices = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    // Security: Only sellers can access this endpoint
+    if (req.user.role !== 'seller' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only sellers can access their services',
+        code: 'SELLER_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const { 
+      status, 
+      page = 1, 
+      limit = 50, 
+      sort = 'createdAt', 
+      order = 'desc',
+      search,
+      title,
+      category,
+      subcategory,
+      gigType,
+      isFeatured,
+      isRecommended,
+      isPopular,
+      minPrice,
+      maxPrice,
+      includeDrafts = 'true',
+      includeInactive = 'false'
+    } = req.query;
+
+    // Security: Build filter for seller's services
+    const filter = { seller: req.user._id };
+    
+    // For admin, respect seller parameter if provided
+    if (req.user.role === 'admin' && req.query.seller && mongoose.Types.ObjectId.isValid(req.query.seller)) {
+      filter.seller = req.query.seller;
+    }
+
+    // Status filter with special handling
+    if (status && status !== 'undefined' && status !== 'all') {
+      filter.status = status;
+    } else {
+      // Default: include all except deleted
+      filter.status = { $nin: ['deleted'] };
+    }
+
+    // Include drafts flag
+    if (includeDrafts === 'false') {
+      if (filter.status && filter.status.$nin) {
+        filter.status.$nin.push('draft');
+      } else if (filter.status === 'draft') {
+        delete filter.status;
+      }
+    }
+
+    // Include inactive flag
+    if (includeInactive === 'false') {
+      filter.isActive = true;
+    }
+
+    // Search filter
+    if (search) {
+      const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+      filter.$text = { $search: sanitizedSearch };
+    }
+
+    // Additional filters
+    if (title) {
+      filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
+    }
+    
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+    
+    if (subcategory && mongoose.Types.ObjectId.isValid(subcategory)) {
+      filter.subcategory = subcategory;
+    }
+    
+    if (gigType) {
+      filter.gigType = gigType;
+    }
+    
+    if (isFeatured !== undefined) {
+      filter.isFeatured = isFeatured === 'true';
+    }
+    
+    if (isRecommended !== undefined) {
+      filter.isRecommended = isRecommended === 'true';
+    }
+    
+    if (isPopular !== undefined) {
+      filter.isPopular = isPopular === 'true';
+    }
+    
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = parseFloat(minPrice);
+      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    }
+
+    // Security: Pagination validation
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Security: Sort validation
+    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
+    const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortObj = { [sortField]: sortOrder };
+
+    // Execute queries
+    const [services, total] = await Promise.all([
+      Service.find(filter)
+        .select('-__v -lastUpdatedBy -version')
+        .populate('category', 'name slug icon')
+        .populate('subcategory', 'name slug')
+        .populate('seller', 'username fullName avatar')
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Service.countDocuments(filter)
+    ]);
+
+    // Security: Format response
+    const formattedServices = services.map(service => {
+      const safeService = { ...service };
+      
+      // Add computed fields
+      safeService.hasImages = Boolean(service.images && service.images.length > 0);
+      safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
+      safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
+      
+      // Format price
+      safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
+      
+      // Format delivery time
+      safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit}`;
+      
+      // Status badge
+      const statusColors = {
+        active: 'success',
+        draft: 'warning',
+        pending: 'info',
+        paused: 'secondary',
+        denied: 'danger',
+        suspended: 'danger'
+      };
+      
+      safeService.statusBadge = {
+        text: service.status.charAt(0).toUpperCase() + service.status.slice(1),
+        color: statusColors[service.status] || 'secondary'
+      };
+      
+      // Truncate description for list view
+      if (safeService.description && safeService.description.length > 150) {
+        safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
+      }
+      
+      return safeService;
+    });
+
+    // Calculate pagination
+    const totalPages = Math.ceil(total / limitNum);
+    const hasNext = pageNum < totalPages;
+    const hasPrev = pageNum > 1;
+
+    // Get status counts for summary
+    const statusCounts = await Service.aggregate([
+      { $match: { seller: filter.seller } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const statusSummary = statusCounts.reduce((acc, curr) => {
+      acc[curr._id] = curr.count;
+      return acc;
+    }, {});
+
+    // Security: Response headers
+    res.set({
+      'X-Request-ID': requestId,
+      'X-Total-Count': total,
+      'X-Total-Pages': totalPages,
+      'X-Page-Size': limitNum,
+      'X-Current-Page': pageNum
+    });
+
+    res.json({
+      success: true,
+      data: formattedServices,
+      summary: {
+        total,
+        ...statusSummary
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext,
+        hasPrev,
+        nextPage: hasNext ? pageNum + 1 : null,
+        prevPage: hasPrev ? pageNum - 1 : null,
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logAudit('ERROR', 'SERVICE', 'GET_MY_SERVICES', req.user?._id, { 
+      error: error.message,
+      params: req.query 
+    });
+    
+    if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
+      return res.status(408).json({
+        success: false,
+        message: 'Query timeout',
+        code: 'QUERY_TIMEOUT',
+        requestId
+      });
+    }
+    
+    next(error);
+  }
+};
 
 module.exports = {
   createService,
   getServices,
+  getMyServices, 
   getServiceById,
   updateService,
   deleteService,

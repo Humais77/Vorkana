@@ -494,5 +494,12 @@ router.get('/metrics/overview',
       }
     });
 });
+// routes/services.js - Update this route
+router.get('/seller/my-services', 
+  protect, 
+  sellerOnly, 
+  serviceLimiter, 
+  controller.getMyServices  // Use the controller method
+);
 
 module.exports = router;
