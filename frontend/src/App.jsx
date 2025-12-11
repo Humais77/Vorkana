@@ -57,6 +57,8 @@ import { useAuthSync } from "./hooks/useAuthSync";
 import CategoryPage from './layouts/pages/CategoryPage';
 import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
+import CreateService from './layouts/pages/CreateService';
+import ServiceDetails from './layouts/pages/ServiceDetails';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -75,6 +77,9 @@ const App = () => {
         <Route path='/categories/:categoryId' element={<CategoryPage/>}/>
         <Route path="/gigs" element={<GigListingsPage />} />
         <Route path='/profile' element={<Profile/>}/>
+        <Route path="/services/create" element={<CreateService />} />
+        <Route path='/profile/services' element={<Profile />} />
+<Route path="/services/:id" element={<ServiceDetails />} />
       </Routes>
       <Footer />
     </BrowserRouter>
