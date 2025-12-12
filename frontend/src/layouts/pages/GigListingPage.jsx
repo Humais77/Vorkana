@@ -1,5 +1,5 @@
 // src/pages/GigListingsPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Star, Clock, CheckCircle, ArrowLeft, Loader2, Search, MapPin } from 'lucide-react';
 import { useGigs } from '../../hooks/useGigs';
@@ -7,23 +7,30 @@ import { useGigs } from '../../hooks/useGigs';
 const GigListingsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [service, setService] = useState('');
-  const [category, setCategory] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Parse query parameters
-  useEffect(() => {
+  
+  // Use useMemo for initial values to prevent cascading renders
+  const initialParams = useMemo(() => {
     const queryParams = new URLSearchParams(location.search);
-    const serviceParam = queryParams.get('service') || '';
-    const categoryParam = queryParams.get('category') || '';
-    
-    setService(serviceParam);
-    setCategory(categoryParam);
-    setSearchQuery(serviceParam);
+    return {
+      serviceParam: queryParams.get('service') || '',
+      categoryParam: queryParams.get('category') || '',
+    };
   }, [location.search]);
 
+  // Initialize state with useMemo values
+  const [service, setService] = useState(initialParams.serviceParam);
+  const [category, setCategory] = useState(initialParams.categoryParam);
+  const [searchQuery, setSearchQuery] = useState(initialParams.serviceParam);
+
+  // Update state only when initialParams change (which happens when location.search changes)
+  React.useEffect(() => {
+    setService(initialParams.serviceParam);
+    setCategory(initialParams.categoryParam);
+    setSearchQuery(initialParams.serviceParam);
+  }, [initialParams]);
+
   // Use the useGigs hook with proper query parameters
-  const { data, isLoading, isError, error } = useGigs({
+  const { data, isLoading, isError, error, refetch } = useGigs({
     search: searchQuery,
     status: 'open',
     page: 1,
@@ -38,18 +45,18 @@ const GigListingsPage = () => {
   const gigs = data?.data || [];
   const totalGigs = data?.pagination?.total || 0;
 
-  const handleGigClick = (gigId, gigSlug) => {
+  const handleGigClick = useCallback((gigId, gigSlug) => {
     navigate(`/gig/${gigSlug || gigId}`);
-  };
+  }, [navigate]);
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     navigate(-1);
-  };
+  }, [navigate]);
 
-  const handleSearch = (e) => {
+  const handleSearch = useCallback((e) => {
     e.preventDefault();
-    // The useGigs hook will automatically refetch with new query
-  };
+    refetch(); // Trigger refetch with new search query
+  }, [refetch]);
 
   if (isLoading) {
     return (
@@ -73,7 +80,7 @@ const GigListingsPage = () => {
             {error?.message || 'Something went wrong. Please try again.'}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => refetch()}
             className="px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
           >
             Try Again
@@ -189,25 +196,7 @@ const GigCard = ({ gig, onClick }) => {
     return categoryImages[categoryName] || categoryImages['default'];
   };
 
-  const getSellerInfo = () => {
-    if (gig.createdBy) {
-      return {
-        name: gig.createdBy.fullName || gig.createdBy.username || 'Seller',
-        avatar: gig.createdBy.avatar || `https://ui-avatars.com/api/?name=${gig.createdBy.fullName || 'Seller'}&background=random`,
-        rating: gig.createdBy.rating || 4.5,
-        verified: true
-      };
-    }
-    
-    return {
-      name: gig.fullName || 'Seller',
-      avatar: `https://ui-avatars.com/api/?name=${gig.fullName || 'Seller'}&background=random`,
-      rating: 4.5,
-      verified: false
-    };
-  };
-
-  const seller = getSellerInfo();
+  // Removed unused seller variable
   const gigImage = getGigImage();
   const gigPrice = gig.budget ? `$${gig.budget}` : 'Negotiable';
   const deliveryTime = gig.timeline ? `${gig.timeline} ${gig.timelineUnit || 'days'}` : 'Custom';
