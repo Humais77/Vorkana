@@ -59,6 +59,7 @@ import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
 import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
+import ScrollToTop from './components/ScrollToTop';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -66,6 +67,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
+    <ScrollToTop/>
       <Navbar />
       <Routes>
         <Route path='/' element={<Home />} />
