@@ -59,36 +59,39 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   // Security: Apply appropriate filters based on user role
   if (showAll && userRole === 'admin') {
-    // Admin can see everything
+    // Admin can see everything including inactive gigs
     if (status !== undefined) {
       filter.status = status;
     }
     filter.deletedAt = null;
   } else if (userRole === 'seller' && userId) {
-    // Seller can see their assigned gigs, their own gigs, and public gigs
+    // Seller can see their assigned gigs, their own gigs, and public ACTIVE gigs
     filter.$or = [
       { assignedTo: userId, deletedAt: null },
       { createdBy: userId, deletedAt: null },
       { 
         status: 'open',
         visibility: 'public',
+        isActive: true, // ADD THIS LINE
         deletedAt: null
       }
     ];
   } else if (userRole === 'user' && userId) {
-    // Regular users can see their own gigs and public gigs
+    // Regular users can see their own gigs and public ACTIVE gigs
     filter.$or = [
       { createdBy: userId, deletedAt: null },
       { 
         status: 'open',
         visibility: 'public',
+        isActive: true, // ADD THIS LINE
         deletedAt: null
       }
     ];
   } else {
-    // Public/guest access
+    // Public/guest access - only ACTIVE gigs
     filter.status = 'open';
     filter.visibility = 'public';
+    filter.isActive = true; // ADD THIS LINE - CRITICAL FIX
     filter.deletedAt = null;
   }
 
@@ -450,7 +453,9 @@ const getGigs = async (req, res, next) => {
       excludeIds,
       showAll: showAllFlag
     }, userRole, req.user?._id);
-
+    if (!showAllFlag && !filter.isActive) {
+      filter.isActive = true;
+    }
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;

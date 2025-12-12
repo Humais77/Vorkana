@@ -80,10 +80,23 @@ export const useMyGigs = (filters = {}) => {
 };
 
 // Get all gigs with query parameters
+// In useGigs.js - update the useGigs hook
+// Get all gigs with query parameters
 export const useGigs = (queryParams = {}) => {
   return useQuery({
     queryKey: gigKeys.list(queryParams),
-    queryFn: () => gigsAPI.getAll(queryParams),
+    queryFn: () => {
+      // Ensure we're only fetching active gigs by default
+      const params = {
+        status: 'open',
+        ...queryParams,
+        // Don't include inactive unless explicitly requested
+        includeInactive: queryParams.includeInactive || false,
+        showAll: queryParams.showAll || false,
+      };
+      
+      return gigsAPI.getAll(params);
+    },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     retry: 2,

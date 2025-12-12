@@ -110,9 +110,12 @@ axiosInstance.interceptors.response.use(
 export const gigsAPI = {
   // Get all gigs with query parameters - UPDATED
   // Update the getAll function to match backend parameters
+// In gig.js - update the getAll function
 getAll: async (params = {}) => {
   try {
-    // Map frontend params to backend params
+    console.log('Fetching gigs with params:', params);
+    
+    // Ensure we're not sending 'me' to backend - convert to actual user ID if needed
     const backendParams = {
       page: params.page || 1,
       limit: params.limit || 10,
@@ -123,7 +126,7 @@ getAll: async (params = {}) => {
       subcategory: params.subcategory,
       minBudget: params.minBudget,
       maxBudget: params.maxBudget,
-      status: params.status,
+      status: params.status || 'open', // Default to open status
       urgency: params.urgency,
       visibility: params.visibility,
       paymentStatus: params.paymentStatus,
@@ -143,12 +146,12 @@ getAll: async (params = {}) => {
       fields: params.fields,
       populate: params.populate !== false,
       showAll: params.showAll || false,
+      includeInactive: params.includeInactive || false,
       includeCategory: params.includeCategory !== false,
       includeClient: params.includeClient !== false,
       includeSeller: params.includeSeller !== false,
       lean: params.lean !== false,
       cache: params.cache || false,
-      // Remove unsupported params
     };
     
     // Clean up undefined/null params
@@ -157,6 +160,8 @@ getAll: async (params = {}) => {
         delete backendParams[key];
       }
     });
+    
+    console.log('Sending to backend:', backendParams);
     
     const response = await axiosInstance.get('/api/gigs', {
       params: backendParams,
@@ -174,6 +179,8 @@ getAll: async (params = {}) => {
         }
       }
     });
+    
+    console.log('Backend response:', response);
     
     return {
       success: true,
