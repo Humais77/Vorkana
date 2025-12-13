@@ -8,7 +8,7 @@ import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
 
-const Navbar = () => {
+const Navbar = ({onSigninClick,onSignupClick }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
@@ -17,7 +17,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation(); // Get current route
-  
+
   const { isAuthenticated, user, loading } = useAuthStore();
   const logoutMutation = useLogout();
   const switchRoleMutation = useSwitchRole();
@@ -47,7 +47,7 @@ const Navbar = () => {
         setScrolled(window.scrollY > 100);
         return;
       }
-      
+
       if (window.scrollY > 100) {
         setShowSearch(true);
         setScrolled(true);
@@ -58,13 +58,13 @@ const Navbar = () => {
     };
 
     window.addEventListener("scroll", handleScroll);
-    
+
     // Reset scroll state when leaving home page
     if (!isHomePage) {
       setShowSearch(false);
       setScrolled(false);
     }
-    
+
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isHomePage]); // Re-run when route changes
 
@@ -257,7 +257,7 @@ const Navbar = () => {
                           </Link>
                         ))}
                       </div>
-                      
+
                       {/* Services Heading with Link */}
                       <Link
                         to="/services"
@@ -349,11 +349,10 @@ const Navbar = () => {
                     onClick={() => setMenuOpen(!menuOpen)}
                     className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
                   >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg ${
-                      user?.role === 'seller' 
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg ${user?.role === 'seller'
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600'
                         : 'bg-gradient-to-r from-blue-500 to-purple-600'
-                    }`}>
+                      }`}>
                       {user?.name?.charAt(0) || 'U'}
                     </div>
                     <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
@@ -373,16 +372,15 @@ const Navbar = () => {
                           <div className="font-medium text-gray-900">{user?.name}</div>
                           <div className="text-sm text-gray-500">{user?.email}</div>
                           <div className="mt-1">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              user?.role === 'seller' 
-                                ? 'bg-green-100 text-green-800' 
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user?.role === 'seller'
+                                ? 'bg-green-100 text-green-800'
                                 : 'bg-blue-100 text-blue-800'
-                            }`}>
+                              }`}>
                               {user?.role === 'seller' ? 'Seller' : 'User'}
                             </span>
                           </div>
                         </div>
-                        
+
                         <div className="p-2">
                           <Link
                             to="/profile"
@@ -392,7 +390,7 @@ const Navbar = () => {
                             <User className="w-4 h-4" />
                             <span>Profile</span>
                           </Link>
-                          
+
                           <Link
                             to="/my-services"
                             onClick={() => setMenuOpen(false)}
@@ -401,7 +399,7 @@ const Navbar = () => {
                             <Package className="w-4 h-4" />
                             <span>My Services</span>
                           </Link>
-                          
+
                           <Link
                             to="/settings"
                             onClick={() => setMenuOpen(false)}
@@ -421,7 +419,7 @@ const Navbar = () => {
                               <span>Switch to Selling</span>
                             </button>
                           )}
-                          
+
                           <button
                             onClick={handleLogout}
                             className="w-full flex items-center space-x-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
@@ -436,18 +434,24 @@ const Navbar = () => {
                 </div>
               ) : (
                 <div className="hidden lg:flex items-center space-x-3">
-                  <Link
-                    to="/sign-in"
+                  <button
+                    onClick={() => {
+                      // This should be passed as a prop from App.jsx
+                      if (onSigninClick) onSigninClick();
+                    }}
                     className="text-gray-700 hover:text-blue-600 font-medium px-3 py-2 transition-colors duration-200"
                   >
                     Sign In
-                  </Link>
-                  <Link
-                    to="/sign-up"
+                  </button>
+                  <button
+                    onClick={() => {
+                      // This should trigger signup modal
+                      if (onSignupClick) onSignupClick();
+                    }}
                     className="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 font-medium transition-all duration-200"
                   >
                     Join
-                  </Link>
+                  </button>
                 </div>
               )}
             </div>
@@ -480,27 +484,25 @@ const Navbar = () => {
                         <X className="w-5 h-5" />
                       </button>
                     </div>
-                    
+
                     {/* User Info in Mobile Menu */}
                     {isAuthenticated && (
                       <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
                         <div className="flex items-center space-x-3">
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${
-                            user?.role === 'seller' 
-                              ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${user?.role === 'seller'
+                              ? 'bg-gradient-to-r from-green-500 to-emerald-600'
                               : 'bg-gradient-to-r from-blue-500 to-purple-600'
-                          }`}>
+                            }`}>
                             {user?.name?.charAt(0) || 'U'}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold text-gray-800 truncate">{user?.name}</div>
                             <div className="text-sm text-gray-500 truncate">{user?.email}</div>
                             <div className="mt-1">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                user?.role === 'seller' 
-                                  ? 'bg-green-100 text-green-800' 
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user?.role === 'seller'
+                                  ? 'bg-green-100 text-green-800'
                                   : 'bg-blue-100 text-blue-800'
-                              }`}>
+                                }`}>
                                 {user?.role === 'seller' ? 'Seller' : 'User'}
                               </span>
                             </div>
@@ -522,7 +524,7 @@ const Navbar = () => {
                         <Home className="w-5 h-5 text-blue-600" />
                         <span className="font-medium text-gray-800">Home</span>
                       </Link>
-                      
+
                       <Link
                         to="/find-work"
                         onClick={() => setMobileMenuOpen(false)}
@@ -538,7 +540,7 @@ const Navbar = () => {
                       <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
                         Explore
                       </div>
-                      
+
                       {/* Categories Link */}
                       <div className="mb-4">
                         <Link
@@ -555,7 +557,7 @@ const Navbar = () => {
                           <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors duration-200" />
                         </Link>
                       </div>
-                      
+
                       {/* Services Link */}
                       <div>
                         <Link
@@ -602,7 +604,7 @@ const Navbar = () => {
                           <User className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">Profile</span>
                         </Link>
-                        
+
                         <Link
                           to="/my-services"
                           onClick={() => setMobileMenuOpen(false)}
@@ -611,7 +613,7 @@ const Navbar = () => {
                           <Package className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">My Services</span>
                         </Link>
-                        
+
                         <Link
                           to="/settings"
                           onClick={() => setMobileMenuOpen(false)}
@@ -620,7 +622,7 @@ const Navbar = () => {
                           <Settings className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">Settings</span>
                         </Link>
-                        
+
                         {/* Switch to Selling - Only for users (not sellers) */}
                         {user?.role === 'user' && (
                           <button
@@ -634,7 +636,7 @@ const Navbar = () => {
                             <span className="font-medium text-gray-800">Switch to Selling</span>
                           </button>
                         )}
-                        
+
                         {/* Seller Dashboard - Only for sellers */}
                         {user?.role === 'seller' && (
                           <Link
@@ -646,7 +648,7 @@ const Navbar = () => {
                             <span className="font-medium text-gray-800">Seller Dashboard</span>
                           </Link>
                         )}
-                        
+
                         <button
                           onClick={handleLogout}
                           className="w-full flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-red-50 transition-all duration-200"
@@ -702,7 +704,7 @@ const Navbar = () => {
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  
+
                   <div className="space-y-4">
                     {/* Warning Alert */}
                     <div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
@@ -716,7 +718,7 @@ const Navbar = () => {
                         </p>
                       </div>
                     </div>
-                    
+
                     {/* Benefits */}
                     <div className="space-y-3">
                       <h4 className="font-semibold text-gray-900">Seller Benefits:</h4>
@@ -739,7 +741,7 @@ const Navbar = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Limitations */}
                     <div className="space-y-3">
                       <h4 className="font-semibold text-gray-900">Please Note:</h4>
@@ -758,7 +760,7 @@ const Navbar = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Action Buttons */}
                     <div className="flex gap-3 pt-4">
                       <button
@@ -785,7 +787,7 @@ const Navbar = () => {
                         )}
                       </button>
                     </div>
-                    
+
                     {/* Final Warning */}
                     <p className="text-xs text-gray-500 text-center pt-2">
                       By proceeding, you confirm that you understand this change is permanent.
