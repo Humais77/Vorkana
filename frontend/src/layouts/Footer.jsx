@@ -60,43 +60,14 @@ const Footer = () => {
     }
   };
 
-  const features = [
-    {
-      title: "Secure Payments",
-      description: "100% payment protection for safe transactions"
-    },
-    {
-      title: "Quality Work",
-      description: "Verified professionals delivering excellence"
-    },
-    {
-      title: "24/7 Support",
-      description: "Always available to assist you"
-    },
-    {
-      title: "Fast Delivery",
-      description: "On-time project completion guaranteed"
-    }
-  ];
-
   return (
-    <footer className="bg-gray-900 text-white pt-16 pb-10">
+    <footer className="bg-gradient-to-b from-slate-50 to-gray-100 text-gray-800 pt-16 pb-10 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Features Section */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-          {features.map((feature, index) => (
-            <div key={index} className="text-center p-6 rounded-xl bg-gray-800/30 border border-gray-700 hover:border-gray-600 transition-colors duration-300">
-              <h4 className="font-semibold text-lg mb-3 text-white">{feature.title}</h4>
-              <p className="text-gray-400 text-sm">{feature.description}</p>
-            </div>
-          ))}
-        </div>
-
         {/* Main Footer Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
           {Object.values(footerLinks).map((section, index) => (
             <div key={index} className="space-y-4">
-              <h3 className="font-bold text-lg text-white mb-6 border-l-4 border-blue-500 pl-3">
+              <h3 className="font-bold text-lg text-gray-900 mb-6 border-l-4 border-blue-500 pl-3">
                 {section.title}
               </h3>
               <ul className="space-y-3">
@@ -104,7 +75,7 @@ const Footer = () => {
                   <li key={linkIndex}>
                     <Link 
                       to={link.path}
-                      className="text-gray-400 hover:text-white transition-colors duration-200 text-sm block py-1"
+                      className="text-gray-600 hover:text-blue-600 transition-colors duration-200 text-sm block py-1"
                     >
                       {link.label}
                     </Link>
@@ -116,26 +87,26 @@ const Footer = () => {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-800 my-10"></div>
+        <div className="border-t border-gray-300 my-10"></div>
 
         {/* Newsletter & Contact */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-10">
           {/* Newsletter */}
           <div className="space-y-6">
             <div>
-              <h3 className="font-bold text-xl mb-2">Stay Updated</h3>
-              <p className="text-gray-400 mb-6">Get the latest news, updates, and special offers</p>
+              <h3 className="font-bold text-xl text-gray-900 mb-2">Stay Updated</h3>
+              <p className="text-gray-600 mb-6">Get the latest news, updates, and special offers</p>
             </div>
             <form className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="email"
                   placeholder="Enter your email address"
-                  className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                  className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 shadow-sm"
                 />
                 <button
                   type="submit"
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-300"
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-300 shadow-sm hover:shadow"
                 >
                   Subscribe
                 </button>
@@ -149,21 +120,21 @@ const Footer = () => {
           {/* Contact Info */}
           <div className="space-y-6">
             <div>
-              <h3 className="font-bold text-xl mb-2">Contact Us</h3>
-              <p className="text-gray-400 mb-6">We're here to help you succeed</p>
+              <h3 className="font-bold text-xl text-gray-900 mb-2">Contact Us</h3>
+              <p className="text-gray-600 mb-6">We're here to help you succeed</p>
             </div>
             <div className="space-y-4">
-              <div className="text-gray-300">
+              <div className="text-gray-700">
                 <div className="font-medium mb-1">Email</div>
-                <div className="text-gray-400">support@vorkana.com</div>
+                <div className="text-gray-600">support@vorkana.com</div>
               </div>
-              <div className="text-gray-300">
+              <div className="text-gray-700">
                 <div className="font-medium mb-1">Phone</div>
-                <div className="text-gray-400">+1 (555) 123-4567</div>
+                <div className="text-gray-600">+1 (555) 123-4567</div>
               </div>
-              <div className="text-gray-300">
+              <div className="text-gray-700">
                 <div className="font-medium mb-1">Address</div>
-                <div className="text-gray-400">
+                <div className="text-gray-600">
                   123 Business Avenue<br />
                   Suite 100<br />
                   San Francisco, CA 94107
@@ -174,18 +145,18 @@ const Footer = () => {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-800 my-10"></div>
+        <div className="border-t border-gray-300 my-10"></div>
 
         {/* Bottom Section */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-8">
           {/* Logo & Copyright */}
           <div className="text-center lg:text-left">
             <div className="mb-4">
-              <span className="text-2xl font-bold text-white">
+              <span className="text-2xl font-bold text-gray-900">
                 Vorkana
               </span>
             </div>
-            <p className="text-gray-500 text-sm max-w-md mb-4">
+            <p className="text-gray-600 text-sm max-w-md mb-4">
               Connecting businesses with top freelance talent worldwide. Quality work, secure payments, and seamless collaboration.
             </p>
             <p className="text-gray-500 text-sm">
@@ -197,8 +168,8 @@ const Footer = () => {
           <div className="flex flex-col items-center lg:items-end gap-6">
             {/* Language & Currency */}
             <div className="flex flex-wrap items-center justify-center gap-4">
-              <div className="px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
-                <select className="bg-transparent text-white text-sm focus:outline-none">
+              <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm">
+                <select className="bg-transparent text-gray-700 text-sm focus:outline-none">
                   <option>English</option>
                   <option>Español</option>
                   <option>Français</option>
@@ -206,8 +177,8 @@ const Footer = () => {
                 </select>
               </div>
               
-              <div className="px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
-                <select className="bg-transparent text-white text-sm focus:outline-none">
+              <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm">
+                <select className="bg-transparent text-gray-700 text-sm focus:outline-none">
                   <option>USD $</option>
                   <option>EUR €</option>
                   <option>GBP £</option>
@@ -218,32 +189,32 @@ const Footer = () => {
 
             {/* Social Links */}
             <div className="flex items-center gap-4">
-              <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+              <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-600 transition-colors duration-200">
                 Facebook
               </a>
-              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-400 transition-colors duration-200">
                 Twitter
               </a>
-              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-pink-600 transition-colors duration-200">
                 Instagram
               </a>
-              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200">
+              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-700 transition-colors duration-200">
                 LinkedIn
               </a>
             </div>
 
             {/* Policy Links */}
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500">
-              <Link to="/privacy" className="hover:text-white transition-colors duration-200">
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-600">
+              <Link to="/privacy" className="hover:text-blue-600 transition-colors duration-200">
                 Privacy Policy
               </Link>
-              <Link to="/terms" className="hover:text-white transition-colors duration-200">
+              <Link to="/terms" className="hover:text-blue-600 transition-colors duration-200">
                 Terms of Service
               </Link>
-              <Link to="/cookies" className="hover:text-white transition-colors duration-200">
+              <Link to="/cookies" className="hover:text-blue-600 transition-colors duration-200">
                 Cookie Policy
               </Link>
-              <Link to="/sitemap" className="hover:text-white transition-colors duration-200">
+              <Link to="/sitemap" className="hover:text-blue-600 transition-colors duration-200">
                 Sitemap
               </Link>
             </div>
@@ -251,8 +222,8 @@ const Footer = () => {
         </div>
 
         {/* Made with love */}
-        <div className="mt-12 pt-6 border-t border-gray-800 text-center">
-          <p className="text-gray-600 text-sm">
+        <div className="mt-12 pt-6 border-t border-gray-300 text-center">
+          <p className="text-gray-500 text-sm">
             Made with passion by the Vorkana team
           </p>
         </div>
