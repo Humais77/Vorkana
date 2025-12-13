@@ -9,7 +9,17 @@ export const useCategories = (options = {}) => {
   
   return useQuery({
     queryKey: ['categories'],
-    queryFn: categoriesAPI.getAll,
+    queryFn: async () => {
+      try {
+        // Get parent categories with subcategories
+        const parentCategories = await categoriesAPI.getParentCategories();
+        console.log('Parent categories with subcategories:', parentCategories);
+        return parentCategories;
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        throw error;
+      }
+    },
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
     retry: 2,
@@ -27,6 +37,7 @@ export const useCategories = (options = {}) => {
     
     // Update Zustand store on success
     onSuccess: (data) => {
+      console.log('Categories fetched successfully:', data);
       setCategories(data);
     },
     

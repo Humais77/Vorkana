@@ -46,78 +46,53 @@ export const categoriesAPI = {
    * Get all categories
    * @returns {Promise<Array>} Array of categories
    */
-  getAll: async () => {
-    try {
-      const response = await axiosInstance.get('/api/categories');
-      
-      // Handle different response structures
-      let categories = [];
-      
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          categories = response.data;
-        } else if (response.data.categories && Array.isArray(response.data.categories)) {
-          categories = response.data.categories;
-        } else if (response.data.data && Array.isArray(response.data.data)) {
-          categories = response.data.data;
-        } else if (response.data.success && Array.isArray(response.data.data)) {
-          categories = response.data.data;
-        }
+ getAll: async (params = {}) => {
+  try {
+    // Add query parameters for parent categories with subcategories
+    const queryParams = {
+      ...params,
+      parentCategory: null, // Only get parent categories (level 0)
+      includeSubcategories: true, // Include subcategories
+    };
+
+    const response = await axiosInstance.get('/api/categories', { params: queryParams });
+    
+    // Handle different response structures
+    let categories = [];
+    
+    if (response.data) {
+      if (Array.isArray(response.data)) {
+        categories = response.data;
+      } else if (response.data.data && Array.isArray(response.data.data)) {
+        categories = response.data.data;
+      } else if (response.data.success && Array.isArray(response.data.data)) {
+        categories = response.data.data;
       }
-      
-      // Ensure each category has required fields
-      return categories.map(category => ({
-        _id: category._id || category.id,
-        name: category.name || 'Unnamed Category',
-        description: category.description || '',
-        icon: category.icon || '📁',
-        slug: category.slug || category.name?.toLowerCase().replace(/\s+/g, '-'),
-        createdAt: category.createdAt || new Date().toISOString(),
-        updatedAt: category.updatedAt || new Date().toISOString(),
-      }));
-      
-    } catch (error) {
-      console.error('Categories API error:', error);
-      
-      // Enhanced error handling
-      let errorMessage = 'Failed to fetch categories';
-      
-      if (error.response) {
-        const { status, data } = error.response;
-        
-        switch (status) {
-          case 404:
-            errorMessage = "Categories endpoint not found";
-            break;
-          case 500:
-            errorMessage = "Server error. Please try again later.";
-            break;
-          case 401:
-            errorMessage = "Authentication required";
-            break;
-          case 403:
-            errorMessage = "Access forbidden";
-            break;
-          default:
-            errorMessage = data?.message || `Server error (${status})`;
-        }
-      } else if (error.request) {
-        errorMessage = "No response from server. Please check if backend is running.";
-      } else {
-        errorMessage = error.message || errorMessage;
-      }
-      
-      // Throw a proper error object
-      throw new Error(errorMessage, {
-        cause: error,
-        details: {
-          response: error.response?.data,
-          status: error.response?.status,
-          url: error.config?.url
-        }
-      });
     }
-  },
+    
+    // DEBUG: Log the categories structure
+    console.log('Categories from API:', categories);
+    
+    // Ensure each category has required fields
+    return categories.map(category => ({
+      _id: category._id || category.id,
+      name: category.name || 'Unnamed Category',
+      description: category.description || '',
+      icon: category.icon || '📁',
+      slug: category.slug || category.name?.toLowerCase().replace(/\s+/g, '-'),
+      parentCategory: category.parentCategory,
+      level: category.level || 0,
+      // Check for subcategories in different possible locations
+      children: category.children || category.subcategories || [],
+      createdAt: category.createdAt || new Date().toISOString(),
+      updatedAt: category.updatedAt || new Date().toISOString(),
+    }));
+    
+  } catch (error) {
+    console.error('Categories API error:', error);
+    throw error;
+  }
+},
   
   /**
    * Get category by ID
@@ -222,4 +197,21 @@ export const categoriesAPI = {
       throw error;
     }
   },
+  getParentCategories: async () => {
+  try {
+    const response = await axiosInstance.get('/api/categories', {
+      params: {
+        parentCategory: null, // Only parent categories
+        level: 0,
+        includeSubcategories: true,
+        limit: 50
+      }
+    });
+    
+    return response.data.data || response.data || [];
+  } catch (error) {
+    console.error('Get parent categories error:', error);
+    throw error;
+  }
+},
 };

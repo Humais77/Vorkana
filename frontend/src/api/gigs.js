@@ -255,6 +255,12 @@ getAll: async (params = {}) => {
                   formData.append('attachments', file);
                 }
               });
+            } else if (key === 'files' && Array.isArray(gigData[key])) {
+              gigData[key].forEach((file) => {
+                if (file instanceof File) {
+                  formData.append('files', file);
+                }
+              });
             } else if (key === 'skillsRequired' && Array.isArray(gigData[key])) {
               gigData[key].forEach((skill, index) => {
                 formData.append(`skillsRequired[${index}]`, skill);
@@ -266,7 +272,12 @@ getAll: async (params = {}) => {
             } else if (typeof gigData[key] === 'object') {
               formData.append(key, JSON.stringify(gigData[key]));
             } else {
-              formData.append(key, gigData[key]);
+              // Ensure subcategory is properly handled
+              if (key === 'subcategory' && !gigData[key]) {
+                // Don't append empty subcategory
+              } else {
+                formData.append(key, gigData[key]);
+              }
             }
           }
         });

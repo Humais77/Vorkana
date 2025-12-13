@@ -513,16 +513,16 @@ gigSchema.post('save', async function (doc) {
   }
 });
 
-// FIXED post-remove (query middleware) – no next needed
-gigSchema.post('findOneAndDelete', async function (doc) {
-  if (doc && doc.status === 'open') {
-    try {
-      await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
-    } catch (error) {
-      console.error('Error decrementing gig count on delete:', error);
-    }
-  }
-});
+// // FIXED post-remove (query middleware) – no next needed
+// gigSchema.post('findOneAndDelete', async function (doc) {
+//   if (doc && doc.status === 'open') {
+//     try {
+//       await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
+//     } catch (error) {
+//       console.error('Error decrementing gig count on delete:', error);
+//     }
+//   }
+// });
 
 // Indexes (only compound indexes, single indexes are at field level)
 gigSchema.index({ projectCategory: 1, status: 1 }, { name: 'category_status_idx' });

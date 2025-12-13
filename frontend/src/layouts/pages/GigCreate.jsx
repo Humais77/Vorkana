@@ -53,18 +53,18 @@ const GigCreate = () => {
   const { categories: storedCategories, setCategories } = useCategoryStore();
 
   // TanStack Query hooks
-  const { 
-    data: categoriesData, 
-    isLoading: categoryLoading, 
+  const {
+    data: categoriesData,
+    isLoading: categoryLoading,
     error: categoryError,
-    refetch: refetchCategories 
+    refetch: refetchCategories
   } = useCategories();
-  
-  const { 
-    mutate: createGig, 
-    isPending: gigLoading, 
-    error: gigError, 
-    isSuccess: gigSuccess, 
+
+  const {
+    mutate: createGig,
+    isPending: gigLoading,
+    error: gigError,
+    isSuccess: gigSuccess,
     data: createdGigData,
     reset: resetGigMutation
   } = useCreateGig();
@@ -125,6 +125,12 @@ const GigCreate = () => {
       }));
     }
   }, [currentUser]);
+  useEffect(() => {
+  console.log('DEBUG - Current categoriesData:', categoriesData);
+  console.log('DEBUG - Current storedCategories:', storedCategories);
+  console.log('DEBUG - Category loading:', categoryLoading);
+  console.log('DEBUG - Category error:', categoryError);
+}, [categoriesData, storedCategories, categoryLoading, categoryError]);
 
   // Sync categories from query to store
   useEffect(() => {
@@ -134,24 +140,63 @@ const GigCreate = () => {
   }, [categoriesData, setCategories]);
 
   // Update subcategories when category changes
-  useEffect(() => {
-    if (formData.projectCategory && categoriesData) {
-      const category = Array.isArray(categoriesData) 
-        ? categoriesData.find(c => c._id === formData.projectCategory)
-        : null;
+ useEffect(() => {
+  console.log('Category changed:', formData.projectCategory);
+  console.log('Categories data available:', !!categoriesData);
+  
+  if (formData.projectCategory && categoriesData) {
+    // Get the current category list (either from store or query)
+    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+      ? storedCategories
+      : (Array.isArray(categoriesData) ? categoriesData : []);
+    
+    console.log('Category list:', categoryList);
+    
+    // Find the selected category
+    const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
+    console.log('Selected category:', selectedCategory);
+    
+    if (selectedCategory) {
+      // Get subcategories - check multiple possible locations
+      const subs = selectedCategory.children || 
+                   selectedCategory.subcategories || 
+                   [];
       
-      const subs = category?.children || category?.subcategories || [];
+      console.log('Found subcategories:', subs);
       setSubcategories(subs);
-      
+
       // Reset subcategory if parent category changes and subcategory is not valid
       if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
+        console.log('Resetting subcategory - not found in new subcategories');
         setFormData(prev => ({ ...prev, subcategory: "" }));
       }
     } else {
+      console.log('No selected category found');
       setSubcategories([]);
       setFormData(prev => ({ ...prev, subcategory: "" }));
     }
-  }, [formData.projectCategory, categoriesData]);
+  } else {
+    console.log('No project category selected or no categories data');
+    setSubcategories([]);
+    setFormData(prev => ({ ...prev, subcategory: "" }));
+  }
+}, [formData.projectCategory, categoriesData, storedCategories]);
+const DebugCategoryInfo = () => (
+  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+    <h4 className="font-bold text-yellow-800 mb-2">Category Debug Info:</h4>
+    <div className="text-sm space-y-1">
+      <p>Selected Category ID: {formData.projectCategory || 'None'}</p>
+      <p>Selected Category Name: {getCategoryName()}</p>
+      <p>Subcategory ID: {formData.subcategory || 'None'}</p>
+      <p>Subcategory Name: {getSubcategoryName()}</p>
+      <p>Subcategories available: {subcategories.length}</p>
+      <p>Categories loaded: {Array.isArray(categoriesData) ? categoriesData.length : 'Not array'}</p>
+      <p>Categories in store: {Array.isArray(storedCategories) ? storedCategories.length : 'Not array'}</p>
+      <p>Category loading: {categoryLoading ? 'Yes' : 'No'}</p>
+      <p>Category error: {categoryError ? 'Yes' : 'No'}</p>
+    </div>
+  </div>
+);
 
   // Cleanup when component unmounts
   useEffect(() => {
@@ -165,7 +210,7 @@ const GigCreate = () => {
   useEffect(() => {
     if (gigSuccess && createdGigData) {
       const gigId = createdGigData.data?._id || createdGigData.gig?._id || createdGigData._id;
-      
+
       if (gigId) {
         setCreatedGigId(gigId);
         setSuccess(true);
@@ -173,7 +218,7 @@ const GigCreate = () => {
         setLastCreatedGigId(gigId);
 
         toast.success(createdGigData.message || "Gig created successfully!");
-        
+
         const timer = setTimeout(() => {
           navigate(`/gig/${gigId}`);
         }, 3000);
@@ -189,11 +234,11 @@ const GigCreate = () => {
       setCreatedGigId(lastCreatedGigId);
       setSuccess(true);
       setActiveStep(5);
-      
+
       const timer = setTimeout(() => {
         navigate(`/gig/${lastCreatedGigId}`);
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [lastCreatedGigId, success, navigate]);
@@ -238,12 +283,12 @@ const GigCreate = () => {
 
     for (const file of filesArray) {
       const isValidType = [
-        'image/jpeg', 'image/jpg', 'image/png', 
-        'application/pdf', 'application/msword', 
+        'image/jpeg', 'image/jpg', 'image/png',
+        'application/pdf', 'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/zip', 'application/x-rar-compressed'
       ].includes(file.type);
-      
+
       const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB
 
       if (!isValidType) {
@@ -274,13 +319,13 @@ const GigCreate = () => {
     }
 
     setErrors(newErrors);
-    
+
     if (fileType === 'attachments') {
       setAttachments(prev => [...prev, ...validFiles]);
     } else if (fileType === 'files') {
       setFiles(prev => [...prev, ...validFiles]);
     }
-    
+
     e.target.value = '';
   }, [errors]);
 
@@ -346,9 +391,10 @@ const GigCreate = () => {
   };
 
   // Handle Email/Password Login
+  // Update the handleEmailLogin function with better error handling
   const handleEmailLogin = async (e) => {
     e.preventDefault();
-    
+
     if (!loginForm.email || !loginForm.password) {
       toast.error("Please enter email and password");
       return;
@@ -371,22 +417,34 @@ const GigCreate = () => {
       if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         toast.success("Login successful!");
-        window.location.reload(); // Reload to update auth state
+
+        // Update form with user data
+        setFormData(prev => ({
+          ...prev,
+          fullName: data.user.name || data.user.fullName || "",
+          oauthEmail: data.user.email || ""
+        }));
+
+        // If you're using Zustand, you might need to update the store
+        useAuthStore.getState().setUser(data.user);
+
       } else {
         toast.error(data.message || "Login failed");
+        setErrors(prev => ({ ...prev, auth: data.message }));
       }
     } catch (error) {
       console.error('Login error:', error);
       toast.error("Login failed. Please try again.");
+      setErrors(prev => ({ ...prev, auth: "Network error" }));
     }
   };
 
   // Handle Registration
   const handleRegister = async (e) => {
     e.preventDefault();
-    
+
     if (registerForm.password !== registerForm.confirmPassword) {
       toast.error("Passwords do not match");
       return;
@@ -415,7 +473,7 @@ const GigCreate = () => {
       if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         toast.success("Registration successful!");
         setAuthMode("login");
       } else {
@@ -498,115 +556,120 @@ const GigCreate = () => {
   }, [activeStep]);
 
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    if (!isAuthenticated) {
-      setErrors(prev => ({
-        ...prev,
-        form: "Please sign in to create a gig."
-      }));
-      setActiveStep(1);
-      toast.error("Please sign in first");
-      setIsSubmitting(false);
-      return;
+  if (!isAuthenticated) {
+    setErrors(prev => ({
+      ...prev,
+      form: "Please sign in to create a gig."
+    }));
+    setActiveStep(1);
+    toast.error("Please sign in first");
+    setIsSubmitting(false);
+    return;
+  }
+
+  // Validate all steps
+  let hasError = false;
+  for (let step = 1; step <= 4; step++) {
+    if (!validateStep(step)) {
+      setActiveStep(step);
+      hasError = true;
+      break;
     }
+  }
 
-    // Validate all steps
-    let hasError = false;
-    for (let step = 1; step <= 4; step++) {
-      if (!validateStep(step)) {
-        setActiveStep(step);
-        hasError = true;
-        break;
-      }
-    }
+  if (hasError) {
+    setIsSubmitting(false);
+    return;
+  }
 
-    if (hasError) {
-      setIsSubmitting(false);
-      return;
-    }
+  try {
+    const formDataObj = new FormData();
 
-    try {
-      const formDataObj = new FormData();
+    // Prepare data according to backend model
+    const gigData = {
+      title: formData.title.trim(),
+      fullName: formData.fullName.trim(),
+      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+      country: formData.country.trim(),
+      phone: formData.phone.trim(),
+      projectCategory: formData.projectCategory,
+      subcategory: formData.subcategory || undefined, // Send undefined if empty
+      description: formData.description.trim(),
+      budget: parseFloat(formData.budget),
+      currency: formData.currency,
+      timeline: formData.timeline.trim(),
+      timelineUnit: formData.timelineUnit,
+      communication: formData.communication,
+      urgency: formData.urgency,
+      visibility: formData.visibility,
+    };
 
-      // Prepare data according to backend model
-      const gigData = {
-        title: formData.title.trim(),
-        fullName: formData.fullName.trim(),
-        oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-        country: formData.country.trim(),
-        phone: formData.phone.trim(),
-        projectCategory: formData.projectCategory,
-        subcategory: formData.subcategory || undefined,
-        description: formData.description.trim(),
-        budget: parseFloat(formData.budget),
-        currency: formData.currency,
-        timeline: formData.timeline.trim(),
-        timelineUnit: formData.timelineUnit,
-        communication: formData.communication,
-        urgency: formData.urgency,
-        visibility: formData.visibility,
-      };
-
-      // Append all data to FormData
-      Object.keys(gigData).forEach(key => {
-        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-          if (typeof gigData[key] === 'object') {
-            formDataObj.append(key, JSON.stringify(gigData[key]));
-          } else {
-            formDataObj.append(key, gigData[key]);
-          }
+    // Log gig data for debugging
+    console.log('=== GIG DATA TO BE SENT ===');
+    console.log('Category:', gigData.projectCategory);
+    console.log('Subcategory:', gigData.subcategory);
+    console.log('Has subcategory?', !!gigData.subcategory);
+    
+    // Append all data to FormData
+    Object.keys(gigData).forEach(key => {
+      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+        if (typeof gigData[key] === 'object') {
+          formDataObj.append(key, JSON.stringify(gigData[key]));
+        } else {
+          formDataObj.append(key, gigData[key]);
         }
-      });
-
-      // Append skills array properly
-      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-        formData.skillsRequired.forEach((skill, index) => {
-          formDataObj.append(`skillsRequired[${index}]`, skill);
-        });
       }
+    });
 
-      // Append deliverables array properly
-      if (formData.deliverables && formData.deliverables.length > 0) {
-        formData.deliverables.forEach((deliverable, index) => {
-          formDataObj.append(`deliverables[${index}]`, deliverable);
-        });
-      }
-
-      // Append attachments
-      attachments.forEach((file) => {
-        formDataObj.append("attachments", file);
+    // Append skills array properly
+    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+      formData.skillsRequired.forEach((skill, index) => {
+        formDataObj.append(`skillsRequired[${index}]`, skill);
       });
-
-      // Append other files
-      files.forEach((file) => {
-        formDataObj.append("files", file);
-      });
-
-      // Log FormData entries for debugging
-      console.log("=== FORM DATA BEING SENT ===");
-      for (let [key, value] of formDataObj.entries()) {
-        console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-      }
-
-      setErrors({});
-
-      // Call create gig mutation
-      createGig(formDataObj);
-
-    } catch (error) {
-      console.error("Error in handleSubmit:", error);
-      toast.error("Failed to prepare gig data. Please try again.");
-      setErrors(prev => ({
-        ...prev,
-        form: error.message || "Something went wrong. Please try again."
-      }));
-    } finally {
-      setIsSubmitting(false);
     }
-  }, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
 
+    // Append deliverables array properly
+    if (formData.deliverables && formData.deliverables.length > 0) {
+      formData.deliverables.forEach((deliverable, index) => {
+        formDataObj.append(`deliverables[${index}]`, deliverable);
+      });
+    }
+
+    // Append attachments
+    attachments.forEach((file) => {
+      formDataObj.append("attachments", file);
+    });
+
+    // Append other files
+    files.forEach((file) => {
+      formDataObj.append("files", file);
+    });
+
+    // Log FormData entries for debugging
+    console.log("=== FINAL FORM DATA BEING SENT ===");
+    for (let [key, value] of formDataObj.entries()) {
+      console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+    }
+
+    setErrors({});
+
+    // Call create gig mutation
+    createGig(formDataObj);
+
+  } catch (error) {
+    console.error("Error in handleSubmit:", error);
+    toast.error("Failed to prepare gig data. Please try again.");
+    setErrors(prev => ({
+      ...prev,
+      form: error.message || "Something went wrong. Please try again."
+    }));
+  } finally {
+    setIsSubmitting(false);
+  }
+}, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
     toast.success("Refreshing categories...");
@@ -635,20 +698,21 @@ const GigCreate = () => {
 
   // Get category name for display
   const getCategoryName = () => {
-    if (!formData.projectCategory) return "";
-    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0 
-      ? storedCategories 
-      : (Array.isArray(categoriesData) ? categoriesData : []);
-    const category = categoryList.find(c => c._id === formData.projectCategory);
-    return category?.name || "";
-  };
+  if (!formData.projectCategory) return "";
+  const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+    ? storedCategories
+    : (Array.isArray(categoriesData) ? categoriesData : []);
+  const category = categoryList.find(c => c._id === formData.projectCategory);
+  return category?.name || "";
+};
 
   // Get subcategory name for display
   const getSubcategoryName = () => {
-    if (!formData.subcategory) return "";
-    const subcategory = subcategories.find(s => s._id === formData.subcategory);
-    return subcategory?.name || "";
-  };
+  if (!formData.subcategory) return "";
+  const subcategory = subcategories.find(s => s._id === formData.subcategory);
+  return subcategory?.name || "";
+};
+
 
   // Handle Enter key press for skills and deliverables
   const handleKeyPress = (e, type) => {
@@ -794,9 +858,8 @@ const GigCreate = () => {
                   {index < steps.length - 1 && (
                     <div className="flex-1 h-1 bg-gray-200 mx-1 md:mx-2 relative">
                       <div
-                        className={`absolute top-0 left-0 h-full bg-emerald-600 transition-all duration-300 ${
-                          isCompleted ? 'w-full' : 'w-0'
-                        }`}
+                        className={`absolute top-0 left-0 h-full bg-emerald-600 transition-all duration-300 ${isCompleted ? 'w-full' : 'w-0'
+                          }`}
                       />
                     </div>
                   )}
@@ -879,13 +942,13 @@ const GigCreate = () => {
                             </span>
                           </li>
                           {formData.subcategory && (
-                            <li className="flex justify-between">
-                              <span className="text-emerald-100">Subcategory:</span>
-                              <span className="font-medium truncate max-w-[120px]">
-                                {getSubcategoryName()}
-                              </span>
-                            </li>
-                          )}
+  <li className="flex justify-between">
+    <span className="text-emerald-100">Subcategory:</span>
+    <span className="font-medium truncate max-w-[120px]">
+      {getSubcategoryName()}
+    </span>
+  </li>
+)}
                           {formData.budget && (
                             <li className="flex justify-between">
                               <span className="text-emerald-100">Budget:</span>
@@ -1012,22 +1075,20 @@ const GigCreate = () => {
                               <button
                                 type="button"
                                 onClick={() => setAuthMode("login")}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                  authMode === "login"
-                                    ? "border-emerald-500 text-emerald-600"
-                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                }`}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${authMode === "login"
+                                  ? "border-emerald-500 text-emerald-600"
+                                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                  }`}
                               >
                                 Sign In
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setAuthMode("register")}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                  authMode === "register"
-                                    ? "border-emerald-500 text-emerald-600"
-                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                }`}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${authMode === "register"
+                                  ? "border-emerald-500 text-emerald-600"
+                                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                  }`}
                               >
                                 Sign Up
                               </button>
@@ -1378,58 +1439,61 @@ const GigCreate = () => {
 
                           {/* Project Category */}
                           <div>
-                            <div className="flex justify-between items-center mb-2">
-                              <label className="text-sm font-semibold text-gray-700">
-                                Project Category *
-                              </label>
-                              {categoryError && (
-                                <button
-                                  type="button"
-                                  onClick={handleRefreshCategories}
-                                  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                                >
-                                  Refresh Categories
-                                </button>
-                              )}
-                            </div>
-                            <div className="relative">
-                              <select
-                                name="projectCategory"
-                                value={formData.projectCategory}
-                                onChange={handleInputChange}
-                                className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                                disabled={categoryLoading || gigLoading}
-                              >
-                                <option value="">Select a category</option>
-                                {categoryLoading ? (
-                                  <option value="" disabled>Loading categories...</option>
-                                ) : (
-                                  (Array.isArray(storedCategories) && storedCategories.length > 0 ? storedCategories : (Array.isArray(categoriesData) ? categoriesData : [])).map((category) => (
-                                    <option key={category._id} value={category._id}>
-                                      {category.name}
-                                    </option>
-                                  ))
-                                )}
-                              </select>
-                              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                <ChevronDown className="h-4 w-4" />
-                              </div>
-                            </div>
-                            {categoryLoading && (
-                              <div className="flex items-center mt-2 text-sm text-gray-500">
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                Loading categories...
-                              </div>
-                            )}
-                            {categoryError && !categoryLoading && (
-                              <p className="mt-2 text-sm text-red-600">
-                                Failed to load categories. Please try refreshing.
-                              </p>
-                            )}
-                            {errors.projectCategory && (
-                              <p className="mt-2 text-sm text-red-600">{errors.projectCategory}</p>
-                            )}
-                          </div>
+  <div className="flex justify-between items-center mb-2">
+    <label className="text-sm font-semibold text-gray-700">
+      Project Category *
+    </label>
+    {categoryError && (
+      <button
+        type="button"
+        onClick={handleRefreshCategories}
+        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+      >
+        Refresh Categories
+      </button>
+    )}
+  </div>
+  <div className="relative">
+    <select
+      name="projectCategory"
+      value={formData.projectCategory}
+      onChange={handleInputChange}
+      className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+      disabled={categoryLoading || gigLoading}
+    >
+      <option value="">Select a category</option>
+      {categoryLoading ? (
+        <option value="" disabled>Loading categories...</option>
+      ) : (
+        // Use storedCategories if available, otherwise categoriesData
+        (Array.isArray(storedCategories) && storedCategories.length > 0 ? storedCategories : 
+         (Array.isArray(categoriesData) ? categoriesData : [])).map((category) => (
+          <option key={category._id} value={category._id}>
+            {category.name}
+            {category.level === 0 ? ' (Parent)' : ''}
+          </option>
+        ))
+      )}
+    </select>
+    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+      <ChevronDown className="h-4 w-4" />
+    </div>
+  </div>
+  {categoryLoading && (
+    <div className="flex items-center mt-2 text-sm text-gray-500">
+      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+      Loading categories...
+    </div>
+  )}
+  {categoryError && !categoryLoading && (
+    <p className="mt-2 text-sm text-red-600">
+      Failed to load categories. Please try refreshing.
+    </p>
+  )}
+  {errors.projectCategory && (
+    <p className="mt-2 text-sm text-red-600">{errors.projectCategory}</p>
+  )}
+</div>
 
                           {/* Subcategory */}
                           {subcategories.length > 0 && (
@@ -1645,9 +1709,9 @@ const GigCreate = () => {
                                     w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center capitalize
                                     ${formData.urgency === level
                                       ? level === 'urgent' ? 'border-red-500 bg-red-50 text-red-600'
-                                      : level === 'high' ? 'border-orange-500 bg-orange-50 text-orange-600'
-                                      : level === 'medium' ? 'border-yellow-500 bg-yellow-50 text-yellow-600'
-                                      : 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                                        : level === 'high' ? 'border-orange-500 bg-orange-50 text-orange-600'
+                                          : level === 'medium' ? 'border-yellow-500 bg-yellow-50 text-yellow-600'
+                                            : 'border-emerald-500 bg-emerald-50 text-emerald-600'
                                       : 'border-gray-200 hover:border-gray-300'
                                     }
                                     ${gigLoading ? 'opacity-50 cursor-not-allowed' : ''}
@@ -1966,7 +2030,7 @@ const GigCreate = () => {
                         Back
                       </button>
                     )}
-                    
+
                     {activeStep < 4 ? (
                       <button
                         type="button"

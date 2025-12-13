@@ -90,7 +90,7 @@ export const useGigs = (queryParams = {}) => {
       const params = {
         status: 'open',
         ...queryParams,
-        // Don't include inactive unless explicitly requested
+        includeSubcategory: queryParams.includeSubcategory !== false, // NEW
         includeInactive: queryParams.includeInactive || false,
         showAll: queryParams.showAll || false,
       };
@@ -195,24 +195,45 @@ export const useCreateGig = () => {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: gigKeys.all });
-      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() }); // Also invalidate my gigs
+      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
       
       const gigId = data.data?._id || data.gig?._id;
       if (gigId) {
         setLastCreatedGigId(gigId);
       }
       
+      // Log success details
+      console.log('Gig created successfully:', {
+        id: gigId,
+        title: data.data?.title,
+        category: data.data?.projectCategory,
+        subcategory: data.data?.subcategory
+      });
+      
       toast.success(data.message || 'Gig created successfully!');
     },
     onError: (error, variables, context) => {
       console.error('Gig creation error:', error);
+      
+      // Log detailed error for debugging
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        errors: error.errors
+      });
       
       if (context?.previousGigs) {
         queryClient.setQueryData(gigKeys.lists(), context.previousGigs);
       }
       
       const errorMessage = error.data?.message || error.message || 'Failed to create gig';
-      toast.error(errorMessage);
+      
+      // Special handling for subcategory errors
+      if (error.message?.includes('subcategory') || error.code === 'SUBCATEGORY_NOT_FOUND') {
+        toast.error('Please select a valid subcategory or leave it empty');
+      } else {
+        toast.error(errorMessage);
+      }
       
       if (error.data?.errors) {
         console.error('Validation errors:', error.data.errors);

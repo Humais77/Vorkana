@@ -9,18 +9,32 @@ const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
+// gig.controller.js - REPLACE sanitizeGigInput function (lines 15-35):
 const sanitizeGigInput = (data) => {
-  // If it's FormData, return it as is - we'll handle it separately
-  if (data instanceof FormData) {
-    return data;
-  }
+  // Use the existing sanitizeObject function directly
+  if (!data || typeof data !== 'object') return data;
   
-  const skipKeys = ['projectCategory', 'subcategory', 'assignedTo', 'selectedProposal', 
-                   'createdBy', 'lastUpdatedBy', 'budget', 'price', 'amount', 
-                   'paymentAmount', 'depositPaid', 'rating', 'deliveryTime', 'version'];
+  // Clone and sanitize the object
+  const sanitized = { ...data };
+  const sanitizeTextFields = (value) => {
+    if (typeof value === 'string') {
+      return sanitizeText(value);
+    }
+    if (Array.isArray(value) && typeof value[0] === 'string') {
+      return value.map(sanitizeText);
+    }
+    return value;
+  };
   
-  // Use the safe sanitize function
-  return safeSanitizeGigInput(data);
+  // Apply sanitization to text fields
+  Object.keys(sanitized).forEach(key => {
+    if (typeof sanitized[key] === 'string' || 
+        (Array.isArray(sanitized[key]) && typeof sanitized[key][0] === 'string')) {
+      sanitized[key] = sanitizeTextFields(sanitized[key]);
+    }
+  });
+  
+  return sanitized;
 };
 
 const buildSecureGigQuery = (queryParams, userRole, userId) => {
@@ -218,21 +232,21 @@ const createGig = async (req, res, next) => {
     }
 
 
-    let sanitizedData;
-    if (req.body instanceof FormData || req.is('multipart/form-data')) {
-      // For FormData, we need to extract fields manually
-      const formData = {};
-      if (req.body instanceof FormData) {
-        // In Node.js, FormData might be parsed differently
-        // You'll need to handle this based on your middleware
-      } else if (req.body) {
-        // If multer or similar middleware has already parsed it
-        sanitizedData = req.body;
-      }
-    } else {
-      sanitizedData = sanitizeGigInput(req.body);
-    }
-
+    // let sanitizedData;
+    // if (req.body instanceof FormData || req.is('multipart/form-data')) {
+    //   // For FormData, we need to extract fields manually
+    //   const formData = {};
+    //   if (req.body instanceof FormData) {
+    //     // In Node.js, FormData might be parsed differently
+    //     // You'll need to handle this based on your middleware
+    //   } else if (req.body) {
+    //     // If multer or similar middleware has already parsed it
+    //     sanitizedData = req.body;
+    //   }
+    // } else {
+    //   sanitizedData = sanitizeGigInput(req.body);
+    // }
+     const sanitizedData = sanitizeGigInput(req.body);
     if (!mongoose.Types.ObjectId.isValid(sanitizedData.projectCategory)) {
       return res.status(400).json({
         success: false,
@@ -1135,8 +1149,7 @@ const updateGig = async (req, res, next) => {
   }
 };
 
-// Delete Gig with Security
-// Update the deleteGig function in gig.controller.js
+// gig.controller.js - REPLACE deleteGig function starting from line 510:
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1165,6 +1178,16 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
+    // Check if gig is already deleted
+    if (gig.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gig is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
+    }
+
     const isOwner = gig.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
@@ -1174,16 +1197,6 @@ const deleteGig = async (req, res, next) => {
         success: false,
         message: 'You can only delete your own gigs',
         code: 'OWNERSHIP_REQUIRED',
-        requestId
-      });
-    }
-
-    // Check if already deleted
-    if (gig.deletedAt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Gig is already deleted',
-        code: 'ALREADY_DELETED',
         requestId
       });
     }
@@ -1201,11 +1214,13 @@ const deleteGig = async (req, res, next) => {
     const now = new Date();
     
     if (permanent === 'true' && isAdmin) {
-      // Bypass validation for permanent delete
-      result = await Gig.findByIdAndDelete(id, {
-        runValidators: false, // Disable validation
-        validateBeforeSave: false // Disable validation before save
-      });
+      // Decrement category count before deletion if gig was open
+      if (gig.status === 'open') {
+        await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+      }
+      
+      // Permanent delete - bypass middleware
+      result = await Gig.deleteOne({ _id: id });
       
       logAudit('PERMANENT_DELETE', 'GIG', id, req.user._id, {
         title: gig.title || 'Unknown',
@@ -1215,7 +1230,7 @@ const deleteGig = async (req, res, next) => {
       
       const responseTime = Date.now() - startTime;
       
-      res.json({
+      return res.json({
         success: true,
         message: 'Gig permanently deleted',
         requestId,
@@ -1223,18 +1238,25 @@ const deleteGig = async (req, res, next) => {
         responseTime: `${responseTime}ms`
       });
     } else {
-      // Soft delete - update without validation
-      await Gig.findByIdAndUpdate(id, {
-        $set: {
+      // Soft delete - update without triggering validations
+      result = await Gig.findByIdAndUpdate(
+        id,
+        {
           isActive: false,
           deletedAt: now,
           deletedBy: req.user._id,
           lastUpdatedBy: req.user._id
+        },
+        {
+          runValidators: false, // Disable validation
+          new: true
         }
-      }, {
-        runValidators: false, // Disable validation
-        new: true
-      });
+      );
+      
+      // Decrement category count for soft-deleted open gigs
+      if (gig.status === 'open') {
+        await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+      }
       
       logAudit('SOFT_DELETE', 'GIG', id, req.user._id, {
         title: gig.title || 'Unknown',
@@ -1243,7 +1265,7 @@ const deleteGig = async (req, res, next) => {
       
       const responseTime = Date.now() - startTime;
       
-      res.json({
+      return res.json({
         success: true,
         message: 'Gig deleted successfully',
         data: {
@@ -1265,17 +1287,6 @@ const deleteGig = async (req, res, next) => {
       id: req.params.id, 
       error: error.message 
     });
-    
-    // Handle validation errors specifically
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Unable to delete gig due to data integrity issues',
-        code: 'DELETE_VALIDATION_ERROR',
-        details: error.message,
-        requestId
-      });
-    }
     
     next(error);
   }
