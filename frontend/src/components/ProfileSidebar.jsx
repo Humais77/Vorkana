@@ -122,7 +122,7 @@ const ProfileSidebar = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sticky top-8">
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6  top-8">
     
       <div className="text-center mb-8">
         <div className="relative mx-auto w-32 h-32 mb-4">

@@ -1,7 +1,6 @@
-// Profile.jsx - Complete updated file
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import {
+import { 
   Plus,
   Trash2,
   CheckSquare,
@@ -19,23 +18,17 @@ import {
   User,
   Briefcase,
   Grid3x3,
-  LayoutGrid,
   List,
-  Eye,
-  EyeOff,
-  Filter,
-  Search,
   Edit,
-  MoreVertical,
   Star,
-  HelpCircle
+  Package
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/useAuthStore';
 import { 
   useMyGigs, 
   useDeleteMultipleGigs, 
   useUpdateMultipleGigsStatus,
-  useGigStats,
   extractGigsFromResponse
 } from '../../hooks/useGigs';
 import { useMyServices, useDeleteService } from '../../hooks/useServices';
@@ -78,7 +71,7 @@ const Profile = () => {
   });
 
   const services = useMemo(() => 
-    servicesResponse?.data || [], 
+    servicesResponse?.data || servicesResponse?.services || [], 
     [servicesResponse]
   );
 
@@ -103,63 +96,18 @@ const Profile = () => {
   const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
   const deleteServiceMutation = useDeleteService();
   
-  const { data: statsResponse, isLoading: statsLoading } = useGigStats();
-  
+  // Calculate stats from actual data
   const stats = useMemo(() => {
-    const defaultStats = {
-      totalGigs: 0,
-      activeGigs: 0,
-      totalOrders: 0,
-      totalBudget: 0,
-      avgBudget: 0,
-      averageRating: 4.8,
-      totalServices: 0,
-      activeServices: 0,
-      serviceOrders: 0,
-      totalEarnings: 0
-    };
-
-    if (statsLoading || !statsResponse) {
-      return defaultStats;
-    }
-    if (statsResponse.isFallback) {
-      return {
-        ...defaultStats,
-        ...statsResponse.data?.overview?.[0]
-      };
-    }
-    if (statsResponse.success && statsResponse.data) {
-      if (statsResponse.data.overview && Array.isArray(statsResponse.data.overview)) {
-        const overview = statsResponse.data.overview[0] || {};
-        return {
-          totalGigs: overview.totalGigs || 0,
-          activeGigs: overview.activeGigs || 0,
-          totalOrders: overview.totalOrders || 0,
-          totalBudget: overview.totalBudget || 0,
-          avgBudget: overview.avgBudget || 0,
-          averageRating: overview.averageRating || 4.8,
-          totalServices: services.length,
-          activeServices: services.filter(s => s.status === 'active').length,
-          serviceOrders: services.reduce((sum, service) => sum + (service.ordersCount || 0), 0),
-          totalEarnings: services.reduce((sum, service) => sum + (service.price || 0) * (service.ordersCount || 0), 0)
-        };
-      }
-    }
-
+    const activeServices = services.filter(s => s.status === 'active').length;
+    const activeGigs = gigs.filter(g => g.status === 'active' || g.status === 'open').length;
+    
     return {
       totalGigs: gigs.length,
-      activeGigs: gigs.filter(g => g.status === 'active' || g.status === 'open').length,
-      totalOrders: gigs.reduce((sum, gig) => sum + (gig.orders || gig.proposals?.length || 0), 0),
-      totalBudget: gigs.reduce((sum, gig) => sum + (gig.budget || gig.price || 0), 0),
-      avgBudget: gigs.length > 0 ? 
-        gigs.reduce((sum, gig) => sum + (gig.budget || gig.price || 0), 0) / gigs.length : 0,
-      averageRating: 4.8,
+      activeGigs: activeGigs,
       totalServices: services.length,
-      activeServices: services.filter(s => s.status === 'active').length,
-      serviceOrders: services.reduce((sum, service) => sum + (service.ordersCount || 0), 0),
-      totalEarnings: services.reduce((sum, service) => sum + (service.price || 0) * (service.ordersCount || 0), 0)
+      activeServices: activeServices,
     };
-  }, [statsResponse, statsLoading, gigs, services]);
+  }, [gigs, services]);
 
   const resetSelection = useCallback(() => {
     setSelectedGigs([]);
@@ -208,7 +156,7 @@ const Profile = () => {
       setSelectedGigs([]);
     } else {
       const filteredGigs = filterGigs(gigs);
-      setSelectedGigs(filteredGigs.map(gig => gig._id));
+      setSelectedGigs(filteredGigs.map(gig => gig._id || gig.id));
     }
     setAllSelected(!allSelected);
   };
@@ -218,7 +166,7 @@ const Profile = () => {
       setSelectedServices([]);
     } else {
       const filteredServices = filterServices(services);
-      setSelectedServices(filteredServices.map(service => service._id));
+      setSelectedServices(filteredServices.map(service => service._id || service.id));
     }
     setAllServicesSelected(!allServicesSelected);
   };
@@ -374,7 +322,7 @@ const Profile = () => {
       case 'paused': 
       case 'cancelled': 
       case 'denied': 
-      case 'suspended': return <EyeOff className="w-4 h-4" />;
+      case 'suspended': return <X className="w-4 h-4" />;
       case 'completed': 
       case 'closed': 
       case 'pending': return <Award className="w-4 h-4" />;
@@ -400,10 +348,6 @@ const Profile = () => {
     );
   }
 
-  const isLoading = activeTab === 'services' ? servicesLoading : gigsLoading;
-  const error = activeTab === 'services' ? servicesError : gigsError;
-  const refetch = activeTab === 'services' ? refetchServices : refetchGigs;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -418,41 +362,6 @@ const Profile = () => {
           </div>
 
           <div className="lg:col-span-3">
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {user?.role === 'seller' ? 'Seller Dashboard' : 'My Profile'}
-                  </h2>
-                  <p className="text-gray-600 mt-1">
-                    {user?.role === 'seller' 
-                      ? 'Manage your services and gigs' 
-                      : 'View your profile information'}
-                  </p>
-                </div>
-                {user?.role === 'seller' && (
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={handleCreateGig}
-                      disabled={isLoading}
-                      className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-5 h-5 mr-2" />
-                      Create Gig
-                    </button>
-                    <button
-                      onClick={handleCreateService}
-                      disabled={isLoading}
-                      className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-5 h-5 mr-2" />
-                      Create Service
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {user?.role === 'seller' ? (
               <SellerDashboard 
                 activeTab={activeTab}
@@ -467,9 +376,9 @@ const Profile = () => {
                 serviceStatusFilter={serviceStatusFilter}
                 filteredGigs={filteredGigs}
                 filteredServices={filteredServices}
-                isLoading={isLoading}
+                servicesLoading={servicesLoading}
+                gigsLoading={gigsLoading}
                 stats={stats}
-                statsLoading={statsLoading}
                 handleSelectAll={handleSelectAll}
                 handleSelectAllServices={handleSelectAllServices}
                 handleSelectGig={handleSelectGig}
@@ -544,9 +453,9 @@ const SellerDashboard = ({
   serviceStatusFilter,
   filteredGigs,
   filteredServices,
-  isLoading,
+  servicesLoading,
+  gigsLoading,
   stats,
-  statsLoading,
   handleSelectAll,
   handleSelectAllServices,
   handleSelectGig,
@@ -566,6 +475,7 @@ const SellerDashboard = ({
   deleteMultipleGigsMutation,
   updateMultipleGigsStatusMutation
 }) => {
+  const isLoading = activeTab === 'services' ? servicesLoading : gigsLoading;
   const hasSelectedItems = activeTab === 'services' 
     ? selectedServices.length > 0 
     : selectedGigs.length > 0;
@@ -576,6 +486,73 @@ const SellerDashboard = ({
 
   return (
     <>
+      {/* Updated Header Section */}
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+          </div>
+          <div className="flex gap-3">
+  <button
+    onClick={handleCreateGig}
+    disabled={isLoading}
+    className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    <Plus className="w-4 h-4 mr-2" />
+    Create Gig
+  </button>
+  <button
+    onClick={handleCreateService}
+    disabled={isLoading}
+    className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    <Plus className="w-4 h-4 mr-2" />
+    Create Service
+  </button>
+</div>
+        </div>
+        
+        {/* Stats Counts Row - Only 3 stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+            <div className="flex items-center">
+              <Package className="w-5 h-5 text-blue-600 mr-2" />
+              <span className="text-sm font-medium text-blue-900">Total Services</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900 mt-2">{stats.totalServices}</p>
+            <div className="flex items-center mt-1">
+              <span className="text-xs text-blue-600">
+                ({stats.activeServices} active)
+              </span>
+            </div>
+          </div>
+          <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+            <div className="flex items-center">
+              <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+              <span className="text-sm font-medium text-green-900">Active Services</span>
+            </div>
+            <p className="text-2xl font-bold text-green-900 mt-2">{stats.activeServices}</p>
+            <div className="flex items-center mt-1">
+              <span className="text-xs text-green-600">
+                of {stats.totalServices} total
+              </span>
+            </div>
+          </div>
+          <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
+            <div className="flex items-center">
+              <FileText className="w-5 h-5 text-orange-600 mr-2" />
+              <span className="text-sm font-medium text-orange-900">Total Gigs</span>
+            </div>
+            <p className="text-2xl font-bold text-orange-900 mt-2">{stats.totalGigs}</p>
+            <div className="flex items-center mt-1">
+              <span className="text-xs text-orange-600">
+                ({stats.activeGigs} active)
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Tab Navigation */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -625,81 +602,89 @@ const SellerDashboard = ({
                 <List className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            <button
+            {/* <button
               onClick={activeTab === 'services' ? handleCreateService : handleCreateGig}
               disabled={isLoading}
               className="inline-flex items-center px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-5 h-5 mr-2" />
               Create {activeTab === 'services' ? 'Service' : 'Gig'}
-            </button>
+            </button> */}
           </div>
         </div>
       </div>
 
-      {/* Bulk Actions Bar */}
-      {hasSelectedItems && (
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200 p-4 mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center">
-              <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
-              <span className="font-medium text-blue-900">
-                {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
-              </span>
+      {/* Bulk Actions Bar with Framer Motion */}
+      <AnimatePresence>
+        {hasSelectedItems && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+            className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200 p-4 mb-6"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center">
+                <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
+                <span className="font-medium text-blue-900">
+                  {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {activeTab === 'gigs' ? (
+                  <>
+                    <button
+                      onClick={() => handleUpdateGigStatus('active')}
+                      disabled={updateMultipleGigsStatusMutation.isPending}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
+                    </button>
+                    <button
+                      onClick={() => handleUpdateGigStatus('paused')}
+                      disabled={updateMultipleGigsStatusMutation.isPending}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
+                    </button>
+                    <button
+                      onClick={handleDeleteGigs}
+                      disabled={deleteMultipleGigsMutation.isPending}
+                      className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleUpdateServiceStatus('active')}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                    >
+                      Activate
+                    </button>
+                    <button
+                      onClick={() => handleUpdateServiceStatus('paused')}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors"
+                    >
+                      Pause
+                    </button>
+                    <button
+                      onClick={handleDeleteServices}
+                      className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {activeTab === 'gigs' ? (
-                <>
-                  <button
-                    onClick={() => handleUpdateGigStatus('active')}
-                    disabled={updateMultipleGigsStatusMutation.isPending}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
-                  </button>
-                  <button
-                    onClick={() => handleUpdateGigStatus('paused')}
-                    disabled={updateMultipleGigsStatusMutation.isPending}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
-                  </button>
-                  <button
-                    onClick={handleDeleteGigs}
-                    disabled={deleteMultipleGigsMutation.isPending}
-                    className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => handleUpdateServiceStatus('active')}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-                  >
-                    Activate
-                  </button>
-                  <button
-                    onClick={() => handleUpdateServiceStatus('paused')}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors"
-                  >
-                    Pause
-                  </button>
-                  <button
-                    onClick={handleDeleteServices}
-                    className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Filter Bar */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
@@ -713,7 +698,7 @@ const SellerDashboard = ({
               >
                 {activeTab === 'services' 
                   ? allServicesSelected
-                    ? <CheckSquare className="w-5 h-5 text-blue-600" />
+                    ? <CheckSquare className="w-5 h-5 text-green-600" />
                     : <Square className="w-5 h-5 text-gray-400" />
                   : allSelected
                     ? <CheckSquare className="w-5 h-5 text-blue-600" />
@@ -763,78 +748,95 @@ const SellerDashboard = ({
         </div>
       </div>
 
-      {/* Content Area */}
-      {activeTab === 'services' ? (
-        viewMode === 'grid' ? (
-          <ServicesGridView 
-            services={filteredServices}
-            isLoading={isLoading}
-            selectedServices={selectedServices}
-            handleSelectService={handleSelectService}
-            handleServiceClick={handleServiceClick}
-            getStatusColor={getStatusColor}
-            getStatusIcon={getStatusIcon}
-          />
-        ) : (
-          <ServicesListView 
-            services={filteredServices}
-            isLoading={isLoading}
-            selectedServices={selectedServices}
-            handleSelectService={handleSelectService}
-            handleServiceClick={handleServiceClick}
-            handleCreateService={handleCreateService}
-            serviceStatusFilter={serviceStatusFilter}
-            getStatusColor={getStatusColor}
-            getStatusIcon={getStatusIcon}
-          />
-        )
-      ) : (
-        viewMode === 'grid' ? (
-          <GigsGridView 
-            gigs={filteredGigs}
-            isLoading={isLoading}
-            selectedGigs={selectedGigs}
-            handleSelectGig={handleSelectGig}
-            handleGigClick={handleGigClick}
-            getStatusColor={getStatusColor}
-            getStatusIcon={getStatusIcon}
-          />
-        ) : (
-          <GigsListView 
-            gigs={filteredGigs}
-            isLoading={isLoading}
-            selectedGigs={selectedGigs}
-            handleSelectGig={handleSelectGig}
-            handleGigClick={handleGigClick}
-            handleDeleteGigs={handleDeleteGigs}
-            handleCreateGig={handleCreateGig}
-            statusFilter={statusFilter}
-            getStatusColor={getStatusColor}
-            getStatusIcon={getStatusIcon}
-          />
-        )
-      )}
-
-      <StatsSummary stats={stats} statsLoading={statsLoading} activeTab={activeTab} />
+      {/* Content Area - Fixed switching glitch */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab + viewMode}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.2 }}
+        >
+          {activeTab === 'services' ? (
+            viewMode === 'grid' ? (
+              <ServicesGridView 
+                services={filteredServices}
+                isLoading={isLoading}
+                selectedServices={selectedServices}
+                handleSelectService={handleSelectService}
+                handleServiceClick={handleServiceClick}
+                getStatusColor={getStatusColor}
+                getStatusIcon={getStatusIcon}
+              />
+            ) : (
+              <ServicesListView 
+                services={filteredServices}
+                isLoading={isLoading}
+                selectedServices={selectedServices}
+                handleSelectService={handleSelectService}
+                handleServiceClick={handleServiceClick}
+                handleCreateService={handleCreateService}
+                serviceStatusFilter={serviceStatusFilter}
+                getStatusColor={getStatusColor}
+                getStatusIcon={getStatusIcon}
+              />
+            )
+          ) : (
+            viewMode === 'grid' ? (
+              <GigsGridView 
+                gigs={filteredGigs}
+                isLoading={isLoading}
+                selectedGigs={selectedGigs}
+                handleSelectGig={handleSelectGig}
+                handleGigClick={handleGigClick}
+                getStatusColor={getStatusColor}
+                getStatusIcon={getStatusIcon}
+              />
+            ) : (
+              <GigsListView 
+                gigs={filteredGigs}
+                isLoading={isLoading}
+                selectedGigs={selectedGigs}
+                handleSelectGig={handleSelectGig}
+                handleGigClick={handleGigClick}
+                handleDeleteGigs={handleDeleteGigs}
+                handleCreateGig={handleCreateGig}
+                statusFilter={statusFilter}
+                getStatusColor={getStatusColor}
+                getStatusIcon={getStatusIcon}
+              />
+            )
+          )}
+        </motion.div>
+      </AnimatePresence>
     </>
   );
 };
 
+// ServicesGridView component with Framer Motion
 const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading your services...</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (services.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Briefcase className="w-8 h-8 text-gray-400" />
@@ -849,25 +851,33 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
             Create Your First Service
           </button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ staggerChildren: 0.1 }}
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+    >
       {services.map((service) => (
-        <div
-          key={service._id}
+        <motion.div
+          key={service._id || service.id}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ y: -5 }}
           className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
         >
           <div className="p-6">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center">
                 <button
-                  onClick={() => handleSelectService(service._id)}
+                  onClick={() => handleSelectService(service._id || service.id)}
                   className="mr-3"
                 >
-                  {selectedServices.includes(service._id) ? (
+                  {selectedServices.includes(service._id || service.id) ? (
                     <CheckSquare className="w-5 h-5 text-green-600" />
                   ) : (
                     <Square className="w-5 h-5 text-gray-400" />
@@ -876,7 +886,7 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
                 <div>
                   <h4 
                     className="font-medium text-gray-900 hover:text-green-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleServiceClick(service._id)}
+                    onClick={() => handleServiceClick(service._id || service.id)}
                   >
                     {service.title || 'Untitled Service'}
                   </h4>
@@ -904,10 +914,7 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
                   ${service.price || 0}
                 </span>
               </div>
-              <div className="flex items-center">
-                <FileText className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="text-sm text-gray-600">{service.ordersCount || 0} orders</span>
-              </div>
+              
             </div>
 
             <div className="flex items-center justify-between">
@@ -919,43 +926,46 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
               </div>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => handleServiceClick(service._id)}
+                  onClick={() => handleServiceClick(service._id || service.id)}
                   className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                   title="View Details"
                 >
                   <ExternalLink className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => {/* Edit service */}}
-                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Edit"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
+                
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 };
 
+// ServicesListView with Framer Motion
 const ServicesListView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, handleCreateService, serviceStatusFilter, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading your services...</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (services.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Briefcase className="w-8 h-8 text-gray-400" />
@@ -974,12 +984,16 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
             Create Your First Service
           </button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+    >
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
@@ -993,30 +1007,27 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
               </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Orders</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Rating</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
-              </th>
+              
+             
+             
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {services.map((service) => (
-              <tr
-                key={service._id}
-                className="hover:bg-gray-50 transition-colors"
+              <motion.tr
+                key={service._id || service.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
+                className="transition-colors"
               >
                 <td className="py-4 px-6">
                   <div className="flex items-center">
                     <button
-                      onClick={() => handleSelectService(service._id)}
+                      onClick={() => handleSelectService(service._id || service.id)}
                       className="mr-3"
                     >
-                      {selectedServices.includes(service._id) ? (
+                      {selectedServices.includes(service._id || service.id) ? (
                         <CheckSquare className="w-5 h-5 text-green-600" />
                       ) : (
                         <Square className="w-5 h-5 text-gray-400" />
@@ -1024,7 +1035,7 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
                     </button>
                     <div 
                       className="cursor-pointer"
-                      onClick={() => handleServiceClick(service._id)}
+                      onClick={() => handleServiceClick(service._id || service.id)}
                     >
                       <h4 className="font-medium text-gray-900 hover:text-green-600">
                         {service.title || 'Untitled Service'}
@@ -1057,73 +1068,42 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
                     </span>
                   </div>
                 </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <FileText className="w-4 h-4 text-gray-600 mr-1" />
-                    <span>{service.ordersCount || 0}</span>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <Star className="w-4 h-4 text-yellow-400 mr-1" />
-                    <span>{service.rating || 'N/A'}</span>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handleServiceClick(service._id)}
-                      className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                      title="View Details"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {/* Edit service */}}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectService(service._id);
-                        if (window.confirm('Are you sure you want to delete this service?')) {
-                          // Handle service deletion
-                        }
-                      }}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                
+                
+                
+              </motion.tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
+// GigsGridView with Framer Motion
 const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading your gigs...</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (gigs.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <FileText className="w-8 h-8 text-gray-400" />
@@ -1138,25 +1118,33 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
             Create Your First Gig
           </button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ staggerChildren: 0.1 }}
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+    >
       {gigs.map((gig) => (
-        <div
-          key={gig._id}
+        <motion.div
+          key={gig._id || gig.id}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ y: -5 }}
           className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
         >
           <div className="p-6">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center">
                 <button
-                  onClick={() => handleSelectGig(gig._id)}
+                  onClick={() => handleSelectGig(gig._id || gig.id)}
                   className="mr-3"
                 >
-                  {selectedGigs.includes(gig._id) ? (
+                  {selectedGigs.includes(gig._id || gig.id) ? (
                     <CheckSquare className="w-5 h-5 text-blue-600" />
                   ) : (
                     <Square className="w-5 h-5 text-gray-400" />
@@ -1165,7 +1153,7 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                 <div>
                   <h4 
                     className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleGigClick(gig._id)}
+                    onClick={() => handleGigClick(gig._id || gig.id)}
                   >
                     {gig.title || 'Untitled Gig'}
                   </h4>
@@ -1193,10 +1181,7 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                   ${gig.budget || gig.price || 0}
                 </span>
               </div>
-              <div className="flex items-center">
-                <User className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="text-sm text-gray-600">{gig.proposals?.length || 0} proposals</span>
-              </div>
+              
             </div>
 
             <div className="flex items-center justify-between">
@@ -1208,7 +1193,7 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
               </div>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => handleGigClick(gig._id)}
+                  onClick={() => handleGigClick(gig._id || gig.id)}
                   className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                   title="View Details"
                 >
@@ -1217,27 +1202,36 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 };
 
+// GigsListView with Framer Motion
 const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, handleDeleteGigs, handleCreateGig, statusFilter, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading your gigs...</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   if (gigs.length === 0) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+      >
         <div className="p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <FileText className="w-8 h-8 text-gray-400" />
@@ -1256,12 +1250,16 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
             Create Your First Gig
           </button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+    >
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
@@ -1275,9 +1273,7 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Budget</span>
               </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Proposals</span>
-              </th>
+              
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
               </th>
@@ -1285,17 +1281,20 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
           </thead>
           <tbody className="divide-y divide-gray-200">
             {gigs.map((gig) => (
-              <tr
-                key={gig._id}
-                className="hover:bg-gray-50 transition-colors"
+              <motion.tr
+                key={gig._id || gig.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
+                className="transition-colors"
               >
                 <td className="py-4 px-6">
                   <div className="flex items-center">
                     <button
-                      onClick={() => handleSelectGig(gig._id)}
+                      onClick={() => handleSelectGig(gig._id || gig.id)}
                       className="mr-3"
                     >
-                      {selectedGigs.includes(gig._id) ? (
+                      {selectedGigs.includes(gig._id || gig.id) ? (
                         <CheckSquare className="w-5 h-5 text-blue-600" />
                       ) : (
                         <Square className="w-5 h-5 text-gray-400" />
@@ -1303,7 +1302,7 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                     </button>
                     <div 
                       className="cursor-pointer"
-                      onClick={() => handleGigClick(gig._id)}
+                      onClick={() => handleGigClick(gig._id || gig.id)}
                     >
                       <h4 className="font-medium text-gray-900 hover:text-blue-600">
                         {gig.title || 'Untitled Gig'}
@@ -1336,16 +1335,11 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                     </span>
                   </div>
                 </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <User className="w-4 h-4 text-gray-600 mr-1" />
-                    <span>{gig.proposals?.length || 0}</span>
-                  </div>
-                </td>
+                
                 <td className="py-4 px-6">
                   <div className="flex items-center space-x-2">
                     <button
-                      onClick={() => handleGigClick(gig._id)}
+                      onClick={() => handleGigClick(gig._id || gig.id)}
                       className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       title="View Details"
                     >
@@ -1353,72 +1347,16 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                     </button>
                   </div>
                 </td>
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
-const StatsSummary = ({ stats, statsLoading, activeTab }) => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-    <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-blue-800">Total {activeTab === 'services' ? 'Services' : 'Gigs'}</p>
-          <p className="text-2xl font-bold text-blue-900 mt-1">
-            {activeTab === 'services' ? stats.totalServices : stats.totalGigs}
-          </p>
-          {statsLoading && (
-            <p className="text-xs text-blue-600 mt-1">Loading...</p>
-          )}
-        </div>
-        <div className={`w-12 h-12 ${activeTab === 'services' ? 'bg-green-500' : 'bg-blue-500'} rounded-full flex items-center justify-center`}>
-          {activeTab === 'services' ? (
-            <Briefcase className="w-6 h-6 text-white" />
-          ) : (
-            <FileText className="w-6 h-6 text-white" />
-          )}
-        </div>
-      </div>
-    </div>
-    <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-2xl p-6 border border-green-200">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-green-800">Active {activeTab === 'services' ? 'Services' : 'Gigs'}</p>
-          <p className="text-2xl font-bold text-green-900 mt-1">
-            {activeTab === 'services' ? stats.activeServices : stats.activeGigs}
-          </p>
-          {statsLoading && (
-            <p className="text-xs text-green-600 mt-1">Loading...</p>
-          )}
-        </div>
-        <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-          <CheckCircle className="w-6 h-6 text-white" />
-        </div>
-      </div>
-    </div>
-    <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-2xl p-6 border border-purple-200">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-purple-800">Total Orders</p>
-          <p className="text-2xl font-bold text-purple-900 mt-1">
-            {activeTab === 'services' ? stats.serviceOrders : stats.totalOrders}
-          </p>
-          {statsLoading && (
-            <p className="text-xs text-purple-600 mt-1">Loading...</p>
-          )}
-        </div>
-        <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center">
-          <Award className="w-6 h-6 text-white" />
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
+// RoleSwitchDialog with Framer Motion
 const RoleSwitchDialog = ({
   showSwitchDialog,
   setShowSwitchDialog,
@@ -1426,152 +1364,132 @@ const RoleSwitchDialog = ({
   handleSwitchRole,
   switchRoleMutation
 }) => {
-  if (!showSwitchDialog) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all duration-300 scale-100 opacity-100">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-gray-900">
-              {switchDirection === 'toUser' ? 'Switch to User Account' : 'Switch to Seller Account'}
-            </h3>
-            <button
-              onClick={() => setShowSwitchDialog(false)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+    <AnimatePresence>
+      {showSwitchDialog && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+            onClick={() => setShowSwitchDialog(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: "spring", damping: 25 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          
-          <div className="space-y-4">
-            {/* Warning Alert */}
-            <div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm text-yellow-800 font-medium">
-                  {switchDirection === 'toUser' 
-                    ? 'You are switching back to user account' 
-                    : 'Important: Account switch required'}
-                </p>
-                <p className="text-xs text-yellow-600 mt-1">
-                  {switchDirection === 'toUser'
-                    ? 'You will lose access to seller features and gig management. You can switch back anytime.'
-                    : 'To create and sell services, you need a seller account.'}
-                </p>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {switchDirection === 'toUser' ? 'Switch to User Account' : 'Switch to Seller Account'}
+                  </h3>
+                  <button
+                    onClick={() => setShowSwitchDialog(false)}
+                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  {/* Warning Alert */}
+                  <div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-yellow-800 font-medium">
+                        {switchDirection === 'toUser' 
+                          ? 'You are switching back to user account' 
+                          : 'Important: Account switch required'}
+                      </p>
+                      <p className="text-xs text-yellow-600 mt-1">
+                        {switchDirection === 'toUser'
+                          ? 'You will lose access to seller features and gig management. You can switch back anytime.'
+                          : 'To create and sell services, you need a seller account.'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-gray-900">
+                      {switchDirection === 'toUser' ? 'You will:' : 'You will gain:'}
+                    </h4>
+                    <div className="space-y-2">
+                      {switchDirection === 'toUser' ? (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
+                            <span className="text-sm text-gray-700">Lose access to service creation and management</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
+                            <span className="text-sm text-gray-700">No longer see seller dashboard</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <div className="w-4 h-4 text-green-500 mt-0.5">•</div>
+                            <span className="text-sm text-gray-700">Gain ability to browse and buy services</span>
+                        </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm text-gray-700">Create and manage services</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm text-gray-700">Access seller dashboard and analytics</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm text-gray-700">Earn money from your services</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => setShowSwitchDialog(false)}
+                      className="flex-1 py-3 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSwitchRole}
+                      disabled={switchRoleMutation.isPending}
+                      className={`flex-1 py-3 text-white font-medium rounded-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2 ${
+                        switchDirection === 'toUser'
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
+                          : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
+                      }`}
+                    >
+                      {switchRoleMutation.isPending ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Switching...
+                        </>
+                      ) : (
+                        <>
+                          <ArrowRightLeft className="w-4 h-4" />
+                          {switchDirection === 'toUser' ? 'Switch to User' : 'Switch to Seller'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="font-semibold text-gray-900">
-                {switchDirection === 'toUser' ? 'You will:' : 'You will gain:'}
-              </h4>
-              <div className="space-y-2">
-                {switchDirection === 'toUser' ? (
-                  <>
-                    <div className="flex items-start gap-2">
-                      <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
-                      <span className="text-sm text-gray-700">Lose access to service creation and management</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
-                      <span className="text-sm text-gray-700">No longer see seller dashboard</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="w-4 h-4 text-green-500 mt-0.5">•</div>
-                      <span className="text-sm text-gray-700">Gain ability to browse and buy services</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">Create and manage services</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">Access seller dashboard and analytics</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">Earn money from your services</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => setShowSwitchDialog(false)}
-                className="flex-1 py-3 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSwitchRole}
-                disabled={switchRoleMutation.isPending}
-                className={`flex-1 py-3 text-white font-medium rounded-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2 ${
-                  switchDirection === 'toUser'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
-                    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
-                }`}
-              >
-                {switchRoleMutation.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Switching...
-                  </>
-                ) : (
-                  <>
-                    <ArrowRightLeft className="w-4 h-4" />
-                    {switchDirection === 'toUser' ? 'Switch to User' : 'Switch to Seller'}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            </motion.div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 };
-
-const styles = `
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  .animate-fadeIn {
-    animation: fadeIn 0.3s ease-out;
-  }
-
-  .line-clamp-1 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-  }
-
-  .line-clamp-2 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-`;
-
-if (typeof document !== 'undefined') {
-  const styleSheet = document.createElement('style');
-  styleSheet.textContent = styles;
-  document.head.appendChild(styleSheet);
-}
 
 export default Profile;
