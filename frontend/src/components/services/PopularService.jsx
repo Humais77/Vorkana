@@ -5,109 +5,213 @@ import {
   Sparkles, TrendingUp, Users, Star,
   Globe, Camera, Code, Palette,
   Smartphone, BookOpen, Building,
-  Cpu, Megaphone
+  Cpu, Megaphone, Zap, Music,
+  Monitor, FileText, ShoppingBag,
+  Headphones, Brush, BarChart,
+  Cloud, Database, Gamepad,
+  Video, Heart, MessageSquare
 } from "lucide-react";
 
 const services = [
     {
-        id: 1,
+        id: "website-development",
         name: "Website Development",
         description: "Professional web solutions",
         image: "https://images.pexels.com/photos/1181673/pexels-photo-1181673.jpeg",
         icon: <Globe className="w-6 h-6" />,
         color: "from-blue-600 to-cyan-500",
-        rating: 4.9,
-        projects: "2.3K"
+        searchQuery: "website development",
+        category: "web"
     },
     {
-        id: 2,
+        id: "video-editing",
         name: "Video Editing",
         description: "Creative video production",
         image: "https://images.pexels.com/photos/277349/pexels-photo-277349.jpeg",
         icon: <Camera className="w-6 h-6" />,
         color: "from-purple-600 to-pink-500",
-        rating: 4.8,
-        projects: "1.8K"
+        searchQuery: "video editing",
+        category: "video"
     },
     {
-        id: 3,
+        id: "software-development",
         name: "Software Development",
         description: "Custom software solutions",
         image: "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
         icon: <Code className="w-6 h-6" />,
         color: "from-green-600 to-emerald-500",
-        rating: 4.9,
-        projects: "3.1K"
+        searchQuery: "software development",
+        category: "software"
     },
     {
-        id: 4,
-        name: "Book Publishing",
-        description: "Publishing services",
-        image: "https://images.pexels.com/photos/316466/pexels-photo-316466.jpeg",
-        icon: <BookOpen className="w-6 h-6" />,
-        color: "from-amber-600 to-orange-500",
-        rating: 4.7,
-        projects: "850"
-    },
-    {
-        id: 5,
-        name: "Architecture & Interior",
-        description: "Design services",
-        image: "https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg",
-        icon: <Building className="w-6 h-6" />,
-        color: "from-red-600 to-rose-500",
-        rating: 4.8,
-        projects: "920"
-    },
-    {
-        id: 6,
-        name: "AI Services",
-        description: "AI-powered solutions",
-        image: "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
-        icon: <Cpu className="w-6 h-6" />,
-        color: "from-indigo-600 to-violet-500",
-        rating: 4.9,
-        projects: "1.5K"
-    },
-    {
-        id: 7,
-        name: "Social Media Marketing",
-        description: "Digital marketing",
-        image: "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
-        icon: <Megaphone className="w-6 h-6" />,
-        color: "from-fuchsia-600 to-purple-500",
-        rating: 4.7,
-        projects: "2.1K"
-    },
-    {
-        id: 8,
+        id: "mobile-app-development",
         name: "Mobile App Development",
         description: "App development",
         image: "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
         icon: <Smartphone className="w-6 h-6" />,
         color: "from-blue-700 to-indigo-600",
-        rating: 4.9,
-        projects: "1.9K"
+        searchQuery: "mobile app",
+        category: "mobile"
     },
     {
-        id: 9,
+        id: "graphic-design",
         name: "Graphic Design",
         description: "Visual design services",
         image: "https://images.pexels.com/photos/1591061/pexels-photo-1591061.jpeg",
         icon: <Palette className="w-6 h-6" />,
         color: "from-purple-600 to-pink-500",
-        rating: 4.8,
-        projects: "2.4K"
+        searchQuery: "graphic design",
+        category: "design"
     },
     {
-        id: 10,
+        id: "content-writing",
         name: "Content Writing",
         description: "Professional writing",
         image: "https://images.pexels.com/photos/7358/startup-photos.jpg",
-        icon: <BookOpen className="w-6 h-6" />,
+        icon: <FileText className="w-6 h-6" />,
         color: "from-teal-600 to-cyan-500",
-        rating: 4.7,
-        projects: "1.3K"
+        searchQuery: "content writing",
+        category: "writing"
+    },
+    {
+        id: "social-media-marketing",
+        name: "Social Media Marketing",
+        description: "Digital marketing",
+        image: "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+        icon: <Megaphone className="w-6 h-6" />,
+        color: "from-fuchsia-600 to-purple-500",
+        searchQuery: "social media marketing",
+        category: "marketing"
+    },
+    {
+        id: "ai-services",
+        name: "AI Services",
+        description: "AI-powered solutions",
+        image: "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
+        icon: <Cpu className="w-6 h-6" />,
+        color: "from-indigo-600 to-violet-500",
+        searchQuery: "ai services",
+        category: "ai"
+    },
+    {
+        id: "data-analysis",
+        name: "Data Analysis",
+        description: "Data analytics services",
+        image: "https://images.pexels.com/photos/669615/pexels-photo-669615.jpeg",
+        icon: <BarChart className="w-6 h-6" />,
+        color: "from-orange-600 to-red-500",
+        searchQuery: "data analysis",
+        category: "data"
+    },
+    {
+        id: "seo-optimization",
+        name: "SEO Optimization",
+        description: "Search engine optimization",
+        image: "https://images.pexels.com/photos/669615/pexels-photo-669615.jpeg",
+        icon: <TrendingUp className="w-6 h-6" />,
+        color: "from-green-600 to-teal-500",
+        searchQuery: "seo optimization",
+        category: "seo"
+    },
+    {
+        id: "ui-ux-design",
+        name: "UI/UX Design",
+        description: "User interface design",
+        image: "https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg",
+        icon: <Monitor className="w-6 h-6" />,
+        color: "from-pink-600 to-rose-500",
+        searchQuery: "ui ux design",
+        category: "design"
+    },
+    {
+        id: "voice-over",
+        name: "Voice Over",
+        description: "Professional voice services",
+        image: "https://images.pexels.com/photos/316466/pexels-photo-316466.jpeg",
+        icon: <Headphones className="w-6 h-6" />,
+        color: "from-amber-600 to-orange-500",
+        searchQuery: "voice over",
+        category: "audio"
+    },
+    {
+        id: "music-production",
+        name: "Music Production",
+        description: "Music and audio services",
+        image: "https://images.pexels.com/photos/164745/pexels-photo-164745.jpeg",
+        icon: <Music className="w-6 h-6" />,
+        color: "from-purple-700 to-pink-600",
+        searchQuery: "music production",
+        category: "audio"
+    },
+    {
+        id: "e-commerce",
+        name: "E-commerce Solutions",
+        description: "Online store development",
+        image: "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+        icon: <ShoppingBag className="w-6 h-6" />,
+        color: "from-yellow-600 to-orange-500",
+        searchQuery: "ecommerce",
+        category: "business"
+    },
+    {
+        id: "cloud-services",
+        name: "Cloud Services",
+        description: "Cloud computing solutions",
+        image: "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg",
+        icon: <Cloud className="w-6 h-6" />,
+        color: "from-blue-500 to-cyan-400",
+        searchQuery: "cloud services",
+        category: "technology"
+    },
+    {
+        id: "database-management",
+        name: "Database Management",
+        description: "Database administration",
+        image: "https://images.pexels.com/photos/1181673/pexels-photo-1181673.jpeg",
+        icon: <Database className="w-6 h-6" />,
+        color: "from-red-600 to-pink-500",
+        searchQuery: "database management",
+        category: "technology"
+    },
+    {
+        id: "game-development",
+        name: "Game Development",
+        description: "Game design and development",
+        image: "https://images.pexels.com/photos/275033/pexels-photo-275033.jpeg",
+        icon: <Gamepad className="w-6 h-6" />,
+        color: "from-green-700 to-emerald-600",
+        searchQuery: "game development",
+        category: "gaming"
+    },
+    {
+        id: "animation",
+        name: "Animation",
+        description: "2D/3D animation services",
+        image: "https://images.pexels.com/photos/277349/pexels-photo-277349.jpeg",
+        icon: <Video className="w-6 h-6" />,
+        color: "from-purple-700 to-indigo-600",
+        searchQuery: "animation",
+        category: "video"
+    },
+    {
+        id: "illustration",
+        name: "Illustration",
+        description: "Digital illustration services",
+        image: "https://images.pexels.com/photos/1591061/pexels-photo-1591061.jpeg",
+        icon: <Brush className="w-6 h-6" />,
+        color: "from-pink-600 to-rose-500",
+        searchQuery: "illustration",
+        category: "design"
+    },
+    {
+        id: "translation",
+        name: "Translation",
+        description: "Language translation services",
+        image: "https://images.pexels.com/photos/316466/pexels-photo-316466.jpeg",
+        icon: <MessageSquare className="w-6 h-6" />,
+        color: "from-blue-600 to-teal-500",
+        searchQuery: "translation",
+        category: "writing"
     }
 ];
 
@@ -137,15 +241,23 @@ const PopularServices = () => {
             <div className="relative max-w-7xl mx-auto">
                 {/* Header Section */}
                 <div className="text-center mb-12">
-                    
-                    <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 text-left">
-                        Popular Services
-                    </h2>
-                    
-                    {/* <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-                        Discover our most requested services from top-rated freelancers.
-                        <span className="font-semibold text-gray-800"> Quality work, delivered on time.</span>
-                    </p> */}
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="text-left">
+                            <h2 className="text-4xl md:text-5xl font-bold text-gray-900">
+                                Popular Services
+                            </h2>
+                            <p className="text-gray-600 mt-2">
+                                Browse services by category and find what you need
+                            </p>
+                        </div>
+                        <Link 
+                            to="/services"
+                            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium hover:gap-3 transition-all"
+                        >
+                            View All Services
+                            <ChevronRight className="w-4 h-4" />
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Services Grid with Scroll Buttons */}
@@ -175,7 +287,7 @@ const PopularServices = () => {
                         {services.map((service) => (
                             <Link
                                 key={service.id}
-                                to={`/services/${service.id}`}
+                                to={`/services?q=${encodeURIComponent(service.searchQuery)}`}
                                 className="group flex-shrink-0 w-80 bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-500 border border-gray-200 hover:border-transparent hover:scale-[1.02] relative overflow-hidden"
                             >
                                 {/* Gradient Background Overlay */}
@@ -191,22 +303,42 @@ const PopularServices = () => {
                                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                                         />
                                         {/* Image Overlay Gradient */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
                                         
+                                        {/* Service Icon */}
+                                        <div className="absolute bottom-4 left-4 w-12 h-12 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center">
+                                            {service.icon}
+                                        </div>
+                                        
+                                        {/* View Services Button */}
+                                        <div className="absolute bottom-4 right-4">
+                                            <div className="flex items-center gap-1 px-3 py-2 bg-white/90 backdrop-blur-sm rounded-full text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">
+                                                View Services
+                                                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Content Section */}
                                     <div className="p-6">
-                                        
-
                                         {/* Service Info */}
                                         <div className="mb-4">
-                                            <h3 className="text-xl font-bold text-gray-900 group-hover:text-gray-800 transition-colors duration-300 mb-2">
+                                            <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors duration-300 mb-2">
                                                 {service.name}
                                             </h3>
                                             <p className="text-gray-600 text-sm leading-relaxed">
                                                 {service.description}
                                             </p>
+                                        </div>
+                                        
+                                        {/* Category Tag */}
+                                        <div className="flex items-center justify-between">
+                                            <span className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
+                                                {service.category.toUpperCase()}
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                Click to explore →
+                                            </span>
                                         </div>
                                     </div>
 
@@ -218,6 +350,58 @@ const PopularServices = () => {
                     </div>
                 </div>
 
+                {/* Stats Section */}
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-8 mb-8">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="text-center">
+                            <div className="text-4xl font-bold text-blue-600 mb-2">
+                                {services.length}+
+                            </div>
+                            <p className="text-gray-600">Service Categories</p>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-4xl font-bold text-purple-600 mb-2">
+                                1000+
+                            </div>
+                            <p className="text-gray-600">Active Services</p>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-4xl font-bold text-green-600 mb-2">
+                                4.8/5
+                            </div>
+                            <p className="text-gray-600">Average Rating</p>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-4xl font-bold text-orange-600 mb-2">
+                                24/7
+                            </div>
+                            <p className="text-gray-600">Support Available</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Call to Action */}
+                <div className="text-center">
+                    <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+                        Can't find what you're looking for? Search for specific services or request a custom service.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                        <Link
+                            to="/services"
+                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-full hover:from-blue-700 hover:to-purple-700 transition-all hover:shadow-lg transform hover:-translate-y-0.5"
+                        >
+                            <Sparkles className="w-5 h-5" />
+                            Browse All Services
+                        </Link>
+                        <Link
+                            to="/services/create"
+                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-white text-blue-600 border border-blue-200 font-bold rounded-full hover:bg-blue-50 transition-all hover:shadow-lg transform hover:-translate-y-0.5"
+                        >
+                            <Zap className="w-5 h-5" />
+                            Start Selling
+                        </Link>
+                    </div>
+                </div>
                 
                 {/* Custom Scrollbar Style */}
                 <style jsx>{`

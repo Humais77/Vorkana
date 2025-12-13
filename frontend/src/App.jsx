@@ -14,7 +14,7 @@
 
 // const App = () => {
 //    const dispatch = useDispatch();
-  
+
 //   useEffect(() => {
 //     // Sync auth state when app loads
 //     dispatch(syncFromLocalStorage());
@@ -60,6 +60,7 @@ import Profile from './layouts/pages/Profile';
 import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
 import ScrollToTop from './components/ScrollToTop';
+import ServiceListingPage from './layouts/pages/ServiceListingPage';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -67,7 +68,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
-    <ScrollToTop/>
+      <ScrollToTop />
       <Navbar />
       <Routes>
         <Route path='/' element={<Home />} />
@@ -76,12 +77,13 @@ const App = () => {
         <Route path='/sign-in' element={<Signin />} />
         <Route path='/sign-up' element={<Signup />} />
         <Route path='/oauth-success' element={<OAuthSuccess />} />
-        <Route path='/categories/:categoryId' element={<CategoryPage/>}/>
+        <Route path='/categories/:categoryId' element={<CategoryPage />} />
         <Route path="/gigs" element={<GigListingsPage />} />
-        <Route path='/profile' element={<Profile/>}/>
+        <Route path='/profile' element={<Profile />} />
         <Route path="/services/create" element={<CreateService />} />
         <Route path='/profile/services' element={<Profile />} />
-<Route path="/services/:id" element={<ServiceDetails />} />
+        <Route path="/services/:id" element={<ServiceDetails />} />
+        <Route path="/services/" element={<ServiceListingPage />} />
       </Routes>
       <Footer />
     </BrowserRouter>
