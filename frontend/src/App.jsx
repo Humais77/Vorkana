@@ -23,6 +23,7 @@ import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
 import ScrollToTop from './components/ScrollToTop';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
+import AllGigsPage from './components/AllGigsPage';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -72,6 +73,7 @@ const App = () => {
         <Route path='/profile/services' element={<Profile />} />
         <Route path="/services/:id" element={<ServiceDetails />} />
         <Route path="/services/" element={<ServiceListingPage />} />
+        <Route path="/all-gigs" element={<AllGigsPage />} />
       </Routes>
       <Footer />
     </BrowserRouter>

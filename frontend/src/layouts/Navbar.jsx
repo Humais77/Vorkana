@@ -8,7 +8,7 @@ import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
 
-const Navbar = ({onSigninClick,onSignupClick }) => {
+const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
@@ -245,6 +245,12 @@ const Navbar = ({onSigninClick,onSignupClick }) => {
                       >
                         Categories
                       </Link>
+                      <Link
+                        to="/all-gigs"
+                        className="px-4 py-2 text-gray-700 hover:text-green-600 transition-colors"
+                      >
+                        Browse All Gigs
+                      </Link>
                       <div className="space-y-1 mb-4">
                         {['Web Development', 'Graphic Design', 'Digital Marketing', 'Writing & Translation', 'Video & Animation'].map((category) => (
                           <Link
@@ -350,8 +356,8 @@ const Navbar = ({onSigninClick,onSignupClick }) => {
                     className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
                   >
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg ${user?.role === 'seller'
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-600'
-                        : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                      : 'bg-gradient-to-r from-blue-500 to-purple-600'
                       }`}>
                       {user?.name?.charAt(0) || 'U'}
                     </div>
@@ -373,8 +379,8 @@ const Navbar = ({onSigninClick,onSignupClick }) => {
                           <div className="text-sm text-gray-500">{user?.email}</div>
                           <div className="mt-1">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user?.role === 'seller'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-blue-100 text-blue-800'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-blue-100 text-blue-800'
                               }`}>
                               {user?.role === 'seller' ? 'Seller' : 'User'}
                             </span>
@@ -490,8 +496,8 @@ const Navbar = ({onSigninClick,onSignupClick }) => {
                       <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
                         <div className="flex items-center space-x-3">
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${user?.role === 'seller'
-                              ? 'bg-gradient-to-r from-green-500 to-emerald-600'
-                              : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                            : 'bg-gradient-to-r from-blue-500 to-purple-600'
                             }`}>
                             {user?.name?.charAt(0) || 'U'}
                           </div>
@@ -500,8 +506,8 @@ const Navbar = ({onSigninClick,onSignupClick }) => {
                             <div className="text-sm text-gray-500 truncate">{user?.email}</div>
                             <div className="mt-1">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user?.role === 'seller'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-blue-100 text-blue-800'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-blue-100 text-blue-800'
                                 }`}>
                                 {user?.role === 'seller' ? 'Seller' : 'User'}
                               </span>
