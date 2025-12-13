@@ -79,27 +79,67 @@ export const useMyGigs = (filters = {}) => {
   });
 };
 
-// Get all gigs with query parameters
-// In useGigs.js - update the useGigs hook
-// Get all gigs with query parameters
-export const useGigs = (queryParams = {}) => {
+export const useGigs = (params = {}) => {
+  // Extract only the parameters we need
+  const {
+    search,
+    projectCategory,
+    status = 'open',
+    page = 1,
+    limit = 12,
+    sort = 'createdAt',
+    order = 'desc',
+    ...restParams
+  } = params;
+
   return useQuery({
-    queryKey: gigKeys.list(queryParams),
-    queryFn: () => {
-      // Ensure we're only fetching active gigs by default
-      const params = {
-        status: 'open',
-        ...queryParams,
-        includeSubcategory: queryParams.includeSubcategory !== false, // NEW
-        includeInactive: queryParams.includeInactive || false,
-        showAll: queryParams.showAll || false,
+    queryKey: ['gigs', { 
+      search, 
+      projectCategory, 
+      status, 
+      page, 
+      limit,
+      sort,
+      order 
+    }],
+    queryFn: async () => {
+      // Build query parameters, excluding empty values
+      const queryParams = {
+        page,
+        limit,
+        sort,
+        order,
+        status,
+        populate: true,
+        includeCategory: true,
+        includeClient: true,
+        includeSeller: true,
+        lean: true,
       };
+
+      // Only add if they have non-empty values
+      if (search && search.trim() !== '') {
+        queryParams.search = search.trim();
+      }
       
-      return gigsAPI.getAll(params);
+      if (projectCategory && projectCategory.trim() !== '') {
+        queryParams.projectCategory = projectCategory.trim();
+      }
+      
+      // Add any other valid parameters
+      Object.keys(restParams).forEach(key => {
+        const value = restParams[key];
+        if (value !== undefined && value !== null && value !== '') {
+          queryParams[key] = value;
+        }
+      });
+
+      console.log('Calling API with params:', queryParams);
+      return gigsAPI.getAll(queryParams);
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    retry: 2,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    retry: 1,
     retryDelay: 1000,
   });
 };

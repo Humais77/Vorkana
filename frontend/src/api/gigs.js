@@ -1,51 +1,4 @@
-// import axios from 'axios';
-
-// const API_URL = import.meta.env.VITE_BACKEND_URL;
-
-// const axiosInstance = axios.create({
-//   baseURL: API_URL,
-//   timeout: 30000,
-// });
-
-// // Request interceptor for auth token
-// axiosInstance.interceptors.request.use(
-//   (config) => {
-//     const token = localStorage.getItem('userToken');
-//     if (token) {
-//       config.headers.Authorization = `Bearer ${token}`;
-//     }
-//     return config;
-//   },
-//   (error) => {
-//     return Promise.reject(error);
-//   }
-// );
-
-// export const gigsAPI = {
-//   getAll: async () => {
-//     const response = await axiosInstance.get('/api/gigs');
-//     return response.data.gigs || response.data;
-//   },
-  
-//   getPopular: async () => {
-//     const response = await axiosInstance.get('/api/gigs/popular');
-//     return response.data.gigs || response.data;
-//   },
-  
-//   getById: async (id) => {
-//     const response = await axiosInstance.get(`/api/gigs/${id}`);
-//     return response.data.gig || response.data;
-//   },
-  
-//   create: async (gigData) => {
-//     const response = await axiosInstance.post('/api/gigs', gigData, {
-//       headers: {
-//         'Content-Type': 'multipart/form-data',
-//       },
-//     });
-//     return response.data.gig || response.data;
-//   },
-// };
+// src/api/gigs.js
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
@@ -107,99 +60,182 @@ axiosInstance.interceptors.response.use(
   }
 );
 
-export const gigsAPI = {
-  // Get all gigs with query parameters - UPDATED
-  // Update the getAll function to match backend parameters
-// In gig.js - update the getAll function
-getAll: async (params = {}) => {
-  try {
-    console.log('Fetching gigs with params:', params);
+// Helper function to check if a value should be included in params
+const shouldIncludeParam = (key, value) => {
+  if (value === undefined || value === null) return false;
+  
+  // Special handling for boolean false values
+  if (typeof value === 'boolean' && value === false && key !== 'showAll') return false;
+  
+  // Skip empty strings for certain fields
+  if (typeof value === 'string' && value.trim() === '') {
+    const skipEmptyFields = [
+      'projectCategory', 'subcategory', 'urgency', 'currency',
+      'visibility', 'paymentStatus', 'disputeStatus'
+    ];
+    return !skipEmptyFields.includes(key);
+  }
+  
+  return true;
+};
+
+// Helper to clean params before sending
+const cleanParams = (params) => {
+  const cleaned = {};
+  
+  Object.keys(params).forEach(key => {
+    const value = params[key];
     
-    // Ensure we're not sending 'me' to backend - convert to actual user ID if needed
-    const backendParams = {
-      page: params.page || 1,
-      limit: params.limit || 10,
-      sort: params.sort || 'createdAt',
-      order: params.order || 'desc',
-      search: params.search || params.q,
-      projectCategory: params.projectCategory,
-      subcategory: params.subcategory,
-      minBudget: params.minBudget,
-      maxBudget: params.maxBudget,
-      status: params.status || 'open', // Default to open status
-      urgency: params.urgency,
-      visibility: params.visibility,
-      paymentStatus: params.paymentStatus,
-      disputeStatus: params.disputeStatus,
-      createdBy: params.createdBy,
-      assignedTo: params.assignedTo,
-      hasAttachments: params.hasAttachments,
-      hasProposals: params.hasProposals,
-      hasMilestones: params.hasMilestones,
-      skillsRequired: params.skillsRequired,
-      createdAfter: params.createdAfter,
-      createdBefore: params.createdBefore,
-      deadlineAfter: params.deadlineAfter,
-      deadlineBefore: params.deadlineBefore,
-      ids: params.ids,
-      excludeIds: params.excludeIds,
-      fields: params.fields,
-      populate: params.populate !== false,
-      showAll: params.showAll || false,
-      includeInactive: params.includeInactive || false,
-      includeCategory: params.includeCategory !== false,
-      includeClient: params.includeClient !== false,
-      includeSeller: params.includeSeller !== false,
-      lean: params.lean !== false,
-      cache: params.cache || false,
-    };
-    
-    // Clean up undefined/null params
-    Object.keys(backendParams).forEach(key => {
-      if (backendParams[key] === undefined || backendParams[key] === null) {
-        delete backendParams[key];
-      }
-    });
-    
-    console.log('Sending to backend:', backendParams);
-    
-    const response = await axiosInstance.get('/api/gigs', {
-      params: backendParams,
-      paramsSerializer: {
-        indexes: null,
-        serialize: (params) => {
-          return Object.entries(params)
-            .map(([key, value]) => {
-              if (Array.isArray(value)) {
-                return `${key}=${value.join(',')}`;
-              }
-              return `${key}=${value}`;
-            })
-            .join('&');
+    if (shouldIncludeParam(key, value)) {
+      // Validate ObjectId fields
+      if (['projectCategory', 'subcategory', 'createdBy', 'assignedTo'].includes(key)) {
+        if (isValidObjectId(value)) {
+          cleaned[key] = value;
         }
       }
-    });
-    
-    console.log('Backend response:', response);
-    
-    return {
-      success: true,
-      data: response.data || [],
-      pagination: response.pagination || {
-        page: 1,
-        limit: 10,
-        total: 0,
-        totalPages: 0
-      },
-      ...response
-    };
-  } catch (error) {
-    console.error('Error fetching gigs:', error);
-    throw error;
-  }
-},
+      // Validate enum fields
+      else if (key === 'urgency' && ['low', 'medium', 'high', 'urgent'].includes(value)) {
+        cleaned[key] = value;
+      }
+      else if (key === 'visibility' && ['public', 'private', 'invite_only'].includes(value)) {
+        cleaned[key] = value;
+      }
+      else if (key === 'status' && ['open', 'in_progress', 'assigned', 'completed', 'cancelled', 'closed'].includes(value)) {
+        cleaned[key] = value;
+      }
+      // Include all other valid values
+      else {
+        cleaned[key] = value;
+      }
+    }
+  });
   
-  // Get gig by ID or slug - UPDATED
+  return cleaned;
+};
+
+// Helper function to check if string is a valid ObjectId
+const isValidObjectId = (id) => {
+  if (!id || typeof id !== 'string') return false;
+  return /^[0-9a-fA-F]{24}$/.test(id);
+};
+
+export const gigsAPI = {
+  // Get all gigs with query parameters - FIXED VERSION
+  getAll: async (params = {}) => {
+    try {
+      console.log('Original params:', params);
+      
+      // Set default values for required fields
+      const defaultParams = {
+        page: 1,
+        limit: 12,
+        sort: 'createdAt',
+        order: 'desc',
+        status: 'open',
+        populate: true,
+        includeCategory: true,
+        includeClient: true,
+        includeSeller: true,
+        lean: true,
+        cache: false,
+      };
+      
+      // Merge params with defaults
+      const mergedParams = { ...defaultParams, ...params };
+      
+      // Clean the parameters - remove empty strings and invalid values
+      const cleanedParams = cleanParams(mergedParams);
+      
+      console.log('Cleaned params for backend:', cleanedParams);
+      
+      const response = await axiosInstance.get('/api/gigs', {
+        params: cleanedParams,
+        paramsSerializer: {
+          indexes: null,
+          serialize: (params) => {
+            const searchParams = new URLSearchParams();
+            
+            Object.entries(params).forEach(([key, value]) => {
+              if (value !== undefined && value !== null) {
+                if (Array.isArray(value)) {
+                  searchParams.append(key, value.join(','));
+                } else if (typeof value === 'object' && !(value instanceof Date)) {
+                  searchParams.append(key, JSON.stringify(value));
+                } else if (value instanceof Date) {
+                  searchParams.append(key, value.toISOString());
+                } else {
+                  searchParams.append(key, value.toString());
+                }
+              }
+            });
+            
+            return searchParams.toString();
+          }
+        }
+      });
+      
+      console.log('Backend response structure:', response);
+      
+      // Ensure consistent response structure
+      return {
+        success: true,
+        data: response.data || [],
+        pagination: response.pagination || {
+          page: cleanedParams.page || 1,
+          limit: cleanedParams.limit || 12,
+          total: response.count || 0,
+          totalPages: Math.ceil((response.count || 0) / (cleanedParams.limit || 12))
+        },
+        ...response
+      };
+      
+    } catch (error) {
+      console.error('Error fetching gigs:', error);
+      
+      // If validation error, retry with cleaned params
+      if (error.code === 'QUERY_VALIDATION_ERROR' || error.status === 400) {
+        console.log('Validation error, retrying with stricter param cleaning...');
+        
+        // More aggressive cleaning for retry
+        const retryParams = { ...params };
+        delete retryParams.projectCategory;
+        delete retryParams.urgency;
+        delete retryParams.currency;
+        delete retryParams.visibility;
+        
+        // Set only safe defaults
+        const safeParams = {
+          page: retryParams.page || 1,
+          limit: retryParams.limit || 12,
+          status: 'open',
+          sort: 'createdAt',
+          order: 'desc'
+        };
+        
+        try {
+          const retryResponse = await axiosInstance.get('/api/gigs', { params: safeParams });
+          return {
+            success: true,
+            data: retryResponse.data || [],
+            pagination: {
+              page: safeParams.page,
+              limit: safeParams.limit,
+              total: retryResponse.count || 0,
+              totalPages: Math.ceil((retryResponse.count || 0) / safeParams.limit)
+            },
+            wasRetried: true
+          };
+        } catch (retryError) {
+          console.error('Retry also failed:', retryError);
+          throw retryError;
+        }
+      }
+      
+      throw error;
+    }
+  },
+  
+  // Get gig by ID or slug
   getById: async (id) => {
     try {
       if (!id || id === 'undefined') {
@@ -236,7 +272,7 @@ getAll: async (params = {}) => {
     }
   },
   
-  // Create a new gig - UPDATED for form data structure
+  // Create a new gig
   create: async (gigData) => {
     try {
       const isFormData = gigData instanceof FormData;
@@ -272,7 +308,7 @@ getAll: async (params = {}) => {
             } else if (typeof gigData[key] === 'object') {
               formData.append(key, JSON.stringify(gigData[key]));
             } else {
-              // Ensure subcategory is properly handled
+              // Handle empty subcategory
               if (key === 'subcategory' && !gigData[key]) {
                 // Don't append empty subcategory
               } else {
@@ -330,7 +366,7 @@ getAll: async (params = {}) => {
     }
   },
   
-  // Update an existing gig - UPDATED
+  // Update an existing gig
   update: async (id, gigData) => {
     try {
       let dataToSend = gigData;
@@ -389,89 +425,44 @@ getAll: async (params = {}) => {
     }
   },
   
-  // Delete a gig - UPDATED with parameters
-  // Update the delete function in gig.js API client
-// In gig.js API client, update the delete function:
-delete: async (id, options = {}) => {
-  try {
-    const response = await axiosInstance.delete(`/api/gigs/${id}`, {
-      params: {
-        permanent: options.permanent || false,
-        force: options.force || false
-      }
-    });
-    
-    return {
-      success: true,
-      data: response.data,
-      message: response.message || 'Gig deleted successfully',
-      ...response
-    };
-  } catch (error) {
-    // Handle specific error cases
-    if (error.code === 'ALREADY_DELETED') {
-      console.warn(`Gig ${id} is already deleted`);
-      return {
-        success: true,
-        message: 'Gig was already deleted',
-        alreadyDeleted: true
-      };
-    }
-    
-    if (error.code === 'DELETE_VALIDATION_ERROR') {
-      console.warn(`Gig ${id} has data issues but will be force deleted`);
-      
-      // Try force delete
-      const forceResponse = await axiosInstance.delete(`/api/gigs/${id}`, {
+  // Delete a gig
+  delete: async (id, options = {}) => {
+    try {
+      const response = await axiosInstance.delete(`/api/gigs/${id}`, {
         params: {
           permanent: options.permanent || false,
-          force: true // Force delete
+          force: options.force || false
         }
       });
       
       return {
         success: true,
-        data: forceResponse.data,
-        message: 'Gig force deleted successfully',
-        wasForceDeleted: true,
-        ...forceResponse
-      };
-    }
-    
-    console.error(`Error deleting gig ${id}:`, error);
-    throw error;
-  }
-},
-  
-  // Submit proposal for a gig
-  submitProposal: async (gigId, proposalData) => {
-    try {
-      const response = await axiosInstance.post(`/api/gigs/${gigId}/proposals`, proposalData);
-      
-      return {
-        success: true,
         data: response.data,
-        message: response.message || 'Proposal submitted successfully',
+        message: response.message || 'Gig deleted successfully',
         ...response
       };
     } catch (error) {
-      console.error(`Error submitting proposal for gig ${gigId}:`, error);
+      console.error(`Error deleting gig ${id}:`, error);
       throw error;
     }
   },
   
-// In gig.js - ensure getStats function looks like this:
-getStats: async () => {
-  try {
-    console.log('Fetching gig stats...');
-    const response = await axiosInstance.get('/api/gigs/stats');
-    
-    console.log('Stats response:', response);
-    
-    // Ensure response has proper structure
-    if (!response.data) {
+  // Get gig statistics
+  getStats: async () => {
+    try {
+      const response = await axiosInstance.get('/api/gigs/stats');
+      
       return {
         success: true,
+        data: response.data,
+        stats: response.data,
+        ...response
+      };
+    } catch (error) {
+      console.error('Error fetching gig stats:', error);
+      
+      return {
+        success: false,
         data: {
           overview: [{
             totalGigs: 0,
@@ -481,38 +472,13 @@ getStats: async () => {
             avgBudget: 0
           }]
         },
-        isFallback: true
+        isFallback: true,
+        error: error.message
       };
     }
-    
-    return {
-      success: true,
-      data: response.data,
-      stats: response.data,
-      ...response
-    };
-  } catch (error) {
-    console.error('Error fetching gig stats:', error);
-    
-    // For ANY error, return empty stats
-    return {
-      success: false,
-      data: {
-        overview: [{
-          totalGigs: 0,
-          activeGigs: 0,
-          totalOrders: 0,
-          totalBudget: 0,
-          avgBudget: 0
-        }]
-      },
-      isFallback: true,
-      error: error.message
-    };
-  }
-}, 
+  },
   
-  // Search gigs - UPDATED
+  // Search gigs
   search: async (searchParams = {}) => {
     try {
       const response = await axiosInstance.get('/api/gigs/search', {
@@ -538,7 +504,7 @@ getStats: async () => {
     }
   },
   
-  // Restore gig (admin only) - NEW
+  // Restore gig (admin only)
   restore: async (id) => {
     try {
       const response = await axiosInstance.patch(`/api/gigs/${id}/restore`);
@@ -555,7 +521,7 @@ getStats: async () => {
     }
   },
   
-  // Export gigs - UPDATED
+  // Export gigs
   exportGigs: async (params = {}) => {
     try {
       const response = await axiosInstance.get('/api/gigs/export', {
