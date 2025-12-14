@@ -104,27 +104,28 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) {
-        return callback(null, true);
-      }
-      
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn(`🚫 CORS blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS policy'), false);
-      }
-    },
-    credentials: true, // Important for cookies
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cookie'],
-    exposedHeaders: ['Authorization', 'Set-Cookie']
-  })
-);
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Request-ID',  // Add this
+    'X-CSRF-Token',  // Add this
+    'Accept'
+  ],
+  exposedHeaders: [
+    'X-Request-ID',
+    'X-Total-Count',
+    'X-Total-Pages',
+    'X-Page-Size',
+    'X-Current-Page',
+    'X-Response-Time',
+    'X-CSRF-Token'
+  ],
+  credentials: true,
+  maxAge: 86400
+}));
 
 // Body parsing with limits
 app.use(express.json({ 

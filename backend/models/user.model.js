@@ -153,11 +153,10 @@ userSchema.index({ isActive: 1 });
 userSchema.virtual('isLocked').get(function () {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
-
 userSchema.virtual('accountAge').get(function () {
+  if (!this.createdAt) return null;
   return Date.now() - this.createdAt.getTime();
 });
-
 // ========== MIDDLEWARE ==========
 
 // Password hashing middleware

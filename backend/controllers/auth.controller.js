@@ -12,9 +12,9 @@ const generateToken = (id) => {
     { id }, 
     process.env.JWT_SECRET, 
     {
-      expiresIn: '15m', // Short-lived access token
-      issuer: 'your-app-name',
-      audience: 'your-app-client'
+      expiresIn: '7d', // Short-lived access token
+      issuer: 'vorkana',
+      audience: 'vorkana-web'
     }
   );
 };
@@ -25,8 +25,8 @@ const generateRefreshToken = (id) => {
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: '7d',
-      issuer: 'your-app-name',
-      audience: 'your-app-client'
+      issuer: 'vorkana',
+      audience: 'vorkana-web'
     }
   );
 };

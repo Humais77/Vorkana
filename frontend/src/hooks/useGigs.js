@@ -42,105 +42,46 @@ export const extractGigsFromResponse = (response) => {
 
 // Get current user's gigs - FIXED
 export const useMyGigs = (filters = {}) => {
-  const { user } = useAuthStore(); // Get user from auth store
+  const { user } = useAuthStore();
   
   return useQuery({
-    queryKey: gigKeys.list({ ...filters, myGigs: true }),
+    queryKey: ['myGigs', filters, user?._id],
     queryFn: async () => {
-      try {
-        if (!user?._id) {
-          throw new Error('User not authenticated');
-        }
-        
-        // Call API to get user's gigs with actual user ID
-        const response = await gigsAPI.getAll({
-          ...filters,
-          createdBy: user._id, // Use actual user ID instead of 'me'
-          includeCategory: true,
-          includeClient: true,
-          populate: true,
-        });
-        
-        return {
-          success: true,
-          gigs: extractGigsFromResponse(response),
-          count: extractGigsFromResponse(response).length,
-          ...response
-        };
-      } catch (error) {
-        console.error('Error fetching my gigs:', error);
-        throw error;
+      if (!user?._id) {
+        throw new Error('User not authenticated');
       }
+      
+      return gigsAPI.getAll({
+        ...filters,
+        createdBy: user._id
+      });
     },
+    enabled: !!user?._id,
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
-    retry: 2,
-    enabled: !!user?._id, // Only enable query if user exists
+    onError: (error) => {
+      console.error('Error fetching my gigs:', error);
+      if (error.message !== 'User not authenticated') {
+        toast.error('Failed to load your gigs');
+      }
+    }
   });
 };
 
 export const useGigs = (params = {}) => {
-  // Extract only the parameters we need
-  const {
-    search,
-    projectCategory,
-    status = 'open',
-    page = 1,
-    limit = 12,
-    sort = 'createdAt',
-    order = 'desc',
-    ...restParams
-  } = params;
-
   return useQuery({
-    queryKey: ['gigs', { 
-      search, 
-      projectCategory, 
-      status, 
-      page, 
-      limit,
-      sort,
-      order 
-    }],
-    queryFn: async () => {
-      // Build query parameters, excluding empty values
-      const queryParams = {
-        page,
-        limit,
-        sort,
-        order,
-        status,
-        populate: true,
-        includeCategory: true,
-        includeClient: true,
-        includeSeller: true,
-        lean: true,
-      };
-
-      // Only add if they have non-empty values
-      if (search && search.trim() !== '') {
-        queryParams.search = search.trim();
-      }
-      
-      if (projectCategory && projectCategory.trim() !== '') {
-        queryParams.projectCategory = projectCategory.trim();
-      }
-      
-      // Add any other valid parameters
-      Object.keys(restParams).forEach(key => {
-        const value = restParams[key];
-        if (value !== undefined && value !== null && value !== '') {
-          queryParams[key] = value;
-        }
-      });
-
-      console.log('Calling API with params:', queryParams);
-      return gigsAPI.getAll(queryParams);
-    },
+    queryKey: ['gigs', params],
+    queryFn: () => gigsAPI.getAll(params),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     retry: 1,
     retryDelay: 1000,
+    onError: (error) => {
+      console.error('Error fetching gigs:', error);
+      if (error.code !== 'SERVER_ERROR') {
+        toast.error('Failed to load gigs');
+      }
+    }
   });
 };
 
@@ -219,68 +160,44 @@ export const useCreateGig = () => {
   
   return useMutation({
     mutationFn: gigsAPI.create,
-    onMutate: async (newGig) => {
-      await queryClient.cancelQueries({ queryKey: gigKeys.all });
-      
-      const previousGigs = queryClient.getQueryData(gigKeys.lists());
-      
-      if (previousGigs) {
-        queryClient.setQueryData(gigKeys.lists(), (old) => ({
-          ...old,
-          data: old.data ? [newGig, ...old.data] : [newGig]
-        }));
-      }
-      
-      return { previousGigs };
-    },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: gigKeys.all });
-      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+      queryClient.invalidateQueries({ queryKey: ['gigs'] });
+      queryClient.invalidateQueries({ queryKey: ['myGigs'] });
       
       const gigId = data.data?._id || data.gig?._id;
       if (gigId) {
         setLastCreatedGigId(gigId);
       }
       
-      // Log success details
+      // Log success
       console.log('Gig created successfully:', {
         id: gigId,
         title: data.data?.title,
-        category: data.data?.projectCategory,
-        subcategory: data.data?.subcategory
+        success: data.success
       });
       
       toast.success(data.message || 'Gig created successfully!');
     },
-    onError: (error, variables, context) => {
-      console.error('Gig creation error:', error);
-      
-      // Log detailed error for debugging
-      console.error('Error details:', {
+    onError: (error) => {
+      console.error('Gig creation error details:', {
         message: error.message,
         code: error.code,
-        errors: error.errors
+        errors: error.errors,
+        status: error.status
       });
       
-      if (context?.previousGigs) {
-        queryClient.setQueryData(gigKeys.lists(), context.previousGigs);
+      let errorMessage = error.message || 'Failed to create gig';
+      
+      // Handle specific error codes
+      if (error.code === 'CATEGORY_NOT_FOUND') {
+        errorMessage = 'Please select a valid category';
+      } else if (error.code === 'SUBCATEGORY_NOT_FOUND') {
+        errorMessage = 'Please select a valid subcategory or leave it empty';
+      } else if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to create a gig';
       }
       
-      const errorMessage = error.data?.message || error.message || 'Failed to create gig';
-      
-      // Special handling for subcategory errors
-      if (error.message?.includes('subcategory') || error.code === 'SUBCATEGORY_NOT_FOUND') {
-        toast.error('Please select a valid subcategory or leave it empty');
-      } else {
-        toast.error(errorMessage);
-      }
-      
-      if (error.data?.errors) {
-        console.error('Validation errors:', error.data.errors);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: gigKeys.all });
+      toast.error(errorMessage);
     },
   });
 };

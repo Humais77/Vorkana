@@ -178,13 +178,32 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   // Date filters
   const addDateFilter = (field, date, operator) => {
-    if (date) {
-      const parsedDate = new Date(date);
-      if (!isNaN(parsedDate.getTime())) {
-        filter[field] = { ...filter[field], [operator]: parsedDate };
-      }
+  if (date) {
+    let parsedDate;
+    
+    // Handle different date formats
+    if (date instanceof Date) {
+      parsedDate = date;
+    } else if (typeof date === 'string') {
+      parsedDate = new Date(date);
+    } else if (typeof date === 'number') {
+      parsedDate = new Date(date);
+    } else {
+      console.warn(`Invalid date format for ${field}:`, date);
+      return;
     }
-  };
+    
+    // Check if date is valid
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+      if (!filter[field]) {
+        filter[field] = {};
+      }
+      filter[field][operator] = parsedDate;
+    } else {
+      console.warn(`Invalid date for ${field}:`, date);
+    }
+  }
+};
 
   addDateFilter('createdAt', createdAfter, '$gte');
   addDateFilter('createdAt', createdBefore, '$lte');
@@ -794,59 +813,57 @@ const getGigById = async (req, res, next) => {
     const userRole = req.user?.role || 'guest';
     const userId = req.user?._id;
 
-    // Apply access controls
-    if (userRole === 'admin') {
-      query.deletedAt = null;
-    } else if (userRole === 'seller' && userId) {
-      query.$or = [
-        { _id: query._id, assignedTo: userId, deletedAt: null },
-        { _id: query._id, createdBy: userId, deletedAt: null },
-        { 
-          ...query, 
-          visibility: 'public',
-          deletedAt: null 
-        }
-      ];
-    } else if (userRole === 'user' && userId) {
-      query.$or = [
-        { _id: query._id, createdBy: userId, deletedAt: null },
-        { 
-          ...query, 
-          visibility: 'public',
-          deletedAt: null 
-        }
-      ];
-    } else {
-      query.visibility = 'public';
-      query.deletedAt = null;
+    // Apply access controls - SIMPLIFIED VERSION
+    query.deletedAt = null;
+    
+    // For non-admin users, add additional restrictions
+    if (userRole !== 'admin') {
+      if (userId) {
+        query.$or = [
+          { createdBy: userId },
+          { assignedTo: userId },
+          { 
+            visibility: 'public',
+            status: 'open'
+          }
+        ];
+      } else {
+        query.visibility = 'public';
+        query.status = 'open';
+      }
     }
 
-    const defaultExclude = ['__v', 'lastUpdatedBy', 'deletedAt', 'deletedBy', 'version'];
-    let select = {};
+    // FIXED: Handle field selection safely
+    let selectFields = {};
     
     if (fields) {
-      const fieldArray = fields.split(',').map(f => f.trim());
-      fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
-          select[field] = 1;
-        }
-      });
-    } else {
-      defaultExclude.forEach(field => {
-        select[field] = 0;
-      });
+      try {
+        const fieldArray = fields.split(',').map(f => f.trim());
+        fieldArray.forEach(field => {
+          if (field && field !== '__v' && field !== 'lastUpdatedBy' && 
+              field !== 'deletedAt' && field !== 'deletedBy' && 
+              field !== 'version' && field !== 'communicationHistory') {
+            selectFields[field] = 1;
+          }
+        });
+      } catch (err) {
+        console.warn('Error parsing fields:', err);
+      }
     }
 
+    // FIXED: Safe populate configuration
     let populateOptions = [];
-    if (populate) {
+    if (populate === 'true' || populate === true) {
       populateOptions = [
         {
           path: 'projectCategory',
-          select: 'name slug icon description'
+          select: 'name slug icon',
+          match: { isActive: true }
         },
         {
           path: 'subcategory',
-          select: 'name slug'
+          select: 'name slug',
+          match: { isActive: true }
         },
         {
           path: 'createdBy',
@@ -860,7 +877,7 @@ const getGigById = async (req, res, next) => {
     }
 
     const gig = await Gig.findOne(query)
-      .select(Object.keys(select).length > 0 ? select : null)
+      .select(Object.keys(selectFields).length > 0 ? selectFields : null)
       .populate(populateOptions);
 
     if (!gig) {
@@ -874,7 +891,10 @@ const getGigById = async (req, res, next) => {
 
     // Additional access checks
     if (gig.visibility !== 'public' && userRole !== 'admin') {
-      if (userRole !== 'seller' && gig.createdBy._id.toString() !== userId?.toString()) {
+      const isOwner = gig.createdBy._id.toString() === userId?.toString();
+      const isAssigned = gig.assignedTo && gig.assignedTo._id.toString() === userId?.toString();
+      
+      if (!isOwner && !isAssigned) {
         return res.status(403).json({
           success: false,
           message: 'Access to this gig is restricted',
@@ -891,7 +911,8 @@ const getGigById = async (req, res, next) => {
       });
     }
 
-    const safeGig = gig.toObject();
+    // FIXED: Convert gig to object safely
+    const safeGig = gig.toObject ? gig.toObject() : gig;
     
     // Remove sensitive data
     if (safeGig.createdBy) {
@@ -912,6 +933,25 @@ const getGigById = async (req, res, next) => {
     delete safeGig.deletedBy;
     delete safeGig.version;
 
+    // Handle date fields safely
+    ['createdAt', 'updatedAt', 'deadline'].forEach(dateField => {
+      if (safeGig[dateField]) {
+        try {
+          // Ensure it's a valid date
+          if (safeGig[dateField] instanceof Date) {
+            safeGig[dateField] = safeGig[dateField].toISOString();
+          } else if (typeof safeGig[dateField] === 'string') {
+            // Already a string, keep as is
+          } else if (safeGig[dateField].toISOString) {
+            safeGig[dateField] = safeGig[dateField].toISOString();
+          }
+        } catch (err) {
+          console.warn(`Error processing date field ${dateField}:`, err);
+          safeGig[dateField] = new Date().toISOString();
+        }
+      }
+    });
+
     // Limit communication history for non-participants
     if (safeGig.communicationHistory && 
         userId !== safeGig.createdBy._id.toString() && 
@@ -931,8 +971,25 @@ const getGigById = async (req, res, next) => {
     });
 
   } catch (error) {
-    logAudit('ERROR', 'GIG', 'GET_BY_ID', req.user?._id, { id: req.params.id, error: error.message });
-    next(error);
+    console.error('Error in getGigById:', error);
+    
+    // Return a more helpful error message
+    const errorMessage = error.message || 'Internal server error';
+    const errorCode = error.name === 'CastError' ? 'INVALID_ID_FORMAT' : 'SERVER_ERROR';
+    
+    res.status(500).json({
+      success: false,
+      message: `Error fetching gig: ${errorMessage}`,
+      code: errorCode,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+    logAudit('ERROR', 'GIG', 'GET_BY_ID', req.user?._id, { 
+      id: req.params.id, 
+      error: error.message,
+      stack: error.stack
+    });
   }
 };
 

@@ -41,6 +41,7 @@ import { useGigStore } from "../../store/useGigStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
 import { useCategories } from "../../hooks/useCategories";
 import { useCreateGig } from "../../hooks/useGigs";
+import { useParentCategories } from '../../hooks/useCategories';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
@@ -58,7 +59,7 @@ const GigCreate = () => {
     isLoading: categoryLoading,
     error: categoryError,
     refetch: refetchCategories
-  } = useCategories();
+  } = useParentCategories();
 
   const {
     mutate: createGig,
@@ -126,11 +127,11 @@ const GigCreate = () => {
     }
   }, [currentUser]);
   useEffect(() => {
-  console.log('DEBUG - Current categoriesData:', categoriesData);
-  console.log('DEBUG - Current storedCategories:', storedCategories);
-  console.log('DEBUG - Category loading:', categoryLoading);
-  console.log('DEBUG - Category error:', categoryError);
-}, [categoriesData, storedCategories, categoryLoading, categoryError]);
+    console.log('DEBUG - Current categoriesData:', categoriesData);
+    console.log('DEBUG - Current storedCategories:', storedCategories);
+    console.log('DEBUG - Category loading:', categoryLoading);
+    console.log('DEBUG - Category error:', categoryError);
+  }, [categoriesData, storedCategories, categoryLoading, categoryError]);
 
   // Sync categories from query to store
   useEffect(() => {
@@ -140,63 +141,63 @@ const GigCreate = () => {
   }, [categoriesData, setCategories]);
 
   // Update subcategories when category changes
- useEffect(() => {
-  console.log('Category changed:', formData.projectCategory);
-  console.log('Categories data available:', !!categoriesData);
-  
-  if (formData.projectCategory && categoriesData) {
-    // Get the current category list (either from store or query)
-    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-      ? storedCategories
-      : (Array.isArray(categoriesData) ? categoriesData : []);
-    
-    console.log('Category list:', categoryList);
-    
-    // Find the selected category
-    const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
-    console.log('Selected category:', selectedCategory);
-    
-    if (selectedCategory) {
-      // Get subcategories - check multiple possible locations
-      const subs = selectedCategory.children || 
-                   selectedCategory.subcategories || 
-                   [];
-      
-      console.log('Found subcategories:', subs);
-      setSubcategories(subs);
+  useEffect(() => {
+    console.log('Category changed:', formData.projectCategory);
+    console.log('Categories data available:', !!categoriesData);
 
-      // Reset subcategory if parent category changes and subcategory is not valid
-      if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
-        console.log('Resetting subcategory - not found in new subcategories');
+    if (formData.projectCategory && categoriesData) {
+      // Get the current category list (either from store or query)
+      const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+        ? storedCategories
+        : (Array.isArray(categoriesData) ? categoriesData : []);
+
+      console.log('Category list:', categoryList);
+
+      // Find the selected category
+      const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
+      console.log('Selected category:', selectedCategory);
+
+      if (selectedCategory) {
+        // Get subcategories - check multiple possible locations
+        const subs = selectedCategory.children ||
+          selectedCategory.subcategories ||
+          [];
+
+        console.log('Found subcategories:', subs);
+        setSubcategories(subs);
+
+        // Reset subcategory if parent category changes and subcategory is not valid
+        if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
+          console.log('Resetting subcategory - not found in new subcategories');
+          setFormData(prev => ({ ...prev, subcategory: "" }));
+        }
+      } else {
+        console.log('No selected category found');
+        setSubcategories([]);
         setFormData(prev => ({ ...prev, subcategory: "" }));
       }
     } else {
-      console.log('No selected category found');
+      console.log('No project category selected or no categories data');
       setSubcategories([]);
       setFormData(prev => ({ ...prev, subcategory: "" }));
     }
-  } else {
-    console.log('No project category selected or no categories data');
-    setSubcategories([]);
-    setFormData(prev => ({ ...prev, subcategory: "" }));
-  }
-}, [formData.projectCategory, categoriesData, storedCategories]);
-const DebugCategoryInfo = () => (
-  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-    <h4 className="font-bold text-yellow-800 mb-2">Category Debug Info:</h4>
-    <div className="text-sm space-y-1">
-      <p>Selected Category ID: {formData.projectCategory || 'None'}</p>
-      <p>Selected Category Name: {getCategoryName()}</p>
-      <p>Subcategory ID: {formData.subcategory || 'None'}</p>
-      <p>Subcategory Name: {getSubcategoryName()}</p>
-      <p>Subcategories available: {subcategories.length}</p>
-      <p>Categories loaded: {Array.isArray(categoriesData) ? categoriesData.length : 'Not array'}</p>
-      <p>Categories in store: {Array.isArray(storedCategories) ? storedCategories.length : 'Not array'}</p>
-      <p>Category loading: {categoryLoading ? 'Yes' : 'No'}</p>
-      <p>Category error: {categoryError ? 'Yes' : 'No'}</p>
+  }, [formData.projectCategory, categoriesData, storedCategories]);
+  const DebugCategoryInfo = () => (
+    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <h4 className="font-bold text-yellow-800 mb-2">Category Debug Info:</h4>
+      <div className="text-sm space-y-1">
+        <p>Selected Category ID: {formData.projectCategory || 'None'}</p>
+        <p>Selected Category Name: {getCategoryName()}</p>
+        <p>Subcategory ID: {formData.subcategory || 'None'}</p>
+        <p>Subcategory Name: {getSubcategoryName()}</p>
+        <p>Subcategories available: {subcategories.length}</p>
+        <p>Categories loaded: {Array.isArray(categoriesData) ? categoriesData.length : 'Not array'}</p>
+        <p>Categories in store: {Array.isArray(storedCategories) ? storedCategories.length : 'Not array'}</p>
+        <p>Category loading: {categoryLoading ? 'Yes' : 'No'}</p>
+        <p>Category error: {categoryError ? 'Yes' : 'No'}</p>
+      </div>
     </div>
-  </div>
-);
+  );
 
   // Cleanup when component unmounts
   useEffect(() => {
@@ -556,120 +557,120 @@ const DebugCategoryInfo = () => (
   }, [activeStep]);
 
   const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
+    e.preventDefault();
+    setIsSubmitting(true);
 
-  if (!isAuthenticated) {
-    setErrors(prev => ({
-      ...prev,
-      form: "Please sign in to create a gig."
-    }));
-    setActiveStep(1);
-    toast.error("Please sign in first");
-    setIsSubmitting(false);
-    return;
-  }
-
-  // Validate all steps
-  let hasError = false;
-  for (let step = 1; step <= 4; step++) {
-    if (!validateStep(step)) {
-      setActiveStep(step);
-      hasError = true;
-      break;
+    if (!isAuthenticated) {
+      setErrors(prev => ({
+        ...prev,
+        form: "Please sign in to create a gig."
+      }));
+      setActiveStep(1);
+      toast.error("Please sign in first");
+      setIsSubmitting(false);
+      return;
     }
-  }
 
-  if (hasError) {
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    const formDataObj = new FormData();
-
-    // Prepare data according to backend model
-    const gigData = {
-      title: formData.title.trim(),
-      fullName: formData.fullName.trim(),
-      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-      country: formData.country.trim(),
-      phone: formData.phone.trim(),
-      projectCategory: formData.projectCategory,
-      subcategory: formData.subcategory || undefined, // Send undefined if empty
-      description: formData.description.trim(),
-      budget: parseFloat(formData.budget),
-      currency: formData.currency,
-      timeline: formData.timeline.trim(),
-      timelineUnit: formData.timelineUnit,
-      communication: formData.communication,
-      urgency: formData.urgency,
-      visibility: formData.visibility,
-    };
-
-    // Log gig data for debugging
-    console.log('=== GIG DATA TO BE SENT ===');
-    console.log('Category:', gigData.projectCategory);
-    console.log('Subcategory:', gigData.subcategory);
-    console.log('Has subcategory?', !!gigData.subcategory);
-    
-    // Append all data to FormData
-    Object.keys(gigData).forEach(key => {
-      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-        if (typeof gigData[key] === 'object') {
-          formDataObj.append(key, JSON.stringify(gigData[key]));
-        } else {
-          formDataObj.append(key, gigData[key]);
-        }
+    // Validate all steps
+    let hasError = false;
+    for (let step = 1; step <= 4; step++) {
+      if (!validateStep(step)) {
+        setActiveStep(step);
+        hasError = true;
+        break;
       }
-    });
+    }
 
-    // Append skills array properly
-    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-      formData.skillsRequired.forEach((skill, index) => {
-        formDataObj.append(`skillsRequired[${index}]`, skill);
+    if (hasError) {
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const formDataObj = new FormData();
+
+      // Prepare data according to backend model
+      const gigData = {
+        title: formData.title.trim(),
+        fullName: formData.fullName.trim(),
+        oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+        country: formData.country.trim(),
+        phone: formData.phone.trim(),
+        projectCategory: formData.projectCategory,
+        subcategory: formData.subcategory || undefined, // Send undefined if empty
+        description: formData.description.trim(),
+        budget: parseFloat(formData.budget),
+        currency: formData.currency,
+        timeline: formData.timeline.trim(),
+        timelineUnit: formData.timelineUnit,
+        communication: formData.communication,
+        urgency: formData.urgency,
+        visibility: formData.visibility,
+      };
+
+      // Log gig data for debugging
+      console.log('=== GIG DATA TO BE SENT ===');
+      console.log('Category:', gigData.projectCategory);
+      console.log('Subcategory:', gigData.subcategory);
+      console.log('Has subcategory?', !!gigData.subcategory);
+
+      // Append all data to FormData
+      Object.keys(gigData).forEach(key => {
+        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+          if (typeof gigData[key] === 'object') {
+            formDataObj.append(key, JSON.stringify(gigData[key]));
+          } else {
+            formDataObj.append(key, gigData[key]);
+          }
+        }
       });
-    }
 
-    // Append deliverables array properly
-    if (formData.deliverables && formData.deliverables.length > 0) {
-      formData.deliverables.forEach((deliverable, index) => {
-        formDataObj.append(`deliverables[${index}]`, deliverable);
+      // Append skills array properly
+      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+        formData.skillsRequired.forEach((skill, index) => {
+          formDataObj.append(`skillsRequired[${index}]`, skill);
+        });
+      }
+
+      // Append deliverables array properly
+      if (formData.deliverables && formData.deliverables.length > 0) {
+        formData.deliverables.forEach((deliverable, index) => {
+          formDataObj.append(`deliverables[${index}]`, deliverable);
+        });
+      }
+
+      // Append attachments
+      attachments.forEach((file) => {
+        formDataObj.append("attachments", file);
       });
+
+      // Append other files
+      files.forEach((file) => {
+        formDataObj.append("files", file);
+      });
+
+      // Log FormData entries for debugging
+      console.log("=== FINAL FORM DATA BEING SENT ===");
+      for (let [key, value] of formDataObj.entries()) {
+        console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+      }
+
+      setErrors({});
+
+      // Call create gig mutation
+      createGig(formDataObj);
+
+    } catch (error) {
+      console.error("Error in handleSubmit:", error);
+      toast.error("Failed to prepare gig data. Please try again.");
+      setErrors(prev => ({
+        ...prev,
+        form: error.message || "Something went wrong. Please try again."
+      }));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Append attachments
-    attachments.forEach((file) => {
-      formDataObj.append("attachments", file);
-    });
-
-    // Append other files
-    files.forEach((file) => {
-      formDataObj.append("files", file);
-    });
-
-    // Log FormData entries for debugging
-    console.log("=== FINAL FORM DATA BEING SENT ===");
-    for (let [key, value] of formDataObj.entries()) {
-      console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-    }
-
-    setErrors({});
-
-    // Call create gig mutation
-    createGig(formDataObj);
-
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    toast.error("Failed to prepare gig data. Please try again.");
-    setErrors(prev => ({
-      ...prev,
-      form: error.message || "Something went wrong. Please try again."
-    }));
-  } finally {
-    setIsSubmitting(false);
-  }
-}, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
+  }, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
     toast.success("Refreshing categories...");
@@ -698,20 +699,20 @@ const DebugCategoryInfo = () => (
 
   // Get category name for display
   const getCategoryName = () => {
-  if (!formData.projectCategory) return "";
-  const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-    ? storedCategories
-    : (Array.isArray(categoriesData) ? categoriesData : []);
-  const category = categoryList.find(c => c._id === formData.projectCategory);
-  return category?.name || "";
-};
+    if (!formData.projectCategory) return "";
+    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+      ? storedCategories
+      : (Array.isArray(categoriesData) ? categoriesData : []);
+    const category = categoryList.find(c => c._id === formData.projectCategory);
+    return category?.name || "";
+  };
 
   // Get subcategory name for display
   const getSubcategoryName = () => {
-  if (!formData.subcategory) return "";
-  const subcategory = subcategories.find(s => s._id === formData.subcategory);
-  return subcategory?.name || "";
-};
+    if (!formData.subcategory) return "";
+    const subcategory = subcategories.find(s => s._id === formData.subcategory);
+    return subcategory?.name || "";
+  };
 
 
   // Handle Enter key press for skills and deliverables
@@ -942,13 +943,13 @@ const DebugCategoryInfo = () => (
                             </span>
                           </li>
                           {formData.subcategory && (
-  <li className="flex justify-between">
-    <span className="text-emerald-100">Subcategory:</span>
-    <span className="font-medium truncate max-w-[120px]">
-      {getSubcategoryName()}
-    </span>
-  </li>
-)}
+                            <li className="flex justify-between">
+                              <span className="text-emerald-100">Subcategory:</span>
+                              <span className="font-medium truncate max-w-[120px]">
+                                {getSubcategoryName()}
+                              </span>
+                            </li>
+                          )}
                           {formData.budget && (
                             <li className="flex justify-between">
                               <span className="text-emerald-100">Budget:</span>
@@ -1439,61 +1440,58 @@ const DebugCategoryInfo = () => (
 
                           {/* Project Category */}
                           <div>
-  <div className="flex justify-between items-center mb-2">
-    <label className="text-sm font-semibold text-gray-700">
-      Project Category *
-    </label>
-    {categoryError && (
-      <button
-        type="button"
-        onClick={handleRefreshCategories}
-        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-      >
-        Refresh Categories
-      </button>
-    )}
-  </div>
-  <div className="relative">
-    <select
-      name="projectCategory"
-      value={formData.projectCategory}
-      onChange={handleInputChange}
-      className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-      disabled={categoryLoading || gigLoading}
-    >
-      <option value="">Select a category</option>
-      {categoryLoading ? (
-        <option value="" disabled>Loading categories...</option>
-      ) : (
-        // Use storedCategories if available, otherwise categoriesData
-        (Array.isArray(storedCategories) && storedCategories.length > 0 ? storedCategories : 
-         (Array.isArray(categoriesData) ? categoriesData : [])).map((category) => (
-          <option key={category._id} value={category._id}>
-            {category.name}
-            {category.level === 0 ? ' (Parent)' : ''}
-          </option>
-        ))
-      )}
-    </select>
-    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-      <ChevronDown className="h-4 w-4" />
-    </div>
-  </div>
-  {categoryLoading && (
-    <div className="flex items-center mt-2 text-sm text-gray-500">
-      <Loader2 className="h-3 w-3 animate-spin mr-1" />
-      Loading categories...
-    </div>
-  )}
-  {categoryError && !categoryLoading && (
-    <p className="mt-2 text-sm text-red-600">
-      Failed to load categories. Please try refreshing.
-    </p>
-  )}
-  {errors.projectCategory && (
-    <p className="mt-2 text-sm text-red-600">{errors.projectCategory}</p>
-  )}
-</div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-sm font-semibold text-gray-700">
+                                Project Category *
+                              </label>
+                              {categoryError && (
+                                <button
+                                  type="button"
+                                  onClick={handleRefreshCategories}
+                                  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                >
+                                  Refresh Categories
+                                </button>
+                              )}
+                            </div>
+                            <div className="relative">
+                              <select
+                                name="projectCategory"
+                                value={formData.projectCategory}
+                                onChange={handleInputChange}
+                                className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                                disabled={categoryLoading || gigLoading}
+                              >
+                                <option value="">Select a category</option>
+                                {categoryLoading ? (
+                                  <option value="" disabled>Loading categories...</option>
+                                ) : (
+                                  (Array.isArray(categoriesData) ? categoriesData : []).map((category) => (
+                                    <option key={category._id} value={category._id}>
+                                      {category.name}
+                                    </option>
+                                  ))
+                                )}
+                              </select>
+                              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                <ChevronDown className="h-4 w-4" />
+                              </div>
+                            </div>
+                            {categoryLoading && (
+                              <div className="flex items-center mt-2 text-sm text-gray-500">
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                Loading categories...
+                              </div>
+                            )}
+                            {categoryError && !categoryLoading && (
+                              <p className="mt-2 text-sm text-red-600">
+                                Failed to load categories. Please try refreshing.
+                              </p>
+                            )}
+                            {errors.projectCategory && (
+                              <p className="mt-2 text-sm text-red-600">{errors.projectCategory}</p>
+                            )}
+                          </div>
 
                           {/* Subcategory */}
                           {subcategories.length > 0 && (
