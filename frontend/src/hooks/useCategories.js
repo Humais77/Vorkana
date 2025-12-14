@@ -1,3 +1,4 @@
+// hooks/useCategories.js
 import { useQuery } from '@tanstack/react-query';
 import { categoriesAPI } from '../api/categories';
 import { useCategoryStore } from '../store/useCategoryStore';
@@ -12,8 +13,11 @@ export const useCategories = (options = {}) => {
     queryFn: async () => {
       try {
         // Get parent categories with subcategories
-        const parentCategories = await categoriesAPI.getParentCategories();
-        console.log('Parent categories with subcategories:', parentCategories);
+        const parentCategories = await categoriesAPI.getAll({
+          parentCategory: null,
+          includeSubcategories: true
+        });
+        console.log('Parent categories fetched:', parentCategories);
         return parentCategories;
       } catch (error) {
         console.error('Error fetching categories:', error);
@@ -25,10 +29,10 @@ export const useCategories = (options = {}) => {
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     
-    // Only refetch if data is stale (older than 5 minutes)
+    // Smart refetching
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
+    refetchOnMount: true,
+    refetchOnReconnect: true,
     
     // Use cached data if available and not too old
     initialData: categories.length > 0 && lastFetched && Date.now() - lastFetched < 5 * 60 * 1000 
@@ -37,13 +41,15 @@ export const useCategories = (options = {}) => {
     
     // Update Zustand store on success
     onSuccess: (data) => {
-      console.log('Categories fetched successfully:', data);
-      setCategories(data);
+      console.log('Categories fetched successfully:', data?.length || 0, 'items');
+      if (data && Array.isArray(data)) {
+        setCategories(data);
+      }
     },
     
     // Handle errors gracefully
     onError: (error) => {
-      console.error('Categories query error:', error);
+      console.error('Categories query error:', error.message);
     },
     
     // Merge with any custom options
@@ -60,6 +66,34 @@ export const useCategory = (id, options = {}) => {
     queryFn: () => categoriesAPI.getById(id),
     enabled: !!id,
     staleTime: 10 * 60 * 1000, // 10 minutes for single category
+    ...options,
+  });
+};
+
+/**
+ * Hook to get parent categories specifically
+ */
+export const useParentCategories = (options = {}) => {
+  const setCategories = useCategoryStore((state) => state.setCategories);
+  
+  return useQuery({
+    queryKey: ['categories', 'parents'],
+    queryFn: async () => {
+      try {
+        const parentCategories = await categoriesAPI.getParentCategories();
+        console.log('Parent categories fetched (hook):', parentCategories?.length || 0);
+        return parentCategories;
+      } catch (error) {
+        console.error('Error in useParentCategories:', error);
+        throw error;
+      }
+    },
+    staleTime: 10 * 60 * 1000,
+    onSuccess: (data) => {
+      if (data && Array.isArray(data)) {
+        setCategories(data);
+      }
+    },
     ...options,
   });
 };
@@ -83,7 +117,7 @@ export const useSearchCategories = (query, options = {}) => {
 export const usePopularCategories = (options = {}) => {
   return useQuery({
     queryKey: ['categories', 'popular'],
-    queryFn: categoriesAPI.getPopular,
+    queryFn: () => categoriesAPI.getPopular(),
     staleTime: 10 * 60 * 1000, // 10 minutes
     ...options,
   });
@@ -95,7 +129,7 @@ export const usePopularCategories = (options = {}) => {
 export const useCategoriesWithStats = (options = {}) => {
   return useQuery({
     queryKey: ['categories', 'stats'],
-    queryFn: categoriesAPI.withStats,
+    queryFn: () => categoriesAPI.withStats(),
     staleTime: 10 * 60 * 1000, // 10 minutes
     ...options,
   });
