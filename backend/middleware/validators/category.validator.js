@@ -76,22 +76,35 @@ const descriptionValidation = Joi.string()
   .optional();
 
 const imageValidation = Joi.string()
-  .uri({ 
-    allowRelative: true,
-    scheme: ['http', 'https', 'data']
-  })
   .pattern(/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
   .custom((value, helpers) => {
-    // Prevent path traversal
-    if (value.includes('..') || value.includes('//')) {
+    // Comprehensive path traversal checks
+    const traversalPatterns = [
+      /\.\.\//,
+      /\.\.\\/,
+      /\/\//,
+      /\\\\./,
+      /^\.\//,
+      /^\.\\/,
+      /^[a-zA-Z]:[\\\/]/  // Windows drives
+    ];
+    
+    if (traversalPatterns.some(pattern => pattern.test(value))) {
       return helpers.error('any.invalid');
     }
+    
+    // Also check URL encoding attempts
+    const decoded = decodeURIComponent(value);
+    if (traversalPatterns.some(pattern => pattern.test(decoded))) {
+      return helpers.error('any.invalid');
+    }
+    
     return value;
-  }, 'Path traversal prevention')
+  })
   .optional()
   .messages({
     'string.pattern.base': 'Invalid image URL format',
-    'any.invalid': 'Invalid image path'
+    'any.invalid': 'Invalid image path - path traversal detected'
   });
 
 const metaKeywordsValidation = Joi.array()

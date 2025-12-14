@@ -2,14 +2,11 @@ const mongoose = require('mongoose');
 const Category = require('../models/category.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
-const crypto = require('crypto');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 
 // Security: Request ID for tracking
-const generateRequestId = () => {
-  return crypto.randomBytes(8).toString('hex');
-};
-
+const { v4: uuidv4 } = require('uuid');
+const generateRequestId = () => uuidv4();
 // Security: Input sanitization for categories
 const sanitizeCategoryInput = (data) => {
   const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];
@@ -65,12 +62,17 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
       { metaKeywords: { $in: [new RegExp(sanitizedSearch, 'i')] } }
     ];
   }
+// Add this helper function:
+const escapeRegex = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
-  // Sanitize all string inputs
-  if (name) {
-    const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
-    filter.name = { $regex: `^${sanitizedName}`, $options: 'i' };
-  }
+// Update the controller code:
+if (name) {
+  const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
+  const escapedName = escapeRegex(sanitizedName);
+  filter.name = { $regex: `^${escapedName}`, $options: 'i' };
+}
   
   if (slug) {
     filter.slug = sanitizeHtml(slug, { allowedTags: [] });
@@ -375,7 +377,22 @@ const getCategories = async (req, res, next) => {
     // Security: Populate configuration
     let populateOptions = [];
     if (populate) {
-      const populateArray = populateFields.split(',').map(f => f.trim());
+      const ALLOWED_POPULATE_FIELDS = ['parentCategory', 'subcategories', 'createdBy', 'lastUpdatedBy'];
+const ALLOWED_SELECT_FIELDS = ['name', 'slug', 'icon', 'description', 'servicesCount', 'gigsCount'];
+
+const validatePopulateFields = (requestedFields) => {
+  const fields = requestedFields.split(',').map(f => f.trim());
+  return fields.filter(field => ALLOWED_POPULATE_FIELDS.includes(field));
+};
+
+const validateSelectFields = (requestedFields) => {
+  const fields = requestedFields.split(',').map(f => f.trim());
+  return fields.filter(field => ALLOWED_SELECT_FIELDS.includes(field));
+};
+
+// In controller:
+const safePopulateFields = validatePopulateFields(populateFields || '');
+const safeSelectFields = validateSelectFields(fields || '');
       
       // Parent category populate
       populateOptions.push({
@@ -1001,6 +1018,22 @@ const restoreCategory = async (req, res, next) => {
 
 // Get Category Statistics with Security
 const getCategoryStats = async (req, res, next) => {
+   const { startDate, endDate } = req.query;
+  const now = new Date();
+  const defaultStartDate = new Date(now.setMonth(now.getMonth() - 1)); // Last month
+  
+  const finalStartDate = startDate ? new Date(startDate) : defaultStartDate;
+  const finalEndDate = endDate ? new Date(endDate) : new Date();
+  
+  // Limit date range to prevent excessive data processing
+  const maxDateRange = 365 * 24 * 60 * 60 * 1000; // 1 year
+  if ((finalEndDate - finalStartDate) > maxDateRange) {
+    return res.status(400).json({
+      success: false,
+      message: 'Date range cannot exceed 1 year',
+      code: 'DATE_RANGE_EXCEEDED'
+    });
+  }
   const requestId = generateRequestId();
   const startTime = Date.now();
   
@@ -1109,6 +1142,29 @@ const getCategoryStats = async (req, res, next) => {
 const bulkUpdateCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
+  // In bulkUpdateCategories controller, add:
+const MAX_BULK_OPERATION_SIZE = 100;
+const ALLOWED_BULK_OPERATIONS = ['activate', 'deactivate', 'update', 'delete', 'feature', 'unfeature', 'popular', 'unpopular'];
+
+// Validate operation size
+if (ids.length > MAX_BULK_OPERATION_SIZE) {
+  return res.status(400).json({
+    success: false,
+    message: `Cannot process more than ${MAX_BULK_OPERATION_SIZE} items in bulk`,
+    code: 'BULK_SIZE_EXCEEDED',
+    requestId
+  });
+}
+
+// Validate operation
+if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
+  return res.status(400).json({
+    success: false,
+    message: `Invalid operation. Allowed: ${ALLOWED_BULK_OPERATIONS.join(', ')}`,
+    code: 'INVALID_BULK_OPERATION',
+    requestId
+  });
+}
   
   try {
     // Security: Rate limiting check (implement separately)
@@ -1190,14 +1246,37 @@ const bulkUpdateCategories = async (req, res, next) => {
     }
 
     // Security: Execute bulk operation with timeout
-    result = await Category.updateMany(
-      { _id: { $in: validIds } },
-      updateData,
-      { 
-        maxTimeMS: 10000,
-        runValidators: operation === 'update'
-      }
-    );
+    // Add ownership or scope filtering:
+const filter = { 
+  _id: { $in: validIds },
+  // Add scope limitation for non-admin users
+  ...(req.user.role !== 'admin' ? { createdBy: req.user._id } : {})
+};
+
+result = await Category.updateMany(
+  filter,
+  updateData,
+  { 
+    maxTimeMS: 10000,
+    runValidators: operation === 'update'
+  }
+);
+
+// Check if all IDs were processed
+if (result.matchedCount < validIds.length) {
+  // Some IDs were not authorized or not found
+  const processedIds = await Category.find(filter).select('_id');
+  const unauthorizedIds = validIds.filter(id => 
+    !processedIds.some(processed => processed._id.toString() === id)
+  );
+  
+  return res.status(403).json({
+    success: false,
+    message: 'Some categories could not be updated due to authorization',
+    unauthorizedIds,
+    requestId
+  });
+}
 
     // Security: Audit log
     logAudit('BULK_OPERATION', 'CATEGORY', 'MULTIPLE', req.user._id, {
@@ -1375,6 +1454,18 @@ const searchCategories = async (req, res, next) => {
         requestId
       });
     }
+    const MAX_FIELD_LENGTHS = {
+  description: 500, // Truncate in projection
+  metaDescription: 160,
+  metaTitle: 60
+};
+
+const applyFieldLimits = (query, fields) => {
+  if (fields && fields.includes('description')) {
+    query.select('+description'); // Explicitly include
+    // Or use aggregation to truncate
+  }
+};
 
     // Security: Limit search results
     const searchLimit = Math.min(parseInt(limit) || 20, 100);

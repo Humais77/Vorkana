@@ -24,6 +24,19 @@ const adminLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // Higher limit for public access
+  skipSuccessfulRequests: false,
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 
 const bulkOperationLimiter = rateLimit({
   windowMs: 30 * 60 * 1000, // 30 minutes
@@ -39,9 +52,9 @@ const bulkOperationLimiter = rateLimit({
 });
 
 // Public routes
-router.get('/', optionalAuth, validateQuery, controller.getCategories);
-router.get('/search', optionalAuth, validateQuery, controller.searchCategories);
-router.get('/:id', optionalAuth, controller.getCategoryById);
+router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
+router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
+router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
 
 // Protected admin routes with rate limiting
 router.post('/', protect, adminOnly, adminLimiter, validateCreate, controller.createCategory);

@@ -14,8 +14,7 @@ const categorySchema = new mongoose.Schema({
     index: true, // Added for faster name lookups
     validate: {
       validator: function(v) {
-        // Additional security validation
-        const injectionPatterns = [
+const injectionPatterns = [
           /\$where/i,
           /\$ne/i,
           /\$nin/i,
@@ -34,6 +33,7 @@ const categorySchema = new mongoose.Schema({
           /javascript:/i,
           /on\w+\s*=/
         ];
+// Remove SQL-specific patterns like: /select.*from/i, etc.
         return !injectionPatterns.some(pattern => pattern.test(v));
       },
       message: 'Category name contains invalid characters'
@@ -61,15 +61,14 @@ const categorySchema = new mongoose.Schema({
   image: {
     type: String,
     trim: true,
-    validate: {
-      validator: function(v) {
-        if (!v) return true;
-        // Validate path and prevent traversal
-        const validPattern = /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
-        return validPattern.test(v) && !v.includes('..') && !v.includes('//');
-      },
-      message: 'Invalid image URL format or path traversal detected',
-    },
+   validate: {
+  validator: function(v) {
+    if (!v) return true;
+    // Validate path and prevent traversal
+    const validPattern = /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
+    return validPattern.test(v) && !v.includes('..') && !v.includes('//'); // GOOD
+  }
+}
   },
   parentCategory: {
     type: mongoose.Schema.Types.ObjectId,
@@ -245,30 +244,84 @@ categorySchema.pre('save', async function () {
     let baseSlug = slugify(this.name, { lower: true, strict: true, locale: 'en', trim: true });
     let slug = baseSlug;
     let counter = 1;
-
-    while (true) {
-      const existing = await this.constructor.findOne({
-        slug,
-        _id: { $ne: this._id }
-      });
-
-      if (!existing) break;
-
-      slug = `${baseSlug}-${counter++}`;
-      if (counter > 100) throw new Error('Could not generate unique slug');
+    let isUnique = false;
+    
+    while (!isUnique && counter <= 1000) {
+      try {
+        // Use findOneAndUpdate with upsert to atomically check and reserve
+        const existing = await this.constructor.findOneAndUpdate(
+          { slug, _id: { $ne: this._id } },
+          { $setOnInsert: { slugReserved: true } },
+          { 
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true,
+            useFindAndModify: false 
+          }
+        );
+        
+        // If document was inserted (upserted), slug is available
+        if (!existing) {
+          isUnique = true;
+        } else {
+          slug = `${baseSlug}-${counter++}`;
+        }
+      } catch (error) {
+        if (error.code === 11000) { // Duplicate key error
+          slug = `${baseSlug}-${counter++}`;
+          continue;
+        }
+        throw error;
+      }
     }
-
+    
+    if (!isUnique) {
+      throw new Error('Could not generate unique slug after 1000 attempts');
+    }
+    
     this.slug = slug;
+  }
+  
+  // Clean up temporary reservation
+  if (this.slugReserved) {
+    delete this.slugReserved;
   }
 
   if (this.isModified('parentCategory') || this.isNew) {
     if (this.parentCategory) {
-      const parent = await this.constructor.findById(this.parentCategory);
-      this.level = parent ? parent.level + 1 : 1;
-      if (this.level > 10) throw new Error('Category nesting too deep (max 10 levels)');
-    } else {
-      this.level = 0;
+  const visited = new Set();
+  let currentId = this.parentCategory;
+  let iterationCount = 0;
+  const MAX_HIERARCHY_DEPTH = 100; // Safety limit
+
+  while (currentId && iterationCount < MAX_HIERARCHY_DEPTH) {
+    iterationCount++;
+    const idStr = currentId.toString();
+    
+    if (visited.has(idStr)) {
+      throw new Error(`Circular reference detected in category hierarchy at depth ${iterationCount}`);
     }
+    
+    visited.add(idStr);
+
+    const cat = await this.constructor.findById(currentId).select('parentCategory');
+    if (!cat) {
+      throw new Error(`Parent category ${currentId} not found`);
+    }
+    
+    if (!cat.parentCategory) break;
+    
+    if (this._id && cat.parentCategory.equals(this._id)) {
+      throw new Error('Circular reference detected: category would be parent of its own parent');
+    }
+    
+    currentId = cat.parentCategory;
+  }
+  
+  if (iterationCount >= MAX_HIERARCHY_DEPTH) {
+    throw new Error('Category hierarchy too deep or circular reference suspected');
+  }
+}
   }
 
   if (this.parentCategory) {
@@ -336,8 +389,18 @@ categorySchema.pre('findOneAndUpdate', async function () {
 
   // No next() call!
 });
-
-// Define compound indexes only (single indexes are defined at field level)
+// Add to category.model.js:
+categorySchema.index({ 
+  name: 1, 
+  parentCategory: 1 
+}, { 
+  unique: true,
+  partialFilterExpression: { 
+    isActive: true,
+    deletedAt: null 
+  },
+  name: 'unique_name_parent_idx'
+});
 categorySchema.index({ 
   isActive: 1, 
   featured: 1, 
@@ -374,7 +437,23 @@ categorySchema.index({
     metaDescription: 2
   }
 });
+// Add to category.model.js:
+categorySchema.index({ 
+  parentCategory: 1, 
+  isActive: 1, 
+  order: 1 
+}, { name: 'hierarchy_sort_idx' });
 
+categorySchema.index({ 
+  slug: 1, 
+  isActive: 1 
+}, { name: 'slug_lookup_idx', unique: true });
+
+// For soft delete queries:
+categorySchema.index({ 
+  deletedAt: 1, 
+  isActive: 1 
+}, { name: 'soft_delete_idx' });
 // Other useful compound indexes
 categorySchema.index({ 
   isActive: 1, 
@@ -392,14 +471,16 @@ categorySchema.index({
 }, { name: 'active_order_idx' });
 
 // Static methods
-categorySchema.statics.incrementServicesCount = async function(categoryId) {
+categorySchema.statics.incrementServicesCount = async function(categoryId, session = null) {
+  const options = session ? { session, new: true } : { new: true };
+  
   return this.findByIdAndUpdate(
     categoryId,
     { 
       $inc: { servicesCount: 1 },
       $set: { lastUpdatedAt: new Date() }
     },
-    { new: true }
+    options
   );
 };
 
@@ -470,18 +551,29 @@ categorySchema.statics.getHierarchy = async function(categoryId, depth = 3) {
 
 // Instance methods
 categorySchema.methods.getFullPath = async function() {
-  const path = [];
-  let current = this;
+  const ancestors = await this.constructor.aggregate([
+    { $match: { _id: this._id } },
+    {
+      $graphLookup: {
+        from: 'categories',
+        startWith: '$parentCategory',
+        connectFromField: 'parentCategory',
+        connectToField: '_id',
+        as: 'ancestors',
+        depthField: 'depth'
+      }
+    },
+    { $unwind: { path: '$ancestors', preserveNullAndEmptyArrays: true } },
+    { $sort: { 'ancestors.depth': -1 } },
+    { $group: { 
+      _id: '$_id',
+      name: { $first: '$name' },
+      ancestors: { $push: '$ancestors.name' }
+    }}
+  ]);
   
-  while (current) {
-    path.unshift(current.name);
-    if (current.parentCategory) {
-      current = await this.constructor.findById(current.parentCategory);
-    } else {
-      current = null;
-    }
-  }
-  
+  const result = ancestors[0];
+  const path = [...(result.ancestors || []), result.name];
   return path.join(' > ');
 };
 
