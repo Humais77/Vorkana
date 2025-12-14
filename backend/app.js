@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
+const cookieParser = require('cookie-parser'); // Add this
 
 dotenv.config();
 
@@ -40,14 +41,15 @@ connectDB();
 
 const app = express();
 
-// ========== CUSTOM MONGO SANITIZER (FIXED) ==========
+// ========== CRITICAL FIX: COOKIE PARSER MUST BE FIRST ==========
+// Cookie parser with secret - MUST BE BEFORE any middleware that uses cookies
+app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
+
+// ========== CUSTOM MONGO SANITIZER ==========
 const mongoSanitizeCustom = (req, res, next) => {
-  // Skip query sanitization to avoid read-only property error
-  // Only sanitize body for non-GET requests
   if (req.method !== 'GET' && req.body && typeof req.body === 'object') {
     try {
       const sanitize = require('express-mongo-sanitize');
-      // Use the sanitize function directly on the body
       req.body = sanitize.sanitize(req.body, {
         replaceWith: '_'
       });
@@ -63,26 +65,25 @@ security(app);
 
 // Helmet for security headers
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable CSP for now to avoid issues
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
 // IMPORTANT: Import ipKeyGenerator from express-rate-limit
 const { ipKeyGenerator } = require('express-rate-limit');
 
-// FIXED: Global rate limiting with proper IPv6 handling
+// FIXED: Global rate limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // limit each IP to 1000 requests per windowMs
+  max: 1000,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: ipKeyGenerator, // FIXED: Use the built-in IP key generator
+  keyGenerator: ipKeyGenerator,
   skip: (req) => {
-    // Skip rate limiting for health checks
     return req.path === '/health';
   }
 });
@@ -90,18 +91,18 @@ const globalLimiter = rateLimit({
 // Apply global rate limiting
 app.use(globalLimiter);
 
-// Use custom sanitizer instead of direct mongoSanitize()
+// Use custom sanitizer
 app.use(mongoSanitizeCustom);
 
 // Prevent parameter pollution
 app.use(hpp());
 
-// CORS configuration
+// CORS configuration - Update for OAuth
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   process.env.FRONTEND_URL
-].filter(Boolean); // Remove undefined values
+].filter(Boolean);
 
 app.use(
   cors({
@@ -118,10 +119,10 @@ app.use(
         callback(new Error('Not allowed by CORS policy'), false);
       }
     },
-    credentials: true,
+    credentials: true, // Important for cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cookie'],
+    exposedHeaders: ['Authorization', 'Set-Cookie']
   })
 );
 
@@ -205,6 +206,15 @@ app.use((err, req, res, next) => {
     return res.status(401).json({
       success: false,
       message: 'Token expired'
+    });
+  }
+
+  // Handle cookie parser errors
+  if (err.message.includes('cookieParser')) {
+    return res.status(500).json({
+      success: false,
+      message: 'Server configuration error',
+      timestamp: new Date().toISOString()
     });
   }
 

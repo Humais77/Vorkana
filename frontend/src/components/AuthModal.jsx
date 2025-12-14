@@ -156,6 +156,16 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const handleGoogleAuth = () => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
     window.location.href = `${backendUrl}/api/auth/google`;
+    const width = 600;
+  const height = 600;
+  const left = (window.innerWidth - width) / 2;
+  const top = (window.innerHeight - height) / 2;
+  
+  window.open(
+    `${backendUrl}/api/auth/google`,
+    'Google Login',
+    `width=${width},height=${height},top=${top},left=${left}`
+  );
   };
 
   const togglePasswordVisibility = () => {

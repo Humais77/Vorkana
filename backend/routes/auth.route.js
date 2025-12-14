@@ -104,41 +104,47 @@ router.put("/profile", protect, updateProfile);
 router.post("/change-password", protect, changePassword);
 router.post("/logout", protect, logout);
 
-// ========== GOOGLE OAUTH ==========
+// In auth.route.js - Update the Google OAuth route:
+
 router.get("/google",
   (req, res, next) => {
     // Generate and store state parameter for CSRF protection
     const state = crypto.randomBytes(32).toString('hex');
     
-    // Store state in session or signed cookie
+    // Store state in signed cookie (now works with cookie-parser)
     res.cookie('oauth_state', state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 10 * 60 * 1000, // 10 minutes
-      signed: true
+      signed: true // Now this works with cookie-parser
     });
     
     passport.authenticate("google", { 
       scope: ["profile", "email"],
       state: state,
-      prompt: "select_account" // Always show account selector
+      prompt: "select_account"
     })(req, res, next);
   }
 );
 
 router.get("/google/callback",
   (req, res, next) => {
-    // Verify state parameter
+    // Verify state parameter from signed cookie
     const state = req.query.state;
     const storedState = req.signedCookies?.oauth_state;
     
     if (!state || !storedState || state !== storedState) {
+      console.error('Invalid state parameter:', { state, storedState });
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_state`);
     }
     
     // Clear the state cookie
-    res.clearCookie('oauth_state');
+    res.clearCookie('oauth_state', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    });
     
     passport.authenticate("google", {
       failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
@@ -166,6 +172,7 @@ router.get("/google/callback",
         }
       }));
       
+      // Redirect with success data
       res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
     })(req, res, next);
   }
