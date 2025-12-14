@@ -1,26 +1,39 @@
-// src/components/CallToAction.jsx
-import React from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/useAuthStore";
 
-const CallToAction = () => {
+const CallToAction = ({ onSignupClick }) => {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuthStore();
+
+  const handleClick = () => {
+    if (isAuthenticated) {
+      // user already logged in
+      navigate("/find-work"); // or any page you want
+    } else {
+      // user not logged in → open signup modal
+      if (onSignupClick) onSignupClick();
+    }
+  };
+
   return (
-    <section className="py-16 bg-green-600 text-white text-center">
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-3xl md:text-4xl font-bold mb-6">
-          Start Your Journey Today
-        </h2>
-        <p className="mb-8 text-lg md:text-xl">
-          Join thousands of freelancers and clients who are achieving success with our platform.
-        </p>
-        <Link
-          to="/signup"
-          className="inline-block bg-white text-green-600 font-semibold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition"
-        >
-          Get Started
-        </Link>
+    <section className="px-6 py-16">
+      <div className="max-w-7xl mx-auto">
+        <div className="rounded-2xl bg-[#5a1b2c] px-8 py-12 md:py-16 text-center">
+          <h2 className="text-3xl md:text-5xl font-semibold text-white mb-8">
+            Freelance services at your{" "}
+            <span className="text-orange-400">fingertips</span>
+          </h2>
+
+          <button
+            onClick={handleClick}
+            className="inline-block bg-white text-gray-900 font-medium px-8 py-3 rounded-md shadow hover:bg-gray-100 transition"
+          >
+            {isAuthenticated ? "Explore Work" : "Join Vorkana"}
+          </button>
+        </div>
       </div>
     </section>
-  )
-}
+  );
+};
 
-export default CallToAction
+export default CallToAction;

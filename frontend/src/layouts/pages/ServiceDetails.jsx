@@ -1,13 +1,13 @@
 // ServiceDetails.jsx - Complete updated file
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Edit, 
-  Trash2, 
-  Star, 
-  Clock, 
-  CheckCircle, 
+import {
+  ArrowLeft,
+  Edit,
+  Trash2,
+  Star,
+  Clock,
+  CheckCircle,
   DollarSign,
   Tag,
   MessageSquare,
@@ -29,16 +29,16 @@ const ServiceDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuthStore();
-  
-  const { 
-    data: service, 
-    isLoading, 
+
+  const {
+    data: service,
+    isLoading,
     error,
-    refetch 
+    refetch
   } = useService(id);
-  
+
   const deleteServiceMutation = useDeleteService();
-  
+
   const [selectedPackage, setSelectedPackage] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
@@ -76,7 +76,7 @@ const ServiceDetails = () => {
       navigate('/login');
       return;
     }
-    
+
     // Navigate to messaging page or open modal
     navigate(`/messages/new?service=${id}&seller=${service?.seller?._id || service?.seller}`);
   };
@@ -87,7 +87,7 @@ const ServiceDetails = () => {
       navigate('/login');
       return;
     }
-    
+
     if (service?.packages && service.packages.length > 0) {
       const selectedPkg = service.packages[selectedPackage];
       navigate(`/checkout?service=${id}&package=${selectedPkg._id || selectedPackage}`);
@@ -125,7 +125,7 @@ const ServiceDetails = () => {
 
   // Check if current user is the owner
   const isOwner = user && service?.seller && (
-    user._id === service.seller._id || 
+    user._id === service.seller._id ||
     user._id === service.seller
   );
 
@@ -151,7 +151,7 @@ const ServiceDetails = () => {
             <ArrowLeft className="w-5 h-5 mr-2" />
             Back to Services
           </button>
-          
+
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-8 h-8 text-red-600" />
@@ -187,25 +187,24 @@ const ServiceDetails = () => {
             <ArrowLeft className="w-5 h-5 mr-2" />
             Back to Services
           </button>
-          
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">{service.title}</h1>
               <div className="flex flex-wrap items-center gap-4 mt-2">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  service.status === 'active' 
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${service.status === 'active'
                     ? 'bg-green-100 text-green-800'
                     : service.status === 'draft'
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : service.status === 'pending'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-red-100 text-red-800'
-                }`}>
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : service.status === 'pending'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-red-100 text-red-800'
+                  }`}>
                   {service.status === 'active' && <CheckCircle className="w-4 h-4 mr-1" />}
                   {service.status === 'draft' && <Edit className="w-4 h-4 mr-1" />}
                   {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
                 </span>
-                
+
                 {service.category && (
                   <Link
                     to={`/services?category=${service.category}`}
@@ -214,24 +213,24 @@ const ServiceDetails = () => {
                     {service.category?.name || 'Uncategorized'}
                   </Link>
                 )}
-                
+
                 <div className="flex items-center text-gray-600">
                   <Eye className="w-4 h-4 mr-1" />
                   <span>{service.views || 0} views</span>
                 </div>
-                
+
                 <div className="flex items-center text-gray-600">
                   <Users className="w-4 h-4 mr-1" />
                   <span>{service.ordersCount || 0} orders</span>
                 </div>
-                
+
                 <div className="flex items-center text-gray-600">
                   <Calendar className="w-4 h-4 mr-1" />
                   <span>{formatDate(service.createdAt)}</span>
                 </div>
               </div>
             </div>
-            
+
             {isOwner && (
               <div className="flex flex-wrap gap-3">
                 <button
@@ -309,13 +308,12 @@ const ServiceDetails = () => {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {service.packages.map((pkg, index) => (
-                    <div 
+                    <div
                       key={index}
-                      className={`border-2 rounded-xl p-5 cursor-pointer transition-all ${
-                        selectedPackage === index
+                      className={`border-2 rounded-xl p-5 cursor-pointer transition-all ${selectedPackage === index
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-gray-300'
-                      } ${pkg.popular ? 'relative' : ''}`}
+                        } ${pkg.popular ? 'relative' : ''}`}
                       onClick={() => setSelectedPackage(index)}
                     >
                       {pkg.popular && (
@@ -330,11 +328,11 @@ const ServiceDetails = () => {
                           <span className="font-bold text-xl">${pkg.price}</span>
                         </div>
                       </div>
-                      
+
                       {pkg.description && (
                         <p className="text-gray-600 text-sm mb-4">{pkg.description}</p>
                       )}
-                      
+
                       <div className="space-y-2 mb-4">
                         <div className="flex items-center justify-between">
                           <span className="text-gray-600">Delivery Time:</span>
@@ -345,7 +343,7 @@ const ServiceDetails = () => {
                           <span className="font-medium">{pkg.revisions || 0}</span>
                         </div>
                       </div>
-                      
+
                       {pkg.features && pkg.features.length > 0 && (
                         <div>
                           <h4 className="font-medium text-gray-900 mb-2">Includes:</h4>
@@ -398,12 +396,11 @@ const ServiceDetails = () => {
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-medium text-gray-900">{req.question}</h4>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-1 rounded ${
-                            req.type === 'file' ? 'bg-purple-100 text-purple-800' :
-                            req.type === 'choice' ? 'bg-blue-100 text-blue-800' :
-                            req.type === 'multiple' ? 'bg-green-100 text-green-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                          <span className={`text-xs px-2 py-1 rounded ${req.type === 'file' ? 'bg-purple-100 text-purple-800' :
+                              req.type === 'choice' ? 'bg-blue-100 text-blue-800' :
+                                req.type === 'multiple' ? 'bg-green-100 text-green-800' :
+                                  'bg-gray-100 text-gray-800'
+                            }`}>
                             {req.type}
                           </span>
                           {req.required && (
@@ -449,7 +446,7 @@ const ServiceDetails = () => {
                   </div>
                   <p className="text-gray-600 text-sm mt-1">Starting price</p>
                 </div>
-                
+
                 <div className="flex items-center">
                   <Star className="w-5 h-5 text-yellow-400 fill-yellow-400 mr-1" />
                   <span className="font-medium">{service.rating?.toFixed(1) || '0.0'}</span>
@@ -471,7 +468,7 @@ const ServiceDetails = () => {
                       {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="flex items-center text-gray-600">
                       <CheckCircle className="w-5 h-5 mr-2" />
@@ -499,6 +496,13 @@ const ServiceDetails = () => {
                     >
                       <MessageSquare className="w-5 h-5 mr-2" />
                       Contact Seller
+                    </button>
+
+                    <button
+                      onClick={() => navigate(`/orders/create?service=${service._id}&package=${selectedPackage?._id}`)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Order Now
                     </button>
                   </>
                 ) : (
@@ -528,7 +532,7 @@ const ServiceDetails = () => {
                 <Users className="w-5 h-5 mr-2 text-blue-500" />
                 About the Seller
               </h3>
-              
+
               {service.sellerDetails || service.seller ? (
                 <>
                   <div className="flex items-start gap-4 mb-4">
@@ -545,7 +549,7 @@ const ServiceDetails = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     <div>
                       <h4 className="font-medium text-gray-900">
                         {service.sellerDetails?.username || service.seller?.username || 'Unknown Seller'}

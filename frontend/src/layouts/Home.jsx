@@ -6,18 +6,22 @@ import FAQSection from './FaqSection'
 import Testimonials from './Testimonal'
 import Stats from './Stats'
 import CallToAction from './CallToAction'
-const Home = () => {
+import MakeItHappen from './MakeItHappen'
+import AuthModal from '../components/AuthModal';
+
+const Home = ({ onSignupClick, onSigninClick }) => {
   return (
     <div>
-      <Hero/>
-      <CategoryGrid/>
-      <PopularServices/>
-      <Testimonials/>
-      <Stats/>
-      <CallToAction/>
-      <FAQSection/>
+      <Hero />
+      <CategoryGrid />
+      <PopularServices />
+      <Testimonials />
+      <Stats />
+      <MakeItHappen onSignupClick={onSignupClick} />
+      <CallToAction onSignupClick={onSignupClick} />
+      <FAQSection />
     </div>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;
