@@ -1,7 +1,8 @@
-const app = require('./app.js');
+const { server } = require('./app.js');
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(3000, () => {
-    console.log(`Server running on http://localhost:3000`);
-  });
-}
+const PORT = process.env.PORT || 3000;
+
+server.listen(3000, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📡 Socket.io server initialized`);
+});

@@ -622,6 +622,45 @@ serviceSchema.statics.incrementViews = async function(serviceId) {
     { new: true }
   );
 };
+serviceSchema.statics.verifyOrderEligibility = async function(serviceId, buyerId, packageId = null) {
+  const Service = mongoose.model('Service');
+  const User = mongoose.model('User');
+  
+  // Check service exists and is active
+  const service = await Service.findById(serviceId);
+  if (!service || !service.isActive || service.status !== 'active') {
+    throw new Error('Service is not available for ordering');
+  }
+  
+  // Check seller is active
+  const seller = await User.findById(service.seller);
+  if (!seller || !seller.isActive) {
+    throw new Error('Seller is not available');
+  }
+  
+  // Check buyer is active
+  const buyer = await User.findById(buyerId);
+  if (!buyer || !buyer.isActive) {
+    throw new Error('Buyer account is not active');
+  }
+  
+  // Check package if specified
+  if (packageId) {
+    const packageExists = service.packages.some(pkg => 
+      pkg._id.toString() === packageId.toString()
+    );
+    if (!packageExists) {
+      throw new Error('Invalid package selected');
+    }
+  }
+  
+  return {
+    service,
+    seller,
+    buyer,
+    eligible: true
+  };
+};
 
 serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
   return this.findByIdAndUpdate(
@@ -631,6 +670,7 @@ serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
   );
 };
 
+// Method to decrement orders count (add to existing static methods)
 serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
   return this.findByIdAndUpdate(
     serviceId,
@@ -639,13 +679,23 @@ serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
   );
 };
 
+// Method to update rating (add to existing static methods)
 serviceSchema.statics.updateRating = async function(serviceId, newRating) {
+  const service = await this.findById(serviceId);
+  if (!service) return null;
+  
+  // Calculate new average rating
+  const currentTotal = service.rating * service.reviewsCount;
+  const newTotal = currentTotal + newRating;
+  const newReviewCount = service.reviewsCount + 1;
+  const newAverage = newTotal / newReviewCount;
+  
   return this.findByIdAndUpdate(
     serviceId,
     { 
       $inc: { reviewsCount: 1 },
       $set: { 
-        rating: newRating,
+        rating: newAverage,
         lastUpdatedAt: new Date()
       }
     },

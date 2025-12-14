@@ -4,7 +4,9 @@ const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
-const cookieParser = require('cookie-parser'); // Add this
+const cookieParser = require('cookie-parser');
+const http = require('http'); // Add this
+const { initSocket } = require('./socket/order.socket'); // Add this
 
 dotenv.config();
 
@@ -34,31 +36,23 @@ const categoryRoutes = require('./routes/category.route.js');
 const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
+const orderRoutes = require('./routes/order.route.js'); // Add this
 const passport = require("passport");
 require("./config/passport.js");
 
 connectDB();
 
 const app = express();
+const server = http.createServer(app); // Create HTTP server
+
+// Initialize Socket.io
+const io = initSocket(server);
+
+// Make io accessible in routes if needed
+app.set('io', io);
 
 // ========== CRITICAL FIX: COOKIE PARSER MUST BE FIRST ==========
-// Cookie parser with secret - MUST BE BEFORE any middleware that uses cookies
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
-
-// ========== CUSTOM MONGO SANITIZER ==========
-const mongoSanitizeCustom = (req, res, next) => {
-  if (req.method !== 'GET' && req.body && typeof req.body === 'object') {
-    try {
-      const sanitize = require('express-mongo-sanitize');
-      req.body = sanitize.sanitize(req.body, {
-        replaceWith: '_'
-      });
-    } catch (error) {
-      console.warn('Mongo sanitize error:', error.message);
-    }
-  }
-  next();
-};
 
 // ========== SECURITY MIDDLEWARE ==========
 security(app);
@@ -69,12 +63,12 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// IMPORTANT: Import ipKeyGenerator from express-rate-limit
+// Import ipKeyGenerator from express-rate-limit
 const { ipKeyGenerator } = require('express-rate-limit');
 
-// FIXED: Global rate limiting
+// Global rate limiting
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 1000,
   message: {
     success: false,
@@ -91,13 +85,10 @@ const globalLimiter = rateLimit({
 // Apply global rate limiting
 app.use(globalLimiter);
 
-// Use custom sanitizer
-app.use(mongoSanitizeCustom);
-
 // Prevent parameter pollution
 app.use(hpp());
 
-// CORS configuration - Update for OAuth
+// CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -110,8 +101,8 @@ app.use(cors({
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
-    'X-Request-ID',  // Add this
-    'X-CSRF-Token',  // Add this
+    'X-Request-ID',
+    'X-CSRF-Token',
     'Accept'
   ],
   exposedHeaders: [
@@ -146,6 +137,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
+app.use('/api/orders', orderRoutes); // Add this
 
 // ========== HEALTH CHECK ==========
 app.get('/health', (req, res) => {
@@ -210,15 +202,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Handle cookie parser errors
-  if (err.message.includes('cookieParser')) {
-    return res.status(500).json({
-      success: false,
-      message: 'Server configuration error',
-      timestamp: new Date().toISOString()
-    });
-  }
-
   // Default error
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
@@ -233,4 +216,4 @@ app.use((err, req, res, next) => {
   });
 });
 
-module.exports = app;
+module.exports = { app, server }; // Export both app and server 
