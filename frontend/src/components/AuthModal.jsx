@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, Globe, Check, ArrowLeft } from "lucide-react";
+import { X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, Globe, Check, ArrowLeft, AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useLogin, useRegister } from "../hooks/useAuth";
+import { useLogin, useRegister, validatePassword } from "../hooks/useAuth";
 import { useAuthStore } from "../store/useAuthStore";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,7 +21,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     password: "",
   });
   
-  // Signup form state - REMOVED confirmPassword
+  // Signup form state
   const [signupData, setSignupData] = useState({
     name: "",
     email: "",
@@ -31,13 +31,29 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState('');
 
   // Clear errors when switching tabs
   useEffect(() => {
     setErrors({});
     clearError();
-    setShowEmailForm(false); // Reset to social buttons view
+    setShowEmailForm(false);
+    setPasswordStrength('');
   }, [activeTab, clearError]);
+
+  // Check password strength on change
+  useEffect(() => {
+    if (signupData.password) {
+      const validation = validatePassword(signupData.password);
+      if (!validation.valid) {
+        setPasswordStrength(validation.message);
+      } else {
+        setPasswordStrength('Strong password');
+      }
+    } else {
+      setPasswordStrength('');
+    }
+  }, [signupData.password]);
 
   const handleSigninChange = (e) => {
     const { name, value } = e.target;
@@ -78,6 +94,8 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       newErrors.name = "Name is required";
     } else if (signupData.name.trim().length < 2) {
       newErrors.name = "Name must be at least 2 characters";
+    } else if (signupData.name.trim().length > 50) {
+      newErrors.name = "Name cannot exceed 50 characters";
     }
     
     if (!signupData.email) {
@@ -91,11 +109,12 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     
     if (!signupData.password) {
       newErrors.password = "Password is required";
-    } else if (signupData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
+    } else {
+      const validation = validatePassword(signupData.password);
+      if (!validation.valid) {
+        newErrors.password = validation.message;
+      }
     }
-    
-    // REMOVED confirm password validation
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -107,9 +126,14 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
     try {
       await loginMutation.mutateAsync(signinData);
-      toast.success("Successfully logged in!");
       onClose();
-      navigate("/create-gig");
+      // Navigate based on user role
+      const user = useAuthStore.getState().user;
+      if (user?.role === 'seller') {
+        navigate("/seller/dashboard");
+      } else {
+        navigate("/");
+      }
     } catch (error) {
       console.error("Login failed:", error);
     }
@@ -121,9 +145,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
     try {
       await registerMutation.mutateAsync(signupData);
-      toast.success("Account created successfully!");
+      toast.success("Please check your email to verify your account.");
       onClose();
-      navigate("/create-gig");
+      navigate("/verify-email");
     } catch (error) {
       console.error("Registration failed:", error);
     }
@@ -131,12 +155,18 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
   const handleGoogleAuth = () => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    const redirectUrl = encodeURIComponent(`${window.location.origin}/oauth-success`);
-    window.location.href = `${backendUrl}/api/auth/google?redirect=${redirectUrl}`;
+    window.location.href = `${backendUrl}/api/auth/google`;
   };
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
+  };
+
+  // Password strength indicator
+  const getPasswordStrengthColor = () => {
+    if (!signupData.password) return 'gray';
+    const validation = validatePassword(signupData.password);
+    return validation.valid ? 'green' : 'red';
   };
 
   // Benefits content
@@ -156,6 +186,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       title: "Global talent access",
       description: "Connect with professionals worldwide"
     }
+  ];
+
+  // Password requirements checklist
+  const passwordRequirements = [
+    { text: "At least 8 characters", met: signupData.password.length >= 8 },
+    { text: "One uppercase letter", met: /[A-Z]/.test(signupData.password) },
+    { text: "One lowercase letter", met: /[a-z]/.test(signupData.password) },
+    { text: "One number", met: /\d/.test(signupData.password) },
+    { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(signupData.password) },
   ];
 
   // Render social buttons view
@@ -180,7 +219,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         className="w-full py-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-sm"
       >
         <Mail className="w-4 h-4 mr-3" />
-        Continue with {activeTab === 'signin' ? 'email/username' : 'email'}
+        Continue with {activeTab === 'signin' ? 'email' : 'email'}
       </button>
 
       {/* Divider */}
@@ -234,7 +273,6 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         <h3 className="text-xl font-bold text-gray-900 mb-2">
           Continue with your email {activeTab === 'signup' ? '' : 'or username'}
         </h3>
-        
       </div>
 
       {error && (
@@ -273,6 +311,10 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               <button 
                 type="button"
                 className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                onClick={() => {
+                  onClose();
+                  navigate('/forgot-password');
+                }}
               >
                 Forgot password?
               </button>
@@ -319,7 +361,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           </button>
         </form>
       ) : (
-        /* SIGN UP EMAIL FORM - REMOVED confirm password */
+        /* SIGN UP EMAIL FORM */
         <form onSubmit={handleSignupSubmit} className="space-y-4">
           <div>
             <label className="text-sm font-semibold text-gray-700 mb-2 block">
@@ -380,12 +422,36 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            
+            {/* Password strength indicator */}
+            {signupData.password && (
+              <div className={`mt-2 p-2 rounded text-xs ${
+                getPasswordStrengthColor() === 'green' 
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : 'bg-red-50 text-red-700 border border-red-200'
+              }`}>
+                <div className="flex items-center">
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  {passwordStrength}
+                </div>
+              </div>
+            )}
+            
             {errors.password && (
               <p className="mt-1 text-xs text-red-600">{errors.password}</p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              Password must be at least 6 characters
-            </p>
+            
+            {/* Password requirements checklist */}
+            <div className="mt-3 space-y-1">
+              {passwordRequirements.map((req, index) => (
+                <div key={index} className="flex items-center text-xs">
+                  <div className={`w-3 h-3 rounded-full mr-2 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
+                  <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
+                    {req.text}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <button
@@ -422,7 +488,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           onClick={onClose}
         />
         
-        {/* Modal - Compact size for both views */}
+        {/* Modal */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -437,7 +503,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             <X className="w-4 h-4" />
           </button>
 
-          <div className="flex h-[450px]"> {/* Fixed compact height */}
+          <div className="flex h-[500px]">
             {/* Left Side - Benefits */}
             <div className="hidden lg:flex flex-col w-2/5 bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white">
               <div className="flex-1">
@@ -502,20 +568,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                   </div>
                 )}
 
-                {/* Content Area - Takes remaining space */}
+                {/* Content Area */}
                 <div className={`flex-1 ${showEmailForm ? 'flex flex-col justify-center' : ''}`}>
                   {showEmailForm ? renderEmailForm() : renderSocialButtons()}
                 </div>
 
-                {/* Footer Terms - Always visible at bottom */}
+                {/* Footer Terms */}
                 <div className="pt-4 border-t border-gray-200 mt-4">
                   <p className="text-center text-gray-600 text-xs">
-                    By joining, you agree to the Vorkana Terms of Service and to occasionally receive emails from us.
-                    {" "}
-                    <button className="text-emerald-600 hover:text-emerald-700 font-medium">
-                      Please read our Privacy Policy
-                    </button>
-                    {" "}to learn how we use your personal data.
+                    By joining, you agree to the Vorkana Terms of Service and Privacy Policy.
                   </p>
                 </div>
               </div>

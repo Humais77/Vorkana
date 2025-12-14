@@ -9,7 +9,7 @@ const getUserFromStorage = () => {
     const user = localStorage.getItem("user");
     if (user) {
       const parsedUser = JSON.parse(user);
-      localStorage.setItem("userInfo", user);
+      localStorage.setItem("userInfo", JSON.stringify(parsedUser));
       return parsedUser;
     }
     
@@ -29,12 +29,22 @@ const getTokenFromStorage = () => {
   }
 };
 
+const getRefreshTokenFromStorage = () => {
+  try {
+    return localStorage.getItem("refreshToken");
+  } catch (error) {
+    console.error("Error reading refresh token from localStorage:", error);
+    return null;
+  }
+};
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
       // State
       user: getUserFromStorage(),
       token: getTokenFromStorage(),
+      refreshToken: getRefreshTokenFromStorage(),
       isAuthenticated: !!getTokenFromStorage(),
       loading: false,
       error: null,
@@ -44,11 +54,12 @@ export const useAuthStore = create(
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
       
-      // Set both user and token
-      setAuth: (user, token) => {
+      // Set authentication (with tokens)
+      setAuth: (user, token, refreshToken) => {
         set({ 
           user, 
           token, 
+          refreshToken,
           isAuthenticated: !!token,
           loading: false,
           error: null 
@@ -61,9 +72,12 @@ export const useAuthStore = create(
         if (token) {
           localStorage.setItem("userToken", token);
         }
+        if (refreshToken) {
+          localStorage.setItem("refreshToken", refreshToken);
+        }
       },
       
-      // NEW: Set only user (useful for role updates)
+      // Set only user (useful for role updates)
       setUser: (user) => {
         const currentState = get();
         set({ 
@@ -80,10 +94,11 @@ export const useAuthStore = create(
         }
       },
       
-      // NEW: Set only token
-      setToken: (token) => {
+      // Set only tokens
+      setTokens: (token, refreshToken) => {
         set({ 
           token, 
+          refreshToken,
           isAuthenticated: !!token,
           loading: false,
           error: null 
@@ -92,12 +107,17 @@ export const useAuthStore = create(
         if (token) {
           localStorage.setItem("userToken", token);
         }
+        if (refreshToken) {
+          localStorage.setItem("refreshToken", refreshToken);
+        }
       },
       
+      // Logout with token blacklisting
       logout: () => {
         set({ 
           user: null, 
           token: null, 
+          refreshToken: null,
           isAuthenticated: false,
           loading: false,
           error: null 
@@ -106,17 +126,39 @@ export const useAuthStore = create(
         // Clear localStorage
         localStorage.removeItem("userInfo");
         localStorage.removeItem("userToken");
+        localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
       },
       
+      // Sync from storage
       syncFromStorage: () => {
         const user = getUserFromStorage();
         const token = getTokenFromStorage();
+        const refreshToken = getRefreshTokenFromStorage();
         set({ 
           user, 
           token, 
+          refreshToken,
           isAuthenticated: !!token 
         });
+      },
+      
+      // Check if user is seller
+      isSeller: () => {
+        const user = get().user;
+        return user?.role === 'seller';
+      },
+      
+      // Check if user is admin
+      isAdmin: () => {
+        const user = get().user;
+        return user?.role === 'admin';
+      },
+      
+      // Check if email is verified
+      isEmailVerified: () => {
+        const user = get().user;
+        return user?.emailVerified === true;
       },
     }),
     {
@@ -124,6 +166,7 @@ export const useAuthStore = create(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
+        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }
