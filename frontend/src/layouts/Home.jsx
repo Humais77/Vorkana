@@ -8,11 +8,13 @@ import Stats from './Stats'
 import CallToAction from './CallToAction'
 import MakeItHappen from './MakeItHappen'
 import AuthModal from '../components/AuthModal';
+import HowItWorks from '../components/HowItWorks'
 
 const Home = ({ onSignupClick, onSigninClick }) => {
   return (
     <div>
       <Hero />
+      {/* <HowItWorks/> */}
       <CategoryGrid />
       <PopularServices />
       <Testimonials />

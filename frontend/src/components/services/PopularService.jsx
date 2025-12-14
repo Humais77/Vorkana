@@ -349,37 +349,7 @@ const PopularServices = () => {
                         ))}
                     </div>
                 </div>
-
-                {/* Stats Section */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-8 mb-8">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="text-center">
-                            <div className="text-4xl font-bold text-blue-600 mb-2">
-                                {services.length}+
-                            </div>
-                            <p className="text-gray-600">Service Categories</p>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-4xl font-bold text-purple-600 mb-2">
-                                1000+
-                            </div>
-                            <p className="text-gray-600">Active Services</p>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-4xl font-bold text-green-600 mb-2">
-                                4.8/5
-                            </div>
-                            <p className="text-gray-600">Average Rating</p>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-4xl font-bold text-orange-600 mb-2">
-                                24/7
-                            </div>
-                            <p className="text-gray-600">Support Available</p>
-                        </div>
-                    </div>
-                </div>
-
+                
                 {/* Call to Action */}
                 <div className="text-center">
                     <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
@@ -388,7 +358,7 @@ const PopularServices = () => {
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         <Link
                             to="/services"
-                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-full hover:from-blue-700 hover:to-purple-700 transition-all hover:shadow-lg transform hover:-translate-y-0.5"
+                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-blue-500  text-white font-bold rounded-full hover:bg-blue-700  transition-all hover:shadow-lg transform hover:-translate-y-0.5"
                         >
                             <Sparkles className="w-5 h-5" />
                             Browse All Services

@@ -40,7 +40,7 @@ const MakeItHappen = () => {
             </div>
           ))}
         </div>
-        <div className="text-left">
+        <div className="text-center">
           <button className="bg-black text-white px-8 py-3 rounded-md text-sm font-medium hover:bg-gray-800 transition">
             Join now
           </button>
