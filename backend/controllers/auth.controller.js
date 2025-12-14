@@ -2,99 +2,141 @@ const User = require('../models/user.model.js');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const validator = require('validator');
+const { promisify } = require('util');
+const blacklist = new Set(); // In production, use Redis
 
-// Helper functions
+// ========== TOKEN FUNCTIONS ==========
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '7d'
-  });
+  return jwt.sign(
+    { id }, 
+    process.env.JWT_SECRET, 
+    {
+      expiresIn: '15m', // Short-lived access token
+      issuer: 'your-app-name',
+      audience: 'your-app-client'
+    }
+  );
 };
 
+const generateRefreshToken = (id) => {
+  return jwt.sign(
+    { id, type: 'refresh' },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    {
+      expiresIn: '7d',
+      issuer: 'your-app-name',
+      audience: 'your-app-client'
+    }
+  );
+};
+
+const verifyToken = (token) => {
+  return promisify(jwt.verify)(token, process.env.JWT_SECRET);
+};
+
+const verifyRefreshToken = (token) => {
+  return promisify(jwt.verify)(
+    token, 
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+  );
+};
+
+// ========== HELPER FUNCTIONS ==========
 const hashPassword = async (password) => {
-  return await bcrypt.hash(password, 10);
+  const salt = await bcrypt.genSalt(12);
+  return await bcrypt.hash(password, salt);
 };
 
-const comparePassword = async (password, hashedPassword) => {
-  return await bcrypt.compare(password, hashedPassword);
+const validatePassword = (password) => {
+  const minLength = 8;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumbers = /\d/.test(password);
+  const hasSpecialChar = /[@$!%*?&]/.test(password);
+  
+  return password.length >= minLength && 
+         hasUpperCase && 
+         hasLowerCase && 
+         hasNumbers && 
+         hasSpecialChar;
 };
+
+const sendEmail = async (to, subject, text, html) => {
+  // In production, implement actual email sending
+  console.log(`📧 Email to ${to}: ${subject}`);
+  console.log(`Text: ${text}`);
+  console.log(`HTML: ${html}`);
+  return true;
+};
+
+// ========== CONTROLLER FUNCTIONS ==========
 
 // Register new user
 const register = async (req, res) => {
   try {
     const { name, email, password, role = 'user' } = req.body;
 
-    console.log('Registration attempt:', { name, email, password, role });
-
-    // Validation
-    if (!name || !email || !password) {
-      console.log('Missing fields:', { name, email, password });
+    // Additional validation
+    if (!validatePassword(password)) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields',
-        required: ['name', 'email', 'password']
+        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character'
       });
     }
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: 'User already exists with this email'
       });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address'
-      });
-    }
-
-    // Validate password strength
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long'
-      });
-    }
-
-    // Create user - password will be auto-hashed by pre-save hook
+    // Create user
     const user = await User.create({
-      name,
-      email,
-      password,  // Raw password - will be hashed by pre-save hook
-      role,
-      isVerified: true, // Always active
+      name: validator.escape(name),
+      email: email.toLowerCase(),
+      password,
+      role: role === 'admin' ? 'user' : role, // Prevent admin self-registration
     });
 
-    console.log('User created:', user._id);
+    // Generate email verification token
+    const verificationToken = user.createEmailVerificationToken();
+    await user.save({ validateBeforeSave: false });
 
-    // Generate token
+    // Send verification email
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    await sendEmail(
+      user.email,
+      'Verify Your Email Address',
+      `Please verify your email by clicking: ${verificationUrl}`,
+      `<h1>Verify Your Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`
+    );
+
+    // Generate tokens
     const token = generateToken(user._id);
-
-    // Remove password from response
-    user.password = undefined;
+    const refreshToken = generateRefreshToken(user._id);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful. Please check your email to verify your account.',
       token,
+      refreshToken,
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        picture: user.picture
+        picture: user.picture,
+        emailVerified: user.emailVerified
       }
     });
 
   } catch (error) {
-    console.error('Registration error details:', error);
+    console.error('Registration error:', error);
     
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -104,9 +146,8 @@ const register = async (req, res) => {
       });
     }
 
-    // Handle duplicate key error
     if (error.code === 11000) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: 'Email already exists'
       });
@@ -114,89 +155,76 @@ const register = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: 'Server error during registration',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Server error during registration'
     });
   }
 };
 
-// Login user - REMOVED isActive check
+// Login user
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email and password'
-      });
-    }
-
     // Find user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('+password +failedLoginAttempts +lockUntil');
     
-    if (!user) {
-      return res.status(401).json({
+    // Check account lock
+    if (user && user.lockUntil && user.lockUntil > Date.now()) {
+      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
+      return res.status(423).json({
         success: false,
-        message: 'Invalid credentials'
+        message: `Account is locked. Try again in ${remainingTime} minutes.`
       });
     }
 
-    // REMOVED: No isActive check - all accounts are active
-    // if (!user.isActive) {
-    //   return res.status(401).json({
-    //     success: false,
-    //     message: 'Account is deactivated. Please contact support.'
-    //   });
-    // }
-
-    // Check password - handle both plain text (legacy) and hashed passwords
-    let isPasswordValid = false;
-    
-    if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
-      // Password is hashed with bcrypt
-      isPasswordValid = await comparePassword(password, user.password);
-    } else {
-      // Password is plain text (legacy) - hash and compare
-      const hashedInput = await hashPassword(password);
-      // This won't match, so we need to fix the password
-      if (user.password === password) {
-        // Fix the password by hashing it
-        user.password = await hashPassword(password);
-        await user.save();
-        isPasswordValid = true;
+    // Check if user exists and password is correct
+    if (!user || !(await user.comparePassword(password))) {
+      if (user) {
+        await user.incrementLoginAttempts();
       }
-    }
-
-    if (!isPasswordValid) {
+      
+      // Constant-time delay to prevent timing attacks
+      await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
+      
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
-    // Generate token
-    const token = generateToken(user._id);
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      });
+    }
 
+    // Reset login attempts on successful login
+    await user.resetLoginAttempts();
+    
     // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    user.lastLoginAt = new Date();
+    await user.save({ validateBeforeSave: false });
 
-    // Remove password from response
-    user.password = undefined;
+    // Generate tokens
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
 
     res.json({
       success: true,
       message: 'Login successful',
       token,
+      refreshToken,
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         picture: user.picture,
-        lastLogin: user.lastLogin
+        emailVerified: user.emailVerified,
+        lastLoginAt: user.lastLoginAt
       }
     });
 
@@ -204,16 +232,88 @@ const login = async (req, res) => {
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during login',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Server error during login'
     });
   }
 };
 
-// Get user profile - REMOVED isActive from response
+// Logout
+const logout = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      // Add to blacklist (in production, use Redis with TTL)
+      blacklist.add(token);
+    }
+    
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during logout'
+    });
+  }
+};
+
+// Refresh token
+const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    // Verify refresh token
+    const decoded = await verifyRefreshToken(refreshToken);
+    
+    // Check if user still exists
+    const user = await User.findById(decoded.id);
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found or account inactive'
+      });
+    }
+
+    // Generate new tokens
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+
+    res.json({
+      success: true,
+      token: newToken,
+      refreshToken: newRefreshToken
+    });
+
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server error refreshing token'
+    });
+  }
+};
+
+// Get user profile
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    const user = await User.findById(req.user._id);
     
     if (!user) {
       return res.status(404).json({
@@ -230,9 +330,11 @@ const getProfile = async (req, res) => {
         email: user.email,
         role: user.role,
         picture: user.picture,
+        emailVerified: user.emailVerified,
+        twoFactorEnabled: user.twoFactorEnabled,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
-        lastLogin: user.lastLogin
+        lastLoginAt: user.lastLoginAt
       }
     });
   } catch (error) {
@@ -249,21 +351,49 @@ const updateProfile = async (req, res) => {
   try {
     const { name, email, picture } = req.body;
     
-    // Check if email is being changed and if it's already taken
+    // Validate inputs
+    if (email && !validator.isEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
+
+    if (picture && !validator.isURL(picture, { protocols: ['http', 'https'] })) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid URL for the picture'
+      });
+    }
+
+    // Check if email is being changed
     if (email && email !== req.user.email) {
-      const existingUser = await User.findOne({ email });
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
       if (existingUser) {
-        return res.status(400).json({
+        return res.status(409).json({
           success: false,
           message: 'Email already taken'
         });
       }
+      
+      // If email is changed, require verification
+      user.emailVerified = false;
+      const verificationToken = user.createEmailVerificationToken();
+      
+      // Send verification email
+      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+      await sendEmail(
+        email,
+        'Verify Your New Email Address',
+        `Please verify your new email by clicking: ${verificationUrl}`,
+        `<h1>Verify Your New Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your new email.</p>`
+      );
     }
 
-    // Build update object
+    // Build update object with sanitization
     const updateData = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
+    if (name) updateData.name = validator.escape(name);
+    if (email) updateData.email = email.toLowerCase();
     if (picture !== undefined) updateData.picture = picture;
 
     // Update user
@@ -271,17 +401,20 @@ const updateProfile = async (req, res) => {
       req.user._id,
       updateData,
       { new: true, runValidators: true }
-    ).select('-password');
+    );
 
     res.json({
       success: true,
-      message: 'Profile updated successfully',
+      message: email && email !== req.user.email ? 
+        'Profile updated. Please verify your new email.' : 
+        'Profile updated successfully',
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        picture: user.picture
+        picture: user.picture,
+        emailVerified: user.emailVerified
       }
     });
   } catch (error) {
@@ -304,10 +437,12 @@ const updateProfile = async (req, res) => {
 };
 
 // Change password
+// Change password
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
+    // Validation
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
@@ -315,11 +450,25 @@ const changePassword = async (req, res) => {
       });
     }
 
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords must be strings'
+      });
+    }
+
     // Get user with password
     const user = await User.findById(req.user._id).select('+password');
     
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     // Verify current password
-    const isPasswordValid = await comparePassword(currentPassword, user.password);
+    const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -327,19 +476,173 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Hash new password
-    user.password = await hashPassword(newPassword);
+    // Check if new password is same as current
+    const isSamePassword = await user.comparePassword(newPassword);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password'
+      });
+    }
+
+    // Validate new password strength
+    const validatePasswordStrength = (password) => {
+      const minLength = 8;
+      const hasUpperCase = /[A-Z]/.test(password);
+      const hasLowerCase = /[a-z]/.test(password);
+      const hasNumbers = /\d/.test(password);
+      const hasSpecialChar = /[@$!%*?&]/.test(password);
+      
+      if (password.length < minLength) {
+        return { valid: false, message: 'Password must be at least 8 characters long' };
+      }
+      
+      if (!hasUpperCase) {
+        return { valid: false, message: 'Password must contain at least one uppercase letter' };
+      }
+      
+      if (!hasLowerCase) {
+        return { valid: false, message: 'Password must contain at least one lowercase letter' };
+      }
+      
+      if (!hasNumbers) {
+        return { valid: false, message: 'Password must contain at least one number' };
+      }
+      
+      if (!hasSpecialChar) {
+        return { valid: false, message: 'Password must contain at least one special character (@$!%*?&)' };
+      }
+      
+      return { valid: true, message: 'Password is strong' };
+    };
+
+    const validationResult = validatePasswordStrength(newPassword);
+    if (!validationResult.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validationResult.message
+      });
+    }
+
+    // Check password history (optional - prevent reusing last 3 passwords)
+    // You can implement this if needed
+
+    // Set the new password (pre-save hook will hash it)
+    user.password = newPassword;
+    
+    // Save without validating the password field (since we already validated)
+    // Or use validateBeforeSave: false
+    await user.save({ validateBeforeSave: false });
+
+    // Invalidate current token (add to blacklist)
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      // Add to blacklist
+      const { tokenBlacklist } = require('../middleware/auth.middleware');
+      tokenBlacklist.add(token);
+    }
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully. Please login again.',
+      // Optional: Provide a logout hint
+      requiresReauth: true
+    });
+
+  } catch (error) {
+    console.error('Change password error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Password validation failed',
+        errors: messages
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Server error changing password',
+      ...(process.env.NODE_ENV === 'development' && { error: error.message })
+    });
+  }
+};
+
+// Verify email
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    const user = await User.findByVerificationToken(token);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification token'
+      });
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
     await user.save();
 
     res.json({
       success: true,
-      message: 'Password changed successfully'
+      message: 'Email verified successfully'
     });
   } catch (error) {
-    console.error('Change password error:', error);
+    console.error('Verify email error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error changing password'
+      message: 'Server error verifying email'
+    });
+  }
+};
+
+// Resend verification email
+const resendVerificationEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      // Don't reveal if user exists
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a verification email'
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified'
+      });
+    }
+
+    // Generate new verification token
+    const verificationToken = user.createEmailVerificationToken();
+    await user.save({ validateBeforeSave: false });
+
+    // Send verification email
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    await sendEmail(
+      user.email,
+      'Verify Your Email Address',
+      `Please verify your email by clicking: ${verificationUrl}`,
+      `<h1>Verify Your Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`
+    );
+
+    res.json({
+      success: true,
+      message: 'Verification email sent'
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error sending verification email'
     });
   }
 };
@@ -349,16 +652,9 @@ const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email'
-      });
-    }
-
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      // Don't reveal that user doesn't exist for security
+      // Security: Don't reveal if user exists
       return res.json({
         success: true,
         message: 'If an account exists with this email, you will receive a password reset link'
@@ -366,27 +662,21 @@ const forgotPassword = async (req, res) => {
     }
 
     // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    
-    // Hash token and set expiry (10 minutes)
-    user.resetPasswordToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-    
-    await user.save();
+    const resetToken = user.createPasswordResetToken();
+    await user.save({ validateBeforeSave: false });
 
-    // In production, you would send an email here
-    // For testing, we'll return the token
-    console.log('Password reset token:', resetToken);
-    console.log('Reset URL:', `http://localhost:3000/reset-password?token=${resetToken}`);
+    // Send reset email
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    await sendEmail(
+      user.email,
+      'Password Reset Request',
+      `You requested a password reset. Click: ${resetUrl}\n\nThis link expires in 15 minutes.`,
+      `<h1>Password Reset</h1><p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 15 minutes.</p>`
+    );
 
     res.json({
       success: true,
-      message: 'Password reset email sent',
-      // Only include token in development for testing
-      ...(process.env.NODE_ENV === 'development' && { resetToken })
+      message: 'Password reset email sent'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -402,25 +692,15 @@ const resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     
-    if (!token || !newPassword) {
+    if (!validatePassword(newPassword)) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide token and new password'
+        message: 'New password must be at least 8 characters with uppercase, lowercase, number and special character'
       });
     }
 
-    // Hash the token to compare with stored token
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
-    
     // Find user with valid token
-    const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
+    const user = await User.findByResetToken(token);
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -432,16 +712,20 @@ const resetPassword = async (req, res) => {
     user.password = await hashPassword(newPassword);
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
     
     await user.save();
 
-    // Generate new token for automatic login
+    // Generate new tokens
     const authToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
 
     res.json({
       success: true,
       message: 'Password reset successful',
       token: authToken,
+      refreshToken,
       user: {
         _id: user._id,
         name: user.name,
@@ -458,42 +742,55 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// Create admin user (one-time setup)
+// Create admin user (protected - one-time setup)
 const createAdmin = async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
     // Only allow in development or with special key
-    if (process.env.NODE_ENV !== 'development' && req.query.secret !== process.env.ADMIN_CREATE_SECRET) {
+    const secretKey = req.headers['x-admin-secret'] || req.query.secret;
+    if (process.env.NODE_ENV === 'production' && secretKey !== process.env.ADMIN_CREATE_SECRET) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized'
       });
     }
 
-    const existingAdmin = await User.findOne({ email });
-    if (existingAdmin) {
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'User already exists'
+      });
+    }
+
+    if (!validatePassword(password)) {
       return res.status(400).json({
         success: false,
-        message: 'Admin already exists'
+        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character'
       });
     }
 
     const hashedPassword = await hashPassword(password);
 
     const admin = await User.create({
-      name: name || 'Admin',
-      email,
+      name: validator.escape(name || 'Admin'),
+      email: email.toLowerCase(),
       password: hashedPassword,
-      role: 'admin'
+      role: 'admin',
+      emailVerified: true
     });
 
     const token = generateToken(admin._id);
+    const refreshToken = generateRefreshToken(admin._id);
+
+    console.log(`✅ Admin created: ${admin.email}`);
 
     res.status(201).json({
       success: true,
       message: 'Admin created successfully',
       token,
+      refreshToken,
       user: {
         _id: admin._id,
         name: admin.name,
@@ -513,10 +810,16 @@ const createAdmin = async (req, res) => {
 module.exports = {
   register,
   login,
+  logout,
+  refreshToken,
   getProfile,
   updateProfile,
   changePassword,
+  verifyEmail,
+  resendVerificationEmail,
   forgotPassword,
   resetPassword,
-  createAdmin
+  createAdmin,
+  generateToken,
+  generateRefreshToken
 };

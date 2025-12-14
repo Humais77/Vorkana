@@ -1,7 +1,30 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const hpp = require('hpp');
+
 dotenv.config();
+
+// Validate environment variables
+const validateEnv = () => {
+  const requiredEnvVars = ['JWT_SECRET', 'MONGO_URL', 'FRONTEND_URL'];
+  const missing = requiredEnvVars.filter(env => !process.env[env]);
+  
+  if (missing.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  
+  if (process.env.NODE_ENV === 'production' && !process.env.COOKIE_SECRET) {
+    console.error('❌ COOKIE_SECRET is required in production');
+    process.exit(1);
+  }
+};
+
+validateEnv();
+
 const connectDB = require('./config/db');
 const security = require('./middleware/security.js');
 
@@ -16,59 +39,186 @@ require("./config/passport.js");
 connectDB();
 
 const app = express();
+
+// ========== CUSTOM MONGO SANITIZER (FIXED) ==========
+const mongoSanitizeCustom = (req, res, next) => {
+  // Skip query sanitization to avoid read-only property error
+  // Only sanitize body for non-GET requests
+  if (req.method !== 'GET' && req.body && typeof req.body === 'object') {
+    try {
+      const sanitize = require('express-mongo-sanitize');
+      // Use the sanitize function directly on the body
+      req.body = sanitize.sanitize(req.body, {
+        replaceWith: '_'
+      });
+    } catch (error) {
+      console.warn('Mongo sanitize error:', error.message);
+    }
+  }
+  next();
+};
+
+// ========== SECURITY MIDDLEWARE ==========
 security(app);
 
+// Helmet for security headers
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for now to avoid issues
+  crossOriginEmbedderPolicy: false
+}));
+
+// IMPORTANT: Import ipKeyGenerator from express-rate-limit
+const { ipKeyGenerator } = require('express-rate-limit');
+
+// FIXED: Global rate limiting with proper IPv6 handling
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: ipKeyGenerator, // FIXED: Use the built-in IP key generator
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
+});
+
+// Apply global rate limiting
+app.use(globalLimiter);
+
+// Use custom sanitizer instead of direct mongoSanitize()
+app.use(mongoSanitizeCustom);
+
+// Prevent parameter pollution
+app.use(hpp());
+
+// CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-];
+  process.env.FRONTEND_URL
+].filter(Boolean); // Remove undefined values
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`CORS blocked origin: ${origin}`);
-        callback(null, true);
+        console.warn(`🚫 CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS policy'), false);
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Authorization']
   })
 );
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing with limits
+app.use(express.json({ 
+  limit: '10mb'
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10mb',
+  parameterLimit: 100
+}));
 
+// Initialize passport
 app.use(passport.initialize());
+
+// ========== ROUTES ==========
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
 
-
+// ========== HEALTH CHECK ==========
 app.get('/health', (req, res) => {
-  res.json({ success: true, message: 'API is alive', timestamp: new Date().toISOString() });
+  res.json({ 
+    success: true, 
+    message: 'API is healthy', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
+  });
 });
 
+// ========== ERROR HANDLING ==========
+
+// 404 handler
 app.use((req, res, next) => {
   res.status(404).json({
     success: false,
     message: `Cannot ${req.method} ${req.originalUrl} - Route not found`,
+    timestamp: new Date().toISOString()
   });
 });
 
+// Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err);
+  console.error('🔴 Unhandled Error:', {
+    message: err.message,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
 
+  // Handle CORS errors
+  if (err.message === 'Not allowed by CORS policy') {
+    return res.status(403).json({
+      success: false,
+      message: 'Cross-origin request blocked'
+    });
+  }
+
+  // Handle rate limit errors
+  if (err.status === 429) {
+    return res.status(429).json({
+      success: false,
+      message: 'Too many requests, please try again later'
+    });
+  }
+
+  // Handle JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token'
+    });
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Token expired'
+    });
+  }
+
+  // Default error
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
 
   res.status(statusCode).json({
     success: false,
     message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    timestamp: new Date().toISOString(),
+    ...(process.env.NODE_ENV === 'development' && { 
+      error: err.toString()
+    })
   });
 });
 
