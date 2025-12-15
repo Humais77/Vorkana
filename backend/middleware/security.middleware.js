@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-
+const { ipKeyGenerator } = require('express-rate-limit');
 // Request ID middleware
 const requestIdMiddleware = (req, res, next) => {
   req.requestId = crypto.randomBytes(8).toString('hex');
@@ -22,20 +22,19 @@ const securityHeaders = (req, res, next) => {
 
 // Order-specific rate limiting
 const orderCreationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 order creations per window
-  keyGenerator: (req) => req.ip,
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),  // Fixed: use helper
   message: {
     success: false,
     message: 'Too many orders created. Please try again later.',
     code: 'ORDER_CREATION_LIMIT'
   }
 });
-
 const orderUpdateLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // 20 updates per window
-  keyGenerator: (req) => `${req.ip}-${req.params.id}`,
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}-${req.params.id}`,  // Fixed: wrap req.ip
   message: {
     success: false,
     message: 'Too many order updates. Please try again later.',
@@ -99,11 +98,10 @@ const validateOrderOwnership = async (req, res, next) => {
       });
     }
 
-    const isSeller = order.seller.toString() === req.user._id.toString();
     const isBuyer = order.buyer.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
 
-    if (!isSeller && !isBuyer && !isAdmin) {
+    if (!isBuyer && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Access denied to this order',
@@ -112,7 +110,6 @@ const validateOrderOwnership = async (req, res, next) => {
     }
 
     req.order = order;
-    req.isSeller = isSeller;
     req.isBuyer = isBuyer;
     next();
   } catch (error) {

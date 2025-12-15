@@ -77,7 +77,6 @@ const register = async (req, res) => {
   try {
     const { name, email, password, role = 'user' } = req.body;
 
-    // Additional validation
     if (!validatePassword(password)) {
       return res.status(400).json({
         success: false,
@@ -85,7 +84,6 @@ const register = async (req, res) => {
       });
     }
 
-    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({
@@ -94,19 +92,16 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user
     const user = await User.create({
       name: validator.escape(name),
       email: email.toLowerCase(),
       password,
-      role: role === 'admin' ? 'user' : role, // Prevent admin self-registration
+      role: 'user',
     });
 
-    // Generate email verification token
     const verificationToken = user.createEmailVerificationToken();
     await user.save({ validateBeforeSave: false });
 
-    // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
     await sendEmail(
       user.email,
@@ -115,7 +110,6 @@ const register = async (req, res) => {
       `<h1>Verify Your Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`
     );
 
-    // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 

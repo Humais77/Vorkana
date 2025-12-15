@@ -25,13 +25,12 @@ const {
 
 const router = express.Router();
 
-// ========== INPUT VALIDATION MIDDLEWARE ==========
 const registerValidation = validateRequest({
   body: {
     name: { type: 'string', minLength: 2, maxLength: 50, required: true },
     email: { type: 'string', format: 'email', required: true },
     password: { type: 'string', minLength: 8, required: true },
-    role: { type: 'string', enum: ['user', 'seller'], default: 'user' }
+    role: { type: 'string', enum: ['user'], default: 'user' }
   }
 });
 
@@ -55,69 +54,55 @@ const resetPasswordValidation = validateRequest({
   }
 });
 
-// ========== PUBLIC ROUTES ==========
-
-// Registration with rate limiting - FIXED: Use middleware function properly
 router.post("/register", 
-  registerLimiter, // Fixed: Use the pre-configured limiter
+  registerLimiter,
   registerValidation,
   register
 );
 
-// Login with rate limiting - FIXED: Use middleware function properly
 router.post("/login", 
-  authLimiter, // Fixed: Use the pre-configured limiter
+  authLimiter,
   loginValidation,
   login
 );
 
-// Refresh token
 router.post("/refresh-token", refreshToken);
 
-// Email verification
 router.get("/verify-email/:token", verifyEmail);
 
-// Resend verification with rate limiting
 router.post("/resend-verification", 
-  passwordResetLimiter, // Fixed: Use the pre-configured limiter
+  passwordResetLimiter,
   validateRequest({ body: { email: { type: 'string', format: 'email', required: true } } }),
   resendVerificationEmail
 );
 
-// Password reset with rate limiting
 router.post("/forgot-password", 
-  passwordResetLimiter, // Fixed: Use the pre-configured limiter
+  passwordResetLimiter,
   forgotPasswordValidation,
   forgotPassword
 );
 
 router.post("/reset-password", 
-  passwordResetLimiter, // Fixed: Use the pre-configured limiter
+  passwordResetLimiter,
   resetPasswordValidation,
   resetPassword
 );
 
-// ========== PROTECTED ROUTES ==========
-// FIXED: These are functions, not calling them immediately
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
 router.post("/change-password", protect, changePassword);
 router.post("/logout", protect, logout);
 
-// In auth.route.js - Update the Google OAuth route:
-
 router.get("/google",
   (req, res, next) => {
-    // Generate and store state parameter for CSRF protection
     const state = crypto.randomBytes(32).toString('hex');
     
-    // Store state in signed cookie (now works with cookie-parser)
     res.cookie('oauth_state', state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 10 * 60 * 1000, // 10 minutes
-      signed: true // Now this works with cookie-parser
+      maxAge: 10 * 60 * 1000,
+      signed: true
     });
     
     passport.authenticate("google", { 
@@ -130,7 +115,6 @@ router.get("/google",
 
 router.get("/google/callback",
   (req, res, next) => {
-    // Verify state parameter from signed cookie
     const state = req.query.state;
     const storedState = req.signedCookies?.oauth_state;
     
@@ -139,7 +123,6 @@ router.get("/google/callback",
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_state`);
     }
     
-    // Clear the state cookie
     res.clearCookie('oauth_state', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -155,7 +138,6 @@ router.get("/google/callback",
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
       }
       
-      // Generate tokens
       const token = require('../controllers/auth.controller.js').generateToken(user._id);
       const refreshToken = require('../controllers/auth.controller.js').generateRefreshToken(user._id);
       
@@ -172,7 +154,6 @@ router.get("/google/callback",
         }
       }));
       
-      // Redirect with success data
       res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
     })(req, res, next);
   }

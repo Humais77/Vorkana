@@ -1,21 +1,17 @@
-// controllers/user.controller.js
 const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 
-// Switch user role
 const switchRole = async (req, res) => {
   try {
     const { role } = req.body;
     
-    // Validate role
-    if (!['user', 'seller', 'admin'].includes(role)) {
+    if (!['user'].includes(role)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid role. Allowed roles: user, seller'
+        message: 'Invalid role. Only "user" role is allowed'
       });
     }
     
-    // Prevent users from switching to admin
     if (role === 'admin' && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
@@ -23,7 +19,6 @@ const switchRole = async (req, res) => {
       });
     }
     
-    // Update user role
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { role },
@@ -37,7 +32,6 @@ const switchRole = async (req, res) => {
       });
     }
     
-    // Generate new token with updated role
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,

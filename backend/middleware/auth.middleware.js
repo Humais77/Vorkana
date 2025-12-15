@@ -4,24 +4,17 @@ const User = require('../models/user.model.js');
 const rateLimit = require('express-rate-limit');
 const validator = require('validator');
 const crypto = require('crypto');
-
-// Import the ipKeyGenerator helper from express-rate-limit
 const { ipKeyGenerator } = require('express-rate-limit');
 
-// Token blacklist (use Redis in production)
 const tokenBlacklist = new Set();
 
-// Protect route middleware
 const protect = async (req, res, next) => {
   try {
     let token;
     
-    // Get token from header
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
-    
-    // Get token from cookie
     else if (req.cookies?.token) {
       token = req.cookies.token;
     }
@@ -33,7 +26,6 @@ const protect = async (req, res, next) => {
       });
     }
     
-    // Check if token is blacklisted
     if (tokenBlacklist.has(token)) {
       return res.status(401).json({
         success: false,
@@ -41,10 +33,8 @@ const protect = async (req, res, next) => {
       });
     }
     
-    // Verify token
     const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
     
-    // Check if user still exists
     const user = await User.findById(decoded.id);
     if (!user) {
       return res.status(401).json({
@@ -53,7 +43,6 @@ const protect = async (req, res, next) => {
       });
     }
     
-    // Check if account is active
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
@@ -61,7 +50,6 @@ const protect = async (req, res, next) => {
       });
     }
     
-    // Grant access to protected route
     req.user = user;
     next();
     
@@ -89,7 +77,6 @@ const protect = async (req, res, next) => {
   }
 };
 
-// Role-based authorization
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -110,7 +97,6 @@ const authorize = (...roles) => {
   };
 };
 
-// FIXED: Rate limiting middleware with proper IPv6 handling
 const rateLimiter = (max, windowMs) => {
   return rateLimit({
     windowMs,
@@ -121,22 +107,19 @@ const rateLimiter = (max, windowMs) => {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // FIX: Use ipKeyGenerator for proper IPv6 handling
     keyGenerator: (req) => {
-      const ip = ipKeyGenerator(req); // Get properly normalized IP
-      // Use IP + user ID if available for more precise limiting
+      const ip = ipKeyGenerator(req);
       return req.user?._id ? `${ip}-${req.user._id}` : ip;
     }
   });
 };
 
-// Rate limiter for specific routes (e.g., auth routes)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: ipKeyGenerator, // Use the built-in IP key generator
+  keyGenerator: ipKeyGenerator,
   message: {
     success: false,
     message: 'Too many login attempts, please try again later.'
@@ -144,8 +127,8 @@ const authLimiter = rateLimit({
 });
 
 const passwordResetLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 attempts per hour
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: ipKeyGenerator,
@@ -156,8 +139,8 @@ const passwordResetLimiter = rateLimit({
 });
 
 const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 registrations per hour per IP
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: ipKeyGenerator,
@@ -167,28 +150,23 @@ const registerLimiter = rateLimit({
   }
 });
 
-// Request validation middleware
 const validateRequest = (schema) => {
   return (req, res, next) => {
     const errors = [];
     
-    // Validate body
     if (schema.body) {
       for (const [key, rules] of Object.entries(schema.body)) {
         const value = req.body[key];
         
-        // Check required
         if (rules.required && (value === undefined || value === null || value === '')) {
           errors.push(`${key} is required`);
           continue;
         }
         
-        // Skip further validation if value is not required and not provided
         if (!rules.required && (value === undefined || value === null)) {
           continue;
         }
         
-        // Type validation
         if (rules.type === 'string' && typeof value !== 'string') {
           errors.push(`${key} must be a string`);
         } else if (rules.type === 'number' && typeof value !== 'number') {
@@ -197,7 +175,6 @@ const validateRequest = (schema) => {
           errors.push(`${key} must be a boolean`);
         }
         
-        // String-specific validations
         if (rules.type === 'string') {
           if (rules.minLength && value.length < rules.minLength) {
             errors.push(`${key} must be at least ${rules.minLength} characters`);
@@ -219,7 +196,6 @@ const validateRequest = (schema) => {
             errors.push(`${key} must be one of: ${rules.enum.join(', ')}`);
           }
           
-          // Sanitize input
           if (rules.sanitize !== false) {
             req.body[key] = validator.escape(value);
           }
@@ -227,7 +203,6 @@ const validateRequest = (schema) => {
       }
     }
     
-    // Validate params
     if (schema.params) {
       for (const [key, rules] of Object.entries(schema.params)) {
         const value = req.params[key];
@@ -238,7 +213,6 @@ const validateRequest = (schema) => {
       }
     }
     
-    // Validate query
     if (schema.query) {
       for (const [key, rules] of Object.entries(schema.query)) {
         const value = req.query[key];
@@ -261,7 +235,6 @@ const validateRequest = (schema) => {
   };
 };
 
-// Email verification middleware
 const verifyEmailToken = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
@@ -283,11 +256,11 @@ const verifyEmailToken = async (req, res, next) => {
   }
 };
 
-// Log request middleware
 const logRequest = (req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
   next();
 };
+
 const adminOnly = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
@@ -306,26 +279,6 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
-// Seller only middleware
-const sellerOnly = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Not authorized'
-    });
-  }
-  
-  if (req.user.role !== 'seller' && req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Seller access required'
-    });
-  }
-  
-  next();
-};
-
-// User only middleware
 const userOnly = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
@@ -334,13 +287,10 @@ const userOnly = (req, res, next) => {
     });
   }
   
-  // Allow all authenticated users
   next();
 };
 
-// Optional authentication middleware
 const optionalAuth = (req, res, next) => {
-  // Try to authenticate but don't require it
   let token;
   
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -351,7 +301,6 @@ const optionalAuth = (req, res, next) => {
   
   if (token) {
     try {
-      // Try to verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       User.findById(decoded.id)
         .then(user => {
@@ -362,7 +311,6 @@ const optionalAuth = (req, res, next) => {
         })
         .catch(() => next());
     } catch (error) {
-      // Token is invalid, proceed without user
       next();
     }
   } else {
@@ -374,7 +322,6 @@ module.exports = {
   protect,
   authorize,
   adminOnly,
-  sellerOnly,
   userOnly,
   optionalAuth,
   rateLimiter,
