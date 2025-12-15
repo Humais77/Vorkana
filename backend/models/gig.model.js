@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const slugify = require('slugify');
-const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js'); // Updated import
+const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
 
 const gigSchema = new mongoose.Schema({
   title: {
@@ -9,7 +9,7 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     minlength: [5, 'Title must be at least 5 characters'],
     maxlength: [200, 'Title cannot exceed 200 characters'],
-    index: true, // Added for faster searches
+    index: true,
   },
   slug: {
     type: String,
@@ -53,7 +53,7 @@ const gigSchema = new mongoose.Schema({
       validator: async function(v) {
         const Category = mongoose.model('Category');
         const category = await Category.findById(v);
-        return category; // Removed: && category.isActive
+        return category;
       },
       message: 'Invalid category'
     }
@@ -64,12 +64,11 @@ const gigSchema = new mongoose.Schema({
     index: true,
     validate: {
       validator: async function(v) {
-        if (!v) return true; // Subcategory is optional
+        if (!v) return true;
         const Category = mongoose.model('Category');
         const subcategory = await Category.findById(v);
         return subcategory && subcategory.parentCategory && 
                subcategory.parentCategory.equals(this.projectCategory);
-        // Removed: && subcategory.isActive 
       },
       message: 'Invalid subcategory or does not belong to the selected category'
     }
@@ -128,8 +127,8 @@ const gigSchema = new mongoose.Schema({
     ref: 'User',
     index: true,
   },
-  proposals: [{
-    seller: {
+  bids: [{
+    bidder: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
@@ -143,8 +142,8 @@ const gigSchema = new mongoose.Schema({
     price: {
       type: Number,
       required: true,
-      min: [5, 'Minimum proposal price is $5'],
-      max: [100000, 'Maximum proposal price is $100,000'],
+      min: [5, 'Minimum bid price is $5'],
+      max: [100000, 'Maximum bid price is $100,000'],
     },
     deliveryTime: {
       type: Number,
@@ -167,14 +166,14 @@ const gigSchema = new mongoose.Schema({
       default: Date.now,
     },
   }],
-  selectedProposal: {
+  selectedBid: {
     type: mongoose.Schema.Types.ObjectId,
     validate: {
       validator: function(v) {
         if (!v) return true;
-        return this.proposals.some(p => p._id.equals(v));
+        return this.bids.some(b => b._id.equals(v));
       },
-      message: 'Selected proposal must be from the proposals array'
+      message: 'Selected bid must be from the bids array'
     }
   },
   milestones: [{
@@ -254,7 +253,7 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
   },
-  sellerReview: {
+  bidderReview: {
     type: String,
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
@@ -335,7 +334,7 @@ const gigSchema = new mongoose.Schema({
       validator: async function(v) {
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user; // Removed: && user.isActive
+        return user;
       },
       message: 'Invalid user'
     }
@@ -353,7 +352,7 @@ const gigSchema = new mongoose.Schema({
         if (!v) return true;
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user; // Removed: && user.isActive
+        return user;
       },
       message: 'Invalid user'
     }
@@ -420,7 +419,7 @@ gigSchema.virtual('subcategoryDetails', {
   justOne: true,
 });
 
-gigSchema.virtual('seller', {
+gigSchema.virtual('assignedUser', {
   ref: 'User',
   localField: 'assignedTo',
   foreignField: '_id',
@@ -440,13 +439,12 @@ gigSchema.virtual('isDeleted').get(function() {
 
 // Pre-save middleware
 gigSchema.pre('save', async function () {
-  // Store original status for post-save logic
   if (this.isNew) this._originalStatus = null;
   if (!this._originalStatus) this._originalStatus = this.status;
 
   // Sanitize text fields
   const fieldsToSanitize = ['title', 'fullName', 'oauthEmail', 'country', 'phone', 
-                           'description', 'timeline', 'clientReview', 'sellerReview', 'disputeReason'];
+                           'description', 'timeline', 'clientReview', 'bidderReview', 'disputeReason'];
   fieldsToSanitize.forEach(field => {
     if (this[field] && typeof this[field] === 'string') {
       this[field] = sanitizeText(this[field]);
@@ -491,7 +489,7 @@ gigSchema.pre('save', async function () {
   }
 });
 
-// FIXED post-save – no next(), errors are logged only
+// FIXED post-save
 gigSchema.post('save', async function (doc) {
   try {
     const Category = mongoose.model('Category');
@@ -513,18 +511,7 @@ gigSchema.post('save', async function (doc) {
   }
 });
 
-// // FIXED post-remove (query middleware) – no next needed
-// gigSchema.post('findOneAndDelete', async function (doc) {
-//   if (doc && doc.status === 'open') {
-//     try {
-//       await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
-//     } catch (error) {
-//       console.error('Error decrementing gig count on delete:', error);
-//     }
-//   }
-// });
-
-// Indexes (only compound indexes, single indexes are at field level)
+// Indexes
 gigSchema.index({ projectCategory: 1, status: 1 }, { name: 'category_status_idx' });
 gigSchema.index({ createdBy: 1, status: 1 }, { name: 'creator_status_idx' });
 gigSchema.index({ assignedTo: 1, status: 1 }, { name: 'assignee_status_idx' });
@@ -545,12 +532,11 @@ gigSchema.index({
   }
 });
 
-// Additional useful indexes
 gigSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
 gigSchema.index({ visibility: 1, status: 1 }, { name: 'visibility_status_idx' });
 gigSchema.index({ budget: 1, status: 1 }, { name: 'budget_status_idx' });
 gigSchema.index({ deadline: 1 }, { name: 'deadline_idx' });
-gigSchema.index({ 'proposals.seller': 1 }, { name: 'proposal_seller_idx' });
+gigSchema.index({ 'bids.bidder': 1 }, { name: 'bid_bidder_idx' });
 
 // Query helpers
 gigSchema.query.active = function() {
@@ -561,12 +547,12 @@ gigSchema.query.open = function() {
   return this.where({ status: 'open', isActive: true, deletedAt: null });
 };
 
-gigSchema.query.byClient = function(clientId) {
+gigSchema.query.byCreator = function(clientId) {
   return this.where({ createdBy: clientId });
 };
 
-gigSchema.query.bySeller = function(sellerId) {
-  return this.where({ assignedTo: sellerId });
+gigSchema.query.byAssignee = function(userId) {
+  return this.where({ assignedTo: userId });
 };
 
 gigSchema.query.byCategory = function(categoryId) {
@@ -596,7 +582,6 @@ gigSchema.statics.closeExpired = async function() {
     gig.lastUpdatedBy = gig.createdBy;
     await gig.save();
     
-    // Decrement category count
     await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
     
     results.push(gig._id);

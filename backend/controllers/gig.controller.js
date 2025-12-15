@@ -3,18 +3,15 @@ const crypto = require('crypto');
 const Gig = require('../models/gig.model.js');
 const Category = require('../models/category.model.js');
 const User = require('../models/user.model.js');
-const { sanitizeHtml, sanitizeObject, sanitizeText } = require('../utils/sanitize.js');
+const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
-// gig.controller.js - REPLACE sanitizeGigInput function (lines 15-35):
 const sanitizeGigInput = (data) => {
-  // Use the existing sanitizeObject function directly
   if (!data || typeof data !== 'object') return data;
   
-  // Clone and sanitize the object
   const sanitized = { ...data };
   const sanitizeTextFields = (value) => {
     if (typeof value === 'string') {
@@ -26,7 +23,6 @@ const sanitizeGigInput = (data) => {
     return value;
   };
   
-  // Apply sanitization to text fields
   Object.keys(sanitized).forEach(key => {
     if (typeof sanitized[key] === 'string' || 
         (Array.isArray(sanitized[key]) && typeof sanitized[key][0] === 'string')) {
@@ -55,7 +51,7 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     paymentStatus,
     disputeStatus,
     hasAttachments,
-    hasProposals,
+    hasBids,
     hasMilestones,
     skillsRequired,
     createdAfter,
@@ -73,39 +69,27 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   // Security: Apply appropriate filters based on user role
   if (showAll && userRole === 'admin') {
-    // Admin can see everything including inactive gigs
     if (status !== undefined) {
       filter.status = status;
     }
     filter.deletedAt = null;
-  } else if (userRole === 'seller' && userId) {
-    // Seller can see their assigned gigs, their own gigs, and public ACTIVE gigs
-    filter.$or = [
-      { assignedTo: userId, deletedAt: null },
-      { createdBy: userId, deletedAt: null },
-      { 
-        status: 'open',
-        visibility: 'public',
-        isActive: true, // ADD THIS LINE
-        deletedAt: null
-      }
-    ];
   } else if (userRole === 'user' && userId) {
-    // Regular users can see their own gigs and public ACTIVE gigs
+    // Users can see their created gigs, assigned gigs, and public ACTIVE gigs
     filter.$or = [
       { createdBy: userId, deletedAt: null },
+      { assignedTo: userId, deletedAt: null },
       { 
         status: 'open',
         visibility: 'public',
-        isActive: true, // ADD THIS LINE
+        isActive: true,
         deletedAt: null
       }
     ];
   } else {
-    // Public/guest access - only ACTIVE gigs
+    // Public/guest access - only ACTIVE public gigs
     filter.status = 'open';
     filter.visibility = 'public';
-    filter.isActive = true; // ADD THIS LINE - CRITICAL FIX
+    filter.isActive = true;
     filter.deletedAt = null;
   }
 
@@ -161,8 +145,8 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     filter.attachments = { $exists: true, $ne: [] };
   }
   
-  if (hasProposals === true || hasProposals === 'true') {
-    filter.proposals = { $exists: true, $ne: [] };
+  if (hasBids === true || hasBids === 'true') {
+    filter.bids = { $exists: true, $ne: [] };
   }
   
   if (hasMilestones === true || hasMilestones === 'true') {
@@ -178,32 +162,28 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   // Date filters
   const addDateFilter = (field, date, operator) => {
-  if (date) {
-    let parsedDate;
-    
-    // Handle different date formats
-    if (date instanceof Date) {
-      parsedDate = date;
-    } else if (typeof date === 'string') {
-      parsedDate = new Date(date);
-    } else if (typeof date === 'number') {
-      parsedDate = new Date(date);
-    } else {
-      console.warn(`Invalid date format for ${field}:`, date);
-      return;
-    }
-    
-    // Check if date is valid
-    if (parsedDate && !isNaN(parsedDate.getTime())) {
-      if (!filter[field]) {
-        filter[field] = {};
+    if (date) {
+      let parsedDate;
+      
+      if (date instanceof Date) {
+        parsedDate = date;
+      } else if (typeof date === 'string') {
+        parsedDate = new Date(date);
+      } else if (typeof date === 'number') {
+        parsedDate = new Date(date);
+      } else {
+        console.warn(`Invalid date format for ${field}:`, date);
+        return;
       }
-      filter[field][operator] = parsedDate;
-    } else {
-      console.warn(`Invalid date for ${field}:`, date);
+      
+      if (parsedDate && !isNaN(parsedDate.getTime())) {
+        if (!filter[field]) {
+          filter[field] = {};
+        }
+        filter[field][operator] = parsedDate;
+      }
     }
-  }
-};
+  };
 
   addDateFilter('createdAt', createdAfter, '$gte');
   addDateFilter('createdAt', createdBefore, '$lte');
@@ -236,6 +216,7 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:GIG] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
 
+// Create Gig
 const createGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -250,22 +231,8 @@ const createGig = async (req, res, next) => {
       });
     }
 
-
-    // let sanitizedData;
-    // if (req.body instanceof FormData || req.is('multipart/form-data')) {
-    //   // For FormData, we need to extract fields manually
-    //   const formData = {};
-    //   if (req.body instanceof FormData) {
-    //     // In Node.js, FormData might be parsed differently
-    //     // You'll need to handle this based on your middleware
-    //   } else if (req.body) {
-    //     // If multer or similar middleware has already parsed it
-    //     sanitizedData = req.body;
-    //   }
-    // } else {
-    //   sanitizedData = sanitizeGigInput(req.body);
-    // }
-     const sanitizedData = sanitizeGigInput(req.body);
+    const sanitizedData = sanitizeGigInput(req.body);
+    
     if (!mongoose.Types.ObjectId.isValid(sanitizedData.projectCategory)) {
       return res.status(400).json({
         success: false,
@@ -277,7 +244,6 @@ const createGig = async (req, res, next) => {
 
     const category = await Category.findOne({ 
       _id: sanitizedData.projectCategory 
-      // Removed: , isActive: true 
     });
     
     if (!category) {
@@ -309,7 +275,7 @@ const createGig = async (req, res, next) => {
     const gigData = {
       ...sanitizedData,
       title: sanitizedData.title || `Project ${Date.now()}`,
-      fullName: req.user.fullName || sanitizedData.fullName || req.user.username,
+      fullName: req.user.name || sanitizedData.fullName || 'User',
       oauthEmail: req.user.email || sanitizedData.oauthEmail,
       createdBy: req.user._id,
       version: 1
@@ -323,10 +289,9 @@ const createGig = async (req, res, next) => {
       req.files.forEach(file => {
         const filePath = `/uploads/${file.filename}`;
         
-        // Distinguish between attachments and other files
         if (file.fieldname === 'attachments') {
           attachments.push(filePath);
-        } else {
+        } else if (file.fieldname === 'files') {
           files.push(filePath);
         }
       });
@@ -399,7 +364,7 @@ const createGig = async (req, res, next) => {
   }
 };
 
-// Get Gigs with Advanced Security
+// Get Gigs
 const getGigs = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -423,7 +388,7 @@ const getGigs = async (req, res, next) => {
       paymentStatus,
       disputeStatus,
       hasAttachments,
-      hasProposals,
+      hasBids,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -447,8 +412,8 @@ const getGigs = async (req, res, next) => {
       showAll = false,
       includeInactive = false,
       includeCategory = true,
-      includeClient = true,
-      includeSeller = true,
+      includeCreator = true,
+      includeAssignee = true,
       lean = true,
       cache = false
     } = req.query;
@@ -473,7 +438,7 @@ const getGigs = async (req, res, next) => {
       paymentStatus,
       disputeStatus,
       hasAttachments,
-      hasProposals,
+      hasBids,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -486,9 +451,11 @@ const getGigs = async (req, res, next) => {
       excludeIds,
       showAll: showAllFlag
     }, userRole, req.user?._id);
+    
     if (!showAllFlag && !filter.isActive) {
       filter.isActive = true;
     }
+    
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
@@ -509,7 +476,6 @@ const getGigs = async (req, res, next) => {
         }
       });
     } else {
-      // Default exclude sensitive fields
       defaultExclude.forEach(field => {
         select[field] = 0;
       });
@@ -541,17 +507,17 @@ const getGigs = async (req, res, next) => {
         }
       }
       
-      if (includeClient) {
+      if (includeCreator) {
         populateOptions.push({
           path: 'createdBy',
-          select: 'username fullName avatar rating'
+          select: 'name email picture role'
         });
       }
       
-      if (includeSeller) {
+      if (includeAssignee) {
         populateOptions.push({
           path: 'assignedTo',
-          select: 'username fullName avatar rating level'
+          select: 'name email picture role'
         });
       }
     }
@@ -573,10 +539,8 @@ const getGigs = async (req, res, next) => {
 
     const safeGigs = gigs.map(gig => {
       if (lean) {
-        // For lean documents
         const safeGig = { ...gig };
         
-        // Remove sensitive data
         if (safeGig.createdBy && safeGig.createdBy._id) {
           delete safeGig.createdBy.email;
           delete safeGig.createdBy.phone;
@@ -596,14 +560,12 @@ const getGigs = async (req, res, next) => {
         delete safeGig.version;
         delete safeGig.communicationHistory;
         
-        // Truncate description for list view
         if (safeGig.description && safeGig.description.length > 200) {
           safeGig.description = safeGig.description.substring(0, 200) + '...';
         }
         
         return safeGig;
       } else {
-        // For mongoose documents
         const safeGig = gig.toObject();
         
         if (safeGig.createdBy) {
@@ -782,7 +744,7 @@ const searchGigs = async (req, res, next) => {
   }
 };
 
-// Get Gig by ID with Security
+// Get Gig by ID
 const getGigById = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -813,10 +775,8 @@ const getGigById = async (req, res, next) => {
     const userRole = req.user?.role || 'guest';
     const userId = req.user?._id;
 
-    // Apply access controls - SIMPLIFIED VERSION
     query.deletedAt = null;
     
-    // For non-admin users, add additional restrictions
     if (userRole !== 'admin') {
       if (userId) {
         query.$or = [
@@ -833,7 +793,6 @@ const getGigById = async (req, res, next) => {
       }
     }
 
-    // FIXED: Handle field selection safely
     let selectFields = {};
     
     if (fields) {
@@ -851,7 +810,6 @@ const getGigById = async (req, res, next) => {
       }
     }
 
-    // FIXED: Safe populate configuration
     let populateOptions = [];
     if (populate === 'true' || populate === true) {
       populateOptions = [
@@ -867,11 +825,11 @@ const getGigById = async (req, res, next) => {
         },
         {
           path: 'createdBy',
-          select: 'username fullName avatar rating joinDate'
+          select: 'name email picture role createdAt'
         },
         {
           path: 'assignedTo',
-          select: 'username fullName avatar rating level totalSales'
+          select: 'name email picture role'
         }
       ];
     }
@@ -889,7 +847,6 @@ const getGigById = async (req, res, next) => {
       });
     }
 
-    // Additional access checks
     if (gig.visibility !== 'public' && userRole !== 'admin') {
       const isOwner = gig.createdBy._id.toString() === userId?.toString();
       const isAssigned = gig.assignedTo && gig.assignedTo._id.toString() === userId?.toString();
@@ -904,17 +861,14 @@ const getGigById = async (req, res, next) => {
       }
     }
 
-    // Log access to inactive gigs
     if (gig.status !== 'open') {
       logAudit('VIEW_INACTIVE', 'GIG', gig._id, userId, {
         status: gig.status
       });
     }
 
-    // FIXED: Convert gig to object safely
     const safeGig = gig.toObject ? gig.toObject() : gig;
     
-    // Remove sensitive data
     if (safeGig.createdBy) {
       delete safeGig.createdBy.email;
       delete safeGig.createdBy.phone;
@@ -933,15 +887,12 @@ const getGigById = async (req, res, next) => {
     delete safeGig.deletedBy;
     delete safeGig.version;
 
-    // Handle date fields safely
     ['createdAt', 'updatedAt', 'deadline'].forEach(dateField => {
       if (safeGig[dateField]) {
         try {
-          // Ensure it's a valid date
           if (safeGig[dateField] instanceof Date) {
             safeGig[dateField] = safeGig[dateField].toISOString();
           } else if (typeof safeGig[dateField] === 'string') {
-            // Already a string, keep as is
           } else if (safeGig[dateField].toISOString) {
             safeGig[dateField] = safeGig[dateField].toISOString();
           }
@@ -952,7 +903,6 @@ const getGigById = async (req, res, next) => {
       }
     });
 
-    // Limit communication history for non-participants
     if (safeGig.communicationHistory && 
         userId !== safeGig.createdBy._id.toString() && 
         userId !== safeGig.assignedTo?._id?.toString() && 
@@ -973,7 +923,6 @@ const getGigById = async (req, res, next) => {
   } catch (error) {
     console.error('Error in getGigById:', error);
     
-    // Return a more helpful error message
     const errorMessage = error.message || 'Internal server error';
     const errorCode = error.name === 'CastError' ? 'INVALID_ID_FORMAT' : 'SERVER_ERROR';
     
@@ -993,7 +942,7 @@ const getGigById = async (req, res, next) => {
   }
 };
 
-// Update Gig with Security
+// Update Gig
 const updateGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1021,7 +970,6 @@ const updateGig = async (req, res, next) => {
       });
     }
 
-    // Check if gig is deleted
     if (gig.deletedAt) {
       return res.status(400).json({
         success: false,
@@ -1033,9 +981,9 @@ const updateGig = async (req, res, next) => {
 
     const isOwner = gig.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
-    const isAssignedSeller = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
     
-    if (!isOwner && !isAdmin && !isAssignedSeller) {
+    if (!isOwner && !isAdmin && !isAssigned) {
       logAudit('UNAUTHORIZED_UPDATE', 'GIG', id, req.user._id);
       return res.status(403).json({
         success: false,
@@ -1047,7 +995,6 @@ const updateGig = async (req, res, next) => {
 
     const sanitizedData = sanitizeGigInput(req.body);
     
-    // Restrict field updates based on role
     if (!isAdmin) {
       delete sanitizedData.status;
       delete sanitizedData.assignedTo;
@@ -1056,13 +1003,12 @@ const updateGig = async (req, res, next) => {
       delete sanitizedData.depositPaid;
       delete sanitizedData.rating;
       delete sanitizedData.clientReview;
-      delete sanitizedData.sellerReview;
+      delete sanitizedData.bidderReview;
       delete sanitizedData.disputeStatus;
       delete sanitizedData.disputeReason;
-      delete sanitizedData.selectedProposal;
+      delete sanitizedData.selectedBid;
     }
 
-    // Validate category if changed
     if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
       const category = await Category.findOne({ 
         _id: sanitizedData.projectCategory 
@@ -1078,7 +1024,6 @@ const updateGig = async (req, res, next) => {
       }
     }
 
-    // Validate subcategory if changed
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory,
@@ -1095,7 +1040,6 @@ const updateGig = async (req, res, next) => {
       }
     }
 
-    // Optimistic concurrency control
     const currentVersion = sanitizedData.version;
     delete sanitizedData.version;
 
@@ -1105,7 +1049,6 @@ const updateGig = async (req, res, next) => {
       $inc: { version: 1 }
     };
 
-    // Process uploaded files
     if (req.files && req.files.length > 0) {
       const attachments = gig.attachments || [];
       const files = gig.files || [];
@@ -1136,7 +1079,7 @@ const updateGig = async (req, res, next) => {
         runValidators: true,
         context: 'query'
       }
-    ).populate('projectCategory', 'name slug').populate('createdBy', 'username fullName');
+    ).populate('projectCategory', 'name slug').populate('createdBy', 'name email');
 
     if (!updatedGig) {
       if (currentVersion) {
@@ -1206,7 +1149,7 @@ const updateGig = async (req, res, next) => {
   }
 };
 
-// gig.controller.js - REPLACE deleteGig function starting from line 510:
+// Delete Gig
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1235,7 +1178,6 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
-    // Check if gig is already deleted
     if (gig.deletedAt) {
       return res.status(400).json({
         success: false,
@@ -1271,12 +1213,10 @@ const deleteGig = async (req, res, next) => {
     const now = new Date();
     
     if (permanent === 'true' && isAdmin) {
-      // Decrement category count before deletion if gig was open
       if (gig.status === 'open') {
         await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
       }
       
-      // Permanent delete - bypass middleware
       result = await Gig.deleteOne({ _id: id });
       
       logAudit('PERMANENT_DELETE', 'GIG', id, req.user._id, {
@@ -1295,7 +1235,6 @@ const deleteGig = async (req, res, next) => {
         responseTime: `${responseTime}ms`
       });
     } else {
-      // Soft delete - update without triggering validations
       result = await Gig.findByIdAndUpdate(
         id,
         {
@@ -1305,12 +1244,11 @@ const deleteGig = async (req, res, next) => {
           lastUpdatedBy: req.user._id
         },
         {
-          runValidators: false, // Disable validation
+          runValidators: false,
           new: true
         }
       );
       
-      // Decrement category count for soft-deleted open gigs
       if (gig.status === 'open') {
         await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
       }
@@ -1395,7 +1333,6 @@ const restoreGig = async (req, res, next) => {
       });
     }
 
-    // Check if category exists
     if (gig.projectCategory) {
       const category = await Category.findById(gig.projectCategory);
       if (!category) {
@@ -1439,8 +1376,8 @@ const restoreGig = async (req, res, next) => {
   }
 };
 
-// Submit Proposal
-const submitProposal = async (req, res, next) => {
+// Submit Bid (Any authenticated user can bid)
+const submitBid = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
@@ -1466,7 +1403,7 @@ const submitProposal = async (req, res, next) => {
     if (!gig) {
       return res.status(404).json({
         success: false,
-        message: 'Gig not found or not open for proposals',
+        message: 'Gig not found or not open for bids',
         code: 'GIG_NOT_FOUND',
         requestId
       });
@@ -1485,25 +1422,25 @@ const submitProposal = async (req, res, next) => {
     if (gig.createdBy.toString() === req.user._id.toString()) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot submit proposal to your own gig',
-        code: 'SELF_PROPOSAL',
+        message: 'Cannot submit bid to your own gig',
+        code: 'SELF_BID',
         requestId
       });
     }
 
-    // Check if seller has already submitted a proposal
-    const existingProposal = gig.proposals.find(p => p.seller.toString() === req.user._id.toString());
-    if (existingProposal) {
+    // Check if user has already submitted a bid
+    const existingBid = gig.bids.find(b => b.bidder.toString() === req.user._id.toString());
+    if (existingBid) {
       return res.status(400).json({
         success: false,
-        message: 'You have already submitted a proposal for this gig',
-        code: 'DUPLICATE_PROPOSAL',
+        message: 'You have already submitted a bid for this gig',
+        code: 'DUPLICATE_BID',
         requestId
       });
     }
 
-    const newProposal = {
-      seller: req.user._id,
+    const newBid = {
+      bidder: req.user._id,
       proposal: sanitizeText(proposal),
       price: parseFloat(price),
       deliveryTime: parseInt(deliveryTime),
@@ -1512,28 +1449,28 @@ const submitProposal = async (req, res, next) => {
       submittedAt: new Date()
     };
 
-    gig.proposals.push(newProposal);
+    gig.bids.push(newBid);
     gig.lastUpdatedBy = req.user._id;
     await gig.save();
 
-    logAudit('SUBMIT_PROPOSAL', 'GIG', id, req.user._id, {
-      price: newProposal.price,
-      deliveryTime: newProposal.deliveryTime
+    logAudit('SUBMIT_BID', 'GIG', id, req.user._id, {
+      price: newBid.price,
+      deliveryTime: newBid.deliveryTime
     });
 
     const responseTime = Date.now() - startTime;
     
     res.json({
       success: true,
-      message: 'Proposal submitted successfully',
-      data: newProposal,
+      message: 'Bid submitted successfully',
+      data: newBid,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
-    logAudit('ERROR', 'GIG', 'SUBMIT_PROPOSAL', req.user._id, { 
+    logAudit('ERROR', 'GIG', 'SUBMIT_BID', req.user._id, { 
       id, 
       error: error.message 
     });
@@ -1542,13 +1479,11 @@ const submitProposal = async (req, res, next) => {
 };
 
 // Get Gig Statistics
-// In gig.controller.js - replace the entire getGigStats function with this:
 const getGigStats = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    // Check authentication
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -1558,8 +1493,7 @@ const getGigStats = async (req, res, next) => {
       });
     }
 
-    // Check if user has permission to view stats
-    if (!['admin', 'seller', 'user'].includes(req.user?.role)) {
+    if (!['admin', 'user'].includes(req.user?.role)) {
       return res.status(403).json({
         success: false,
         message: 'Access required for statistics',
@@ -1568,22 +1502,17 @@ const getGigStats = async (req, res, next) => {
       });
     }
 
-    // Build filter based on user role
     let filter = { deletedAt: null };
     
-    if (req.user.role === 'seller') {
+    if (req.user.role === 'user') {
       filter = {
         $or: [
           { createdBy: req.user._id, deletedAt: null },
           { assignedTo: req.user._id, deletedAt: null }
         ]
       };
-    } else if (req.user.role === 'user') {
-      filter = { createdBy: req.user._id, deletedAt: null };
     }
-    // Admin can see all gigs (already set to { deletedAt: null })
 
-    // Execute aggregation
     const stats = await Gig.aggregate([
       { $match: filter },
       {
@@ -1601,8 +1530,8 @@ const getGigStats = async (req, res, next) => {
                 closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
                 totalBudget: { $sum: '$budget' },
                 avgBudget: { $avg: '$budget' },
-                totalProposals: { $sum: { $size: '$proposals' } },
-                avgProposalsPerGig: { $avg: { $size: '$proposals' } }
+                totalBids: { $sum: { $size: '$bids' } },
+                avgBidsPerGig: { $avg: { $size: '$bids' } }
               }
             }
           ],
@@ -1613,7 +1542,7 @@ const getGigStats = async (req, res, next) => {
                 _id: '$projectCategory',
                 count: { $sum: 1 },
                 avgBudget: { $avg: '$budget' },
-                totalProposals: { $sum: { $size: '$proposals' } },
+                totalBids: { $sum: { $size: '$bids' } },
                 maxBudget: { $max: '$budget' },
                 minBudget: { $min: '$budget' }
               }
@@ -1649,7 +1578,7 @@ const getGigStats = async (req, res, next) => {
               $project: {
                 title: 1,
                 budget: 1,
-                proposalsCount: { $size: '$proposals' },
+                bidsCount: { $size: '$bids' },
                 slug: 1,
                 projectCategory: 1
               }
@@ -1676,19 +1605,19 @@ const getGigStats = async (req, res, next) => {
                 default: "100000+",
                 output: {
                   count: { $sum: 1 },
-                  avgProposals: { $avg: { $size: '$proposals' } }
+                  avgBids: { $avg: { $size: '$bids' } }
                 }
               }
             }
           ],
-          proposalStats: [
-            { $unwind: { path: '$proposals', preserveNullAndEmptyArrays: true } },
+          bidStats: [
+            { $unwind: { path: '$bids', preserveNullAndEmptyArrays: true } },
             {
               $group: {
-                _id: '$proposals.status',
+                _id: '$bids.status',
                 count: { $sum: 1 },
-                avgPrice: { $avg: '$proposals.price' },
-                avgDeliveryTime: { $avg: '$proposals.deliveryTime' }
+                avgPrice: { $avg: '$bids.price' },
+                avgDeliveryTime: { $avg: '$bids.deliveryTime' }
               }
             }
           ]
@@ -1696,7 +1625,6 @@ const getGigStats = async (req, res, next) => {
       }
     ]);
 
-    // Handle empty results - ensure we always return valid structure
     const sanitizedStats = stats[0] || {
       overview: [{
         totalGigs: 0,
@@ -1708,8 +1636,8 @@ const getGigStats = async (req, res, next) => {
         closedGigs: 0,
         totalBudget: 0,
         avgBudget: 0,
-        totalProposals: 0,
-        avgProposalsPerGig: 0
+        totalBids: 0,
+        avgBidsPerGig: 0
       }],
       byCategory: [],
       byStatus: [],
@@ -1717,10 +1645,9 @@ const getGigStats = async (req, res, next) => {
       topGigs: [],
       growth: [],
       budgetDistribution: [],
-      proposalStats: []
+      bidStats: []
     };
 
-    // Ensure overview array has at least one item
     if (!sanitizedStats.overview || sanitizedStats.overview.length === 0) {
       sanitizedStats.overview = [{
         totalGigs: 0,
@@ -1732,8 +1659,8 @@ const getGigStats = async (req, res, next) => {
         closedGigs: 0,
         totalBudget: 0,
         avgBudget: 0,
-        totalProposals: 0,
-        avgProposalsPerGig: 0
+        totalBids: 0,
+        avgBidsPerGig: 0
       }];
     }
 
@@ -1751,7 +1678,6 @@ const getGigStats = async (req, res, next) => {
   } catch (error) {
     console.error('Error in getGigStats:', error);
     
-    // Even on error, return empty stats structure
     const responseTime = Date.now() - startTime;
     
     res.status(500).json({
@@ -1767,8 +1693,8 @@ const getGigStats = async (req, res, next) => {
           closedGigs: 0,
           totalBudget: 0,
           avgBudget: 0,
-          totalProposals: 0,
-          avgProposalsPerGig: 0
+          totalBids: 0,
+          avgBidsPerGig: 0
         }],
         byCategory: [],
         byStatus: [],
@@ -1776,7 +1702,7 @@ const getGigStats = async (req, res, next) => {
         topGigs: [],
         growth: [],
         budgetDistribution: [],
-        proposalStats: []
+        bidStats: []
       },
       message: 'Error fetching statistics',
       error: error.message,
@@ -1819,7 +1745,7 @@ const exportGigs = async (req, res, next) => {
     const gigs = await Gig.find(filter)
       .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -communicationHistory')
       .populate('projectCategory', 'name slug')
-      .populate('createdBy', 'username fullName')
+      .populate('createdBy', 'name email')
       .lean();
 
     if (format === 'csv') {
@@ -1827,7 +1753,7 @@ const exportGigs = async (req, res, next) => {
         'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
         'Category', 'Status', 'Urgency', 'Visibility', 'Created By',
         'Assigned To', 'Created At', 'Updated At', 'Deadline',
-        'Proposals Count', 'Skills Required', 'Deliverables'
+        'Bids Count', 'Skills Required', 'Deliverables'
       ];
 
       const csvRows = gigs.map(gig => [
@@ -1841,12 +1767,12 @@ const exportGigs = async (req, res, next) => {
         gig.status || 'open',
         gig.urgency || 'medium',
         gig.visibility || 'public',
-        gig.createdBy?.username || '',
-        gig.assignedTo?.username || '',
+        gig.createdBy?.name || '',
+        gig.assignedTo?.name || '',
         new Date(gig.createdAt).toISOString(),
         new Date(gig.updatedAt).toISOString(),
         gig.deadline ? new Date(gig.deadline).toISOString() : '',
-        gig.proposals?.length || 0,
+        gig.bids?.length || 0,
         `"${(gig.skillsRequired || []).join(', ').replace(/"/g, '""')}"`,
         `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`
       ]);
@@ -1895,7 +1821,7 @@ module.exports = {
   updateGig,
   deleteGig,
   restoreGig,
-  submitProposal,
+  submitBid,
   getGigStats,
   exportGigs,
 };

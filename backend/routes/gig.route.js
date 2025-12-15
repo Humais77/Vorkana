@@ -10,7 +10,7 @@ const {
   updateGig,
   deleteGig,
   restoreGig,
-  submitProposal,
+  submitBid,
   getGigStats,
   searchGigs,
   exportGigs
@@ -19,17 +19,16 @@ const {
 const { 
   validateCreate, 
   validateUpdate, 
-  validateProposal,
+  validateBid,
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const { protect, sellerOnly, userOnly, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
 
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../public/uploads');
     
-    // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -37,7 +36,6 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename with timestamp and random bytes
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname).toLowerCase();
     const filename = `${file.fieldname}-${uniqueSuffix}${ext}`;
@@ -45,21 +43,18 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter for security
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|pdf|doc|docx|zip|rar/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
   const mimetype = allowedTypes.test(file.mimetype);
   
   if (extname && mimetype) {
-    // Additional security checks
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 10 * 1024 * 1024;
     
     if (file.size > maxSize) {
       return cb(new Error('File size exceeds 10MB limit'), false);
     }
     
-    // Check for potential malicious files
     const originalName = file.originalname.toLowerCase();
     if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
       return cb(new Error('Invalid filename'), false);
@@ -74,13 +69,24 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB per file
-    files: 5 // Maximum 5 files per upload
+    fileSize: 10 * 1024 * 1024,
+    files: 10
   },
   fileFilter: fileFilter
 });
 
-// Error handler for multer
+const handleMultipleFileFields = (req, res, next) => {
+  upload.fields([
+    { name: 'attachments', maxCount: 5 },
+    { name: 'files', maxCount: 5 }
+  ])(req, res, (err) => {
+    if (err) {
+      return handleMulterError(err, req, res, next);
+    }
+    next();
+  });
+};
+
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -93,14 +99,14 @@ const handleMulterError = (err, req, res, next) => {
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({
         success: false,
-        message: 'Too many files. Maximum 5 files allowed.',
+        message: 'Too many files. Maximum 10 files allowed.',
         code: 'TOO_MANY_FILES'
       });
     }
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
       return res.status(400).json({
         success: false,
-        message: 'Unexpected file field',
+        message: 'Unexpected file field. Only "attachments" and "files" fields are allowed.',
         code: 'UNEXPECTED_FILE_FIELD'
       });
     }
@@ -133,12 +139,12 @@ const handleMulterError = (err, req, res, next) => {
   next(err);
 };
 
-// Rate limiting middleware (you can add this separately)
+// Rate limiting
 const rateLimit = require('express-rate-limit');
 
 const gigLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: {
     success: false,
     message: 'Too many requests, please try again later.',
@@ -148,13 +154,13 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const proposalLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // limit each IP to 20 proposal submissions per hour
+const bidLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
   message: {
     success: false,
-    message: 'Too many proposal submissions, please try again later.',
-    code: 'PROPOSAL_RATE_LIMIT_EXCEEDED'
+    message: 'Too many bid submissions, please try again later.',
+    code: 'BID_RATE_LIMIT_EXCEEDED'
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -165,12 +171,20 @@ router.get('/', optionalAuth, validateQuery, getGigs);
 router.get('/search', optionalAuth, validateQuery, searchGigs);
 router.get('/:id', optionalAuth, getGigById);
 
-// Protected routes
+// Protected routes (all authenticated users)
 router.get('/stats', protect, gigLimiter, getGigStats);
-router.post('/', protect, gigLimiter, upload.array('attachments', 5), handleMulterError, validateCreate, createGig);
-router.post('/:id/proposals', protect, sellerOnly, proposalLimiter, validateProposal, submitProposal);
-router.put('/:id', protect, gigLimiter, upload.array('attachments', 5), handleMulterError, validateUpdate, updateGig);
+router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
+
+// Submit bid (any authenticated user can bid)
+router.post('/:id/bids', protect, bidLimiter, validateBid, submitBid);
+
+// Update gig (creator or admin)
+router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+
+// Delete gig (creator or admin)
 router.delete('/:id', protect, gigLimiter, deleteGig);
+
+// Admin routes
 router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
 router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
 

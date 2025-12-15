@@ -274,8 +274,8 @@ const updateSchema = Joi.object({
   abortEarly: false 
 });
 
-// Proposal schema
-const proposalSchema = Joi.object({
+// Bid schema
+const bidSchema = Joi.object({
   proposal: Joi.string().trim().min(20).max(2000).required()
     .messages({
       'string.empty': 'Proposal is required',
@@ -308,23 +308,19 @@ const proposalSchema = Joi.object({
   abortEarly: false 
 });
 
-// Query schema for get requests
+// Query schema
 const querySchema = Joi.object({
-  // Pagination
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
   offset: Joi.number().integer().min(0),
   
-  // Sorting
   sort: Joi.string().valid('budget', 'createdAt', 'updatedAt', 'deadline', 'urgency', 'title').default('createdAt'),
   order: Joi.string().valid('asc', 'desc', '1', '-1').default('desc'),
   sortBy: Joi.string(),
   
-  // Search
   search: Joi.string().trim().max(100),
   q: Joi.string().trim().max(100),
   
-  // Filtering
   title: Joi.string().trim().max(100),
   slug: Joi.string().trim().max(100),
   projectCategory: objectId,
@@ -340,7 +336,7 @@ const querySchema = Joi.object({
   paymentStatus: Joi.string().valid('pending', 'partial', 'completed', 'refunded', 'disputed'),
   disputeStatus: Joi.string().valid('none', 'open', 'resolved', 'escalated'),
   hasAttachments: Joi.boolean(),
-  hasProposals: Joi.boolean(),
+  hasBids: Joi.boolean(),
   hasMilestones: Joi.boolean(),
   skillsRequired: Joi.string().max(500),
   createdAfter: Joi.date().iso(),
@@ -352,15 +348,14 @@ const querySchema = Joi.object({
   ids: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   excludeIds: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   
-  // Data control
   fields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   excludeFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   populate: Joi.boolean().default(true),
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   showAll: Joi.boolean(),
   includeCategory: Joi.boolean().default(true),
-  includeClient: Joi.boolean().default(true),
-  includeSeller: Joi.boolean().default(true),
+  includeCreator: Joi.boolean().default(true),
+  includeAssignee: Joi.boolean().default(true),
   lean: Joi.boolean().default(true),
   cache: Joi.boolean().default(false),
 }).options({ 
@@ -438,9 +433,9 @@ const validateUpdate = (req, res, next) => {
   }
 };
 
-const validateProposal = (req, res, next) => {
+const validateBid = (req, res, next) => {
   try {
-    const { error, value } = proposalSchema.validate(req.body, { 
+    const { error, value } = bidSchema.validate(req.body, { 
       abortEarly: false,
       allowUnknown: false 
     });
@@ -454,9 +449,9 @@ const validateProposal = (req, res, next) => {
       
       return res.status(400).json({
         success: false,
-        message: 'Proposal validation failed',
+        message: 'Bid validation failed',
         errors: messages,
-        code: 'PROPOSAL_VALIDATION_ERROR',
+        code: 'BID_VALIDATION_ERROR',
         timestamp: new Date().toISOString()
       });
     }
@@ -496,20 +491,17 @@ const validateQuery = (req, res, next) => {
       });
     }
     
-    // Handle sorting
     if (value.sortBy) {
       value.sort = value.sortBy;
       delete value.sortBy;
     }
     
-    // Convert order string to number for MongoDB
     if (value.order === 'asc' || value.order === '1') {
       value.order = 1;
     } else if (value.order === 'desc' || value.order === '-1') {
       value.order = -1;
     }
     
-    // Security: Limit max results for non-admin users
     if (!req.user?.isAdmin && value.limit > 50) {
       value.limit = 50;
     }
@@ -528,11 +520,11 @@ const validateQuery = (req, res, next) => {
 module.exports = {
   createSchema,
   updateSchema,
-  proposalSchema,
+  bidSchema,
   querySchema,
   validateCreate,
   validateUpdate,
-  validateProposal,
+  validateBid,
   validateQuery,
   objectId,
 };
