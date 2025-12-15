@@ -2,8 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { useSwitchRole } from "../hooks/useUser";
-import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Store, Menu, X, Home, Briefcase, AlertCircle, Check, ArrowRight } from "lucide-react";
+import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, AlertCircle, Check, ArrowRight } from "lucide-react";
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,19 +12,17 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [showSearch, setShowSearch] = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [switchDialogOpen, setSwitchDialogOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   const { isAuthenticated, user, loading } = useAuthStore();
   const logoutMutation = useLogout();
-  const switchRoleMutation = useSwitchRole();
 
   const isHomePage = location.pathname === "/";
 
   useEffect(() => {
-    if (mobileMenuOpen || switchDialogOpen) {
+    if (mobileMenuOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -34,7 +31,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [mobileMenuOpen, switchDialogOpen]);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -67,7 +64,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     }
 
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHomePage, menuOpen, exploreOpen]); // Added dependencies
+  }, [isHomePage, menuOpen, exploreOpen]);
 
   useEffect(() => {
     if (!isHomePage) {
@@ -90,24 +87,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     }
   };
 
-  const handleSwitchToSelling = async () => {
-    try {
-      await switchRoleMutation.mutateAsync('seller');
-      setSwitchDialogOpen(false);
-      setMenuOpen(false);
-      setMobileMenuOpen(false);
-      navigate('/seller/dashboard');
-    } catch (error) {
-      console.error("Role switch failed:", error);
-    }
-  };
-
   const handleMobileMenuClick = () => {
     setMobileMenuOpen(!mobileMenuOpen);
-  };
-
-  const openSwitchDialog = () => {
-    setSwitchDialogOpen(true);
   };
 
   const iconRotate = {
@@ -131,12 +112,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     hidden: { opacity: 0, y: -10 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } },
     exit: { opacity: 0, y: -10, transition: { duration: 0.15, ease: "easeIn" } }
-  };
-
-  const modalAnimation = {
-    hidden: { opacity: 0, scale: 0.95 },
-    visible: { opacity: 1, scale: 1, transition: { duration: 0.2, ease: "easeOut" } },
-    exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15, ease: "easeIn" } }
   };
 
   if (loading) {
@@ -301,26 +276,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 </div>
               )}
 
-              {isAuthenticated && user?.role === 'user' && (
-                <button
-                  onClick={openSwitchDialog}
-                  className="hidden lg:flex items-center space-x-2 px-4 py-2.5 text-green-600 hover:text-green-700 transition-all duration-200"
-                >
-                  <Store className="w-5 h-5" />
-                  <span className="font-medium">Switch to Selling</span>
-                </button>
-              )}
-
-              {isAuthenticated && user?.role === 'seller' && (
-                <Link
-                  to="/seller/dashboard"
-                  className="hidden lg:flex items-center space-x-2 px-4 py-2.5 text-green-600 hover:text-green-700 transition-all duration-200"
-                >
-                  <Store className="w-5 h-5" />
-                  <span className="font-medium">Seller Dashboard</span>
-                </Link>
-              )}
-
               {isAuthenticated ? (
                 <div className="relative">
                   <button
@@ -347,7 +302,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <div className="text-sm text-gray-500">{user?.email}</div>
                           <div className="mt-1">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              {user?.role === 'seller' ? 'Seller' : 'User'}
+                              User
                             </span>
                           </div>
                         </div>
@@ -379,16 +334,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <Settings className="w-4 h-4" />
                             <span>Settings</span>
                           </Link>
-
-                          {user?.role === 'user' && (
-                            <button
-                              onClick={openSwitchDialog}
-                              className="w-full flex items-center space-x-3 px-3 py-2.5 text-green-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                            >
-                              <Store className="w-4 h-4" />
-                              <span>Switch to Selling</span>
-                            </button>
-                          )}
 
                           <button
                             onClick={handleLogout}
@@ -462,7 +407,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <div className="text-sm text-gray-500 truncate">{user?.email}</div>
                             <div className="mt-1">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                {user?.role === 'seller' ? 'Seller' : 'User'}
+                                User
                               </span>
                             </div>
                           </div>
@@ -589,30 +534,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <span className="font-medium text-gray-800">Settings</span>
                         </Link>
 
-                        {user?.role === 'user' && (
-                          <button
-                            onClick={() => {
-                              setMobileMenuOpen(false);
-                              setSwitchDialogOpen(true);
-                            }}
-                            className="w-full flex items-center space-x-3 px-3 py-3.5 text-green-600 hover:bg-gray-50 transition-all duration-200"
-                          >
-                            <Store className="w-5 h-5" />
-                            <span className="font-medium">Switch to Selling</span>
-                          </button>
-                        )}
-
-                        {user?.role === 'seller' && (
-                          <Link
-                            to="/seller/dashboard"
-                            onClick={() => setMobileMenuOpen(false)}
-                            className="flex items-center space-x-3 px-3 py-3.5 text-green-600 hover:bg-gray-50 transition-all duration-200"
-                          >
-                            <Store className="w-5 h-5" />
-                            <span className="font-medium">Seller Dashboard</span>
-                          </Link>
-                        )}
-
                         <button
                           onClick={handleLogout}
                           className="w-full flex items-center space-x-3 px-3 py-3.5 text-gray-800 hover:bg-gray-50 transition-all duration-200"
@@ -638,124 +559,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
           )}
         </AnimatePresence>
       </nav>
-
-      <AnimatePresence>
-        {switchDialogOpen && (
-          <>
-            <motion.div
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={overlayAnimation}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-            >
-              <motion.div
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={modalAnimation}
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
-              >
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">Switch to Seller Account</h3>
-                    <button
-                      onClick={() => setSwitchDialogOpen(false)}
-                      className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-                      <AlertCircle className="w-5 h-5 text-gray-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm text-gray-800 font-medium">
-                          Important: This action cannot be undone
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Once you switch to a seller account, you cannot switch back to a user account.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-semibold text-gray-900">Seller Benefits:</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-gray-600" />
-                          <span className="text-sm text-gray-700">Create and sell services</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-gray-600" />
-                          <span className="text-sm text-gray-700">Earn money from your skills</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-gray-600" />
-                          <span className="text-sm text-gray-700">Build your professional portfolio</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-gray-600" />
-                          <span className="text-sm text-gray-700">Access seller tools and analytics</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-semibold text-gray-900">Please Note:</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-start gap-2">
-                          <div className="w-4 h-4 text-gray-600 mt-0.5">•</div>
-                          <span className="text-sm text-gray-700">You cannot switch back to user account</span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <div className="w-4 h-4 text-gray-600 mt-0.5">•</div>
-                          <span className="text-sm text-gray-700">All existing user features will be replaced with seller features</span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <div className="w-4 h-4 text-gray-600 mt-0.5">•</div>
-                          <span className="text-sm text-gray-700">You'll need to set up your seller profile</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3 pt-4">
-                      <button
-                        onClick={() => setSwitchDialogOpen(false)}
-                        className="flex-1 py-3 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSwitchToSelling}
-                        disabled={switchRoleMutation.isPending}
-                        className="flex-1 py-3 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        {switchRoleMutation.isPending ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Switching...
-                          </>
-                        ) : (
-                          <>
-                            <ArrowRight className="w-4 h-4" />
-                            Switch to Seller
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-gray-500 text-center pt-2">
-                      By proceeding, you confirm that you understand this change is permanent.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       {(menuOpen || exploreOpen) && (
         <div

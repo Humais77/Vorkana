@@ -11,8 +11,6 @@ import {
   Tag,
   CheckCircle,
   Loader2,
-  ArrowRightLeft,
-  AlertTriangle,
   X,
   Award,
   User,
@@ -32,7 +30,6 @@ import {
   extractGigsFromResponse
 } from '../../hooks/useGigs';
 import { useMyServices, useDeleteService } from '../../hooks/useServices';
-import { useSwitchRole } from '../../hooks/useUser';
 import { toast } from 'react-hot-toast';
 import ProfileSidebar from '../../components/ProfileSidebar';
 
@@ -40,7 +37,6 @@ const Profile = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
-  const switchRoleMutation = useSwitchRole();
   
   // Parse tab from URL
   const searchParams = new URLSearchParams(location.search);
@@ -54,10 +50,8 @@ const Profile = () => {
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [activeTab, setActiveTab] = useState(urlTab || 'services');
   const [viewMode, setViewMode] = useState('grid');
-  const [showSwitchDialog, setShowSwitchDialog] = useState(false);
-  const [switchDirection, setSwitchDirection] = useState('');
   
-  // Use services hook for seller
+  // Use services hook
   const { 
     data: servicesResponse, 
     isLoading: servicesLoading, 
@@ -70,10 +64,20 @@ const Profile = () => {
     order: 'desc'
   });
 
-  const services = useMemo(() => 
-    servicesResponse?.data || servicesResponse?.services || [], 
-    [servicesResponse]
-  );
+  const services = useMemo(() => {
+  if (!servicesResponse) return [];
+  
+  // Try different response formats
+  if (Array.isArray(servicesResponse)) {
+    return servicesResponse;
+  } else if (servicesResponse.data && Array.isArray(servicesResponse.data)) {
+    return servicesResponse.data;
+  } else if (servicesResponse.services && Array.isArray(servicesResponse.services)) {
+    return servicesResponse.services;
+  }
+  
+  return [];
+}, [servicesResponse]);
 
   const { 
     data: gigsResponse, 
@@ -257,32 +261,6 @@ const Profile = () => {
     // TODO: Implement service status update
   };
 
-  const handleSwitchRole = async () => {
-    try {
-      const newRole = switchDirection === 'toUser' ? 'user' : 'seller';
-      await switchRoleMutation.mutateAsync(newRole);
-      setShowSwitchDialog(false);
-      
-      toast.success(`Successfully switched to ${newRole} account`);
-      
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    } catch (error) {
-      toast.error('Failed to switch role');
-    }
-  };
-
-  const openSwitchToUserDialog = () => {
-    setSwitchDirection('toUser');
-    setShowSwitchDialog(true);
-  };
-
-  const openSwitchToSellerDialog = () => {
-    setSwitchDirection('toSeller');
-    setShowSwitchDialog(true);
-  };
-
   const filterGigs = useCallback((gigsToFilter) => {
     if (statusFilter === 'all') return gigsToFilter;
     return gigsToFilter.filter(gig => gig.status === statusFilter);
@@ -354,93 +332,53 @@ const Profile = () => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Left Sidebar - Profile Info */}
           <div className="lg:col-span-1">
-            <ProfileSidebar 
-              onSwitchToUser={openSwitchToUserDialog}
-              onSwitchToSeller={openSwitchToSellerDialog}
-              switchRoleMutation={switchRoleMutation}
-            />
+            <ProfileSidebar />
           </div>
 
           <div className="lg:col-span-3">
-            {user?.role === 'seller' ? (
-              <SellerDashboard 
-                activeTab={activeTab}
-                handleTabChange={handleTabChange}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                selectedGigs={selectedGigs}
-                selectedServices={selectedServices}
-                allSelected={allSelected}
-                allServicesSelected={allServicesSelected}
-                statusFilter={statusFilter}
-                serviceStatusFilter={serviceStatusFilter}
-                filteredGigs={filteredGigs}
-                filteredServices={filteredServices}
-                servicesLoading={servicesLoading}
-                gigsLoading={gigsLoading}
-                stats={stats}
-                handleSelectAll={handleSelectAll}
-                handleSelectAllServices={handleSelectAllServices}
-                handleSelectGig={handleSelectGig}
-                handleSelectService={handleSelectService}
-                handleUpdateGigStatus={handleUpdateGigStatus}
-                handleUpdateServiceStatus={handleUpdateServiceStatus}
-                handleDeleteGigs={handleDeleteGigs}
-                handleDeleteServices={handleDeleteServices}
-                handleGigClick={handleGigClick}
-                handleServiceClick={handleServiceClick}
-                handleCreateGig={handleCreateGig}
-                handleCreateService={handleCreateService}
-                setStatusFilter={setStatusFilter}
-                setServiceStatusFilter={setServiceStatusFilter}
-                getStatusColor={getStatusColor}
-                getStatusIcon={getStatusIcon}
-                deleteMultipleGigsMutation={deleteMultipleGigsMutation}
-                updateMultipleGigsStatusMutation={updateMultipleGigsStatusMutation}
-              />
-            ) : (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center">
-                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <User className="w-10 h-10 text-blue-600" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">You're in User Mode</h3>
-                <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                  As a user, you can browse and purchase services from sellers. 
-                  Switch to seller mode to create and manage your own services.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button
-                    onClick={openSwitchToSellerDialog}
-                    className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-                  >
-                    <ArrowRightLeft className="w-5 h-5 mr-2" />
-                    Switch to Seller
-                  </button>
-                  <Link
-                    to="/services"
-                    className="inline-flex items-center px-5 py-3 border-2 border-blue-200 text-blue-600 rounded-xl font-medium hover:border-blue-300 hover:bg-blue-50 transition-colors"
-                  >
-                    Browse Services
-                  </Link>
-                </div>
-              </div>
-            )}
+            <Dashboard 
+              activeTab={activeTab}
+              handleTabChange={handleTabChange}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              selectedGigs={selectedGigs}
+              selectedServices={selectedServices}
+              allSelected={allSelected}
+              allServicesSelected={allServicesSelected}
+              statusFilter={statusFilter}
+              serviceStatusFilter={serviceStatusFilter}
+              filteredGigs={filteredGigs}
+              filteredServices={filteredServices}
+              servicesLoading={servicesLoading}
+              gigsLoading={gigsLoading}
+              stats={stats}
+              handleSelectAll={handleSelectAll}
+              handleSelectAllServices={handleSelectAllServices}
+              handleSelectGig={handleSelectGig}
+              handleSelectService={handleSelectService}
+              handleUpdateGigStatus={handleUpdateGigStatus}
+              handleUpdateServiceStatus={handleUpdateServiceStatus}
+              handleDeleteGigs={handleDeleteGigs}
+              handleDeleteServices={handleDeleteServices}
+              handleGigClick={handleGigClick}
+              handleServiceClick={handleServiceClick}
+              handleCreateGig={handleCreateGig}
+              handleCreateService={handleCreateService}
+              setStatusFilter={setStatusFilter}
+              setServiceStatusFilter={setServiceStatusFilter}
+              getStatusColor={getStatusColor}
+              getStatusIcon={getStatusIcon}
+              deleteMultipleGigsMutation={deleteMultipleGigsMutation}
+              updateMultipleGigsStatusMutation={updateMultipleGigsStatusMutation}
+            />
           </div>
         </div>
       </div>
-
-      <RoleSwitchDialog 
-        showSwitchDialog={showSwitchDialog}
-        setShowSwitchDialog={setShowSwitchDialog}
-        switchDirection={switchDirection}
-        handleSwitchRole={handleSwitchRole}
-        switchRoleMutation={switchRoleMutation}
-      />
     </div>
   );
 };
 
-const SellerDashboard = ({
+const Dashboard = ({
   activeTab,
   handleTabChange,
   viewMode,
@@ -486,33 +424,33 @@ const SellerDashboard = ({
 
   return (
     <>
-      {/* Updated Header Section */}
+      {/* Header Section */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
           </div>
           <div className="flex gap-3">
-  <button
-    onClick={handleCreateGig}
-    disabled={isLoading}
-    className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    <Plus className="w-4 h-4 mr-2" />
-    Create Gig
-  </button>
-  <button
-    onClick={handleCreateService}
-    disabled={isLoading}
-    className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    <Plus className="w-4 h-4 mr-2" />
-    Create Service
-  </button>
-</div>
+            <button
+              onClick={handleCreateGig}
+              disabled={isLoading}
+              className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create Gig
+            </button>
+            <button
+              onClick={handleCreateService}
+              disabled={isLoading}
+              className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create Service
+            </button>
+          </div>
         </div>
         
-        {/* Stats Counts Row - Only 3 stats */}
+        {/* Stats Counts Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
             <div className="flex items-center">
@@ -602,19 +540,11 @@ const SellerDashboard = ({
                 <List className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            {/* <button
-              onClick={activeTab === 'services' ? handleCreateService : handleCreateGig}
-              disabled={isLoading}
-              className="inline-flex items-center px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Create {activeTab === 'services' ? 'Service' : 'Gig'}
-            </button> */}
           </div>
         </div>
       </div>
 
-      {/* Bulk Actions Bar with Framer Motion */}
+      {/* Bulk Actions Bar */}
       <AnimatePresence>
         {hasSelectedItems && (
           <motion.div
@@ -748,7 +678,7 @@ const SellerDashboard = ({
         </div>
       </div>
 
-      {/* Content Area - Fixed switching glitch */}
+      {/* Content Area */}
       <AnimatePresence mode="wait">
         <motion.div
           key={activeTab + viewMode}
@@ -813,7 +743,7 @@ const SellerDashboard = ({
   );
 };
 
-// ServicesGridView component with Framer Motion
+// ServicesGridView component
 const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
@@ -914,7 +844,6 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
                   ${service.price || 0}
                 </span>
               </div>
-              
             </div>
 
             <div className="flex items-center justify-between">
@@ -932,7 +861,6 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
                 >
                   <ExternalLink className="w-4 h-4" />
                 </button>
-                
               </div>
             </div>
           </div>
@@ -942,7 +870,7 @@ const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectS
   );
 };
 
-// ServicesListView with Framer Motion
+// ServicesListView
 const ServicesListView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, handleCreateService, serviceStatusFilter, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
@@ -1007,9 +935,6 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
               </th>
-              
-             
-             
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -1068,9 +993,6 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
                     </span>
                   </div>
                 </td>
-                
-                
-                
               </motion.tr>
             ))}
           </tbody>
@@ -1080,7 +1002,7 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
   );
 };
 
-// GigsGridView with Framer Motion
+// GigsGridView
 const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
@@ -1181,7 +1103,6 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                   ${gig.budget || gig.price || 0}
                 </span>
               </div>
-              
             </div>
 
             <div className="flex items-center justify-between">
@@ -1208,7 +1129,7 @@ const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
   );
 };
 
-// GigsListView with Framer Motion
+// GigsListView
 const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, handleDeleteGigs, handleCreateGig, statusFilter, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (
@@ -1273,7 +1194,6 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Budget</span>
               </th>
-              
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
               </th>
@@ -1335,7 +1255,6 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                     </span>
                   </div>
                 </td>
-                
                 <td className="py-4 px-6">
                   <div className="flex items-center space-x-2">
                     <button
@@ -1353,142 +1272,6 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
         </table>
       </div>
     </motion.div>
-  );
-};
-
-// RoleSwitchDialog with Framer Motion
-const RoleSwitchDialog = ({
-  showSwitchDialog,
-  setShowSwitchDialog,
-  switchDirection,
-  handleSwitchRole,
-  switchRoleMutation
-}) => {
-  return (
-    <AnimatePresence>
-      {showSwitchDialog && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-            onClick={() => setShowSwitchDialog(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ type: "spring", damping: 25 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-gray-900">
-                    {switchDirection === 'toUser' ? 'Switch to User Account' : 'Switch to Seller Account'}
-                  </h3>
-                  <button
-                    onClick={() => setShowSwitchDialog(false)}
-                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                
-                <div className="space-y-4">
-                  {/* Warning Alert */}
-                  <div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
-                    <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-yellow-800 font-medium">
-                        {switchDirection === 'toUser' 
-                          ? 'You are switching back to user account' 
-                          : 'Important: Account switch required'}
-                      </p>
-                      <p className="text-xs text-yellow-600 mt-1">
-                        {switchDirection === 'toUser'
-                          ? 'You will lose access to seller features and gig management. You can switch back anytime.'
-                          : 'To create and sell services, you need a seller account.'}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-gray-900">
-                      {switchDirection === 'toUser' ? 'You will:' : 'You will gain:'}
-                    </h4>
-                    <div className="space-y-2">
-                      {switchDirection === 'toUser' ? (
-                        <>
-                          <div className="flex items-start gap-2">
-                            <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
-                            <span className="text-sm text-gray-700">Lose access to service creation and management</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <div className="w-4 h-4 text-red-500 mt-0.5">•</div>
-                            <span className="text-sm text-gray-700">No longer see seller dashboard</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <div className="w-4 h-4 text-green-500 mt-0.5">•</div>
-                            <span className="text-sm text-gray-700">Gain ability to browse and buy services</span>
-                        </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm text-gray-700">Create and manage services</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm text-gray-700">Access seller dashboard and analytics</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm text-gray-700">Earn money from your services</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={() => setShowSwitchDialog(false)}
-                      className="flex-1 py-3 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSwitchRole}
-                      disabled={switchRoleMutation.isPending}
-                      className={`flex-1 py-3 text-white font-medium rounded-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2 ${
-                        switchDirection === 'toUser'
-                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
-                          : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
-                      }`}
-                    >
-                      {switchRoleMutation.isPending ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Switching...
-                        </>
-                      ) : (
-                        <>
-                          <ArrowRightLeft className="w-4 h-4" />
-                          {switchDirection === 'toUser' ? 'Switch to User' : 'Switch to Seller'}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
   );
 };
 

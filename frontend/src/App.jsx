@@ -27,7 +27,7 @@ import ScrollToTop from './components/ScrollToTop';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
 import AllGigsPage from './components/AllGigsPage';
 import OrderCreate from './components/OrderCreate';
-import SellerDashboard from './components/SellerDashboard';
+// import SellerDashboard from './components/SellerDashboard';
 import OrderDetails from './components/OrderDetails';
 import MyOrders from './components/MyOrders.jsx';
 import { SecurityProvider } from './context/SecurityContext.jsx';
@@ -139,11 +139,11 @@ const App = () => {
           <Route path="/services/" element={<ServiceListingPage />} />
           <Route path="/all-gigs" element={<AllGigsPage />} />
           <Route path="/orders/create" element={<OrderCreate />} />
-          <Route path="/seller/dashboard" element={<SellerDashboard />} />
+          {/* <Route path="/seller/dashboard" element={<SellerDashboard />} /> */}
           <Route path="/orders/:id" element={<OrderDetails />} />
           <Route path="/my-orders" element={<MyOrders />} />
-          <Route path="/seller/orders" element={<SellerDashboard />} />
-          <Route path="/seller/orders/pending" element={<SellerDashboard />} />
+          {/* <Route path="/seller/orders" element={<SellerDashboard />} />
+          <Route path="/seller/orders/pending" element={<SellerDashboard />} /> */}
         </Routes>
         <Footer />
       </BrowserRouter>

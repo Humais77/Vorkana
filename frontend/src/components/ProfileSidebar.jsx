@@ -1,14 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   User,
   Calendar,
   MapPin,
-  Globe,
   Award,
   Star,
   Edit2,
   DollarSign,
-  ArrowRightLeft,
   Package,
   Check,
   Save,
@@ -22,11 +20,7 @@ import {
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'react-hot-toast';
 
-const ProfileSidebar = ({ 
-  onSwitchToUser, 
-  onSwitchToSeller, 
-  switchRoleMutation 
-}) => {
+const ProfileSidebar = () => {
   const { user } = useAuthStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -62,21 +56,6 @@ const ProfileSidebar = ({
       });
     }
   }, [user]);
-
-  const profileData = useMemo(() => ({
-    name: user?.name || 'Your Name',
-    bio: user?.bio || 'Tell us about yourself...',
-    location: user?.location || 'Add your location',
-    skills: user?.skills || [],
-    hourlyRate: user?.hourlyRate || 0,
-    availability: user?.availability || 'Not specified',
-    email: user?.email || '',
-    phone: user?.phone || 'Not provided',
-    linkedin: user?.linkedin || '',
-    github: user?.github || '',
-    experience: user?.experience || 'Add your experience',
-    education: user?.education || 'Add your education'
-  }), [user]);
 
   const handleSave = async () => {
     try {
@@ -122,16 +101,12 @@ const ProfileSidebar = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6  top-8">
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 top-8">
     
       <div className="text-center mb-8">
         <div className="relative mx-auto w-32 h-32 mb-4">
-          <div className={`w-full h-full rounded-full flex items-center justify-center text-white text-4xl font-bold ${
-            user?.role === 'seller' 
-              ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
-              : 'bg-gradient-to-r from-blue-500 to-purple-600'
-          }`}>
-            {profileData.name.charAt(0).toUpperCase()}
+          <div className="w-full h-full rounded-full flex items-center justify-center text-white text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600">
+            {(user?.name || 'U').charAt(0).toUpperCase()}
           </div>
           <button
             onClick={() => setIsEditing(!isEditing)}
@@ -154,7 +129,7 @@ const ProfileSidebar = ({
             placeholder="Your Name"
           />
         ) : (
-          <h1 className="text-2xl font-bold text-gray-900">{profileData.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{user?.name || 'Your Name'}</h1>
         )}
         
         {isEditing ? (
@@ -166,52 +141,18 @@ const ProfileSidebar = ({
             placeholder="Your Email"
           />
         ) : (
-          <p className="text-gray-600 mt-1">{profileData.email}</p>
+          <p className="text-gray-600 mt-1">{user?.email || ''}</p>
         )}
         
         <div className="flex items-center justify-center mt-2">
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-            user?.role === 'seller' 
-              ? 'bg-green-100 text-green-800' 
-              : 'bg-blue-100 text-blue-800'
-          }`}>
-            {user?.role === 'seller' ? (
-              <>
-                <Package className="w-3 h-3 mr-1" />
-                Seller
-              </>
-            ) : (
-              <>
-                <User className="w-3 h-3 mr-1" />
-                User
-              </>
-            )}
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <User className="w-3 h-3 mr-1" />
+            User
           </span>
           <span className="mx-2 text-gray-400">•</span>
           <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
           <span className="ml-1 font-medium">4.8</span>
         </div>
-      </div>
-
-      <div className="mb-6">
-        <button
-          onClick={user?.role === 'seller' ? onSwitchToUser : onSwitchToSeller}
-          disabled={switchRoleMutation.isPending}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          <span className="font-medium">
-            {switchRoleMutation.isPending 
-              ? 'Switching...' 
-              : `Switch to ${user?.role === 'seller' ? 'User' : 'Seller'}`
-            }
-          </span>
-        </button>
-        <p className="text-xs text-gray-500 text-center mt-2">
-          {user?.role === 'seller' 
-            ? 'Switch back to user account' 
-            : 'Switch to seller account to create gigs'}
-        </p>
       </div>
 
       {isEditing && (
@@ -248,7 +189,7 @@ const ProfileSidebar = ({
           />
         ) : (
           <p className="text-gray-600 text-sm">
-            {profileData.bio}
+            {user?.bio || 'Tell us about yourself...'}
           </p>
         )}
       </div>
@@ -299,8 +240,8 @@ const ProfileSidebar = ({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {profileData.skills.length > 0 ? (
-              profileData.skills.map((skill, index) => (
+            {(user?.skills || []).length > 0 ? (
+              (user?.skills || []).map((skill, index) => (
                 <span
                   key={index}
                   className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full"
@@ -346,22 +287,22 @@ const ProfileSidebar = ({
         </>
       ) : (
         <>
-          {profileData.experience && profileData.experience !== 'Add your experience' && (
+          {user?.experience && user?.experience !== 'Add your experience' && (
             <div className="mb-6">
               <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
                 <Briefcase className="w-4 h-4 mr-2" />
                 Experience
               </h3>
-              <p className="text-gray-600 text-sm">{profileData.experience}</p>
+              <p className="text-gray-600 text-sm">{user?.experience}</p>
             </div>
           )}
-          {profileData.education && profileData.education !== 'Add your education' && (
+          {user?.education && user?.education !== 'Add your education' && (
             <div className="mb-6">
               <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
                 <Award className="w-4 h-4 mr-2" />
                 Education
               </h3>
-              <p className="text-gray-600 text-sm">{profileData.education}</p>
+              <p className="text-gray-600 text-sm">{user?.education}</p>
             </div>
           )}
         </>
@@ -381,13 +322,13 @@ const ProfileSidebar = ({
               placeholder="Your Location"
             />
           ) : (
-            <span>{profileData.location}</span>
+            <span>{user?.location || 'Add your location'}</span>
           )}
         </div>
         
         <div className="flex items-center text-gray-600">
           <Mail className="w-4 h-4 mr-3 flex-shrink-0" />
-          <span>{profileData.email}</span>
+          <span>{user?.email || ''}</span>
         </div>
         
         <div className="flex items-center text-gray-600">
@@ -401,7 +342,7 @@ const ProfileSidebar = ({
               placeholder="Phone Number"
             />
           ) : (
-            <span>{profileData.phone}</span>
+            <span>{user?.phone || 'Not provided'}</span>
           )}
         </div>
  
@@ -420,7 +361,7 @@ const ProfileSidebar = ({
               <option value="not-available">Not Available</option>
             </select>
           ) : (
-            <span>Available {profileData.availability}</span>
+            <span>Available {user?.availability || 'Not specified'}</span>
           )}
         </div>
         
@@ -435,7 +376,7 @@ const ProfileSidebar = ({
               placeholder="Hourly Rate"
             />
           ) : (
-            <span>${profileData.hourlyRate}/hour</span>
+            <span>${user?.hourlyRate || 0}/hour</span>
           )}
         </div>
       </div>

@@ -39,7 +39,6 @@ import { toast } from "react-hot-toast";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useGigStore } from "../../store/useGigStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
-import { useCategories } from "../../hooks/useCategories";
 import { useCreateGig } from "../../hooks/useGigs";
 import { useParentCategories } from '../../hooks/useCategories';
 
@@ -91,6 +90,19 @@ const GigCreate = () => {
     deliverables: []
   });
 
+  const [completedFields, setCompletedFields] = useState({
+    fullName: false,
+    oauthEmail: false,
+    country: false,
+    phone: false,
+    title: false,
+    projectCategory: false,
+    subcategory: false,
+    budget: false,
+    description: false,
+    timeline: false
+  });
+
   const [attachments, setAttachments] = useState([]);
   const [files, setFiles] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
@@ -124,8 +136,16 @@ const GigCreate = () => {
         oauthEmail: currentUser.email || "",
         title: prev.title || ""
       }));
+      
+      // Mark fields as completed if they have values
+      setCompletedFields(prev => ({
+        ...prev,
+        fullName: !!(currentUser.name || currentUser.fullName),
+        oauthEmail: !!currentUser.email
+      }));
     }
   }, [currentUser]);
+
   useEffect(() => {
     console.log('DEBUG - Current categoriesData:', categoriesData);
     console.log('DEBUG - Current storedCategories:', storedCategories);
@@ -166,38 +186,40 @@ const GigCreate = () => {
         console.log('Found subcategories:', subs);
         setSubcategories(subs);
 
-        // Reset subcategory if parent category changes and subcategory is not valid
-        if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
-          console.log('Resetting subcategory - not found in new subcategories');
-          setFormData(prev => ({ ...prev, subcategory: "" }));
-        }
+        // Reset subcategory if parent category changes
+        setFormData(prev => ({ 
+          ...prev, 
+          subcategory: "" 
+        }));
+        setCompletedFields(prev => ({
+          ...prev,
+          subcategory: false
+        }));
       } else {
         console.log('No selected category found');
         setSubcategories([]);
-        setFormData(prev => ({ ...prev, subcategory: "" }));
+        setFormData(prev => ({ 
+          ...prev, 
+          subcategory: "" 
+        }));
+        setCompletedFields(prev => ({
+          ...prev,
+          subcategory: false
+        }));
       }
     } else {
       console.log('No project category selected or no categories data');
       setSubcategories([]);
-      setFormData(prev => ({ ...prev, subcategory: "" }));
+      setFormData(prev => ({ 
+        ...prev, 
+        subcategory: "" 
+      }));
+      setCompletedFields(prev => ({
+        ...prev,
+        subcategory: false
+      }));
     }
   }, [formData.projectCategory, categoriesData, storedCategories]);
-  const DebugCategoryInfo = () => (
-    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <h4 className="font-bold text-yellow-800 mb-2">Category Debug Info:</h4>
-      <div className="text-sm space-y-1">
-        <p>Selected Category ID: {formData.projectCategory || 'None'}</p>
-        <p>Selected Category Name: {getCategoryName()}</p>
-        <p>Subcategory ID: {formData.subcategory || 'None'}</p>
-        <p>Subcategory Name: {getSubcategoryName()}</p>
-        <p>Subcategories available: {subcategories.length}</p>
-        <p>Categories loaded: {Array.isArray(categoriesData) ? categoriesData.length : 'Not array'}</p>
-        <p>Categories in store: {Array.isArray(storedCategories) ? storedCategories.length : 'Not array'}</p>
-        <p>Category loading: {categoryLoading ? 'Yes' : 'No'}</p>
-        <p>Category error: {categoryError ? 'Yes' : 'No'}</p>
-      </div>
-    </div>
-  );
 
   // Cleanup when component unmounts
   useEffect(() => {
@@ -258,14 +280,54 @@ const GigCreate = () => {
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
+    
+    // Update form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Update completed status based on validation
+    const isValid = validateField(name, value);
+    setCompletedFields(prev => ({
+      ...prev,
+      [name]: isValid
+    }));
+    
+    // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
   }, [errors]);
+
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'fullName':
+        return value.trim().length >= 3;
+      case 'oauthEmail':
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(value);
+      case 'country':
+        return value.trim().length >= 2;
+      case 'phone':
+        return value.trim().length >= 5;
+      case 'title':
+        return value.trim().length >= 5;
+      case 'projectCategory':
+        return !!value;
+      case 'subcategory':
+        return !!value;
+      case 'budget':
+        const budgetNum = parseFloat(value);
+        return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
+      case 'description':
+        return value.trim().length >= 20;
+      case 'timeline':
+        return value.trim().length >= 3;
+      default:
+        return !!value;
+    }
+  };
 
   const handleLoginChange = (e) => {
     const { name, value } = e.target;
@@ -392,7 +454,6 @@ const GigCreate = () => {
   };
 
   // Handle Email/Password Login
-  // Update the handleEmailLogin function with better error handling
   const handleEmailLogin = async (e) => {
     e.preventDefault();
 
@@ -426,6 +487,13 @@ const GigCreate = () => {
           ...prev,
           fullName: data.user.name || data.user.fullName || "",
           oauthEmail: data.user.email || ""
+        }));
+
+        // Update completed fields
+        setCompletedFields(prev => ({
+          ...prev,
+          fullName: !!(data.user.name || data.user.fullName),
+          oauthEmail: !!data.user.email
         }));
 
         // If you're using Zustand, you might need to update the store
@@ -523,6 +591,11 @@ const GigCreate = () => {
         newErrors.projectCategory = "Please select a project category.";
       }
 
+      // Check if subcategory is required (if there are subcategories available)
+      if (subcategories.length > 0 && !formData.subcategory) {
+        newErrors.subcategory = "Please select a subcategory.";
+      }
+
       const budgetNum = parseFloat(formData.budget);
       if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
         newErrors.budget = "Budget must be between $5 and $100,000.";
@@ -541,7 +614,7 @@ const GigCreate = () => {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData, isAuthenticated]);
+  }, [formData, isAuthenticated, subcategories]);
 
   const nextStep = useCallback(() => {
     if (validateStep(activeStep)) {
@@ -549,12 +622,6 @@ const GigCreate = () => {
       setShowLoginMessage(false);
     }
   }, [activeStep, validateStep]);
-
-  const prevStep = useCallback(() => {
-    if (activeStep > 1) {
-      setActiveStep(prev => Math.max(prev - 1, 1));
-    }
-  }, [activeStep]);
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
@@ -671,6 +738,7 @@ const GigCreate = () => {
       setIsSubmitting(false);
     }
   }, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
+
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
     toast.success("Refreshing categories...");
@@ -713,7 +781,6 @@ const GigCreate = () => {
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
   };
-
 
   // Handle Enter key press for skills and deliverables
   const handleKeyPress = (e, type) => {
@@ -900,68 +967,74 @@ const GigCreate = () => {
                       Information entered:
                     </h3>
                     <ul className="space-y-2 text-sm">
-                      {activeStep >= 1 && (
-                        <>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Name:</span>
-                            <span className="font-medium truncate max-w-[150px]">
-                              {formData.fullName || "Not entered"}
-                            </span>
-                          </li>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Email:</span>
-                            <span className="font-medium truncate max-w-[150px]">
-                              {formData.oauthEmail || "Not entered"}
-                            </span>
-                          </li>
-                        </>
+                      {activeStep >= 1 && completedFields.fullName && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Name:</span>
+                          <span className="font-medium truncate max-w-[150px]">
+                            {formData.fullName}
+                          </span>
+                        </li>
                       )}
-                      {activeStep >= 2 && (
-                        <>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Country:</span>
-                            <span className="font-medium">{formData.country || "Not entered"}</span>
-                          </li>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Phone:</span>
-                            <span className="font-medium">{formData.phone || "Not entered"}</span>
-                          </li>
-                        </>
+                      {activeStep >= 1 && completedFields.oauthEmail && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Email:</span>
+                          <span className="font-medium truncate max-w-[150px]">
+                            {formData.oauthEmail}
+                          </span>
+                        </li>
                       )}
-                      {activeStep >= 3 && (
-                        <>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Project Title:</span>
-                            <span className="font-medium truncate max-w-[120px]">
-                              {formData.title || "Not entered"}
-                            </span>
-                          </li>
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Category:</span>
-                            <span className="font-medium truncate max-w-[120px]">
-                              {getCategoryName() || "Not selected"}
-                            </span>
-                          </li>
-                          {formData.subcategory && (
-                            <li className="flex justify-between">
-                              <span className="text-emerald-100">Subcategory:</span>
-                              <span className="font-medium truncate max-w-[120px]">
-                                {getSubcategoryName()}
-                              </span>
-                            </li>
-                          )}
-                          {formData.budget && (
-                            <li className="flex justify-between">
-                              <span className="text-emerald-100">Budget:</span>
-                              <span className="font-medium">${formatBudget(formData.budget)}</span>
-                            </li>
-                          )}
-                        </>
+                      {activeStep >= 2 && completedFields.country && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Country:</span>
+                          <span className="font-medium truncate max-w-[120px]">{formData.country}</span>
+                        </li>
                       )}
-                      {activeStep >= 4 && formData.description && (
+                      {activeStep >= 2 && completedFields.phone && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Phone:</span>
+                          <span className="font-medium truncate max-w-[120px]">{formData.phone}</span>
+                        </li>
+                      )}
+                      {activeStep >= 3 && completedFields.title && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Project Title:</span>
+                          <span className="font-medium truncate max-w-[120px]">
+                            {formData.title}
+                          </span>
+                        </li>
+                      )}
+                      {activeStep >= 3 && completedFields.projectCategory && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Category:</span>
+                          <span className="font-medium truncate max-w-[120px]">
+                            {getCategoryName()}
+                          </span>
+                        </li>
+                      )}
+                      {activeStep >= 3 && completedFields.subcategory && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Subcategory:</span>
+                          <span className="font-medium truncate max-w-[120px]">
+                            {getSubcategoryName()}
+                          </span>
+                        </li>
+                      )}
+                      {activeStep >= 3 && completedFields.budget && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Budget:</span>
+                          <span className="font-medium">${formatBudget(formData.budget)}</span>
+                        </li>
+                      )}
+                      {activeStep >= 4 && completedFields.description && (
                         <li className="flex justify-between">
                           <span className="text-emerald-100">Description:</span>
                           <span className="font-medium">{formData.description.length} chars</span>
+                        </li>
+                      )}
+                      {activeStep >= 4 && completedFields.timeline && (
+                        <li className="flex justify-between">
+                          <span className="text-emerald-100">Timeline:</span>
+                          <span className="font-medium">{formData.timeline}</span>
                         </li>
                       )}
                       {activeStep >= 4 && formData.skillsRequired.length > 0 && (
@@ -1337,6 +1410,7 @@ const GigCreate = () => {
                         </div>
                       ) : (
                         <div className="space-y-6">
+                          {/* Country Field - Fixed with proper padding */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <Globe className="mr-2" size={14} />
@@ -1348,11 +1422,11 @@ const GigCreate = () => {
                                 name="country"
                                 value={formData.country}
                                 onChange={handleInputChange}
-                                className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
+                                className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base pl-12 md:pl-14"
                                 placeholder="United States"
                                 disabled={gigLoading}
                               />
-                              <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                              <Globe className="absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                             </div>
                             <p className="mt-2 text-xs md:text-sm text-gray-500">
                               Helps freelancers understand your time zone
@@ -1362,6 +1436,7 @@ const GigCreate = () => {
                             )}
                           </div>
 
+                          {/* Phone Field - Fixed with proper padding */}
                           <div>
                             <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                               <Phone className="mr-2" size={14} />
@@ -1373,11 +1448,11 @@ const GigCreate = () => {
                                 name="phone"
                                 value={formData.phone}
                                 onChange={handleInputChange}
-                                className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
+                                className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base pl-12 md:pl-14"
                                 placeholder="+1 234 567 8900"
                                 disabled={gigLoading}
                               />
-                              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                              <Phone className="absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                             </div>
                             <p className="mt-2 text-xs md:text-sm text-gray-500">
                               Only shared with freelancers you hire
@@ -1493,12 +1568,12 @@ const GigCreate = () => {
                             )}
                           </div>
 
-                          {/* Subcategory */}
+                          {/* Subcategory - Now Mandatory */}
                           {subcategories.length > 0 && (
                             <div>
                               <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                                 <Layers className="mr-2" size={14} />
-                                Subcategory (Optional)
+                                Subcategory *
                               </label>
                               <div className="relative">
                                 <select
@@ -1507,8 +1582,9 @@ const GigCreate = () => {
                                   onChange={handleInputChange}
                                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                                   disabled={!formData.projectCategory || gigLoading}
+                                  required={subcategories.length > 0}
                                 >
-                                  <option value="">Select a subcategory (optional)</option>
+                                  <option value="">Select a subcategory</option>
                                   {subcategories.map((subcategory) => (
                                     <option key={subcategory._id} value={subcategory._id}>
                                       {subcategory.name}
@@ -1520,8 +1596,11 @@ const GigCreate = () => {
                                 </div>
                               </div>
                               <p className="mt-2 text-xs text-gray-500">
-                                Optional - helps freelancers understand your project better
+                                Please select a subcategory for better project matching
                               </p>
+                              {errors.subcategory && (
+                                <p className="mt-2 text-sm text-red-600">{errors.subcategory}</p>
+                              )}
                             </div>
                           )}
 
@@ -2015,46 +2094,34 @@ const GigCreate = () => {
                     </div>
                   )}
 
-                  {/* Navigation Buttons */}
-                  <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
-                    {activeStep > 1 && activeStep < 5 && (
-                      <button
-                        type="button"
-                        onClick={prevStep}
-                        className="px-4 md:px-8 py-2 md:py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={gigLoading || isSubmitting}
-                      >
-                        <ArrowRight className="mr-2 rotate-180" size={18} />
-                        Back
-                      </button>
-                    )}
-
+                  {/* Navigation Buttons - Removed Back button, only Save & Continue */}
+                  <div className="flex justify-end pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
                     {activeStep < 4 ? (
                       <button
                         type="button"
                         onClick={nextStep}
-                        className="ml-auto px-4 md:px-8 py-2 md:py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-6 md:px-8 py-3 md:py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
                         disabled={gigLoading || isSubmitting || (activeStep === 1 && !isAuthenticated)}
                       >
-                        <Save className="mr-2" size={18} />
-                        Continue
-                        <ChevronRight className="ml-2" size={18} />
+                        <Save className="mr-2" size={20} />
+                        Save & Continue
+                        <ChevronRight className="ml-2" size={20} />
                       </button>
                     ) : activeStep === 4 ? (
                       <button
                         type="submit"
                         disabled={gigLoading || categoryLoading || !isAuthenticated || isSubmitting}
-                        className="w-full md:w-auto px-4 md:px-8 py-2 md:py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {gigLoading || isSubmitting ? (
                           <>
-                            <Loader2 className="mr-2 animate-spin" size={18} />
+                            <Loader2 className="mr-2 animate-spin" size={20} />
                             Creating Project...
                           </>
                         ) : (
                           <>
                             Create Project
-                            <ChevronRight className="ml-2" size={18} />
+                            <ChevronRight className="ml-2" size={20} />
                           </>
                         )}
                       </button>

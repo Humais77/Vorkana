@@ -1,9 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Pause, Play } from "lucide-react";
+import bg_video from '../assets/bg_video.mp4'
 
 const Hero = () => {
   const [paused, setPaused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Check if screen is mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const categories = [
     { id: 1, name: "website development" },
@@ -50,16 +64,23 @@ const Hero = () => {
 
   return (
     <section className="relative w-full h-[70vh] md:h-[85vh] overflow-hidden flex items-center">
-      {/* Background Video */}
-      <video
-        id="heroVideo"
-        autoPlay
-        muted
-        loop
-        playsInline
-        className="absolute inset-0 w-full h-full object-cover"
-        src="/hero-bg.mp4"
-      />
+      {/* Background Video - Only show on md and above */}
+      {!isMobile && (
+        <video
+          id="heroVideo"
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+          src={bg_video}
+        />
+      )}
+
+      {/* Green gradient background only for mobile */}
+      {isMobile && (
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-green-600"></div>
+      )}
 
       {/* Dark overlay with gradient from left */}
       <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent"></div>
@@ -114,7 +135,8 @@ const Hero = () => {
       {/* Pause / Play Button */}
       <button
         onClick={handleToggle}
-        className="absolute bottom-6 right-6 bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-md transition shadow-md cursor-pointer"
+       className="absolute bottom-6 right-6 bg-white/20 hover:bg-white/30 text-white p-3 rounded-full backdrop-blur-md transition shadow-md cursor-pointer hidden md:flex"
+
       >
         {paused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
       </button>
