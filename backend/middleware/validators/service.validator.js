@@ -1,6 +1,6 @@
 const Joi = require('joi');
 const mongoose = require('mongoose');
-const { sanitizeHtml, sanitizeText } = require('../../utils/sanitize.js'); // Updated import
+const { sanitizeHtml, sanitizeText } = require('../../utils/sanitize.js');
 
 const objectId = Joi.string().custom((value, helpers) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
@@ -11,7 +11,6 @@ const objectId = Joi.string().custom((value, helpers) => {
   'any.invalid': 'Invalid ID format'
 });
 
-// Enhanced sanitization with better error messages
 const sanitizeInput = (data, options = {}) => {
   if (typeof data === 'string') {
     const sanitizationOptions = {
@@ -21,7 +20,6 @@ const sanitizeInput = (data, options = {}) => {
     };
     const sanitized = sanitizeHtml(data.trim(), sanitizationOptions);
     
-    // Check for injection patterns
     if (options.preventInjection) {
       const injectionPatterns = [
         /\$where/i,
@@ -53,11 +51,9 @@ const sanitizeInput = (data, options = {}) => {
   return data;
 };
 
-// Image URL validation with security
 const imageUrlSchema = Joi.string().pattern(
   /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i
 ).custom((value, helpers) => {
-  // Prevent path traversal
   if (value.includes('..') || value.includes('//')) {
     return helpers.error('any.invalid');
   }
@@ -67,7 +63,6 @@ const imageUrlSchema = Joi.string().pattern(
   'any.invalid': 'Invalid image path detected'
 });
 
-// Package schema
 const packageSchema = Joi.object({
   name: Joi.string()
     .required()
@@ -125,7 +120,6 @@ const packageSchema = Joi.object({
     .default(false),
 }).options({ stripUnknown: true });
 
-// Feature schema
 const featureSchema = Joi.object({
   title: Joi.string()
     .required()
@@ -148,7 +142,6 @@ const featureSchema = Joi.object({
     .default(true),
 }).options({ stripUnknown: true });
 
-// Requirement schema
 const requirementSchema = Joi.object({
   question: Joi.string()
     .required()
@@ -176,7 +169,6 @@ const requirementSchema = Joi.object({
     }),
 }).options({ stripUnknown: true });
 
-// FAQ schema
 const faqSchema = Joi.object({
   question: Joi.string()
     .required()
@@ -197,7 +189,6 @@ const faqSchema = Joi.object({
     }),
 }).options({ stripUnknown: true });
 
-// Create service schema
 const createSchema = Joi.object({
   title: Joi.string()
     .required()
@@ -342,13 +333,6 @@ const createSchema = Joi.object({
       'array.max': 'Cannot have more than 3 packages',
     }),
   
-  gigType: Joi.string()
-    .valid('basic', 'standard', 'premium', 'custom')
-    .default('basic')
-    .messages({
-      'any.only': 'Invalid gig type',
-    }),
-  
   status: Joi.string()
     .valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended')
     .default('draft')
@@ -386,7 +370,6 @@ const createSchema = Joi.object({
   abortEarly: false 
 });
 
-// Update service schema
 const updateSchema = Joi.object({
   title: Joi.string()
     .min(5)
@@ -527,13 +510,6 @@ const updateSchema = Joi.object({
       'array.max': 'Cannot have more than 3 packages',
     }),
   
-  gigType: Joi.string()
-    .valid('basic', 'standard', 'premium', 'custom')
-    .optional()
-    .messages({
-      'any.only': 'Invalid gig type',
-    }),
-  
   status: Joi.string()
     .valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended')
     .optional()
@@ -591,7 +567,6 @@ const updateSchema = Joi.object({
   abortEarly: false 
 });
 
-// Bulk operations schema
 const bulkSchema = Joi.object({
   ids: Joi.array()
     .items(objectId)
@@ -624,14 +599,11 @@ const bulkSchema = Joi.object({
   abortEarly: false 
 });
 
-// Query validation schema
 const querySchema = Joi.object({
-  // Pagination
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(200).default(10),
   offset: Joi.number().integer().min(0),
   
-  // Sorting
   sort: Joi.string()
     .valid('price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'relevance', 'title')
     .default('createdAt'),
@@ -639,16 +611,14 @@ const querySchema = Joi.object({
   order: Joi.string().valid('asc', 'desc', '1', '-1').default('desc'),
   sortBy: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   
-  // Search
   search: Joi.string().trim().max(100).custom((value) => sanitizeText(value || ''), 'XSS prevention'),
   q: Joi.string().trim().max(100).custom((value) => sanitizeText(value || ''), 'XSS prevention'),
   
-  // Filtering
   title: Joi.string().trim().max(100).custom((value) => sanitizeText(value || ''), 'XSS prevention'),
   slug: Joi.string().trim().max(100),
   category: objectId,
   subcategory: objectId,
-  seller: objectId,
+  createdBy: objectId,
   minPrice: Joi.number().min(0),
   maxPrice: Joi.number().min(0),
   minRating: Joi.number().min(0).max(5),
@@ -658,8 +628,6 @@ const querySchema = Joi.object({
   deliveryTimeUnit: Joi.string().valid('hours', 'days', 'weeks'),
   currency: Joi.string(),
   status: Joi.string().valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended'),
-  gigType: Joi.string().valid('basic', 'standard', 'premium', 'custom'),
-  sellerLevel: Joi.string().valid('new', 'level1', 'level2', 'toprated'),
   isFeatured: Joi.boolean(),
   isRecommended: Joi.boolean(),
   isPopular: Joi.boolean(),
@@ -676,26 +644,22 @@ const querySchema = Joi.object({
   ids: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   excludeIds: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   
-  // Data control
   fields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   excludeFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   populate: Joi.boolean().default(true),
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
-  includeSeller: Joi.boolean().default(true),
+  includeCreator: Joi.boolean().default(true),
   includeCategory: Joi.boolean().default(true),
   includeReviews: Joi.boolean(),
   includeStats: Joi.boolean(),
   
-  // Security
   showAll: Joi.boolean(),
   includeInactive: Joi.boolean(),
   lean: Joi.boolean().default(true),
   cache: Joi.boolean().default(false),
   
-  // Export
   format: Joi.string().valid('json', 'csv', 'excel'),
   
-  // Performance
   timeout: Joi.number().integer().min(1000).max(30000),
   
 }).options({ 
@@ -704,7 +668,6 @@ const querySchema = Joi.object({
   convert: true 
 });
 
-// Middleware functions with improved error handling
 const validateCreate = (req, res, next) => {
   try {
     const { error, value } = createSchema.validate(req.body, { 
@@ -796,7 +759,6 @@ const validateBulk = (req, res, next) => {
       });
     }
     
-    // Validate all IDs are unique
     const uniqueIds = [...new Set(value.ids)];
     if (uniqueIds.length !== value.ids.length) {
       return res.status(400).json({
@@ -841,26 +803,22 @@ const validateQuery = (req, res, next) => {
       });
     }
     
-    // Handle sorting
     if (value.sortBy) {
       value.sort = value.sortBy;
       delete value.sortBy;
     }
     
-    // Convert order string to number for MongoDB
     if (value.order === 'asc' || value.order === '1') {
       value.order = 1;
     } else if (value.order === 'desc' || value.order === '-1') {
       value.order = -1;
     }
     
-    // Set timeout if provided
     if (value.timeout) {
       req.queryTimeout = value.timeout;
       delete value.timeout;
     }
     
-    // Security: Limit max results for non-admin users
     if (!req.user?.isAdmin && value.limit > 50) {
       value.limit = 50;
     }

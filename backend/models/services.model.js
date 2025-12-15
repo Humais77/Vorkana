@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const slugify = require('slugify');
-const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js'); // Updated import
+const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
 
 const serviceSchema = new mongoose.Schema({
   title: {
@@ -12,7 +12,6 @@ const serviceSchema = new mongoose.Schema({
     index: true,
     validate: {
       validator: function(v) {
-        // Security: Prevent injection patterns
         const injectionPatterns = [
           /\$where/i,
           /\$ne/i,
@@ -75,7 +74,7 @@ const serviceSchema = new mongoose.Schema({
     index: true,
     validate: {
       validator: async function(v) {
-        if (!v) return true; // Subcategory is optional
+        if (!v) return true;
         const Category = mongoose.model('Category');
         const subcategory = await Category.findById(v);
         return subcategory && subcategory.isActive && subcategory.parentCategory && 
@@ -84,18 +83,18 @@ const serviceSchema = new mongoose.Schema({
       message: 'Invalid subcategory or does not belong to the selected category'
     }
   },
-  seller: {
+  createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Seller is required'],
+    required: [true, 'Creator is required'],
     index: true,
     validate: {
       validator: async function(v) {
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user && user.isActive && user.role === 'seller';
+        return user && user.isActive;
       },
-      message: 'Invalid or inactive seller'
+      message: 'Invalid or inactive user'
     }
   },
   price: {
@@ -263,16 +262,6 @@ const serviceSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Likes cannot be negative'],
   },
-  sellerLevel: {
-    type: String,
-    enum: ['new', 'level1', 'level2', 'toprated'],
-    default: 'new',
-  },
-  gigType: {
-    type: String,
-    enum: ['basic', 'standard', 'premium', 'custom'],
-    default: 'basic',
-  },
   status: {
     type: String,
     enum: ['draft', 'pending', 'active', 'paused', 'denied', 'suspended'],
@@ -400,9 +389,9 @@ serviceSchema.virtual('categoryDetails', {
   justOne: true
 });
 
-serviceSchema.virtual('sellerDetails', {
+serviceSchema.virtual('creatorDetails', {
   ref: 'User',
-  localField: 'seller',
+  localField: 'createdBy',
   foreignField: '_id',
   justOne: true
 });
@@ -413,11 +402,9 @@ serviceSchema.virtual('isDeleted').get(function() {
 
 // Pre-save middleware
 serviceSchema.pre('save', async function () {
-  // Store original status for post-save logic
   if (this.isNew) this._originalStatus = null;
   if (!this._originalStatus) this._originalStatus = this.status;
 
-  // Sanitize fields
   const fieldsToSanitize = ['title', 'description', 'shortDescription', 'metaTitle', 'metaDescription'];
   fieldsToSanitize.forEach(field => {
     if (this[field] && typeof this[field] === 'string') {
@@ -425,7 +412,6 @@ serviceSchema.pre('save', async function () {
     }
   });
 
-  // Sanitize arrays and nested objects
   ['tags', 'searchKeywords'].forEach(arr => {
     if (Array.isArray(this[arr])) {
       this[arr] = this[arr].map(sanitizeText);
@@ -465,7 +451,6 @@ serviceSchema.pre('save', async function () {
     }));
   }
 
-  // Generate unique slug
   if (this.isModified('title') || this.isNew) {
     let baseSlug = slugify(this.title, { lower: true, strict: true, locale: 'en', trim: true });
     let slug = baseSlug;
@@ -480,7 +465,6 @@ serviceSchema.pre('save', async function () {
     this.slug = slug;
   }
 
-  // Published & expiry logic
   if (this.isModified('status') && this.status === 'active' && !this.publishedAt) {
     this.publishedAt = new Date();
   }
@@ -495,13 +479,11 @@ serviceSchema.pre('save', async function () {
     this.expiresAt = null;
   }
 
-  // Version increment
   if (!this.isNew && this.isModified()) {
     this.version += 1;
   }
 });
 
-// FIXED post-save – no next()
 serviceSchema.post('save', async function (doc) {
   try {
     const Category = mongoose.model('Category');
@@ -523,7 +505,6 @@ serviceSchema.post('save', async function (doc) {
   }
 });
 
-// FIXED post-remove
 serviceSchema.post('findOneAndDelete', async function (doc) {
   if (doc && doc.status === 'active') {
     try {
@@ -534,9 +515,9 @@ serviceSchema.post('findOneAndDelete', async function (doc) {
   }
 });
 
-// Indexes (compound indexes only)
+// Indexes
 serviceSchema.index({ category: 1, status: 1 }, { name: 'category_status_idx' });
-serviceSchema.index({ seller: 1, status: 1 }, { name: 'seller_status_idx' });
+serviceSchema.index({ createdBy: 1, status: 1 }, { name: 'creator_status_idx' });
 serviceSchema.index({ status: 1, publishedAt: -1 }, { name: 'status_published_desc_idx' });
 serviceSchema.index({ isFeatured: 1, status: 1 }, { name: 'featured_status_idx' });
 serviceSchema.index({ isRecommended: 1, status: 1 }, { name: 'recommended_status_idx' });
@@ -559,12 +540,9 @@ serviceSchema.index({
   }
 });
 
-// Additional useful indexes
 serviceSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
 serviceSchema.index({ price: 1, status: 1 }, { name: 'price_status_idx' });
 serviceSchema.index({ deliveryTime: 1, status: 1 }, { name: 'delivery_status_idx' });
-serviceSchema.index({ gigType: 1, status: 1 }, { name: 'gigtype_status_idx' });
-serviceSchema.index({ sellerLevel: 1, status: 1 }, { name: 'sellerlevel_status_idx' });
 serviceSchema.index({ views: -1, status: 1 }, { name: 'views_status_desc_idx' });
 serviceSchema.index({ ordersCount: -1, status: 1 }, { name: 'orders_status_desc_idx' });
 
@@ -581,8 +559,8 @@ serviceSchema.query.public = function() {
   });
 };
 
-serviceSchema.query.bySeller = function(sellerId) {
-  return this.where({ seller: sellerId });
+serviceSchema.query.byCreator = function(userId) {
+  return this.where({ createdBy: userId });
 };
 
 serviceSchema.query.byCategory = function(categoryId) {
@@ -622,41 +600,29 @@ serviceSchema.statics.incrementViews = async function(serviceId) {
     { new: true }
   );
 };
-serviceSchema.statics.verifyOrderEligibility = async function(serviceId, buyerId, packageId = null) {
+
+serviceSchema.statics.verifyOrderEligibility = async function(serviceId, buyerId) {
   const Service = mongoose.model('Service');
   const User = mongoose.model('User');
   
-  // Check service exists and is active
   const service = await Service.findById(serviceId);
   if (!service || !service.isActive || service.status !== 'active') {
     throw new Error('Service is not available for ordering');
   }
   
-  // Check seller is active
-  const seller = await User.findById(service.seller);
-  if (!seller || !seller.isActive) {
-    throw new Error('Seller is not available');
+  const creator = await User.findById(service.createdBy);
+  if (!creator || !creator.isActive) {
+    throw new Error('Service creator is not available');
   }
   
-  // Check buyer is active
   const buyer = await User.findById(buyerId);
   if (!buyer || !buyer.isActive) {
     throw new Error('Buyer account is not active');
   }
   
-  // Check package if specified
-  if (packageId) {
-    const packageExists = service.packages.some(pkg => 
-      pkg._id.toString() === packageId.toString()
-    );
-    if (!packageExists) {
-      throw new Error('Invalid package selected');
-    }
-  }
-  
   return {
     service,
-    seller,
+    creator,
     buyer,
     eligible: true
   };
@@ -670,7 +636,6 @@ serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
   );
 };
 
-// Method to decrement orders count (add to existing static methods)
 serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
   return this.findByIdAndUpdate(
     serviceId,
@@ -679,12 +644,10 @@ serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
   );
 };
 
-// Method to update rating (add to existing static methods)
 serviceSchema.statics.updateRating = async function(serviceId, newRating) {
   const service = await this.findById(serviceId);
   if (!service) return null;
   
-  // Calculate new average rating
   const currentTotal = service.rating * service.reviewsCount;
   const newTotal = currentTotal + newRating;
   const newReviewCount = service.reviewsCount + 1;
@@ -718,10 +681,9 @@ serviceSchema.statics.closeExpired = async function() {
   
   for (const service of expiredServices) {
     service.status = 'paused';
-    service.lastUpdatedBy = service.seller;
+    service.lastUpdatedBy = service.createdBy;
     await service.save();
     
-    // Decrement category count
     await mongoose.model('Category').decrementServicesCount(service.category);
     
     results.push(service._id);

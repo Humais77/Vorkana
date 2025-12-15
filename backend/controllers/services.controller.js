@@ -7,16 +7,13 @@ const Category = require('../models/category.model.js');
 const User = require('../models/user.model.js');
 const { sanitizeHtml } = require('../utils/sanitize.js');
 
-// Security: Request ID for tracking
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
-// Security: Input sanitization with file support
 const sanitizeServiceInput = (data, files = {}) => {
   const sanitized = {};
   
-  // Handle regular data fields
   for (const key in data) {
     if (typeof data[key] === 'string') {
       sanitized[key] = sanitizeHtml(data[key], {
@@ -60,20 +57,16 @@ const sanitizeServiceInput = (data, files = {}) => {
     }
   }
   
-  // Handle file uploads if present
   if (files && Array.isArray(files)) {
     const imageUrls = files.map(file => {
-      // Security: Validate file path and prevent path traversal
       const safePath = file.path.replace(/\\/g, '/');
       const relativePath = `/uploads/${path.basename(safePath)}`;
       
-      // Security: Check if file exists and is within uploads directory
       const absolutePath = path.join(__dirname, '../../public', relativePath);
       if (!fs.existsSync(absolutePath)) {
         throw new Error(`Uploaded file not found: ${relativePath}`);
       }
       
-      // Security: Validate file is within uploads directory
       const normalizedAbsolute = path.normalize(absolutePath);
       const uploadsDir = path.join(__dirname, '../../public/uploads');
       if (!normalizedAbsolute.startsWith(uploadsDir)) {
@@ -86,7 +79,6 @@ const sanitizeServiceInput = (data, files = {}) => {
     if (imageUrls.length > 0) {
       sanitized.images = imageUrls;
       
-      // Set thumbnail as first image if not specified
       if (!sanitized.thumbnail && imageUrls.length > 0) {
         sanitized.thumbnail = imageUrls[0];
       }
@@ -96,13 +88,11 @@ const sanitizeServiceInput = (data, files = {}) => {
   return sanitized;
 };
 
-// Security: Clean up orphaned files
 const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
   try {
     if (!files || !Array.isArray(files)) return;
     
     for (const file of files) {
-      // Check if this file is in the uploadedImagePaths
       const isUsed = uploadedImagePaths.some(imgPath => 
         file.path.includes(path.basename(imgPath))
       );
@@ -116,7 +106,6 @@ const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
   }
 };
 
-// Security: Delete image files
 const deleteImageFiles = (imagePaths) => {
   try {
     if (!Array.isArray(imagePaths)) return;
@@ -132,7 +121,6 @@ const deleteImageFiles = (imagePaths) => {
   }
 };
 
-// Security: Build secure query
 const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   const {
     search,
@@ -140,7 +128,7 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     slug,
     category,
     subcategory,
-    seller,
+    createdBy,
     minPrice,
     maxPrice,
     minRating,
@@ -150,8 +138,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     deliveryTimeUnit,
     currency,
     status,
-    gigType,
-    sellerLevel,
     isFeatured,
     isRecommended,
     isPopular,
@@ -178,17 +164,17 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     if (status !== undefined) {
       filter.status = status;
     }
-  } else if (userRole === 'seller' && userId) {
-    // Sellers can see their own services and active public services
+  } else if (userRole === 'user' && userId) {
+    // Users can see their own services and active public services
     filter.$or = [
-      { seller: userId },
+      { createdBy: userId },
       { 
         status: 'active',
         isActive: true 
       }
     ];
   } else {
-    // Regular users can only see active services
+    // Non-authenticated users can only see active services
     filter.status = 'active';
     filter.isActive = true;
   }
@@ -199,11 +185,9 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     filter.$text = { $search: sanitizedSearch };
   }
 
-  // Sanitize all string inputs
   if (title) filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
   if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
   
-  // Validate ObjectIds
   if (category && mongoose.Types.ObjectId.isValid(category)) {
     filter.category = category;
   }
@@ -212,8 +196,8 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     filter.subcategory = subcategory;
   }
   
-  if (seller && mongoose.Types.ObjectId.isValid(seller)) {
-    filter.seller = seller;
+  if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
+    filter.createdBy = createdBy;
   }
 
   // Price range
@@ -240,8 +224,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   // Other filters
   if (deliveryTimeUnit) filter.deliveryTimeUnit = deliveryTimeUnit;
   if (currency) filter.currency = currency;
-  if (gigType) filter.gigType = gigType;
-  if (sellerLevel) filter.sellerLevel = sellerLevel;
   if (isFeatured !== undefined) filter.isFeatured = isFeatured;
   if (isRecommended !== undefined) filter.isRecommended = isRecommended;
   if (isPopular !== undefined) filter.isPopular = isPopular;
@@ -292,24 +274,22 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   return filter;
 };
 
-// Security: Audit logging
 const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:SERVICE] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
 
-// Create Service with File Handling
+// Create Service
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
   let uploadedFiles = [];
   
   try {
-    // Security: Only sellers and admins can create services
-    if (!['seller', 'admin'].includes(req.user.role)) {
-      logAudit('UNAUTHORIZED_CREATE', 'SERVICE', 'NONE', req.user._id);
-      return res.status(403).json({ 
+    // Security: Only authenticated users can create services
+    if (!req.user) {
+      return res.status(401).json({ 
         success: false, 
-        message: 'Only sellers can create services',
-        code: 'SELLER_ACCESS_REQUIRED',
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
         requestId
       });
     }
@@ -360,7 +340,7 @@ const createService = async (req, res, next) => {
 
     const service = await Service.create({
       ...sanitizedData,
-      seller: req.user._id,
+      createdBy: req.user._id,
       version: 1
     });
 
@@ -414,7 +394,7 @@ const createService = async (req, res, next) => {
   }
 };
 
-// Get Services with Advanced Security
+// Get Services
 const getServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -425,7 +405,7 @@ const getServices = async (req, res, next) => {
       slug,
       category,
       subcategory,
-      seller,
+      createdBy,
       minPrice,
       maxPrice,
       minRating,
@@ -435,8 +415,6 @@ const getServices = async (req, res, next) => {
       deliveryTimeUnit,
       currency,
       status,
-      gigType,
-      sellerLevel,
       isFeatured,
       isRecommended,
       isPopular,
@@ -464,7 +442,7 @@ const getServices = async (req, res, next) => {
       populateFields = 'name',
       showAll = false,
       includeInactive = false,
-      includeSeller = true,
+      includeCreator = true,
       includeCategory = true,
       includeReviews = false,
       includeStats = false,
@@ -472,18 +450,16 @@ const getServices = async (req, res, next) => {
       cache = false
     } = req.query;
 
-    // Security: Determine visibility
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
-    const isSellerView = req.user?.role === 'seller';
+    const isUserView = req.user?.role === 'user' || req.user?.role === 'admin';
 
-    // Build secure query
     const filter = buildSecureServiceQuery({
       search: search || q,
       title,
       slug,
       category,
       subcategory,
-      seller: isSellerView ? req.user._id : seller,
+      createdBy: isUserView ? req.user._id : createdBy,
       minPrice,
       maxPrice,
       minRating,
@@ -493,8 +469,6 @@ const getServices = async (req, res, next) => {
       deliveryTimeUnit,
       currency,
       status: showAllFlag ? status : undefined,
-      gigType,
-      sellerLevel,
       isFeatured,
       isRecommended,
       isPopular,
@@ -513,18 +487,15 @@ const getServices = async (req, res, next) => {
       showAll: showAllFlag
     }, req.user?.role, req.user?._id);
 
-    // Security: Pagination validation
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    // Security: Sort validation
     const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    // Security: Field selection
     const defaultExclude = ['__v', 'lastUpdatedBy'];
     let select = {};
     
@@ -544,7 +515,6 @@ const getServices = async (req, res, next) => {
       });
     }
 
-    // Security: Populate configuration
     let populateOptions = [];
     
     if (populate) {
@@ -564,16 +534,15 @@ const getServices = async (req, res, next) => {
         });
       }
       
-      if (includeSeller) {
+      if (includeCreator) {
         populateOptions.push({
-          path: 'seller',
-          select: 'username fullName avatar rating level',
+          path: 'createdBy',
+          select: 'name email picture role',
           match: { isActive: true }
         });
       }
     }
 
-    // Security: Execute queries with timeout
     const queryOptions = {
       select: Object.keys(select).length > 0 ? select : null,
       sort: sortObj,
@@ -589,21 +558,21 @@ const getServices = async (req, res, next) => {
       Service.countDocuments(filter)
     ]);
 
-    // Security: Sanitize output data
     const safeServices = services.map(service => {
       const safeService = { ...service };
       
-      // Remove sensitive data
-      if (safeService.seller && safeService.seller._id) {
-        delete safeService.seller.email;
-        delete safeService.seller.phone;
-        delete safeService.seller.password;
+      if (safeService.createdBy && safeService.createdBy._id) {
+        // Only show limited creator info
+        safeService.createdBy = {
+          _id: safeService.createdBy._id,
+          name: safeService.createdBy.name,
+          picture: safeService.createdBy.picture
+        };
       }
       
       delete safeService.__v;
       delete safeService.lastUpdatedBy;
       
-      // Truncate long descriptions for list view
       if (safeService.description && safeService.description.length > 200) {
         safeService.description = safeService.description.substring(0, 200) + '...';
       }
@@ -611,12 +580,10 @@ const getServices = async (req, res, next) => {
       return safeService;
     });
 
-    // Calculate pagination
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
-    // Include stats if requested
     let stats = {};
     if (includeStats) {
       stats = await Service.aggregate([
@@ -635,7 +602,6 @@ const getServices = async (req, res, next) => {
       ]);
     }
 
-    // Security: Response headers
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
@@ -683,14 +649,13 @@ const getServices = async (req, res, next) => {
   }
 };
 
-// Get Service by ID or Slug with Security
+// Get Service by ID or Slug
 const getServiceById = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
     const { id } = req.params;
     const { fields, populate = true, incrementView = 'true' } = req.query;
 
-    // Security: Validate input
     if (!id) {
       return res.status(400).json({
         success: false,
@@ -703,7 +668,6 @@ const getServiceById = async (req, res, next) => {
     let query;
     const isObjectId = mongoose.Types.ObjectId.isValid(id);
 
-    // Security: Build query based on identifier type
     if (isObjectId) {
       query = { _id: id };
     } else {
@@ -711,14 +675,14 @@ const getServiceById = async (req, res, next) => {
       query = { slug: sanitizedSlug.toLowerCase() };
     }
 
-    // Security: Check permissions
-    if (req.user?.role !== 'admin' && req.user?.role !== 'seller') {
+    // Check permissions
+    if (req.user?.role !== 'admin') {
       query.status = 'active';
       query.isActive = true;
-    } else if (req.user?.role === 'seller') {
-      // Sellers can see their own services regardless of status
+    } else if (req.user?.role === 'user' || req.user?.role === 'admin') {
+      // Users can see their own services regardless of status
       query.$or = [
-        { _id: query._id || query.slug, seller: req.user._id },
+        { _id: query._id || query.slug, createdBy: req.user._id },
         { 
           ...query, 
           status: 'active',
@@ -727,7 +691,6 @@ const getServiceById = async (req, res, next) => {
       ];
     }
 
-    // Security: Field selection
     const defaultExclude = ['__v', 'lastUpdatedBy'];
     let select = {};
     
@@ -740,7 +703,6 @@ const getServiceById = async (req, res, next) => {
       });
     }
 
-    // Security: Populate configuration
     let populateOptions = [];
     if (populate) {
       populateOptions = [
@@ -755,8 +717,8 @@ const getServiceById = async (req, res, next) => {
           match: { isActive: true }
         },
         {
-          path: 'seller',
-          select: 'username fullName avatar rating level totalSales responseRate responseTime joinDate description languages skills',
+          path: 'createdBy',
+          select: 'name picture role createdAt',
           match: { isActive: true }
         }
       ];
@@ -775,9 +737,8 @@ const getServiceById = async (req, res, next) => {
       });
     }
 
-    // Security: Check if user can view this service
     if (service.status !== 'active' && req.user?.role !== 'admin') {
-      if (req.user?.role !== 'seller' || service.seller._id.toString() !== req.user._id.toString()) {
+      if (req.user?.role !== 'user' || service.createdBy._id.toString() !== req.user._id.toString()) {
         return res.status(403).json({
           success: false,
           message: 'Access to this service is restricted',
@@ -787,32 +748,31 @@ const getServiceById = async (req, res, next) => {
       }
     }
 
-    // Increment view count
     if (incrementView === 'true' && service.status === 'active') {
       await Service.incrementViews(service._id);
     }
 
-    // Security: Audit log for sensitive access
     if (service.status !== 'active') {
       logAudit('VIEW_INACTIVE', 'SERVICE', service._id, req.user?._id, {
         status: service.status
       });
     }
 
-    // Security: Remove sensitive data
     const safeService = service.toObject();
     
-    if (safeService.seller) {
-      delete safeService.seller.email;
-      delete safeService.seller.phone;
-      delete safeService.seller.password;
-      delete safeService.seller.paymentMethods;
+    if (safeService.createdBy) {
+      // Limit creator info shown
+      safeService.createdBy = {
+        _id: safeService.createdBy._id,
+        name: safeService.createdBy.name,
+        picture: safeService.createdBy.picture,
+        accountAge: Date.now() - new Date(safeService.createdBy.createdAt).getTime()
+      };
     }
     
     delete safeService.__v;
     delete safeService.lastUpdatedBy;
 
-    // Format packages for better readability
     if (safeService.packages && Array.isArray(safeService.packages)) {
       safeService.packages = safeService.packages.map(pkg => ({
         ...pkg,
@@ -834,7 +794,7 @@ const getServiceById = async (req, res, next) => {
   }
 };
 
-// Update Service with Security and File Handling
+// Update Service
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   let uploadedFiles = [];
@@ -842,7 +802,6 @@ const updateService = async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // Security: Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -863,8 +822,7 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Security: Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -877,21 +835,18 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Get uploaded files
     if (req.files) {
       uploadedFiles = req.files;
     }
     
-    // Security: Admins can update any field, sellers have restrictions
     const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
     
     if (!isAdmin) {
-      // Sellers cannot update certain fields
+      // Regular users cannot update certain fields
       delete sanitizedData.status;
       delete sanitizedData.isFeatured;
       delete sanitizedData.isRecommended;
       delete sanitizedData.isPopular;
-      delete sanitizedData.sellerLevel;
       delete sanitizedData.ordersCount;
       delete sanitizedData.views;
       delete sanitizedData.likes;
@@ -899,7 +854,6 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    // Verify category if being updated
     if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
       const category = await Category.findOne({ 
         _id: sanitizedData.category, 
@@ -917,7 +871,6 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    // Verify subcategory if being updated
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (service.subcategory?.toString() || '')) {
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory, 
@@ -936,7 +889,6 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    // Optimistic concurrency control
     const currentVersion = sanitizedData.version;
     delete sanitizedData.version;
 
@@ -946,20 +898,12 @@ const updateService = async (req, res, next) => {
       $inc: { version: 1 }
     };
 
-    // Handle status changes
     if (sanitizedData.status && sanitizedData.status !== service.status) {
       if (sanitizedData.status === 'active' && !service.publishedAt) {
         updateData.publishedAt = new Date();
       }
-      
-      // Update category counts if status changes to/from active
-      if ((service.status === 'active' && sanitizedData.status !== 'active') ||
-          (service.status !== 'active' && sanitizedData.status === 'active')) {
-        // This will be handled by post-save middleware
-      }
     }
 
-    // Get existing images to compare
     const existingImages = service.images || [];
     const newImages = sanitizedData.images || [];
     
@@ -974,7 +918,7 @@ const updateService = async (req, res, next) => {
         runValidators: true,
         context: 'query'
       }
-    ).populate('category', 'name slug').populate('seller', 'username fullName');
+    ).populate('category', 'name slug').populate('createdBy', 'name picture');
 
     if (!updatedService) {
       await cleanupUploadedFiles(uploadedFiles, newImages);
@@ -998,7 +942,6 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Clean up old images that were replaced
     try {
       const removedImages = existingImages.filter(img => !newImages.includes(img));
       if (removedImages.length > 0) {
@@ -1008,7 +951,6 @@ const updateService = async (req, res, next) => {
       console.error('Error cleaning up old images:', cleanupError);
     }
 
-    // Security: Audit log
     logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
       oldVersion: currentVersion || service.version,
@@ -1017,15 +959,9 @@ const updateService = async (req, res, next) => {
       imagesUpdated: newImages.length > 0
     });
 
-    // Security: Remove sensitive data
     const safeService = updatedService.toObject();
     delete safeService.__v;
     delete safeService.lastUpdatedBy;
-    
-    if (safeService.seller) {
-      delete safeService.seller.email;
-      delete safeService.seller.phone;
-    }
 
     res.json({
       success: true,
@@ -1036,7 +972,6 @@ const updateService = async (req, res, next) => {
     });
 
   } catch (error) {
-    // Clean up uploaded files on error
     await cleanupUploadedFiles(uploadedFiles);
     
     if (error.code === 11000) {
@@ -1056,14 +991,13 @@ const updateService = async (req, res, next) => {
   }
 };
 
-// Delete Service with Security and File Cleanup
+// Delete Service
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
 
-    // Security: Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -1084,8 +1018,7 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-    // Security: Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -1098,7 +1031,6 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-    // Check for active orders if not forcing
     if (force !== 'true' && service.ordersCount > 0) {
       return res.status(400).json({
         success: false,
@@ -1110,15 +1042,12 @@ const deleteService = async (req, res, next) => {
 
     let result;
     
-    // Security: Permanent delete (admin only)
     if (permanent === 'true' && isAdmin) {
-      // Clean up associated files
       try {
         if (service.images && Array.isArray(service.images)) {
           deleteImageFiles(service.images);
         }
         
-        // Clean up thumbnail if it exists
         if (service.thumbnail) {
           deleteImageFiles([service.thumbnail]);
         }
@@ -1128,10 +1057,9 @@ const deleteService = async (req, res, next) => {
       
       result = await Service.findByIdAndDelete(id);
       
-      // Security: Audit log for permanent delete
       logAudit('PERMANENT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
-        seller: service.seller,
+        createdBy: service.createdBy,
         force: force === 'true',
         imagesCleaned: service.images?.length || 0
       });
@@ -1143,16 +1071,14 @@ const deleteService = async (req, res, next) => {
         timestamp: new Date().toISOString()
       });
     } else {
-      // Soft delete
       service.isActive = false;
       service.status = 'suspended';
       service.lastUpdatedBy = req.user._id;
       await service.save();
       
-      // Security: Audit log for soft delete
       logAudit('SOFT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
-        seller: service.seller
+        createdBy: service.createdBy
       });
       
       res.json({
@@ -1172,7 +1098,7 @@ const deleteService = async (req, res, next) => {
   }
 };
 
-// Restore Service (Admin/Seller)
+// Restore Service
 const restoreService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -1198,8 +1124,7 @@ const restoreService = async (req, res, next) => {
       });
     }
 
-    // Security: Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -1211,7 +1136,6 @@ const restoreService = async (req, res, next) => {
       });
     }
 
-    // Check if category is still active
     const category = await Category.findById(service.category);
     if (!category || !category.isActive) {
       return res.status(400).json({
@@ -1227,7 +1151,6 @@ const restoreService = async (req, res, next) => {
     service.lastUpdatedBy = req.user._id;
     await service.save();
 
-    // Security: Audit log
     logAudit('RESTORE', 'SERVICE', id, req.user._id);
 
     res.json({
@@ -1250,23 +1173,20 @@ const restoreService = async (req, res, next) => {
   }
 };
 
-// Get Service Statistics with Security
+// Get Service Statistics
 const getServiceStats = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    // Security: Only admin and sellers can see detailed stats
-    if (!['admin', 'seller'].includes(req.user?.role)) {
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Access required for statistics',
-        code: 'ACCESS_REQUIRED',
+        message: 'Admin access required for statistics',
+        code: 'ADMIN_ACCESS_REQUIRED',
         requestId
       });
     }
 
-    const filter = req.user.role === 'seller' 
-      ? { seller: req.user._id }
-      : {};
+    const filter = {};
 
     const stats = await Service.aggregate([
       { $match: filter },
@@ -1316,17 +1236,6 @@ const getServiceStats = async (req, res, next) => {
             },
             { $sort: { count: -1 } }
           ],
-          byGigType: [
-            {
-              $group: {
-                _id: '$gigType',
-                count: { $sum: 1 },
-                avgPrice: { $avg: '$price' },
-                avgOrders: { $avg: '$ordersCount' }
-              }
-            },
-            { $sort: { count: -1 } }
-          ],
           topServices: [
             { $match: { status: 'active', isActive: true } },
             { $sort: { ordersCount: -1 } },
@@ -1372,7 +1281,6 @@ const getServiceStats = async (req, res, next) => {
       }
     ]);
 
-    // Security: Sanitize output
     const sanitizedStats = stats[0];
     
     res.json({
@@ -1389,23 +1297,21 @@ const getServiceStats = async (req, res, next) => {
   }
 };
 
-// Bulk Operations with Security
+// Bulk Operations
 const bulkUpdateServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    // Security: Rate limiting check
-    if (!['admin', 'seller'].includes(req.user.role)) {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Access required for bulk operations',
-        code: 'ACCESS_REQUIRED',
+        message: 'Admin access required for bulk operations',
+        code: 'ADMIN_ACCESS_REQUIRED',
         requestId
       });
     }
 
     const { ids, operation, data } = req.body;
 
-    // Security: Limit batch size
     if (ids.length > 50) {
       return res.status(400).json({
         success: false,
@@ -1415,7 +1321,6 @@ const bulkUpdateServices = async (req, res, next) => {
       });
     }
 
-    // Security: Validate all IDs
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
     if (validIds.length !== ids.length) {
       return res.status(400).json({
@@ -1426,26 +1331,10 @@ const bulkUpdateServices = async (req, res, next) => {
       });
     }
 
-    // For sellers, verify ownership
-    if (req.user.role === 'seller') {
-      const services = await Service.find({ _id: { $in: validIds } });
-      const notOwned = services.filter(service => service.seller.toString() !== req.user._id.toString());
-      
-      if (notOwned.length > 0) {
-        return res.status(403).json({
-          success: false,
-          message: 'You can only update your own services',
-          code: 'OWNERSHIP_REQUIRED',
-          requestId
-        });
-      }
-    }
-
     let result;
     let updateData = {};
     const now = new Date();
 
-    // Define allowed operations
     const allowedOperations = {
       activate: { status: 'active', isActive: true },
       deactivate: { isActive: false },
@@ -1474,17 +1363,14 @@ const bulkUpdateServices = async (req, res, next) => {
       updatedAt: now
     };
 
-    // Add version increment for updates
     if (operation === 'update') {
       updateData.$inc = { version: 1 };
     }
 
-    // Handle publish date for activation
     if (operation === 'activate') {
       updateData.publishedAt = now;
     }
 
-    // Security: Execute bulk operation with timeout
     result = await Service.updateMany(
       { _id: { $in: validIds } },
       updateData,
@@ -1494,7 +1380,6 @@ const bulkUpdateServices = async (req, res, next) => {
       }
     );
 
-    // Security: Audit log
     logAudit('BULK_OPERATION', 'SERVICE', 'MULTIPLE', req.user._id, {
       operation,
       affectedCount: result.modifiedCount,
@@ -1534,30 +1419,27 @@ const bulkUpdateServices = async (req, res, next) => {
   }
 };
 
-// Export Services with Security
+// Export Services
 const exportServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    // Security: Only admin and sellers can export
-    if (!['admin', 'seller'].includes(req.user?.role)) {
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Access required for export',
-        code: 'ACCESS_REQUIRED',
+        message: 'Admin access required for export',
+        code: 'ADMIN_ACCESS_REQUIRED',
         requestId
       });
     }
 
     const { format = 'json', ...queryParams } = req.query;
     
-    // Security: Build secure query
     const filter = buildSecureServiceQuery(
       queryParams, 
       req.user.role, 
       req.user._id
     );
 
-    // Security: Limit export size
     const count = await Service.countDocuments(filter);
     if (count > 5000) {
       return res.status(400).json({
@@ -1571,16 +1453,15 @@ const exportServices = async (req, res, next) => {
     const services = await Service.find(filter)
       .select('-__v -lastUpdatedBy')
       .populate('category', 'name slug')
-      .populate('seller', 'username fullName')
+      .populate('createdBy', 'name email')
       .lean();
 
-    // Security: Format response based on requested format
     if (format === 'csv') {
       const headers = [
-        'ID', 'Title', 'Slug', 'Description', 'Category', 'Seller',
+        'ID', 'Title', 'Slug', 'Description', 'Category', 'Creator',
         'Price', 'Currency', 'Delivery Time', 'Delivery Unit', 'Revisions',
         'Rating', 'Reviews Count', 'Orders Count', 'Views', 'Likes',
-        'Status', 'Featured', 'Recommended', 'Popular', 'Gig Type',
+        'Status', 'Featured', 'Recommended', 'Popular',
         'Created At', 'Updated At', 'Published At'
       ];
 
@@ -1590,7 +1471,7 @@ const exportServices = async (req, res, next) => {
         service.slug || '',
         `"${(service.description || '').replace(/"/g, '""')}"`,
         service.category?.name || '',
-        service.seller?.username || '',
+        service.createdBy?.name || '',
         service.price || 0,
         service.currency || 'USD',
         service.deliveryTime || 0,
@@ -1605,7 +1486,6 @@ const exportServices = async (req, res, next) => {
         service.isFeatured ? 'Yes' : 'No',
         service.isRecommended ? 'Yes' : 'No',
         service.isPopular ? 'Yes' : 'No',
-        service.gigType || 'basic',
         new Date(service.createdAt).toISOString(),
         new Date(service.updatedAt).toISOString(),
         service.publishedAt ? new Date(service.publishedAt).toISOString() : ''
@@ -1616,7 +1496,6 @@ const exportServices = async (req, res, next) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
-      // Security: Set secure download headers
       res.header('Content-Type', 'text/csv');
       res.header('Content-Disposition', `attachment; filename="services_${Date.now()}.csv"`);
       res.header('X-Request-ID', requestId);
@@ -1626,7 +1505,6 @@ const exportServices = async (req, res, next) => {
       return res.send(csvContent);
     }
 
-    // Default JSON export
     res.json({
       success: true,
       format: 'json',
@@ -1645,13 +1523,12 @@ const exportServices = async (req, res, next) => {
   }
 };
 
-// Search Services with Security
+// Search Services
 const searchServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
     const { query, category, minPrice, maxPrice, sort = 'relevance', limit = 20 } = req.query;
 
-    // Security: Sanitize search query
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
         success: false,
@@ -1675,10 +1552,8 @@ const searchServices = async (req, res, next) => {
       });
     }
 
-    // Security: Limit search results
     const searchLimit = Math.min(parseInt(limit) || 20, 100);
 
-    // Build search filter
     const filter = {
       $text: { $search: sanitizedQuery },
       status: 'active',
@@ -1695,7 +1570,6 @@ const searchServices = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Define sort options
     const sortOptions = {
       relevance: { score: { $meta: 'textScore' } },
       price_asc: { price: 1 },
@@ -1711,14 +1585,13 @@ const searchServices = async (req, res, next) => {
     const results = await Service.find(filter, { 
       score: { $meta: 'textScore' } 
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail seller category')
-    .populate('seller', 'username fullName avatar rating level')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy category')
+    .populate('createdBy', 'name picture')
     .populate('category', 'name slug')
     .sort(sortObj)
     .limit(searchLimit)
     .lean();
 
-    // Security: Sanitize and format results
     const safeResults = results.map(result => ({
       _id: result._id,
       title: result.title,
@@ -1734,13 +1607,10 @@ const searchServices = async (req, res, next) => {
       ordersCount: result.ordersCount || 0,
       views: result.views || 0,
       thumbnail: result.thumbnail,
-      seller: {
-        _id: result.seller?._id,
-        username: result.seller?.username,
-        fullName: result.seller?.fullName,
-        avatar: result.seller?.avatar,
-        rating: result.seller?.rating,
-        level: result.seller?.level
+      createdBy: {
+        _id: result.createdBy?._id,
+        name: result.createdBy?.name,
+        picture: result.createdBy?.picture
       },
       category: {
         _id: result.category?._id,
@@ -1750,7 +1620,6 @@ const searchServices = async (req, res, next) => {
       score: result.score || 0
     }));
 
-    // Get related categories
     const categoryIds = [...new Set(safeResults.map(r => r.category?._id).filter(Boolean))];
     const relatedCategories = await Category.find({ 
       _id: { $in: categoryIds },
@@ -1807,7 +1676,6 @@ const toggleLike = async (req, res, next) => {
       });
     }
 
-    // Check if user already liked the service
     const userLike = await mongoose.model('UserLike').findOne({
       user: req.user._id,
       service: id
@@ -1853,7 +1721,6 @@ const toggleLike = async (req, res, next) => {
       });
     }
 
-    // Get updated service
     const updatedService = await Service.findById(id)
       .select('likes title slug')
       .lean();
@@ -1893,7 +1760,7 @@ const getSimilarServices = async (req, res, next) => {
     }
 
     const service = await Service.findById(id)
-      .select('category tags title seller')
+      .select('category tags title createdBy')
       .lean();
 
     if (!service) {
@@ -1907,7 +1774,6 @@ const getSimilarServices = async (req, res, next) => {
 
     const similarLimit = Math.min(parseInt(limit) || 8, 20);
 
-    // Find similar services by category and tags
     const similarServices = await Service.find({
       _id: { $ne: id },
       category: service.category,
@@ -1917,13 +1783,12 @@ const getSimilarServices = async (req, res, next) => {
         tags: { $in: service.tags.slice(0, 3) }
       } : {})
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail seller')
-    .populate('seller', 'username fullName avatar rating')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+    .populate('createdBy', 'name picture')
     .sort({ rating: -1, ordersCount: -1 })
     .limit(similarLimit)
     .lean();
 
-    // If not enough similar services, get more from same category
     if (similarServices.length < similarLimit) {
       const additionalServices = await Service.find({
         _id: { $nin: [id, ...similarServices.map(s => s._id)] },
@@ -1931,8 +1796,8 @@ const getSimilarServices = async (req, res, next) => {
         status: 'active',
         isActive: true
       })
-      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail seller')
-      .populate('seller', 'username fullName avatar rating')
+      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+      .populate('createdBy', 'name picture')
       .sort({ rating: -1, ordersCount: -1 })
       .limit(similarLimit - similarServices.length)
       .lean();
@@ -1940,7 +1805,6 @@ const getSimilarServices = async (req, res, next) => {
       similarServices.push(...additionalServices);
     }
 
-    // Security: Sanitize results
     const safeServices = similarServices.map(s => ({
       _id: s._id,
       title: s.title,
@@ -1954,12 +1818,10 @@ const getSimilarServices = async (req, res, next) => {
       ordersCount: s.ordersCount || 0,
       views: s.views || 0,
       thumbnail: s.thumbnail,
-      seller: {
-        _id: s.seller?._id,
-        username: s.seller?.username,
-        fullName: s.seller?.fullName,
-        avatar: s.seller?.avatar,
-        rating: s.seller?.rating
+      createdBy: {
+        _id: s.createdBy?._id,
+        name: s.createdBy?.name,
+        picture: s.createdBy?.picture
       }
     }));
 
@@ -1980,7 +1842,7 @@ const getSimilarServices = async (req, res, next) => {
   }
 };
 
-// Upload Images Only
+// Upload Images
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
   let uploadedFiles = [];
@@ -2009,8 +1871,7 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    // Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -2023,7 +1884,6 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    // Get uploaded files
     if (req.files) {
       uploadedFiles = req.files;
     }
@@ -2037,17 +1897,14 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    // Process uploaded files
     const imageUrls = uploadedFiles.map(file => {
       const safePath = file.path.replace(/\\/g, '/');
       return `/uploads/${path.basename(safePath)}`;
     });
 
-    // Add new images to service
     const existingImages = service.images || [];
     const updatedImages = [...existingImages, ...imageUrls];
     
-    // Limit total images
     if (updatedImages.length > 10) {
       await cleanupUploadedFiles(uploadedFiles);
       return res.status(400).json({
@@ -2102,7 +1959,6 @@ const removeImage = async (req, res, next) => {
       });
     }
 
-    // Security: Validate image URL
     const decodedImageUrl = decodeURIComponent(imageUrl);
     if (!decodedImageUrl.startsWith('/uploads/')) {
       return res.status(400).json({
@@ -2124,8 +1980,7 @@ const removeImage = async (req, res, next) => {
       });
     }
 
-    // Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -2137,7 +1992,6 @@ const removeImage = async (req, res, next) => {
       });
     }
 
-    // Check if image exists
     const imageIndex = service.images.indexOf(decodedImageUrl);
     if (imageIndex === -1) {
       return res.status(404).json({
@@ -2148,10 +2002,8 @@ const removeImage = async (req, res, next) => {
       });
     }
 
-    // Remove image from array
     service.images.splice(imageIndex, 1);
     
-    // If this was the thumbnail, set new thumbnail (first image or null)
     if (service.thumbnail === decodedImageUrl) {
       service.thumbnail = service.images.length > 0 ? service.images[0] : null;
     }
@@ -2160,7 +2012,6 @@ const removeImage = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
-    // Delete the physical file
     try {
       deleteImageFiles([decodedImageUrl]);
     } catch (cleanupError) {
@@ -2204,7 +2055,6 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
-    // Security: Validate image URL
     const decodedImageUrl = decodeURIComponent(imageUrl);
     if (!decodedImageUrl.startsWith('/uploads/')) {
       return res.status(400).json({
@@ -2226,8 +2076,7 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
-    // Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -2239,7 +2088,6 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
-    // Check if image exists in service images
     if (!service.images.includes(decodedImageUrl)) {
       return res.status(400).json({
         success: false,
@@ -2249,7 +2097,6 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
-    // Set thumbnail
     service.thumbnail = decodedImageUrl;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
@@ -2305,8 +2152,7 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    // Check permissions
-    const isOwner = service.seller.toString() === req.user._id.toString();
+    const isOwner = service.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
@@ -2319,7 +2165,6 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    // Get uploaded files
     if (req.files && req.files.length > 0) {
       uploadedFiles = req.files;
     } else {
@@ -2331,12 +2176,10 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    // Process uploaded thumbnail
     const thumbnailFile = uploadedFiles[0];
     const safePath = thumbnailFile.path.replace(/\\/g, '/');
     const thumbnailUrl = `/uploads/${path.basename(safePath)}`;
 
-    // Delete old thumbnail if it exists
     if (service.thumbnail && service.thumbnail !== thumbnailUrl) {
       try {
         deleteImageFiles([service.thumbnail]);
@@ -2345,7 +2188,6 @@ const uploadThumbnail = async (req, res, next) => {
       }
     }
 
-    // Update service with new thumbnail
     service.thumbnail = thumbnailUrl;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
@@ -2372,16 +2214,17 @@ const uploadThumbnail = async (req, res, next) => {
     next(error);
   }
 };
-// Get Seller's Services
+
+// Get My Services
 const getMyServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    // Security: Only sellers can access this endpoint
-    if (req.user.role !== 'seller' && req.user.role !== 'admin') {
-      return res.status(403).json({
+    // Only authenticated users can access this endpoint
+    if (!req.user) {
+      return res.status(401).json({
         success: false,
-        message: 'Only sellers can access their services',
-        code: 'SELLER_ACCESS_REQUIRED',
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
         requestId
       });
     }
@@ -2396,7 +2239,6 @@ const getMyServices = async (req, res, next) => {
       title,
       category,
       subcategory,
-      gigType,
       isFeatured,
       isRecommended,
       isPopular,
@@ -2406,23 +2248,19 @@ const getMyServices = async (req, res, next) => {
       includeInactive = 'false'
     } = req.query;
 
-    // Security: Build filter for seller's services
-    const filter = { seller: req.user._id };
+    const filter = { createdBy: req.user._id };
     
-    // For admin, respect seller parameter if provided
-    if (req.user.role === 'admin' && req.query.seller && mongoose.Types.ObjectId.isValid(req.query.seller)) {
-      filter.seller = req.query.seller;
+    // For admin, respect createdBy parameter if provided
+    if (req.user.role === 'admin' && req.query.createdBy && mongoose.Types.ObjectId.isValid(req.query.createdBy)) {
+      filter.createdBy = req.query.createdBy;
     }
 
-    // Status filter with special handling
     if (status && status !== 'undefined' && status !== 'all') {
       filter.status = status;
     } else {
-      // Default: include all except deleted
       filter.status = { $nin: ['deleted'] };
     }
 
-    // Include drafts flag
     if (includeDrafts === 'false') {
       if (filter.status && filter.status.$nin) {
         filter.status.$nin.push('draft');
@@ -2431,18 +2269,15 @@ const getMyServices = async (req, res, next) => {
       }
     }
 
-    // Include inactive flag
     if (includeInactive === 'false') {
       filter.isActive = true;
     }
 
-    // Search filter
     if (search) {
       const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
       filter.$text = { $search: sanitizedSearch };
     }
 
-    // Additional filters
     if (title) {
       filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
     }
@@ -2453,10 +2288,6 @@ const getMyServices = async (req, res, next) => {
     
     if (subcategory && mongoose.Types.ObjectId.isValid(subcategory)) {
       filter.subcategory = subcategory;
-    }
-    
-    if (gigType) {
-      filter.gigType = gigType;
     }
     
     if (isFeatured !== undefined) {
@@ -2477,24 +2308,21 @@ const getMyServices = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Security: Pagination validation
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    // Security: Sort validation
     const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    // Execute queries
     const [services, total] = await Promise.all([
       Service.find(filter)
         .select('-__v -lastUpdatedBy -version')
         .populate('category', 'name slug icon')
         .populate('subcategory', 'name slug')
-        .populate('seller', 'username fullName avatar')
+        .populate('createdBy', 'name picture')
         .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
@@ -2502,22 +2330,17 @@ const getMyServices = async (req, res, next) => {
       Service.countDocuments(filter)
     ]);
 
-    // Security: Format response
     const formattedServices = services.map(service => {
       const safeService = { ...service };
       
-      // Add computed fields
       safeService.hasImages = Boolean(service.images && service.images.length > 0);
       safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
       safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
       
-      // Format price
       safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
       
-      // Format delivery time
       safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit}`;
       
-      // Status badge
       const statusColors = {
         active: 'success',
         draft: 'warning',
@@ -2532,7 +2355,6 @@ const getMyServices = async (req, res, next) => {
         color: statusColors[service.status] || 'secondary'
       };
       
-      // Truncate description for list view
       if (safeService.description && safeService.description.length > 150) {
         safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
       }
@@ -2540,14 +2362,12 @@ const getMyServices = async (req, res, next) => {
       return safeService;
     });
 
-    // Calculate pagination
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
-    // Get status counts for summary
     const statusCounts = await Service.aggregate([
-      { $match: { seller: filter.seller } },
+      { $match: { createdBy: filter.createdBy } },
       {
         $group: {
           _id: '$status',
@@ -2561,7 +2381,6 @@ const getMyServices = async (req, res, next) => {
       return acc;
     }, {});
 
-    // Security: Response headers
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
@@ -2613,7 +2432,7 @@ const getMyServices = async (req, res, next) => {
 module.exports = {
   createService,
   getServices,
-  getMyServices, 
+  getMyServices,
   getServiceById,
   updateService,
   deleteService,

@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const controller = require('../controllers/services.controller.js');
-const { protect, sellerOnly, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
+const { protect, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
 const { 
   validateCreate, 
   validateUpdate, 
@@ -12,11 +12,10 @@ const {
   validateQuery 
 } = require('../middleware/validators/service.validator.js');
 
-// Rate limiting middleware
 const rateLimit = require('express-rate-limit');
 
 const serviceLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   skipSuccessfulRequests: false,
   message: {
@@ -29,7 +28,7 @@ const serviceLimiter = rateLimit({
 });
 
 const bulkOperationLimiter = rateLimit({
-  windowMs: 30 * 60 * 1000, // 30 minutes
+  windowMs: 30 * 60 * 1000,
   max: 10,
   skipSuccessfulRequests: false,
   message: {
@@ -42,7 +41,7 @@ const bulkOperationLimiter = rateLimit({
 });
 
 const imageUploadLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
+  windowMs: 10 * 60 * 1000,
   max: 20,
   skipSuccessfulRequests: false,
   message: {
@@ -59,7 +58,6 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../public/uploads');
     
-    // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -67,11 +65,9 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename with timestamp and random bytes
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname).toLowerCase();
     
-    // Security: Sanitize filename
     const originalName = file.originalname.replace(path.extname(file.originalname), '');
     const sanitizedName = originalName.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
     
@@ -80,27 +76,23 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter for security
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|webp|gif|svg/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
   const mimetype = allowedTypes.test(file.mimetype);
   
   if (extname && mimetype) {
-    // Additional security checks
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = 5 * 1024 * 1024;
     
     if (file.size > maxSize) {
       return cb(new Error('File size exceeds 5MB limit'), false);
     }
     
-    // Check for potential malicious files
     const originalName = file.originalname.toLowerCase();
     if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
       return cb(new Error('Invalid filename'), false);
     }
     
-    // Check for executable files
     const executableExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.py'];
     const fileExtension = path.extname(originalName);
     if (executableExtensions.includes(fileExtension)) {
@@ -116,23 +108,21 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB per file
-    files: 10 // Maximum 10 files per upload
+    fileSize: 5 * 1024 * 1024,
+    files: 10
   },
   fileFilter: fileFilter
 });
 
-// Single file upload for thumbnails
 const thumbnailUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 2 * 1024 * 1024, // 2MB for thumbnails
-    files: 1 // Only one thumbnail
+    fileSize: 2 * 1024 * 1024,
+    files: 1
   },
   fileFilter: fileFilter
 });
 
-// Error handler for multer
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -217,13 +207,20 @@ router.get('/:id', optionalAuth, controller.getServiceById);
 router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 
 // ============================================
-// SELLER ROUTES
+// USER ROUTES (Service creators)
 // ============================================
+
+// Get my created services
+router.get('/my-services', 
+  protect, 
+  serviceLimiter, 
+  validateQuery, 
+  controller.getMyServices
+);
 
 // Create service with images
 router.post('/', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
@@ -231,10 +228,9 @@ router.post('/',
   controller.createService
 );
 
-// Update service
+// Update my service
 router.put('/:id', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
@@ -242,83 +238,46 @@ router.put('/:id',
   controller.updateService
 );
 
-// Delete service
+// Delete my service
 router.delete('/:id', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   controller.deleteService
 );
 
-// Restore service
+// Restore my service
 router.patch('/:id/restore', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   controller.restoreService
 );
 
-// Get seller stats
-router.get('/seller/stats', 
-  protect, 
-  sellerOnly, 
-  serviceLimiter, 
-  validateQuery, 
-  controller.getServiceStats
-);
-
-// Bulk operations
-router.post('/seller/bulk', 
-  protect, 
-  sellerOnly, 
-  bulkOperationLimiter, 
-  validateBulk, 
-  controller.bulkUpdateServices
-);
-
-// Export services
-router.get('/seller/export', 
-  protect, 
-  sellerOnly, 
-  serviceLimiter, 
-  validateQuery, 
-  controller.exportServices
-);
-
-// ============================================
-// SELLER IMAGE MANAGEMENT ROUTES
-// ============================================
-
-// Upload additional images
+// Upload additional images to my service
 router.post('/:id/images', 
   protect, 
-  sellerOnly, 
   imageUploadLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
   controller.uploadImages
 );
 
-// Remove specific image
+// Remove specific image from my service
 router.delete('/:id/images/:imageUrl', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   controller.removeImage
 );
 
-// Set existing image as thumbnail
+// Set existing image as thumbnail for my service
 router.put('/:id/thumbnail/:imageUrl', 
   protect, 
-  sellerOnly, 
   serviceLimiter, 
   controller.setThumbnail
 );
 
-// Upload new thumbnail
+// Upload new thumbnail for my service
 router.post('/:id/thumbnail', 
   protect, 
-  sellerOnly, 
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
@@ -329,7 +288,7 @@ router.post('/:id/thumbnail',
 // ADMIN ROUTES
 // ============================================
 
-// Update service (admin)
+// Update any service (admin)
 router.put('/admin/:id', 
   protect, 
   adminOnly, 
@@ -340,7 +299,7 @@ router.put('/admin/:id',
   controller.updateService
 );
 
-// Delete service (admin)
+// Delete any service (admin)
 router.delete('/admin/:id', 
   protect, 
   adminOnly, 
@@ -374,10 +333,6 @@ router.get('/admin/export',
   validateQuery, 
   controller.exportServices
 );
-
-// ============================================
-// ADMIN IMAGE MANAGEMENT ROUTES
-// ============================================
 
 // Upload additional images (admin)
 router.post('/admin/:id/images', 
@@ -416,7 +371,7 @@ router.post('/admin/:id/thumbnail',
 );
 
 // ============================================
-// BATCH OPERATION ROUTES
+// BATCH OPERATION ROUTES (Admin only)
 // ============================================
 
 // Batch update services status
@@ -478,9 +433,9 @@ router.get('/metrics/overview',
         routes: {
           public: 4,
           protected: 1,
-          seller: 11,
+          user: 8,
           admin: 11,
-          total: 27
+          total: 24
         },
         features: {
           fileUploads: true,
@@ -494,12 +449,5 @@ router.get('/metrics/overview',
       }
     });
 });
-// routes/services.js - Update this route
-router.get('/seller/my-services', 
-  protect, 
-  sellerOnly, 
-  serviceLimiter, 
-  controller.getMyServices  // Use the controller method
-);
 
 module.exports = router;
