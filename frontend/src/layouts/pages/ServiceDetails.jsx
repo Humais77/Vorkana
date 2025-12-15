@@ -124,10 +124,10 @@ const ServiceDetails = () => {
   };
 
   // Check if current user is the owner
-  const isOwner = user && service?.seller && (
-    user._id === service.seller._id ||
-    user._id === service.seller
-  );
+  const isOwner = user && service?.createdBy && (
+  user._id === service.createdBy._id ||
+  user._id === service.createdBy
+);
 
   if (isLoading) {
     return (
@@ -533,76 +533,61 @@ const ServiceDetails = () => {
                 About the Seller
               </h3>
 
-              {service.sellerDetails || service.seller ? (
-                <>
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
-                      {service.sellerDetails?.avatar || service.seller?.avatar ? (
-                        <img
-                          src={service.sellerDetails?.avatar || service.seller?.avatar}
-                          alt={service.sellerDetails?.username || service.seller?.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-blue-500 flex items-center justify-center text-white font-bold">
-                          {(service.sellerDetails?.username || service.seller?.username || 'S')?.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
+              {service.createdBy ? (
+  <>
+    <div className="flex items-start gap-4 mb-4">
+      <div className="w-12 h-12 bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
+        {service.createdBy?.picture ? (
+          <img
+            src={service.createdBy.picture}
+            alt={service.createdBy.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-blue-500 flex items-center justify-center text-white font-bold">
+            {(service.createdBy?.name || 'S').charAt(0).toUpperCase()}
+          </div>
+        )}
+      </div>
 
-                    <div>
-                      <h4 className="font-medium text-gray-900">
-                        {service.sellerDetails?.username || service.seller?.username || 'Unknown Seller'}
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        {service.sellerDetails?.fullName || service.seller?.fullName || 'Service Provider'}
-                      </p>
-                      <div className="flex items-center mt-1">
-                        <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />
-                        <span className="text-sm font-medium">
-                          {service.sellerDetails?.rating?.toFixed(1) || service.seller?.rating?.toFixed(1) || '0.0'}
-                        </span>
-                        <span className="text-gray-500 text-sm ml-1">
-                          ({service.sellerDetails?.totalSales || service.seller?.totalSales || 0} sales)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+      <div>
+        <h4 className="font-medium text-gray-900">
+          {service.createdBy?.name || 'Unknown Seller'}
+        </h4>
+        <p className="text-gray-600 text-sm">
+          Service Provider
+        </p>
+        <div className="flex items-center mt-1">
+          <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />
+          <span className="text-sm font-medium">
+            {service.createdBy?.rating?.toFixed(1) || '0.0'}
+          </span>
+        </div>
+      </div>
+    </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Response Time</span>
-                      <span className="font-medium">
-                        {service.sellerDetails?.responseTime || service.seller?.responseTime || 'Within 24 hours'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Member Since</span>
-                      <span className="font-medium">
-                        {formatDate(service.sellerDetails?.joinDate || service.seller?.joinDate)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Location</span>
-                      <span className="font-medium">
-                        {service.sellerDetails?.country || service.seller?.country || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-gray-600">Member Since</span>
+        <span className="font-medium">
+          {formatDate(service.createdBy?.createdAt)}
+        </span>
+      </div>
+    </div>
 
-                  <button
-                    onClick={handleContactSeller}
-                    className="w-full mt-6 py-2 border-2 border-blue-600 text-blue-600 font-medium rounded-xl hover:bg-blue-50 transition-colors flex items-center justify-center"
-                  >
-                    <MessageSquare className="w-5 h-5 mr-2" />
-                    Contact Seller
-                  </button>
-                </>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-500">Seller information not available</p>
-                </div>
-              )}
+    <button
+      onClick={handleContactSeller}
+      className="w-full mt-6 py-2 border-2 border-blue-600 text-blue-600 font-medium rounded-xl hover:bg-blue-50 transition-colors flex items-center justify-center"
+    >
+      <MessageSquare className="w-5 h-5 mr-2" />
+      Contact Seller
+    </button>
+  </>
+) : (
+  <div className="text-center py-4">
+    <p className="text-gray-500">Seller information not available</p>
+  </div>
+)}
             </div>
 
             {/* Tags */}

@@ -55,6 +55,7 @@ const CreateService = () => {
     shortDescription: '',
     category: '',
     subcategory: '',
+    userLevel: 'new',
 
     // Pricing & Delivery
     price: '',
@@ -442,21 +443,22 @@ const CreateService = () => {
 
     // Prepare data with proper type conversion
     const serviceData = {
-      title: formData.title.trim(),
-      description: formData.description.trim(),
-      category: formData.category,
-      price: parseFloat(formData.price),
-      currency: formData.currency,
-      deliveryTime: parseInt(formData.deliveryTime),
-      deliveryTimeUnit: formData.deliveryTimeUnit,
-      revisions: parseInt(formData.revisions) || 1,
-      gigType: formData.gigType,
-      status: status,
-      sellerLevel: formData.sellerLevel,
-      isFeatured: formData.isFeatured,
-      isRecommended: formData.isRecommended,
-      isPopular: formData.isPopular,
-    };
+  title: formData.title.trim(),
+  description: formData.description.trim(),
+  category: formData.category,
+  price: parseFloat(formData.price),
+  currency: formData.currency,
+  deliveryTime: parseInt(formData.deliveryTime),
+  deliveryTimeUnit: formData.deliveryTimeUnit,
+  revisions: parseInt(formData.revisions) || 1,
+  gigType: formData.gigType,
+  status: status,
+  // REMOVE: sellerLevel: formData.sellerLevel,
+  userLevel: formData.userLevel, // Optional
+  isFeatured: formData.isFeatured,
+  isRecommended: formData.isRecommended,
+  isPopular: formData.isPopular,
+};
 
     // Add optional fields only if they have values
     if (formData.shortDescription.trim()) {
@@ -642,7 +644,7 @@ const CreateService = () => {
       metaDescription: "Hire me for professional web development using modern technologies. Get a responsive, fast, and SEO-friendly website.",
       gigType: "premium",
       status: "draft",
-      sellerLevel: "level2",
+      userLevel: "intermediate",
       isFeatured: false,
       isRecommended: false,
       isPopular: false
@@ -865,22 +867,21 @@ const CreateService = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Seller Level
-                  </label>
-                  <select
-                    name="sellerLevel"
-                    value={formData.sellerLevel}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={createServiceMutation.isPending}
-                  >
-                    <option value="new">New Seller</option>
-                    <option value="level1">Level 1</option>
-                    <option value="level2">Level 2</option>
-                    <option value="toprated">Top Rated</option>
-                  </select>
-                </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Experience Level
+  </label>
+  <select
+    name="userLevel"
+    value={formData.userLevel || 'new'}
+    onChange={handleInputChange}
+    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+    disabled={createServiceMutation.isPending}
+  >
+    <option value="new">Beginner</option>
+    <option value="intermediate">Intermediate</option>
+    <option value="expert">Expert</option>
+  </select>
+</div>
               </div>
 
               <div>

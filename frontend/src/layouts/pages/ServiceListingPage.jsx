@@ -215,15 +215,18 @@ const ServiceListingPage = () => {
   ];
 
   // Get seller information from service
-  const getSellerInfo = (service) => {
-    if (service.seller && typeof service.seller === 'object') {
-      return service.seller;
-    }
-    return {
-      username: 'Unknown Seller',
-      avatar: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg'
-    };
+  const getUserInfo = (service) => {
+  if (service.user && typeof service.user === 'object') {
+    return service.user;
+  }
+  // Fallback if service.user doesn't exist yet
+  return {
+    username: service.createdBy?.username || 'Service Provider',
+    avatar: service.createdBy?.avatar || 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
+    verified: service.createdBy?.verified || false,
+    level: service.createdBy?.level || 'Beginner'
   };
+};
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -431,7 +434,7 @@ const ServiceListingPage = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
               {services.map(service => {
-                const sellerInfo = getSellerInfo(service);
+                const userInfo = getUserInfo(service);
                 return (
                   <div
                     key={service._id}
@@ -477,25 +480,25 @@ const ServiceListingPage = () => {
                     <div className="p-5">
                       {/* Seller Info */}
                       <div className="flex items-center gap-3 mb-4">
-                        <img
-                          src={sellerInfo.avatar}
-                          alt={sellerInfo.username}
-                          className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
-                        />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-gray-900 text-sm">
-                              {sellerInfo.username}
-                            </h4>
-                            {sellerInfo.verified && (
-                              <CheckCircle className="w-4 h-4 text-blue-500" />
-                            )}
-                          </div>
-                          {sellerInfo.level && (
-                            <span className="text-xs text-gray-500">{sellerInfo.level}</span>
-                          )}
-                        </div>
-                      </div>
+  <img
+    src={getUserInfo(service).avatar}
+    alt={getUserInfo(service).username}
+    className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+  />
+  <div>
+    <div className="flex items-center gap-2">
+      <h4 className="font-semibold text-gray-900 text-sm">
+        {getUserInfo(service).username}
+      </h4>
+      {getUserInfo(service).verified && (
+        <CheckCircle className="w-4 h-4 text-blue-500" />
+      )}
+    </div>
+    {getUserInfo(service).level && (
+      <span className="text-xs text-gray-500">{getUserInfo(service).level}</span>
+    )}
+  </div>
+</div>
 
                       {/* Service Title & Description */}
                       <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
@@ -666,7 +669,7 @@ const ServiceListingPage = () => {
               onClick={() => navigate('/services/create')}
               className="px-8 py-3 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
             >
-              Start Selling
+              Offer Your Service
             </button>
           </div>
         </div>
