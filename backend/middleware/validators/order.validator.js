@@ -90,7 +90,7 @@ const createOrderSchema = Joi.object({
 // Update order schema
 const updateOrderSchema = Joi.object({
   status: Joi.string().valid(
-    'accepted', 'in_progress', 'delivered', 'revision', 
+    'in_progress', 'delivered', 'revision', 
     'completed', 'cancelled'
   ).optional().messages({
     'any.only': 'Invalid status'
@@ -116,12 +116,10 @@ const querySchema = Joi.object({
   
   // Filtering
   status: Joi.string().valid(
-    'pending', 'accepted', 'in_progress', 'delivered', 
-    'revision', 'completed', 'cancelled', 'expired'
+    'pending', 'in_progress', 'delivered', 
+    'revision', 'completed', 'cancelled'
   ),
   service: objectId,
-  seller: objectId,
-  buyer: objectId,
   minAmount: Joi.number().min(0),
   maxAmount: Joi.number().min(0),
   createdAfter: Joi.date().iso(),
@@ -132,11 +130,10 @@ const querySchema = Joi.object({
   
   // Data control
   includeService: Joi.boolean().default(true),
-  includeSeller: Joi.boolean().default(false),
   includeBuyer: Joi.boolean().default(false),
   
   // Role-based filters
-  role: Joi.string().valid('seller', 'buyer'),
+  role: Joi.string().valid('buyer'),
   showAll: Joi.boolean().default(false)
 }).options({
   stripUnknown: true,

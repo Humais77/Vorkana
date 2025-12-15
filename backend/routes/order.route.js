@@ -8,7 +8,6 @@ const fs = require('fs');
 const controller = require('../controllers/order.controller');
 const { 
   protect, 
-  sellerOnly, 
   adminOnly 
 } = require('../middleware/auth.middleware');
 const {
@@ -28,9 +27,11 @@ const {
   validateUpdateOrder,
   validateOrderQuery
 } = require('../middleware/validators/order.validator');
+
 router.use(requestIdMiddleware);
 router.use(securityHeaders);
 router.use(sanitizeOrderInput);
+
 // Rate limiting
 const orderLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -154,6 +155,8 @@ router.post('/',
   auditLog('CREATE_ORDER'),
   controller.createOrder
 );
+
+// Cancel Order
 router.post('/:id/cancel',
   protect,
   validateOrderOwnership,
@@ -214,7 +217,7 @@ router.get('/:id',
   controller.getOrderById
 );
 
-// Update Order Status (Seller accepts/updates)
+// Update Order Status
 router.patch('/:id/status',
   protect,
   orderUpdateLimiter,
@@ -225,7 +228,7 @@ router.patch('/:id/status',
   controller.updateOrderStatus
 );
 
-// Add Deliverables (Seller delivers work)
+// Add Deliverables (Service provider delivers work)
 router.post('/:id/deliverables',
   protect,
   validateOrderOwnership,
@@ -246,43 +249,6 @@ router.post('/:id/accept-delivery',
 router.post('/:id/request-revision',
   protect,
   controller.requestRevision
-);
-
-// ============================================
-// SELLER-SPECIFIC ROUTES
-// ============================================
-
-// Get Seller Pending Orders (Dashboard)
-router.get('/seller/pending',
-  protect,
-  sellerOnly,
-  controller.getSellerPendingOrders
-);
-
-// Get Seller Active Orders (Dashboard)
-router.get('/seller/active',
-  protect,
-  sellerOnly,
-  controller.getSellerActiveOrders
-);
-
-// Get Seller Orders (All seller orders)
-router.get('/seller/orders',
-  protect,
-  sellerOnly,
-  (req, res, next) => {
-    req.query.role = 'seller';
-    next();
-  },
-  validateOrderQuery,
-  controller.getOrders
-);
-
-// Get Seller Stats
-router.get('/seller/stats',
-  protect,
-  sellerOnly,
-  controller.getOrderStats
 );
 
 // ============================================

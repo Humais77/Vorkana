@@ -6,7 +6,6 @@ const orderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    // required: true,
     index: true,
   },
   service: {
@@ -21,20 +20,6 @@ const orderSchema = new mongoose.Schema({
         return service && service.isActive && service.status === 'active';
       },
       message: 'Invalid or inactive service'
-    }
-  },
-  seller: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Seller is required'],
-    index: true,
-    validate: {
-      validator: async function(v) {
-        const User = mongoose.model('User');
-        const user = await User.findById(v);
-        return user && user.isActive && (user.role === 'seller' || user.role === 'admin');
-      },
-      message: 'Invalid or inactive seller'
     }
   },
   buyer: {
@@ -178,18 +163,16 @@ const orderSchema = new mongoose.Schema({
     type: Date
   },
 
-  // Status Tracking - Simplified for your use case
+  // Status Tracking
   status: {
     type: String,
     enum: [
-      'pending',       // Order created, awaiting seller acceptance
-      'accepted',      // Seller accepted the order
-      'in_progress',   // Seller started working
-      'delivered',     // Seller delivered work
+      'pending',       // Order created
+      'in_progress',   // Service provider started working
+      'delivered',     // Work delivered
       'revision',      // Buyer requested revision
       'completed',     // Order completed successfully
       'cancelled',     // Order cancelled
-      'expired'        // Order expired (seller didn't accept in time)
     ],
     default: 'pending',
     index: true
@@ -208,7 +191,7 @@ const orderSchema = new mongoose.Schema({
     }
   }],
 
-  // Buyer Verification - Updated for your user model
+  // Buyer Verification
   buyerVerified: {
     type: Boolean,
     default: false,
@@ -216,7 +199,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentVerified: {
     type: Boolean,
-    default: true, // Set to true since you're not using payment gateway
+    default: true,
     index: true
   },
   deliveryVerified: {
@@ -282,7 +265,7 @@ const orderSchema = new mongoose.Schema({
   }],
 
   // Reviews
-  sellerReview: {
+  serviceReview: {
     rating: {
       type: Number,
       min: [1, 'Minimum rating is 1'],
@@ -308,18 +291,17 @@ const orderSchema = new mongoose.Schema({
   },
 
   // Security & Audit
- ipAddress: {
-  type: String,
-  required: false,
-  validate: {
-    validator: function(v) {
-      if (!v) return true;
-      // Supports IPv4, ::1, and valid IPv6
-      return /^(?:(?:[0-9]{1,3}\.){3}[0-9]{1,3}|::1|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})$/.test(v);
-    },
-    message: 'Invalid IP address'
-  }
-},
+  ipAddress: {
+    type: String,
+    required: false,
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        return /^(?:(?:[0-9]{1,3}\.){3}[0-9]{1,3}|::1|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})$/.test(v);
+      },
+      message: 'Invalid IP address'
+    }
+  },
   userAgent: String,
   deviceInfo: {
     type: String,
@@ -336,11 +318,9 @@ const orderSchema = new mongoose.Schema({
   },
 
   // Timestamps
-  acceptedAt: Date,
   startedAt: Date,
   completedAt: Date,
   cancelledAt: Date,
-  expiredAt: Date,
   deadlineAt: {
     type: Date,
     index: true,
@@ -400,13 +380,6 @@ orderSchema.virtual('serviceDetails', {
   justOne: true
 });
 
-orderSchema.virtual('sellerDetails', {
-  ref: 'User',
-  localField: 'seller',
-  foreignField: '_id',
-  justOne: true
-});
-
 orderSchema.virtual('buyerDetails', {
   ref: 'User',
   localField: 'buyer',
@@ -429,13 +402,11 @@ orderSchema.virtual('timeRemaining').get(function() {
 orderSchema.virtual('progressPercentage').get(function() {
   const statusWeights = {
     'pending': 0,
-    'accepted': 25,
     'in_progress': 50,
     'delivered': 75,
     'completed': 100,
     'revision': 60,
     'cancelled': 0,
-    'expired': 0
   };
   return statusWeights[this.status] || 0;
 });
@@ -443,27 +414,16 @@ orderSchema.virtual('progressPercentage').get(function() {
 // Pre-save middleware
 orderSchema.pre('save', async function() {
   try {
-    // Security: Validate that buyer is not ordering their own service
+    // Security: Validate service availability
     const Service = mongoose.model('Service');
     const service = await Service.findById(this.service);
     
-    if (service && service.seller.toString() === this.buyer.toString()) {
-      throw new Error('You cannot order your own service');
-    }
-
-    // Security: Validate service availability
     if (!service || !service.isActive || service.status !== 'active') {
       throw new Error('Service is not available for ordering');
     }
 
-    // Security: Validate seller is active
-    const User = mongoose.model('User');
-    const seller = await User.findById(this.seller);
-    if (!seller || !seller.isActive) {
-      throw new Error('Seller account is not active');
-    }
-
     // Security: Validate buyer is active and email verified
+    const User = mongoose.model('User');
     const buyer = await User.findById(this.buyer);
     if (!buyer || !buyer.isActive) {
       throw new Error('Buyer account is not active');
@@ -480,49 +440,41 @@ orderSchema.pre('save', async function() {
       }
     }
 
-    // Existing code continues...
+    // Set deadline based on delivery time
+    if (!this.deadlineAt && this.deliveryTime && this.deliveryTimeUnit) {
+      const now = new Date();
+      let deadline = new Date(now);
+      
+      switch(this.deliveryTimeUnit) {
+        case 'hours':
+          deadline.setHours(deadline.getHours() + this.deliveryTime);
+          break;
+        case 'days':
+          deadline.setDate(deadline.getDate() + this.deliveryTime);
+          break;
+        case 'weeks':
+          deadline.setDate(deadline.getDate() + (this.deliveryTime * 7));
+          break;
+      }
+      
+      this.deadlineAt = deadline;
+    }
+
   } catch (error) {
     throw error;
   }
 });
 
-// Post-save middleware to update service orders count
-orderSchema.post('save', async function(doc) {
-  try {
-    const Service = mongoose.model('Service');
-    
-    if (doc.isNew && doc.status === 'accepted') {
-      await Service.incrementOrdersCount(doc.service);
-    } else if (doc.isModified('status')) {
-      const wasAccepted = this._originalStatus === 'accepted';
-      const isNowAccepted = doc.status === 'accepted';
-      
-      if (wasAccepted && !isNowAccepted) {
-        await Service.decrementOrdersCount(doc.service);
-      } else if (!wasAccepted && isNowAccepted) {
-        await Service.incrementOrdersCount(doc.service);
-      }
-    }
-  } catch (error) {
-    console.error('Error updating service orders count:', error);
-  }
-});
+// Static methods for role-based filtering
 orderSchema.statics.findSecure = function(userId, userRole, filter = {}) {
   const baseFilter = { isActive: true };
   
   // Apply role-based filtering
   if (userRole === 'admin') {
     // Admin can see all orders
-  } else if (userRole === 'seller') {
-    baseFilter.seller = userId;
-  } else if (userRole === 'user') {
-    baseFilter.buyer = userId;
   } else {
-    // Default to both buyer and seller if user has multiple roles
-    baseFilter.$or = [
-      { seller: userId },
-      { buyer: userId }
-    ];
+    // Regular users can only see their own orders as buyer
+    baseFilter.buyer = userId;
   }
 
   return this.find({ ...baseFilter, ...filter });
@@ -530,28 +482,22 @@ orderSchema.statics.findSecure = function(userId, userRole, filter = {}) {
 
 // Add method to check if order can be cancelled
 orderSchema.methods.canBeCancelled = function() {
-  const cancellableStatuses = ['pending', 'accepted', 'in_progress'];
+  const cancellableStatuses = ['pending', 'in_progress'];
   return cancellableStatuses.includes(this.status) && 
          new Date() < new Date(this.createdAt.getTime() + 24 * 60 * 60 * 1000); // Within 24 hours
 };
 
 // Indexes
-orderSchema.index({ seller: 1, status: 1 });
 orderSchema.index({ buyer: 1, status: 1 });
 orderSchema.index({ service: 1, status: 1 });
 orderSchema.index({ orderNumber: 1, status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ deadlineAt: 1, status: 1 });
-orderSchema.index({ buyerVerified: 1 });
 orderSchema.index({ totalAmount: 1, status: 1 });
 
 // Query helpers
 orderSchema.query.active = function() {
   return this.where({ isActive: true });
-};
-
-orderSchema.query.bySeller = function(sellerId) {
-  return this.where({ seller: sellerId });
 };
 
 orderSchema.query.byBuyer = function(buyerId) {
@@ -571,40 +517,6 @@ orderSchema.statics.generateOrderNumber = function() {
   const timestamp = Date.now().toString().slice(-6);
   const random = crypto.randomBytes(2).toString('hex').toUpperCase();
   return `ORD-${timestamp}-${random}`;
-};
-
-orderSchema.statics.findExpiringOrders = function() {
-  const now = new Date();
-  const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-  
-  return this.find({
-    status: 'pending',
-    deadlineAt: { $lte: oneHourFromNow, $gt: now },
-    isActive: true
-  });
-};
-
-orderSchema.statics.expireOrders = async function() {
-  const expiringOrders = await this.findExpiringOrders();
-  const results = [];
-  
-  for (const order of expiringOrders) {
-    if (new Date() > order.deadlineAt) {
-      order.status = 'expired';
-      order.expiredAt = new Date();
-      order.statusHistory.push({
-        status: 'expired',
-        changedBy: order.seller,
-        reason: 'Auto-expired: Seller did not accept in time',
-        timestamp: new Date()
-      });
-      
-      await order.save();
-      results.push(order._id);
-    }
-  }
-  
-  return results;
 };
 
 const Order = mongoose.model('Order', orderSchema);

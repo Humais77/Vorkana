@@ -5,15 +5,6 @@ const Service = require('../models/services.model');
 const User = require('../models/user.model');
 const { sanitizeHtml } = require('../utils/sanitize');
 const { emitNewOrder, emitOrderStatusChange, emitOrderUpdate } = require('../socket/order.socket');
-const {
-  requestIdMiddleware,
-  securityHeaders,
-  sanitizeOrderInput,
-  validateOrderOwnership,
-  validateOrderModifiable,
-  validateFileUpload,
-  auditLog
-} = require('../middleware/security.middleware');
 
 // Security: Request ID for tracking
 const generateRequestId = () => {
@@ -30,8 +21,6 @@ const buildSecureOrderQuery = (queryParams, userRole, userId) => {
   const {
     status,
     service,
-    seller,
-    buyer,
     minAmount,
     maxAmount,
     createdAfter,
@@ -48,24 +37,13 @@ const buildSecureOrderQuery = (queryParams, userRole, userId) => {
   // Security: Visibility based on user role
   if (showAll && userRole === 'admin') {
     // Admin can see all orders
-  } else if (userRole === 'seller') {
-    // Sellers can see their own orders as seller
-    filter.seller = userId;
-  } else if (userRole === 'user') {
-    // Buyers can see their own orders as buyer
-    filter.buyer = userId;
   } else {
-    // Regular users can only see their own orders
-    filter.$or = [
-      { seller: userId },
-      { buyer: userId }
-    ];
+    // Regular users can only see their own orders as buyer
+    filter.buyer = userId;
   }
 
   // Apply role-based filter if specified
-  if (role === 'seller' && userRole === 'seller') {
-    filter.seller = userId;
-  } else if (role === 'buyer' && userRole === 'user') {
+  if (role === 'buyer') {
     filter.buyer = userId;
   }
 
@@ -73,12 +51,6 @@ const buildSecureOrderQuery = (queryParams, userRole, userId) => {
   if (status) filter.status = status;
   if (service && mongoose.Types.ObjectId.isValid(service)) {
     filter.service = service;
-  }
-  if (seller && mongoose.Types.ObjectId.isValid(seller) && userRole === 'admin') {
-    filter.seller = seller;
-  }
-  if (buyer && mongoose.Types.ObjectId.isValid(buyer) && userRole === 'admin') {
-    filter.buyer = buyer;
   }
 
   // Amount range
@@ -196,6 +168,8 @@ const createOrder = async (req, res, next) => {
       notes = '',
       currency = 'USD'
     } = req.body;
+
+    // Rate limiting: Check for too many recent orders
     const recentOrders = await Order.countDocuments({
       buyer: req.user._id,
       createdAt: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
@@ -211,24 +185,13 @@ const createOrder = async (req, res, next) => {
     }
 
     // Security: Validate service exists and is available
-    const service = await Service.findById(serviceId).select('+isActive +status +seller');
+    const service = await Service.findById(serviceId).select('+isActive +status');
     if (!service || !service.isActive || service.status !== 'active') {
       return res.status(400).json({
         success: false,
         message: 'Service is not available for ordering',
         code: 'SERVICE_UNAVAILABLE',
         requestId: req.requestId
-      });
-    }
-
-    // Security: Check seller is active
-    const seller = await User.findById(service.seller);
-    if (!seller || !seller.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: 'Seller is not available',
-        code: 'SELLER_UNAVAILABLE',
-        requestId
       });
     }
 
@@ -243,15 +206,7 @@ const createOrder = async (req, res, next) => {
       });
     }
 
-    // Check if buyer is trying to order their own service
-    if (service.seller.toString() === req.user._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'You cannot order your own service',
-        code: 'SELF_ORDER_NOT_ALLOWED',
-        requestId: req.requestId
-      });
-    }
+    // Check for duplicate pending order for same service
     const existingOrder = await Order.findOne({
       buyer: req.user._id,
       service: serviceId,
@@ -290,7 +245,6 @@ const createOrder = async (req, res, next) => {
     // Create order
     const order = new Order({
       service: serviceId,
-      seller: service.seller,
       buyer: req.user._id,
       package: packageId,
       quantity,
@@ -315,8 +269,8 @@ const createOrder = async (req, res, next) => {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
       deviceInfo: req.headers['user-agent'],
-      buyerVerified: buyer.emailVerified || false, // Use your user model's emailVerified field
-      paymentVerified: true // Set to true since you're not using payment gateway
+      buyerVerified: buyer.emailVerified || false,
+      paymentVerified: true
     });
 
     await order.save();
@@ -324,18 +278,16 @@ const createOrder = async (req, res, next) => {
     // Populate order details
     const populatedOrder = await Order.findById(order._id)
       .populate('service', 'title slug thumbnail price currency deliveryTime deliveryTimeUnit')
-      .populate('seller', 'name email picture role')
       .populate('buyer', 'name email picture')
       .lean();
 
-    // Emit real-time notification to seller
+    // Emit real-time notification
     await emitNewOrder(order);
 
     // Security: Audit log
     logAudit('CREATE', 'ORDER', order._id, req.user._id, {
       orderNumber: order.orderNumber,
       service: serviceId,
-      seller: service.seller,
       totalAmount: order.totalAmount,
       currency: order.currency
     });
@@ -375,8 +327,6 @@ const getOrders = async (req, res, next) => {
     const {
       status,
       service,
-      seller,
-      buyer,
       minAmount,
       maxAmount,
       createdAfter,
@@ -391,7 +341,6 @@ const getOrders = async (req, res, next) => {
       sort = 'createdAt',
       order = 'desc',
       includeService = true,
-      includeSeller = false,
       includeBuyer = false
     } = req.query;
 
@@ -399,8 +348,6 @@ const getOrders = async (req, res, next) => {
     const filter = buildSecureOrderQuery({
       status,
       service,
-      seller,
-      buyer,
       minAmount,
       maxAmount,
       createdAfter,
@@ -432,13 +379,7 @@ const getOrders = async (req, res, next) => {
         select: 'title slug thumbnail price currency deliveryTime deliveryTimeUnit'
       });
     }
-    if (includeSeller) {
-      populateOptions.push({
-        path: 'seller',
-        select: 'name email picture role'
-      });
-    }
-    if (includeBuyer) {
+    if (includeBuyer && req.user.role === 'admin') {
       populateOptions.push({
         path: 'buyer',
         select: 'name email picture'
@@ -465,12 +406,7 @@ const getOrders = async (req, res, next) => {
     const safeOrders = orders.map(order => {
       const safeOrder = { ...order };
       
-      if (safeOrder.seller && safeOrder.seller._id) {
-        delete safeOrder.seller.email;
-        delete safeOrder.seller.phone;
-      }
-      
-      if (safeOrder.buyer && safeOrder.buyer._id) {
+      if (safeOrder.buyer && safeOrder.buyer._id && req.user.role !== 'admin') {
         delete safeOrder.buyer.email;
         delete safeOrder.buyer.phone;
       }
@@ -527,7 +463,6 @@ const getOrderById = async (req, res, next) => {
 
     const order = await Order.findById(id)
       .populate('service', 'title slug description thumbnail price currency deliveryTime deliveryTimeUnit revisions packages requirements')
-      .populate('seller', 'name email picture role')
       .populate('buyer', 'name email picture')
       .lean();
 
@@ -541,11 +476,10 @@ const getOrderById = async (req, res, next) => {
     }
 
     // Security: Check permissions
-    const isSeller = order.seller._id.toString() === req.user._id.toString();
     const isBuyer = order.buyer._id.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
-    if (!isSeller && !isBuyer && !isAdmin) {
+    if (!isBuyer && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Access denied to this order',
@@ -556,9 +490,6 @@ const getOrderById = async (req, res, next) => {
 
     // Remove sensitive data based on role
     if (!isAdmin) {
-      if (order.seller) {
-        delete order.seller.email;
-      }
       if (order.buyer) {
         delete order.buyer.email;
       }
@@ -585,7 +516,7 @@ const getOrderById = async (req, res, next) => {
   }
 };
 
-// Update Order Status (Seller accepts order)
+// Update Order Status
 const updateOrderStatus = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -613,12 +544,11 @@ const updateOrderStatus = async (req, res, next) => {
       });
     }
 
-    // Security: Check permissions
-    const isSeller = order.seller.toString() === req.user._id.toString();
+    // Security: Check permissions - only buyer or admin can update
     const isBuyer = order.buyer.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
-    if (!isSeller && !isBuyer && !isAdmin) {
+    if (!isBuyer && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Access denied to update this order',
@@ -629,14 +559,12 @@ const updateOrderStatus = async (req, res, next) => {
 
     // Validate status transition
     const validTransitions = {
-      pending: ['accepted', 'cancelled', 'expired'],
-      accepted: ['in_progress', 'cancelled'],
+      pending: ['in_progress', 'cancelled'],
       in_progress: ['delivered', 'cancelled'],
       delivered: ['completed', 'revision', 'cancelled'],
       revision: ['delivered', 'cancelled'],
       cancelled: [],
-      completed: [],
-      expired: []
+      completed: []
     };
 
     const currentStatus = order.status;
@@ -665,12 +593,7 @@ const updateOrderStatus = async (req, res, next) => {
 
     // Set timestamps based on status
     const now = new Date();
-    if (status === 'accepted') {
-      order.acceptedAt = now;
-      
-      // Update service orders count
-      await Service.incrementOrdersCount(order.service);
-    } else if (status === 'in_progress') {
+    if (status === 'in_progress') {
       order.startedAt = now;
     } else if (status === 'delivered') {
       order.deliveredAt = now;
@@ -678,11 +601,6 @@ const updateOrderStatus = async (req, res, next) => {
       order.completedAt = now;
     } else if (status === 'cancelled') {
       order.cancelledAt = now;
-      
-      // If order was accepted, decrement service orders count
-      if (oldStatus === 'accepted') {
-        await Service.decrementOrdersCount(order.service);
-      }
     }
 
     await order.save();
@@ -717,7 +635,7 @@ const updateOrderStatus = async (req, res, next) => {
   }
 };
 
-// Add Deliverables (Seller delivers work)
+// Add Deliverables (Service provider delivers work)
 const addDeliverables = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -745,18 +663,18 @@ const addDeliverables = async (req, res, next) => {
       });
     }
 
-    // Security: Only seller can add deliverables
-    if (order.seller.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Security: Only buyer (or admin) can add deliverables
+    if (order.buyer.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Only seller can add deliverables',
+        message: 'Access denied to add deliverables',
         code: 'ACCESS_DENIED',
         requestId
       });
     }
 
     // Check if order is in correct status
-    if (!['accepted', 'in_progress', 'revision'].includes(order.status)) {
+    if (!['in_progress', 'revision'].includes(order.status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot add deliverables when order is ${order.status}`,
@@ -973,124 +891,6 @@ const requestRevision = async (req, res, next) => {
   }
 };
 
-// Get Seller Dashboard Orders (Pending orders for seller)
-const getSellerPendingOrders = async (req, res, next) => {
-  const requestId = generateRequestId();
-  
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
-    const skip = (pageNum - 1) * limitNum;
-
-    const filter = {
-      seller: req.user._id,
-      status: 'pending',
-      isActive: true
-    };
-
-    const [orders, total] = await Promise.all([
-      Order.find(filter)
-        .populate('service', 'title slug thumbnail')
-        .populate('buyer', 'name picture')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Order.countDocuments(filter)
-    ]);
-
-    const totalPages = Math.ceil(total / limitNum);
-
-    res.set({
-      'X-Request-ID': requestId,
-      'X-Total-Count': total,
-      'X-Total-Pages': totalPages,
-      'X-Page-Size': limitNum,
-      'X-Current-Page': pageNum
-    });
-
-    res.json({
-      success: true,
-      orders,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasNext: pageNum < totalPages,
-        hasPrev: pageNum > 1
-      },
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    logAudit('ERROR', 'ORDER', 'GET_SELLER_PENDING', req.user?._id, { error: error.message });
-    next(error);
-  }
-};
-
-// Get Seller Active Orders (Accepted, in_progress, delivered, revision)
-const getSellerActiveOrders = async (req, res, next) => {
-  const requestId = generateRequestId();
-  
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
-    const skip = (pageNum - 1) * limitNum;
-
-    const filter = {
-      seller: req.user._id,
-      status: { $in: ['accepted', 'in_progress', 'delivered', 'revision'] },
-      isActive: true
-    };
-
-    const [orders, total] = await Promise.all([
-      Order.find(filter)
-        .populate('service', 'title slug thumbnail')
-        .populate('buyer', 'name picture')
-        .sort({ updatedAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Order.countDocuments(filter)
-    ]);
-
-    const totalPages = Math.ceil(total / limitNum);
-
-    res.set({
-      'X-Request-ID': requestId,
-      'X-Total-Count': total,
-      'X-Total-Pages': totalPages,
-      'X-Page-Size': limitNum,
-      'X-Current-Page': pageNum
-    });
-
-    res.json({
-      success: true,
-      orders,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasNext: pageNum < totalPages,
-        hasPrev: pageNum > 1
-      },
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    logAudit('ERROR', 'ORDER', 'GET_SELLER_ACTIVE', req.user?._id, { error: error.message });
-    next(error);
-  }
-};
-
 // Get Buyer Active Orders
 const getBuyerActiveOrders = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -1104,14 +904,13 @@ const getBuyerActiveOrders = async (req, res, next) => {
 
     const filter = {
       buyer: req.user._id,
-      status: { $in: ['accepted', 'in_progress', 'delivered', 'revision'] },
+      status: { $in: ['in_progress', 'delivered', 'revision'] },
       isActive: true
     };
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
         .populate('service', 'title slug thumbnail')
-        .populate('seller', 'name picture')
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limitNum)
@@ -1158,9 +957,7 @@ const getOrderStats = async (req, res, next) => {
     const filter = {};
     
     // Apply role-based filter
-    if (req.user.role === 'seller') {
-      filter.seller = req.user._id;
-    } else if (req.user.role === 'user') {
+    if (req.user.role === 'user') {
       filter.buyer = req.user._id;
     }
 
@@ -1176,7 +973,7 @@ const getOrderStats = async (req, res, next) => {
             $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } 
           },
           activeOrders: { 
-            $sum: { $cond: [{ $in: ['$status', ['accepted', 'in_progress', 'delivered', 'revision']] }, 1, 0] } 
+            $sum: { $cond: [{ $in: ['$status', ['in_progress', 'delivered', 'revision']] }, 1, 0] } 
           },
           completedOrders: { 
             $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } 
@@ -1217,8 +1014,6 @@ module.exports = {
   addDeliverables,
   acceptDelivery,
   requestRevision,
-  getSellerPendingOrders,
-  getSellerActiveOrders,
   getBuyerActiveOrders,
   getOrderStats
 };
