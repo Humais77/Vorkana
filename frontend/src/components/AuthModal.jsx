@@ -5,6 +5,7 @@ import { toast } from "react-hot-toast";
 import { useLogin, useRegister, validatePassword } from "../hooks/useAuth";
 import { useAuthStore } from "../store/useAuthStore";
 import { motion, AnimatePresence } from "framer-motion";
+import auth_modal_bg from '../assets/auth_modal_bg.png';
 
 const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const navigate = useNavigate();
@@ -120,25 +121,28 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSigninSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateSignin()) return;
+  // In handleSigninSubmit function, replace:
+const handleSigninSubmit = async (e) => {
+  e.preventDefault();
+  if (!validateSignin()) return;
 
-    try {
-      await loginMutation.mutateAsync(signinData);
-      onClose();
-      // Navigate based on user role
-      const user = useAuthStore.getState().user;
-      if (user?.role === 'seller') {
-        navigate("/seller/dashboard");
-      } else {
-        navigate("/");
-      }
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
+  try {
+    await loginMutation.mutateAsync(signinData);
+    onClose();
+    // REMOVE THIS ROLE-BASED NAVIGATION
+    // const user = useAuthStore.getState().user;
+    // if (user?.role === 'seller') {
+    //   navigate("/seller/dashboard");
+    // } else {
+    //   navigate("/");
+    // }
+    
+    // SIMPLY NAVIGATE TO HOME
+    navigate("/");
+  } catch (error) {
+    console.error("Login failed:", error);
+  }
+};
   const handleSignupSubmit = async (e) => {
     e.preventDefault();
     if (!validateSignup()) return;
@@ -494,7 +498,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          className="absolute inset-0 bg-black/30"
           onClick={onClose}
         />
         
@@ -503,7 +507,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-4xl bg-white rounded-xl shadow-xl overflow-hidden"
+          className="relative w-full max-w-6xl bg-white rounded-xl shadow-2xl overflow-hidden"
+
+
         >
           {/* Close button */}
           <button
@@ -513,9 +519,14 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             <X className="w-4 h-4" />
           </button>
 
-          <div className="flex h-[500px]">
+          <div className="flex h-[620px]">
+
             {/* Left Side - Benefits */}
-            <div className="hidden lg:flex flex-col w-2/5 bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white">
+            <div
+  className="hidden lg:flex flex-col w-[38%] p-8 text-white bg-cover bg-center relative"
+  style={{ backgroundImage: `url(${auth_modal_bg})` }}
+>
+
               <div className="flex-1">
                 <h1 className="text-2xl font-bold mb-4">
                   Success starts here
@@ -545,7 +556,8 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
             {/* Right Side - Auth Content */}
             <div className="flex-1 p-6 overflow-y-auto">
-              <div className="max-w-xs mx-auto h-full flex flex-col">
+              <div className="max-w-sm mx-auto h-full flex flex-col">
+
                 {/* Header with tab switch - Only show in social view */}
                 {!showEmailForm && (
                   <div className="text-center mb-6">

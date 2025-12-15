@@ -1,10 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authAPI, userAPI } from '../api/auth';
 import { useAuthStore } from '../store/useAuthStore';
-import { useState } from 'react';
 import { toast } from 'react-hot-toast';
 
-// Password validation helper
 export const validatePassword = (password) => {
   const minLength = 8;
   const hasUpperCase = /[A-Z]/.test(password);
@@ -35,7 +33,6 @@ export const validatePassword = (password) => {
   return { valid: true, message: 'Password is strong' };
 };
 
-// Email validation helper
 export const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
@@ -106,7 +103,7 @@ export const useLogout = () => {
       toast.success('Logged out successfully');
     },
     onError: (error) => {
-      logout(); // Still logout on error
+      logout();
       toast.error(error.response?.data?.message || 'Logout failed');
     },
   });
@@ -122,7 +119,6 @@ export const useChangePassword = () => {
       if (data.success) {
         toast.success(data.message || 'Password changed successfully');
         
-        // If requires reauth, logout user
         if (data.requiresReauth) {
           setTimeout(() => {
             window.location.href = '/signin';
@@ -219,7 +215,6 @@ export const useResetPassword = () => {
       if (data.success) {
         toast.success(data.message || 'Password reset successfully');
         
-        // Auto-login user if tokens provided
         if (data.token) {
           const { setAuth } = useAuthStore.getState();
           setAuth(data.user, data.token);

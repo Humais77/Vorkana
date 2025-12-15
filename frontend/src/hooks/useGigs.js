@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { gigsAPI } from '../api/gigs';
 import { useGigStore } from '../store/useGigStore';
-import { useAuthStore } from '../store/useAuthStore'; // Import auth store
+import { useAuthStore } from '../store/useAuthStore';
 import toast from 'react-hot-toast';
 
-// Query keys
 export const gigKeys = {
   all: ['gigs'],
   lists: () => [...gigKeys.all, 'list'],
@@ -17,7 +16,6 @@ export const gigKeys = {
   search: (params) => [...gigKeys.all, 'search', params],
 };
 
-// Helper function to extract gigs from response
 export const extractGigsFromResponse = (response) => {
   if (!response) return [];
   
@@ -40,7 +38,6 @@ export const extractGigsFromResponse = (response) => {
   return [];
 };
 
-// Get current user's gigs - FIXED
 export const useMyGigs = (filters = {}) => {
   const { user } = useAuthStore();
   
@@ -60,7 +57,6 @@ export const useMyGigs = (filters = {}) => {
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     onError: (error) => {
-      console.error('Error fetching my gigs:', error);
       if (error.message !== 'User not authenticated') {
         toast.error('Failed to load your gigs');
       }
@@ -77,7 +73,6 @@ export const useGigs = (params = {}) => {
     retry: 1,
     retryDelay: 1000,
     onError: (error) => {
-      console.error('Error fetching gigs:', error);
       if (error.code !== 'SERVER_ERROR') {
         toast.error('Failed to load gigs');
       }
@@ -85,7 +80,6 @@ export const useGigs = (params = {}) => {
   });
 };
 
-// Get gigs with infinite scroll
 export const useInfiniteGigs = (queryParams = {}) => {
   const { user } = useAuthStore();
   
@@ -95,7 +89,6 @@ export const useInfiniteGigs = (queryParams = {}) => {
       gigsAPI.getAll({ 
         ...queryParams, 
         page: pageParam,
-        // If query includes createdBy='me', replace with actual user ID
         createdBy: queryParams.createdBy === 'me' ? user?._id : queryParams.createdBy
       }),
     initialPageParam: 1,
@@ -108,11 +101,10 @@ export const useInfiniteGigs = (queryParams = {}) => {
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
-    enabled: !(queryParams.createdBy === 'me' && !user?._id), // Only enable if user exists when requesting 'my' gigs
+    enabled: !(queryParams.createdBy === 'me' && !user?._id),
   });
 };
 
-// Get popular gigs
 export const usePopularGigs = () => {
   return useQuery({
     queryKey: gigKeys.popular(),
@@ -131,7 +123,6 @@ export const usePopularGigs = () => {
   });
 };
 
-// Get single gig
 export const useGig = (id) => {
   const setGigDetails = useGigStore((state) => state.setGigDetails);
   
@@ -153,7 +144,6 @@ export const useGig = (id) => {
   });
 };
 
-// Create gig
 export const useCreateGig = () => {
   const queryClient = useQueryClient();
   const setLastCreatedGigId = useGigStore((state) => state.setLastCreatedGigId);
@@ -169,26 +159,11 @@ export const useCreateGig = () => {
         setLastCreatedGigId(gigId);
       }
       
-      // Log success
-      console.log('Gig created successfully:', {
-        id: gigId,
-        title: data.data?.title,
-        success: data.success
-      });
-      
       toast.success(data.message || 'Gig created successfully!');
     },
     onError: (error) => {
-      console.error('Gig creation error details:', {
-        message: error.message,
-        code: error.code,
-        errors: error.errors,
-        status: error.status
-      });
-      
       let errorMessage = error.message || 'Failed to create gig';
       
-      // Handle specific error codes
       if (error.code === 'CATEGORY_NOT_FOUND') {
         errorMessage = 'Please select a valid category';
       } else if (error.code === 'SUBCATEGORY_NOT_FOUND') {
@@ -202,7 +177,6 @@ export const useCreateGig = () => {
   });
 };
 
-// Update gig
 export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
@@ -218,8 +192,6 @@ export const useUpdateGig = () => {
       toast.success(data.message || 'Gig updated successfully!');
     },
     onError: (error) => {
-      console.error('Gig update error:', error);
-      
       if (error.code === 'VERSION_CONFLICT') {
         toast.error('This gig was modified by another user. Please refresh and try again.');
       } else {
@@ -229,7 +201,6 @@ export const useUpdateGig = () => {
   });
 };
 
-// Delete single gig
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
   
@@ -247,8 +218,6 @@ export const useDeleteGig = () => {
       toast.success(data.message || 'Gig deleted successfully!');
     },
     onError: (error) => {
-      console.error('Gig deletion error:', error);
-      
       if (error.code === 'GIG_IN_PROGRESS') {
         toast.error('Cannot delete gig that is in progress. Use force delete if necessary.');
       } else {
@@ -258,7 +227,6 @@ export const useDeleteGig = () => {
   });
 };
 
-// In useGigs.js, update useDeleteMultipleGigs:
 export const useDeleteMultipleGigs = () => {
   const queryClient = useQueryClient();
   
@@ -269,13 +237,9 @@ export const useDeleteMultipleGigs = () => {
       
       for (const id of ids) {
         try {
-          // First try normal delete
           const result = await gigsAPI.delete(id);
           results.push({ id, success: true, result });
         } catch (error) {
-          console.error(`Failed to delete gig ${id}:`, error);
-          
-          // If it's a validation error, try force delete
           if (error.message?.includes('validation failed') || error.code === 'DELETE_VALIDATION_ERROR') {
             try {
               const forceResult = await gigsAPI.delete(id, { force: true });
@@ -312,13 +276,11 @@ export const useDeleteMultipleGigs = () => {
       }
     },
     onError: (error) => {
-      console.error('Multiple gigs deletion error:', error);
       toast.error(error.message || 'Failed to delete gigs');
     },
   });
 };
 
-// Update gig status
 export const useUpdateGigStatus = () => {
   const queryClient = useQueryClient();
   
@@ -333,19 +295,16 @@ export const useUpdateGigStatus = () => {
       toast.success(`Gig marked as ${variables.status}`);
     },
     onError: (error) => {
-      console.error('Gig status update error:', error);
       toast.error(error.message || 'Failed to update gig status');
     },
   });
 };
 
-// Update multiple gigs status
 export const useUpdateMultipleGigsStatus = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: async ({ ids, status }) => {
-      // Update each gig individually
       const results = await Promise.all(
         ids.map(id => gigsAPI.update(id, { status }))
       );
@@ -354,7 +313,6 @@ export const useUpdateMultipleGigsStatus = () => {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
       
-      // Invalidate each gig detail
       variables.ids.forEach(id => {
         queryClient.invalidateQueries({ queryKey: gigKeys.detail(id) });
       });
@@ -362,13 +320,11 @@ export const useUpdateMultipleGigsStatus = () => {
       toast.success(`${variables.ids.length} gig(s) marked as ${variables.status}`);
     },
     onError: (error) => {
-      console.error('Multiple gigs status update error:', error);
       toast.error(error.message || 'Failed to update gigs status');
     },
   });
 };
 
-// Restore gig
 export const useRestoreGig = () => {
   const queryClient = useQueryClient();
   
@@ -382,14 +338,11 @@ export const useRestoreGig = () => {
       toast.success(data.message || 'Gig restored successfully!');
     },
     onError: (error) => {
-      console.error('Gig restoration error:', error);
       toast.error(error.data?.message || error.message || 'Failed to restore gig');
     },
   });
 };
 
-// In useGigs.js - update useGigStats function
-// Update the useGigStats function in useGigs.js
 export const useGigStats = () => {
   const { user } = useAuthStore();
   
@@ -400,9 +353,6 @@ export const useGigStats = () => {
         const response = await gigsAPI.getStats();
         return response;
       } catch (error) {
-        console.warn('Stats endpoint not available, returning empty stats:', error.message);
-        
-        // Return empty stats structure
         return {
           success: false,
           data: {
@@ -427,7 +377,6 @@ export const useGigStats = () => {
   });
 };
 
-// Search gigs
 export const useSearchGigs = (searchParams = {}) => {
   return useQuery({
     queryKey: gigKeys.search(searchParams),
@@ -438,7 +387,6 @@ export const useSearchGigs = (searchParams = {}) => {
   });
 };
 
-// Submit proposal
 export const useSubmitProposal = () => {
   const queryClient = useQueryClient();
   
@@ -452,8 +400,6 @@ export const useSubmitProposal = () => {
       toast.success(data.message || 'Proposal submitted successfully!');
     },
     onError: (error) => {
-      console.error('Proposal submission error:', error);
-      
       if (error.code === 'DUPLICATE_PROPOSAL') {
         toast.error('You have already submitted a proposal for this gig.');
       } else if (error.code === 'PRIVATE_GIG') {
@@ -465,7 +411,6 @@ export const useSubmitProposal = () => {
   });
 };
 
-// Export gigs
 export const useExportGigs = () => {
   return useMutation({
     mutationFn: (params) => gigsAPI.exportGigs(params),
@@ -477,8 +422,6 @@ export const useExportGigs = () => {
       }
     },
     onError: (error) => {
-      console.error('Export error:', error);
-      
       if (error.code === 'EXPORT_LIMIT_EXCEEDED') {
         toast.error('Export limit exceeded. Please use filters to reduce the number of records.');
       } else {
@@ -488,7 +431,6 @@ export const useExportGigs = () => {
   });
 };
 
-// Get similar gigs
 export const useSimilarGigs = (gigId) => {
   return useQuery({
     queryKey: ['gigs', 'similar', gigId],
@@ -498,7 +440,6 @@ export const useSimilarGigs = (gigId) => {
   });
 };
 
-// Hook for optimistic updates when toggling gig selection
 export const useToggleGigSelection = () => {
   const queryClient = useQueryClient();
   
@@ -507,13 +448,10 @@ export const useToggleGigSelection = () => {
       return { gigId, selected };
     },
     onMutate: async ({ gigId, selected }) => {
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: gigKeys.myGigs() });
       
-      // Snapshot previous value
       const previousGigs = queryClient.getQueryData(gigKeys.myGigs());
       
-      // Optimistically update to the new value
       queryClient.setQueryData(gigKeys.myGigs(), (old) => {
         if (!old) return old;
         
@@ -533,7 +471,6 @@ export const useToggleGigSelection = () => {
       return { previousGigs };
     },
     onError: (err, variables, context) => {
-      // Rollback on error
       if (context?.previousGigs) {
         queryClient.setQueryData(gigKeys.myGigs(), context.previousGigs);
       }

@@ -98,11 +98,12 @@ const OAuthSuccess = () => {
         
         // Redirect based on user role
         setTimeout(() => {
-          if (data.user.role === 'seller') {
-            navigate('/seller/dashboard');
-          } else {
-            navigate('/');
-          }
+          // if (data.user.role === 'seller') {
+          //   navigate('/seller/dashboard');
+          // } else {
+          //   navigate('/');
+          // }
+           navigate('/');
         }, 1500);
         
       } catch (err) {

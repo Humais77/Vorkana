@@ -15,7 +15,6 @@ const getUserFromStorage = () => {
     
     return null;
   } catch (error) {
-    console.error("Error reading user from localStorage:", error);
     return null;
   }
 };
@@ -24,7 +23,6 @@ const getTokenFromStorage = () => {
   try {
     return localStorage.getItem("userToken");
   } catch (error) {
-    console.error("Error reading token from localStorage:", error);
     return null;
   }
 };
@@ -33,7 +31,6 @@ const getRefreshTokenFromStorage = () => {
   try {
     return localStorage.getItem("refreshToken");
   } catch (error) {
-    console.error("Error reading refresh token from localStorage:", error);
     return null;
   }
 };
@@ -41,7 +38,6 @@ const getRefreshTokenFromStorage = () => {
 export const useAuthStore = create(
   persist(
     (set, get) => ({
-      // State
       user: getUserFromStorage(),
       token: getTokenFromStorage(),
       refreshToken: getRefreshTokenFromStorage(),
@@ -49,12 +45,10 @@ export const useAuthStore = create(
       loading: false,
       error: null,
       
-      // Actions
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
       
-      // Set authentication (with tokens)
       setAuth: (user, token, refreshToken) => {
         set({ 
           user, 
@@ -65,7 +59,6 @@ export const useAuthStore = create(
           error: null 
         });
         
-        // Persist to localStorage
         if (user) {
           localStorage.setItem("userInfo", JSON.stringify(user));
         }
@@ -77,7 +70,6 @@ export const useAuthStore = create(
         }
       },
       
-      // Set only user (useful for role updates)
       setUser: (user) => {
         const currentState = get();
         set({ 
@@ -86,7 +78,6 @@ export const useAuthStore = create(
           error: null 
         });
         
-        // Update localStorage
         if (user) {
           const currentUser = currentState.user || {};
           const updatedUser = { ...currentUser, ...user };
@@ -94,7 +85,6 @@ export const useAuthStore = create(
         }
       },
       
-      // Set only tokens
       setTokens: (token, refreshToken) => {
         set({ 
           token, 
@@ -112,7 +102,6 @@ export const useAuthStore = create(
         }
       },
       
-      // Logout with token blacklisting
       logout: () => {
         set({ 
           user: null, 
@@ -123,14 +112,12 @@ export const useAuthStore = create(
           error: null 
         });
         
-        // Clear localStorage
         localStorage.removeItem("userInfo");
         localStorage.removeItem("userToken");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
       },
       
-      // Sync from storage
       syncFromStorage: () => {
         const user = getUserFromStorage();
         const token = getTokenFromStorage();
@@ -143,19 +130,11 @@ export const useAuthStore = create(
         });
       },
       
-      // Check if user is seller
-      isSeller: () => {
-        const user = get().user;
-        return user?.role === 'seller';
-      },
-      
-      // Check if user is admin
       isAdmin: () => {
         const user = get().user;
         return user?.role === 'admin';
       },
       
-      // Check if email is verified
       isEmailVerified: () => {
         const user = get().user;
         return user?.emailVerified === true;
