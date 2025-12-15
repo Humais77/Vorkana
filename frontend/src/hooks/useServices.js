@@ -1,47 +1,38 @@
-// hooks/useServices.js
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { servicesAPI } from '../api/services.js';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-
-// Fetch seller's services
 export const useMyServices = (filters = {}) => {
   return useQuery({
     queryKey: ['myServices', filters],
     queryFn: async () => {
       try {
         const result = await servicesAPI.getMyServices(filters);
-        console.log('useMyServices result:', result);
         return result;
       } catch (error) {
-        console.error('useMyServices query error:', error);
         throw error;
       }
     },
     refetchOnWindowFocus: false,
     retry: 1,
     onError: (error) => {
-      console.error('Get my services error:', error);
       toast.error(error.message || 'Failed to load your services');
     },
   });
 };
 
-// Fetch all services (public)
 export const useServices = (filters = {}) => {
   return useQuery({
     queryKey: ['services', filters],
     queryFn: () => servicesAPI.getAll(filters),
     refetchOnWindowFocus: false,
     onError: (error) => {
-      console.error('Get services error:', error);
       toast.error(error.message || 'Failed to load services');
     },
   });
 };
 
-// Fetch single service
 export const useService = (identifier) => {
   return useQuery({
     queryKey: ['service', identifier],
@@ -49,55 +40,40 @@ export const useService = (identifier) => {
     enabled: !!identifier,
     retry: false,
     onError: (error) => {
-      console.error('Get service error:', error);
       toast.error(error.message || 'Failed to load service');
     },
   });
 };
 
-// Fetch categories
 export const useCategories = () => {
   return useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
       try {
         const categories = await servicesAPI.getCategories();
-        console.log('Categories fetched:', categories);
         return categories;
       } catch (error) {
-        console.error('Categories fetch error:', error);
         throw error;
       }
     },
     refetchOnWindowFocus: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    onError: (error) => {
-      console.error('Get categories error:', error);
-      // Don't show toast for categories error as it's handled in the component
-    },
+    staleTime: 5 * 60 * 1000,
   });
 };
 
-// Create new service
 export const useCreateService = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   
   return useMutation({
     mutationFn: async ({ serviceData, files = null }) => {
-      console.log('Creating service:', serviceData);
       const result = await servicesAPI.create(serviceData, files);
-      console.log('Create service result:', result);
       return result;
     },
     onSuccess: (data) => {
-      console.log('Create service success:', data);
-      
       if (data.success) {
         queryClient.invalidateQueries(['myServices']);
         queryClient.invalidateQueries(['services']);
-        
-        // Navigate to profile with services tab
         navigate('/profile?tab=services');
         toast.success(data.message || 'Service created successfully!');
       } else {
@@ -105,13 +81,11 @@ export const useCreateService = () => {
       }
     },
     onError: (error) => {
-      console.error('Create service mutation error:', error);
       toast.error(error.message || 'Failed to create service');
     },
   });
 };
 
-// Update service
 export const useUpdateService = () => {
   const queryClient = useQueryClient();
   
@@ -128,13 +102,11 @@ export const useUpdateService = () => {
       }
     },
     onError: (error) => {
-      console.error('Update service error:', error);
       toast.error(error.message || 'Failed to update service');
     },
   });
 };
 
-// Delete service
 export const useDeleteService = () => {
   const queryClient = useQueryClient();
   
@@ -150,13 +122,11 @@ export const useDeleteService = () => {
       }
     },
     onError: (error) => {
-      console.error('Delete service error:', error);
       toast.error(error.message || 'Failed to delete service');
     },
   });
 };
 
-// Like/Unlike service
 export const useToggleLike = () => {
   const queryClient = useQueryClient();
   
@@ -172,25 +142,23 @@ export const useToggleLike = () => {
       }
     },
     onError: (error) => {
-      console.error('Toggle like error:', error);
       toast.error(error.message || 'Failed to perform action');
     },
   });
 };
 
-// Get service stats
 export const useServiceStats = (filters = {}) => {
   return useQuery({
     queryKey: ['serviceStats', filters],
     queryFn: () => servicesAPI.getStats(filters),
     refetchOnWindowFocus: false,
+    // Add error handling
     onError: (error) => {
-      console.error('Failed to fetch service stats:', error);
+      toast.error(error.message || 'Failed to fetch service statistics');
     },
   });
 };
 
-// Search services
 export const useSearchServices = (searchParams) => {
   return useQuery({
     queryKey: ['searchServices', searchParams],
@@ -198,26 +166,20 @@ export const useSearchServices = (searchParams) => {
     enabled: Boolean(searchParams?.query || searchParams?.q || searchParams?.category),
     refetchOnWindowFocus: false,
     onError: (error) => {
-      console.error('Search services error:', error);
       toast.error(error.message || 'Failed to search services');
     },
   });
 };
 
-// Get similar services
 export const useSimilarServices = (serviceId, params = {}) => {
   return useQuery({
     queryKey: ['similarServices', serviceId, params],
     queryFn: () => servicesAPI.getSimilar(serviceId, params),
     enabled: !!serviceId,
     refetchOnWindowFocus: false,
-    onError: (error) => {
-      console.error('Failed to fetch similar services:', error);
-    },
   });
 };
 
-// Bulk operations
 export const useBulkServiceOperations = () => {
   const queryClient = useQueryClient();
   
@@ -233,13 +195,11 @@ export const useBulkServiceOperations = () => {
       }
     },
     onError: (error) => {
-      console.error('Bulk operation error:', error);
       toast.error(error.message || 'Failed to perform bulk operation');
     },
   });
 };
 
-// Upload images
 export const useUploadServiceImages = () => {
   const queryClient = useQueryClient();
   
@@ -255,13 +215,11 @@ export const useUploadServiceImages = () => {
       }
     },
     onError: (error) => {
-      console.error('Upload images error:', error);
       toast.error(error.message || 'Failed to upload images');
     },
   });
 };
 
-// Remove image
 export const useRemoveServiceImage = () => {
   const queryClient = useQueryClient();
   
@@ -277,7 +235,6 @@ export const useRemoveServiceImage = () => {
       }
     },
     onError: (error) => {
-      console.error('Remove image error:', error);
       toast.error(error.message || 'Failed to remove image');
     },
   });
