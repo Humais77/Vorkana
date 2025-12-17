@@ -131,6 +131,7 @@ const verifyAdmin = async (req, res, next) => {
   }
 };
 // In admin.middleware.js - UPDATED requirePermission function
+// In admin.middleware.js - UPDATED requirePermission function
 const requirePermission = (permission) => {
   return (req, res, next) => {
     if (!req.admin) {
@@ -148,21 +149,57 @@ const requirePermission = (permission) => {
 
     // FIX: Updated permissions matrix - admin should have all permissions
     const permissions = {
+      // Dashboard
       'view_dashboard': ['admin', 'super_admin', 'moderator'],
+      
+      // Users
+      'view_users': ['admin', 'super_admin', 'moderator'],  // ADD THIS
       'manage_users': ['admin', 'super_admin'],
+      'export_users': ['admin', 'super_admin'],
+      
+      // Categories
+      'view_categories': ['admin', 'super_admin', 'moderator'],  // ADD THIS
       'manage_categories': ['admin', 'super_admin', 'moderator'],
-      'manage_services': ['admin', 'super_admin', 'moderator'], // ADD THIS LINE
+      'export_categories': ['admin', 'super_admin'],
+      
+      // Services
+      'view_services': ['admin', 'super_admin', 'moderator'],  // ADD THIS
+      'manage_services': ['admin', 'super_admin', 'moderator'],
+      'export_services': ['admin', 'super_admin'],
+      
+      // Gigs
+      'view_gigs': ['admin', 'super_admin', 'moderator'],  // ADD THIS
       'manage_gigs': ['admin', 'super_admin', 'moderator'],
+      'export_gigs': ['admin', 'super_admin'],
+      
+      // Orders
+      'view_orders': ['admin', 'super_admin', 'moderator'],  // ADD THIS
       'manage_orders': ['admin', 'super_admin', 'moderator'],
+      'export_orders': ['admin', 'super_admin'],
+      
+      // Analytics
       'view_analytics': ['admin', 'super_admin'],
       'export_data': ['admin', 'super_admin'],
-      'system_settings': ['admin', 'super_admin']
+      
+      // System
+      'system_settings': ['admin', 'super_admin'],
+      
+      // Fallback for any other permissions
+      '*': ['admin', 'super_admin', 'moderator']  // Wildcard for any permission not listed
     };
 
     const userRole = req.admin.role;
-    const allowedRoles = permissions[permission] || [];
-
+    
+    // Check if permission exists in matrix, otherwise use wildcard
+    const allowedRoles = permissions[permission] || permissions['*'] || [];
+    
     console.log(`[PERMISSION CHECK] Allowed roles for ${permission}:`, allowedRoles);
+    
+    // Always allow admin and super_admin for all permissions
+    if (userRole === 'super_admin' || userRole === 'admin') {
+      console.log(`[PERMISSION CHECK] Bypass check for ${userRole}`);
+      return next();
+    }
 
     if (!allowedRoles.includes(userRole)) {
       console.log(`[PERMISSION CHECK] Access denied. User role ${userRole} not in allowed roles:`, allowedRoles);
