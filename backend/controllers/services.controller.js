@@ -2331,36 +2331,41 @@ const getMyServices = async (req, res, next) => {
     ]);
 
     const formattedServices = services.map(service => {
-      const safeService = { ...service };
-      
-      safeService.hasImages = Boolean(service.images && service.images.length > 0);
-      safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
-      safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
-      
-      safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
-      
-      safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit}`;
-      
-      const statusColors = {
-        active: 'success',
-        draft: 'warning',
-        pending: 'info',
-        paused: 'secondary',
-        denied: 'danger',
-        suspended: 'danger'
-      };
-      
-      safeService.statusBadge = {
-        text: service.status.charAt(0).toUpperCase() + service.status.slice(1),
-        color: statusColors[service.status] || 'secondary'
-      };
-      
-      if (safeService.description && safeService.description.length > 150) {
-        safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
-      }
-      
-      return safeService;
-    });
+  const safeService = { ...service };
+
+  safeService.hasImages = Boolean(service.images && service.images.length > 0);
+  safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
+  safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
+
+  safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
+  safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit || 'days'}`;
+
+  const statusColors = {
+    active: 'success',
+    draft: 'warning',
+    pending: 'info',
+    paused: 'secondary',
+    denied: 'danger',
+    suspended: 'danger'
+  };
+
+  // FIXED: Safe handling of missing/invalid status
+  const statusKey = service.status || 'draft';
+  const statusText = statusKey 
+    ? statusKey.charAt(0).toUpperCase() + statusKey.slice(1)
+    : 'Unknown';
+
+  safeService.statusBadge = {
+    text: statusText,
+    color: statusColors[statusKey] || 'secondary'
+  };
+
+  if (safeService.description && safeService.description.length > 150) {
+    safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
+  }
+
+  return safeService;
+});
 
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
@@ -2428,12 +2433,159 @@ const getMyServices = async (req, res, next) => {
     next(error);
   }
 };
+// Add to service.controller.js
+const getAdminServices = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    // Security: Verify admin access
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const {
+      page = 1,
+      limit = 12,
+      search = '',
+      status = '',
+      featured = '',
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      minPrice,
+      maxPrice,
+      category,
+      rating,
+      createdBy,
+      isActive
+    } = req.query;
+
+    // Build filter for admin - can see all services
+    const filter = {};
+
+    if (search) {
+      const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+      filter.$or = [
+        { title: { $regex: sanitizedSearch, $options: 'i' } },
+        { description: { $regex: sanitizedSearch, $options: 'i' } },
+        { slug: { $regex: sanitizedSearch, $options: 'i' } }
+      ];
+    }
+
+    if (status && status !== '') {
+      filter.status = status;
+    }
+
+    if (featured && featured !== '') {
+      filter.isFeatured = featured === 'true';
+    }
+
+    if (isActive && isActive !== '') {
+      filter.isActive = isActive === 'true';
+    }
+
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+
+    if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
+      filter.createdBy = createdBy;
+    }
+
+    // Price range
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = parseFloat(minPrice);
+      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    }
+
+    // Rating range
+    if (rating) {
+      filter.rating = { $gte: parseFloat(rating) };
+    }
+
+    // Calculate pagination
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort options
+    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'ordersCount', 'views'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
+    const sortOptions = { [sortField]: sortDirection };
+
+    // Execute query
+    const [services, total] = await Promise.all([
+      Service.find(filter)
+        .select('-__v -lastUpdatedBy -version')
+        .populate('category', 'name slug icon')
+        .populate('subcategory', 'name slug')
+        .populate('createdBy', 'name email picture role')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Service.countDocuments(filter)
+    ]);
+
+    // Format response
+    const formattedServices = services.map(service => ({
+      ...service,
+      priceFormatted: `${service.currency || 'USD'} ${service.price}`,
+      deliveryFormatted: `${service.deliveryTime} ${service.deliveryTimeUnit || 'days'}`,
+      statusBadge: {
+        text: service.status ? service.status.charAt(0).toUpperCase() + service.status.slice(1) : 'Unknown',
+        color: service.status === 'active' ? 'success' : 
+               service.status === 'draft' ? 'warning' : 
+               service.status === 'pending' ? 'info' : 'secondary'
+      },
+      createdBy: service.createdBy ? {
+        _id: service.createdBy._id,
+        name: service.createdBy.name,
+        email: service.createdBy.email,
+        picture: service.createdBy.picture
+      } : null
+    }));
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: formattedServices,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[GET ADMIN SERVICES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch services',
+      code: 'SERVICES_FETCH_ERROR',
+      requestId
+    });
+  }
+};
 
 module.exports = {
   createService,
   getServices,
   getMyServices,
   getServiceById,
+  getAdminServices,
   updateService,
   deleteService,
   restoreService,

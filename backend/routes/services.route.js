@@ -195,7 +195,12 @@ router.get('/search', optionalAuth, validateQuery, controller.searchServices);
 
 // Get similar services
 router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
-
+router.get('/my-services', 
+  protect, 
+  serviceLimiter, 
+  validateQuery, 
+  controller.getMyServices
+);
 // Get service by ID or slug
 router.get('/:id', optionalAuth, controller.getServiceById);
 
@@ -211,12 +216,7 @@ router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 // ============================================
 
 // Get my created services
-router.get('/my-services', 
-  protect, 
-  serviceLimiter, 
-  validateQuery, 
-  controller.getMyServices
-);
+
 
 // Create service with images
 router.post('/', 

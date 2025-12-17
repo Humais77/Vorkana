@@ -7,6 +7,7 @@ const {
   adminDashboardLimiter,
   auditLog 
 } = require('../middleware/admin.middleware.js');
+const serviceController = require('../controllers/services.controller.js');
 
 // Security: Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
@@ -127,6 +128,39 @@ router.get('/system/health',
       });
     }
   }
+);
+// admin.route.js - Update the services route
+router.get('/services', 
+  verifyAdmin,  
+  adminApiLimiter,
+  requirePermission('manage_services'),
+  auditLog('VIEW_SERVICES', 'services'),
+  async (req, res, next) => {
+    // Add admin-specific query parameters
+    req.query.isAdmin = true;
+    req.query.showAll = true;
+    req.query.includeInactive = true;
+    
+    // Parse numeric values
+    if (req.query.page) req.query.page = parseInt(req.query.page);
+    if (req.query.limit) req.query.limit = parseInt(req.query.limit);
+    
+    // Fix boolean cast issues
+    if (req.query.featured === '') delete req.query.featured;
+    if (req.query.status === '') delete req.query.status;
+    
+    next();
+  },
+  serviceController.getAdminServices  // This should match the exported function name
+);
+
+// Make similar changes to other service routes:
+router.get('/services/stats', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SERVICE_STATS', 'services'),
+  serviceController.getServiceStats  // Ensure this matches your controller function
 );
 
 // Real-time updates endpoint for Socket.io

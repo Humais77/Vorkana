@@ -20,21 +20,28 @@ const adminDashboardLimiter = rateLimit({
 
 // Advanced admin verification with multi-factor checks
 // In admin.middleware.js - FIX THE TOKEN EXTRACTION
+// In admin.middleware.js - UPDATED VERIFY ADMIN FUNCTION
 const verifyAdmin = async (req, res, next) => {
   try {
+    console.log('[ADMIN VERIFICATION] Starting verification...');
+    console.log('[ADMIN VERIFICATION] Headers:', req.headers);
+    
     // Security: Check for admin token in multiple locations
     let token;
     const authHeader = req.headers.authorization;
     const cookieToken = req.cookies?.adminToken || req.cookies?.token;
     
     // FIX: Accept both "Admin" and "Bearer" prefixes
-    if (authHeader && (authHeader.startsWith('Admin ') || authHeader.startsWith('Bearer '))) {
+    if (authHeader && (authHeader.startsWith('Admin ') || authHeader.startsWith('Bearer ') || authHeader.startsWith('admin '))) {
       token = authHeader.split(' ')[1];
+      console.log('[ADMIN VERIFICATION] Token from header:', token ? 'Present' : 'Missing');
     } else if (cookieToken) {
       token = cookieToken;
+      console.log('[ADMIN VERIFICATION] Token from cookie:', token ? 'Present' : 'Missing');
     }
     
     if (!token) {
+      console.log('[ADMIN VERIFICATION] No token found');
       return res.status(401).json({
         success: false,
         message: 'Admin access denied. No token provided.',
@@ -42,21 +49,40 @@ const verifyAdmin = async (req, res, next) => {
       });
     }
 
+    // FIX: Log token verification attempt
+    console.log('[ADMIN VERIFICATION] Verifying token...');
+    
     // FIX: Use the same JWT_SECRET for now
     const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    console.log('[ADMIN VERIFICATION] Decoded token:', decoded);
     
-    // Security: Find user with additional checks
+    // FIX: Check user with more flexible role checking
     const user = await User.findOne({
-      _id: decoded.id,
-      isActive: true,
-      role: 'admin' // This is key - must be admin role
+      _id: decoded.id || decoded._id, // Try both possibilities
+      isActive: true
     }).select('+lastLoginAt +failedLoginAttempts');
 
     if (!user) {
+      console.log('[ADMIN VERIFICATION] User not found:', decoded.id);
       return res.status(403).json({
         success: false,
-        message: 'Admin user not found or inactive.',
-        code: 'ADMIN_NOT_FOUND'
+        message: 'User not found or inactive.',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    // FIX: Check if user has admin role (support multiple role formats)
+    const isAdmin = user.role === 'admin' || 
+                   user.role === 'Admin' || 
+                   user.role === 'administrator' ||
+                   (Array.isArray(user.roles) && user.roles.includes('admin'));
+    
+    if (!isAdmin) {
+      console.log('[ADMIN VERIFICATION] User is not admin. Role:', user.role);
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required. Your role: ' + user.role,
+        code: 'ADMIN_ACCESS_REQUIRED'
       });
     }
 
@@ -69,13 +95,14 @@ const verifyAdmin = async (req, res, next) => {
 
     req.admin = user;
     req.adminToken = token;
+    req.user = user; // Also set req.user for compatibility
     
-    // Security: Log admin access
-    console.log(`[ADMIN ACCESS] ${new Date().toISOString()} - ${user.email} - ${req.method} ${req.path}`);
+    console.log(`[ADMIN VERIFICATION] Access granted: ${user.email} (${user.role})`);
     
     next();
   } catch (error) {
     console.error('[ADMIN VERIFICATION ERROR]', error.message);
+    console.error('[ADMIN VERIFICATION ERROR] Stack:', error.stack);
     
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
@@ -96,14 +123,16 @@ const verifyAdmin = async (req, res, next) => {
     res.status(500).json({
       success: false,
       message: 'Admin authentication failed.',
-      code: 'ADMIN_AUTH_ERROR'
+      code: 'ADMIN_AUTH_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
-// Role-based access control middleware
+// In admin.middleware.js - UPDATED requirePermission function
 const requirePermission = (permission) => {
   return (req, res, next) => {
     if (!req.admin) {
+      console.log('[PERMISSION CHECK] No admin object found');
       return res.status(401).json({
         success: false,
         message: 'Admin authentication required.',
@@ -111,27 +140,39 @@ const requirePermission = (permission) => {
       });
     }
 
-    // Security: Define admin permissions matrix
+    console.log(`[PERMISSION CHECK] Checking permission: ${permission}`);
+    console.log(`[PERMISSION CHECK] User role: ${req.admin.role}`);
+    console.log(`[PERMISSION CHECK] User ID: ${req.admin._id}`);
+
+    // FIX: Updated permissions matrix - admin should have all permissions
     const permissions = {
-      'view_dashboard': ['admin'],
-      'manage_users': ['admin'],
-      'manage_categories': ['admin'],
-      'view_analytics': ['admin'],
-      'export_data': ['admin'],
-      'system_settings': ['admin']
+      'view_dashboard': ['admin', 'super_admin', 'moderator'],
+      'manage_users': ['admin', 'super_admin'],
+      'manage_categories': ['admin', 'super_admin', 'moderator'],
+      'manage_services': ['admin', 'super_admin', 'moderator'], // ADD THIS LINE
+      'manage_gigs': ['admin', 'super_admin', 'moderator'],
+      'manage_orders': ['admin', 'super_admin', 'moderator'],
+      'view_analytics': ['admin', 'super_admin'],
+      'export_data': ['admin', 'super_admin'],
+      'system_settings': ['admin', 'super_admin']
     };
 
     const userRole = req.admin.role;
     const allowedRoles = permissions[permission] || [];
 
+    console.log(`[PERMISSION CHECK] Allowed roles for ${permission}:`, allowedRoles);
+
     if (!allowedRoles.includes(userRole)) {
+      console.log(`[PERMISSION CHECK] Access denied. User role ${userRole} not in allowed roles:`, allowedRoles);
       return res.status(403).json({
         success: false,
-        message: `Insufficient permissions. Required: ${permission}`,
-        code: 'INSUFFICIENT_PERMISSIONS'
+        message: `Insufficient permissions. Required: ${permission}, Your role: ${userRole}`,
+        code: 'INSUFFICIENT_PERMISSIONS',
+        allowedRoles: allowedRoles
       });
     }
 
+    console.log(`[PERMISSION CHECK] Permission ${permission} granted to ${userRole}`);
     next();
   };
 };

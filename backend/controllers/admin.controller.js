@@ -608,6 +608,109 @@ const getSystemHealthHandler = async (req, res) => {
     });
   }
 };
+const getServiceStats = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const stats = await Service.aggregate([
+      {
+        $facet: {
+          overview: [
+            {
+              $group: {
+                _id: null,
+                totalServices: { $sum: 1 },
+                activeServices: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+                draftServices: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+                pendingServices: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+                pausedServices: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
+                suspendedServices: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
+                featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
+                recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
+                popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
+                totalOrders: { $sum: '$ordersCount' },
+                totalViews: { $sum: '$views' },
+                totalLikes: { $sum: '$likes' },
+                avgPrice: { $avg: '$price' },
+                avgRating: { $avg: '$rating' },
+                avgDeliveryTime: { $avg: '$deliveryTime' },
+                totalRevenue: { $sum: { $multiply: ['$price', '$ordersCount'] } }
+              }
+            }
+          ],
+          byCategory: [
+            { $match: { status: 'active', isActive: true } },
+            {
+              $group: {
+                _id: '$category',
+                count: { $sum: 1 },
+                totalOrders: { $sum: '$ordersCount' },
+                avgRating: { $avg: '$rating' },
+                avgPrice: { $avg: '$price' }
+              }
+            },
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+          ],
+          byStatus: [
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 },
+                avgPrice: { $avg: '$price' },
+                avgOrders: { $avg: '$ordersCount' }
+              }
+            },
+            { $sort: { count: -1 } }
+          ],
+          byFeatured: [
+            {
+              $group: {
+                _id: '$isFeatured',
+                count: { $sum: 1 },
+                avgOrders: { $avg: '$ordersCount' },
+                avgRating: { $avg: '$rating' }
+              }
+            }
+          ],
+          growth: [
+            {
+              $group: {
+                _id: {
+                  year: { $year: '$createdAt' },
+                  month: { $month: '$createdAt' },
+                  week: { $week: '$createdAt' }
+                },
+                count: { $sum: 1 },
+                totalOrders: { $sum: '$ordersCount' }
+              }
+            },
+            { $sort: { '_id.year': -1, '_id.month': -1, '_id.week': -1 } },
+            { $limit: 12 }
+          ]
+        }
+      }
+    ]);
+
+    const result = stats[0];
+    
+    res.json({
+      success: true,
+      data: result,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[SERVICE STATS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch service statistics',
+      code: 'SERVICE_STATS_ERROR',
+      requestId
+    });
+  }
+};
 
 module.exports = {
   getDashboardStats,
@@ -616,6 +719,7 @@ module.exports = {
   updateUser,
   deleteUser,
   exportUsers,
+  getServiceStats,
   generateAdminToken,
   getSystemHealthHandler, // Add this
   logAdminAction // Make sure this is exported if used in routes
