@@ -31,7 +31,48 @@ const initSocket = (server) => {
     pingInterval: 25000,
     cookie: false
   });
+  const adminNamespace = io.of('/admin');
+  
+  adminNamespace.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      if (!token) return next(new Error('Authentication error'));
+      
+      const decoded = jwt.verify(token, process.env.JWT_ADMIN_SECRET);
+      const admin = await User.findById(decoded.id);
+      
+      if (!admin || admin.role !== 'admin') {
+        return next(new Error('Admin access required'));
+      }
+      
+      socket.admin = admin;
+      next();
+    } catch (error) {
+      next(new Error('Authentication error'));
+    }
+  });
 
+  adminNamespace.on('connection', (socket) => {
+    console.log(`Admin connected: ${socket.admin.email}`);
+    
+    // Broadcast updates to all admin clients
+    const broadcastUpdate = (event, data) => {
+      adminNamespace.emit(`admin:${event}`, data);
+    };
+
+    // Listen for user updates from controllers
+    socket.on('user:updated', (user) => {
+      broadcastUpdate('user_updated', user);
+    });
+
+    socket.on('category:updated', (category) => {
+      broadcastUpdate('category_updated', category);
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`Admin disconnected: ${socket.admin.email}`);
+    });
+  });
   // Socket.io middleware for authentication
   io.use(async (socket, next) => {
     try {

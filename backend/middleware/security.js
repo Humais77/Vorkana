@@ -15,34 +15,31 @@ module.exports = function (app) {
 
   app.use(cookieParser());
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: [
-            "'self'",
-            "'unsafe-inline'",     
-            "'unsafe-eval'",      
-            'http://localhost:*',
-            'ws://localhost:*',
-          ],
-          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          connectSrc: ["'self'", 'http://localhost:*', 'ws://localhost:*', 'wss://localhost:*'],
-          frameAncestors: ["'none'"],
-        },
+  // In security.js - Update helmet configuration
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",     
+          "'unsafe-eval'",      
+          'http://localhost:*',
+          'ws://localhost:*',
+        ],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", 'http://localhost:*', 'ws://localhost:*', 'wss://localhost:*'],
+        frameAncestors: ["'none'"],
       },
-      referrerPolicy: { policy: 'no-referrer-when-downgrade' },
-      hsts: process.env.NODE_ENV === 'production' ? {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true,
-      } : false,
-      crossOriginEmbedderPolicy: false,
-    })
-  );
+    },
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Add this
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+  })
+);
 
   app.use((req, res, next) => {
     if (req.body) req.body = sanitize(req.body);

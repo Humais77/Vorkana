@@ -37,6 +37,7 @@ const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
 const orderRoutes = require('./routes/order.route.js'); // Add this
+const adminRoutes = require('./routes/admin.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
@@ -95,15 +96,28 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+// Enhanced CORS configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.error(`CORS blocked for origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
     'X-Request-ID',
     'X-CSRF-Token',
-    'Accept'
+    'Accept',
+    'X-Admin-Request', // Add this line - fix the header name
+    'X-Admin-Token'    // Add if you're using admin tokens
   ],
   exposedHeaders: [
     'X-Request-ID',
@@ -112,12 +126,18 @@ app.use(cors({
     'X-Page-Size',
     'X-Current-Page',
     'X-Response-Time',
-    'X-CSRF-Token'
+    'X-CSRF-Token',
+    'X-Admin-Access'  // Add admin-specific headers
   ],
   credentials: true,
-  maxAge: 86400
-}));
+  maxAge: 86400,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
 
+// ========== MIDDLEWARE ==========
+// CRITICAL: Apply CORS middleware FIRST
+app.use(cors(corsOptions));
 // Body parsing with limits
 app.use(express.json({ 
   limit: '10mb'
@@ -138,6 +158,8 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
 app.use('/api/orders', orderRoutes); // Add this
+app.use('/api/admin', adminRoutes);
+
 
 // ========== HEALTH CHECK ==========
 app.get('/health', (req, res) => {
