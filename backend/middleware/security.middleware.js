@@ -24,17 +24,18 @@ const securityHeaders = (req, res, next) => {
 const orderCreationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => ipKeyGenerator(req.ip),  // Fixed: use helper
+  keyGenerator: (req) => ipKeyGenerator(req),  // Fixed: pass the request object
   message: {
     success: false,
     message: 'Too many orders created. Please try again later.',
     code: 'ORDER_CREATION_LIMIT'
   }
 });
+
 const orderUpdateLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 20,
-  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}-${req.params.id}`,  // Fixed: wrap req.ip
+  keyGenerator: (req) => `${ipKeyGenerator(req)}-${req.params.id}`,  // Fixed: pass request object
   message: {
     success: false,
     message: 'Too many order updates. Please try again later.',

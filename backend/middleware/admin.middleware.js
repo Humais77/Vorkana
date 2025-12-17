@@ -2,13 +2,15 @@ const jwt = require('jsonwebtoken');
 const { promisify } = require('util');
 const User = require('../models/user.model.js');
 const rateLimit = require('express-rate-limit');
-
+const { ipKeyGenerator } = require('express-rate-limit'); 
 // Security: Rate limiting for admin dashboard
 const adminDashboardLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   keyGenerator: (req) => {
-    return req.user ? `${req.ip}-${req.user._id}` : req.ip;
+    // Use ipKeyGenerator instead of accessing req.ip directly
+    const ip = ipKeyGenerator(req);
+    return req.user ? `${ip}-${req.user._id}` : ip;
   },
   message: {
     success: false,
