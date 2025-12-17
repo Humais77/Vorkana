@@ -10,6 +10,7 @@ const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const UsersManagement = lazy(() => import('../../../components/admin/UsersManagement'));
 const CategoriesManagement = lazy(() => import('../../../components/admin/CategoriesManagement'));
 const ServicesManagement = lazy(() => import('../../../components/admin/ServicesManagement'));
+const GigsManagement = lazy(() => import('../../../components/admin/GigsManagement'));
 const SecurityPage = lazy(() => import('../../../components/admin/SecurityPage'));
 const ActivityLogPage = lazy(() => import('../../../components/admin/ActivityLogPage'));
 const SettingsPage = lazy(() => import('../../../components/admin/SettingsPage'));
@@ -43,6 +44,11 @@ const AdminRoutes = () => {
         <Route path="services" element={
           <Suspense fallback={<LoadingSpinner />}>
             <ServicesManagement />
+          </Suspense>
+        } />
+        <Route path="gigs" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <GigsManagement />
           </Suspense>
         } />
         <Route path="security" element={

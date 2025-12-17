@@ -195,8 +195,29 @@ getServiceStats: () => adminApi.get('/api/admin/services/stats'),
   // Analytics
   getAnalytics: (params) => adminApi.get('/api/admin/analytics', { params }),
   
-  // Mock data for development
+ getGigs: (params) => adminApi.get('/api/admin/gigs', { params }),
+  getGigById: (id) => adminApi.get(`/api/admin/gigs/${id}`),
+  createGig: (data) => adminApi.post('/api/admin/gigs', data),
+  updateGig: (id, data) => adminApi.put(`/api/admin/gigs/${id}`, data),
+  deleteGig: (id) => adminApi.delete(`/api/admin/gigs/${id}`),
+  bulkUpdateGigs: (data) => adminApi.post('/api/admin/gigs/bulk', data),
+  exportGigs: (format = 'csv') => 
+    adminApi.get('/api/admin/gigs/export', { 
+      params: { format },
+      responseType: 'blob'
+    }),
+  getGigStats: () => adminApi.get('/api/admin/gigs/stats'),
+  
+  // Get categories for dropdowns
+  getCategoriesForDropdown: () => 
+    adminApi.get('/api/admin/categories/dropdown', {
+      params: { active: true, limit: 100 }
+    }),
+    
+  // Get users for dropdown (clients/freelancers)
+  getUsersForDropdown: (role = '') => 
+    adminApi.get('/api/admin/users/dropdown', {
+      params: { role, limit: 100 }
+    }),
   
 };
-
-// Enhanced API with fallbacks for development

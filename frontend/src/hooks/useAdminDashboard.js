@@ -479,3 +479,137 @@ export const useBulkServiceOperations = () => {
     }
   });
 };
+// Add to useAdminDashboard.js
+export const useAdminGigs = (params = {}) => {
+  return useQuery({
+    queryKey: ['admin', 'gigs', params],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getGigs(params);
+        return response.data;
+      } catch (error) {
+        console.error('Gigs error:', error);
+        throw error;
+      }
+    },
+    staleTime: 60000,
+    retry: 2,
+    keepPreviousData: true,
+    onError: (error) => {
+      if (error.response?.status !== 401) {
+        toast.error('Failed to load gigs');
+      }
+    }
+  });
+};
+
+export const useCreateGig = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => adminAPI.createGig(data),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Gig created successfully');
+        queryClient.invalidateQueries(['admin', 'gigs']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Creation failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Creation failed');
+    }
+  });
+};
+
+export const useUpdateGig = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => adminAPI.updateGig(id, data),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Gig updated successfully');
+        queryClient.invalidateQueries(['admin', 'gigs']);
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Update failed');
+    }
+  });
+};
+
+export const useDeleteGig = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => adminAPI.deleteGig(id),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Gig deleted successfully');
+        queryClient.invalidateQueries(['admin', 'gigs']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Delete failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Delete failed');
+    }
+  });
+};
+
+export const useBulkGigOperations = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ids, operation, data = {} }) => 
+      adminAPI.bulkUpdateGigs({ ids, operation, data }),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(response.data.message || 'Bulk operation completed');
+        queryClient.invalidateQueries(['admin', 'gigs']);
+      } else {
+        toast.error(response.data.message || 'Bulk operation failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Bulk operation failed');
+    }
+  });
+};
+
+export const useCategoriesForDropdown = () => {
+  return useQuery({
+    queryKey: ['admin', 'categories', 'dropdown'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getCategoriesForDropdown();
+        return response.data;
+      } catch (error) {
+        console.error('Categories dropdown error:', error);
+        return { data: [] };
+      }
+    },
+    staleTime: 300000,
+  });
+};
+
+export const useUsersForDropdown = (role = '') => {
+  return useQuery({
+    queryKey: ['admin', 'users', 'dropdown', role],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getUsersForDropdown(role);
+        return response.data;
+      } catch (error) {
+        console.error('Users dropdown error:', error);
+        return { data: [] };
+      }
+    },
+    staleTime: 300000,
+  });
+};
