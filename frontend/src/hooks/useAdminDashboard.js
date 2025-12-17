@@ -310,3 +310,172 @@ export const useDeleteCategory = () => {
     }
   });
 };
+// Add these hooks to your existing useAdminDashboard.js
+
+export const useAdminServices = (params = {}) => {
+  return useQuery({
+    queryKey: ['admin', 'services', params],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getServices(params);
+        if (response.data.success) {
+          // Safely call setServices if it exists
+          try {
+            const { setServices } = useAdminStore.getState();
+            if (typeof setServices === 'function') {
+              setServices(response.data);
+            } else {
+              console.warn('setServices function not available in store');
+            }
+          } catch (storeError) {
+            console.warn('Could not set services in store:', storeError);
+          }
+          
+          return response.data;
+        }
+        throw new Error(response.data.message || 'Failed to fetch services');
+      } catch (error) {
+        console.error('Services error:', error);
+        throw error;
+      }
+    },
+    staleTime: 60000,
+    retry: 2,
+    keepPreviousData: true,
+    onError: (error) => {
+      if (error.response?.status !== 401) {
+        toast.error('Failed to load services');
+      }
+    }
+  });
+};
+
+export const useUpdateService = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => adminAPI.updateService(id, data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries(['admin', 'services']);
+      
+      const previousServices = queryClient.getQueryData(['admin', 'services']);
+      
+      queryClient.setQueryData(['admin', 'services'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(service => 
+            service._id === id ? { ...service, ...data } : service
+          )
+        };
+      });
+      
+      return { previousServices };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Service updated successfully');
+        queryClient.invalidateQueries(['admin', 'services']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousServices) {
+        queryClient.setQueryData(['admin', 'services'], context.previousServices);
+      }
+      toast.error(error.response?.data?.message || 'Update failed');
+    }
+  });
+};
+
+export const useDeleteService = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id) => adminAPI.deleteService(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries(['admin', 'services']);
+      
+      const previousServices = queryClient.getQueryData(['admin', 'services']);
+      
+      queryClient.setQueryData(['admin', 'services'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.filter(service => service._id !== id)
+        };
+      });
+      
+      return { previousServices };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Service deleted successfully');
+        queryClient.invalidateQueries(['admin', 'services']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Delete failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousServices) {
+        queryClient.setQueryData(['admin', 'services'], context.previousServices);
+      }
+      toast.error(error.response?.data?.message || 'Delete failed');
+    }
+  });
+};
+
+export const useBulkServiceOperations = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ids, operation, data = {} }) => 
+      adminAPI.bulkUpdateServices({ ids, operation, data }),
+    onMutate: async ({ ids, operation, data }) => {
+      await queryClient.cancelQueries(['admin', 'services']);
+      
+      const previousServices = queryClient.getQueryData(['admin', 'services']);
+      
+      queryClient.setQueryData(['admin', 'services'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(service => 
+            ids.includes(service._id) 
+              ? { 
+                  ...service, 
+                  ...data,
+                  ...(operation === 'activate' ? { status: 'active' } : {}),
+                  ...(operation === 'pause' ? { status: 'paused' } : {}),
+                  ...(operation === 'feature' ? { isFeatured: true } : {}),
+                  ...(operation === 'unfeature' ? { isFeatured: false } : {}),
+                  ...(operation === 'recommend' ? { isRecommended: true } : {}),
+                  ...(operation === 'unrecommend' ? { isRecommended: false } : {}),
+                } 
+              : service
+          )
+        };
+      });
+      
+      return { previousServices };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(response.data.message || 'Bulk operation completed');
+        queryClient.invalidateQueries(['admin', 'services']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Bulk operation failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousServices) {
+        queryClient.setQueryData(['admin', 'services'], context.previousServices);
+      }
+      toast.error(error.response?.data?.message || 'Bulk operation failed');
+    }
+  });
+};

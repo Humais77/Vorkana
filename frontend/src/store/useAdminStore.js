@@ -1,3 +1,4 @@
+// useAdminStore.js - Add setServices function
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -29,9 +30,16 @@ export const useAdminStore = create(
       categoriesLastFetched: null,
       categoriesFilters: {},
       
+      // Services State - ADD THIS SECTION
+      services: [],
+      servicesPagination: null,
+      servicesLastFetched: null,
+      servicesFilters: {},
+      
       // UI State
       selectedUser: null,
       selectedCategory: null,
+      selectedService: null, // Add this
       selectedTab: 'dashboard',
       sidebarOpen: true,
       theme: 'light',
@@ -68,8 +76,20 @@ export const useAdminStore = create(
         });
       },
       
+      // ADD THIS FUNCTION - setServices
+      setServices: (data) => {
+        const services = Array.isArray(data) ? data : data?.data || [];
+        const pagination = data?.pagination || null;
+        set({ 
+          services, 
+          servicesPagination: pagination,
+          servicesLastFetched: Date.now() 
+        });
+      },
+      
       setSelectedUser: (user) => set({ selectedUser: user }),
       setSelectedCategory: (category) => set({ selectedCategory: category }),
+      setSelectedService: (service) => set({ selectedService: service }), // Add this
       setSelectedTab: (tab) => set({ selectedTab: tab }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setTheme: (theme) => set({ theme }),
@@ -80,6 +100,11 @@ export const useAdminStore = create(
       
       setCategoriesFilters: (filters) => set({ 
         categoriesFilters: { ...get().categoriesFilters, ...filters }
+      }),
+      
+      // Add services filters
+      setServicesFilters: (filters) => set({ 
+        servicesFilters: { ...get().servicesFilters, ...filters }
       }),
       
       // Notifications
@@ -122,6 +147,11 @@ export const useAdminStore = create(
         return categories.find(category => category._id === id);
       },
       
+      getServiceById: (id) => { // Add this
+        const services = get().services;
+        return services.find(service => service._id === id);
+      },
+      
       shouldRefreshDashboard: () => {
         const { dashboardStats } = get();
         return !dashboardStats.lastUpdated || 
@@ -138,10 +168,16 @@ export const useAdminStore = create(
         return !categoriesLastFetched || Date.now() - categoriesLastFetched > 120000;
       },
       
+      shouldRefreshServices: () => { // Add this
+        const { servicesLastFetched } = get();
+        return !servicesLastFetched || Date.now() - servicesLastFetched > 120000;
+      },
+      
       // Clear methods
       clearSelected: () => set({ 
         selectedUser: null, 
-        selectedCategory: null 
+        selectedCategory: null,
+        selectedService: null
       }),
       
       clearAll: () => set({
@@ -164,8 +200,13 @@ export const useAdminStore = create(
         categoriesPagination: null,
         categoriesLastFetched: null,
         categoriesFilters: {},
+        services: [], // Add this
+        servicesPagination: null, // Add this
+        servicesLastFetched: null, // Add this
+        servicesFilters: {}, // Add this
         selectedUser: null,
         selectedCategory: null,
+        selectedService: null,
         sidebarOpen: true,
         theme: 'light',
         notifications: []

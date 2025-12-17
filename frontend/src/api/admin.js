@@ -139,11 +139,27 @@ export const adminAPI = {
   getCategoryStats: () => adminApi.get('/api/admin/categories/stats'),
   
   // Services & Gigs
-  getServices: (params) => adminApi.get('/api/admin/services', { params }),
-  getServiceStats: () => adminApi.get('/api/admin/services/stats'),
-  getGigs: (params) => adminApi.get('/api/admin/gigs', { params }),
-  getGigStats: () => adminApi.get('/api/admin/gigs/stats'),
-  
+  // Add to your existing adminAPI object in admin.js
+
+// Services
+getServices: (params) => {
+  // For admin, use the admin-specific endpoint
+  if (params.isAdmin) {
+    return adminApi.get('/api/services/admin/services', { params });
+  }
+  return adminApi.get('/api/admin/services', { params });
+},
+getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`),
+createService: (data) => adminApi.post('/api/admin/services', data),
+updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
+deleteService: (id) => adminApi.delete(`/api/admin/services/${id}`),
+bulkUpdateServices: (data) => adminApi.post('/api/admin/services/bulk', data),
+exportServices: (format = 'csv') => 
+  adminApi.get('/api/admin/services/export', { 
+    params: { format },
+    responseType: 'blob'
+  }),
+getServiceStats: () => adminApi.get('/api/admin/services/stats'),
   // Security
   getSecurityLogs: (params) => adminApi.get('/api/admin/security/logs', { params }),
   getSecurityStats: () => adminApi.get('/api/admin/security/stats'),

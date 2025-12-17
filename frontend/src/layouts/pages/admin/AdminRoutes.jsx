@@ -9,6 +9,7 @@ import AdminLayout from './AdminLayout';
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const UsersManagement = lazy(() => import('../../../components/admin/UsersManagement'));
 const CategoriesManagement = lazy(() => import('../../../components/admin/CategoriesManagement'));
+const ServicesManagement = lazy(() => import('../../../components/admin/ServicesManagement'));
 const SecurityPage = lazy(() => import('../../../components/admin/SecurityPage'));
 const ActivityLogPage = lazy(() => import('../../../components/admin/ActivityLogPage'));
 const SettingsPage = lazy(() => import('../../../components/admin/SettingsPage'));
@@ -39,6 +40,11 @@ const AdminRoutes = () => {
             <CategoriesManagement />
           </Suspense>
         } />
+        <Route path="services" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <ServicesManagement />
+          </Suspense>
+        } />
         <Route path="security" element={
           <Suspense fallback={<LoadingSpinner />}>
             <SecurityPage />
@@ -55,7 +61,7 @@ const AdminRoutes = () => {
           </Suspense>
         } />
         {/* Add other admin routes */}
-        <Route path="services" element={<div>Services Management</div>} />
+        {/* <Route path="services" element={<div>Services Management</div>} /> */}
         <Route path="gigs" element={<div>Gigs Management</div>} />
         <Route path="analytics" element={<div>Analytics</div>} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
