@@ -2,9 +2,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 
-// Layout
-import AdminLayout from './AdminLayout';
-
 // Lazy load pages
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const UsersManagement = lazy(() => import('../../../components/admin/UsersManagement'));
@@ -24,54 +21,48 @@ const LoadingSpinner = () => (
 const AdminRoutes = () => {
   return (
     <Routes>
-      {/* All admin routes should be under /admin/* */}
-      <Route path="/" element={<AdminLayout />}>
-        <Route index element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <AdminDashboard />
-          </Suspense>
-        } />
-        <Route path="users" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <UsersManagement />
-          </Suspense>
-        } />
-        <Route path="categories" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <CategoriesManagement />
-          </Suspense>
-        } />
-        <Route path="services" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <ServicesManagement />
-          </Suspense>
-        } />
-        <Route path="gigs" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <GigsManagement />
-          </Suspense>
-        } />
-        <Route path="security" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <SecurityPage />
-          </Suspense>
-        } />
-        <Route path="activity" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <ActivityLogPage />
-          </Suspense>
-        } />
-        <Route path="settings" element={
-          <Suspense fallback={<LoadingSpinner />}>
-            <SettingsPage />
-          </Suspense>
-        } />
-        {/* Add other admin routes */}
-        {/* <Route path="services" element={<div>Services Management</div>} /> */}
-        <Route path="gigs" element={<div>Gigs Management</div>} />
-        <Route path="analytics" element={<div>Analytics</div>} />
-        <Route path="*" element={<Navigate to="/admin" replace />} />
-      </Route>
+      <Route index element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <AdminDashboard />
+        </Suspense>
+      } />
+      <Route path="users" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <UsersManagement />
+        </Suspense>
+      } />
+      <Route path="categories" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <CategoriesManagement />
+        </Suspense>
+      } />
+      <Route path="services" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <ServicesManagement />
+        </Suspense>
+      } />
+      <Route path="gigs" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <GigsManagement />
+        </Suspense>
+      } />
+      <Route path="security" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <SecurityPage />
+        </Suspense>
+      } />
+      <Route path="activity" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <ActivityLogPage />
+        </Suspense>
+      } />
+      <Route path="settings" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <SettingsPage />
+        </Suspense>
+      } />
+      <Route path="analytics" element={<div>Analytics</div>} />
+      <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>
   );
 };

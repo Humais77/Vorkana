@@ -613,3 +613,55 @@ export const useUsersForDropdown = (role = '') => {
     staleTime: 300000,
   });
 };
+// Add this to your useAdminDashboard.js file
+export const useBulkCategoryOperations = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ids, operation, data = {} }) => 
+      adminAPI.bulkUpdateCategories({ ids, operation, data }),
+    onMutate: async ({ ids, operation, data }) => {
+      await queryClient.cancelQueries(['admin', 'categories']);
+      
+      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      
+      queryClient.setQueryData(['admin', 'categories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(category => 
+            ids.includes(category._id) 
+              ? { 
+                  ...category, 
+                  ...data,
+                  ...(operation === 'activate' ? { isActive: true } : {}),
+                  ...(operation === 'deactivate' ? { isActive: false } : {}),
+                  ...(operation === 'feature' ? { featured: true } : {}),
+                  ...(operation === 'unfeature' ? { featured: false } : {}),
+                  ...(operation === 'popular' ? { popular: true } : {}),
+                  ...(operation === 'unpopular' ? { popular: false } : {}),
+                } 
+              : category
+          )
+        };
+      });
+      
+      return { previousCategories };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(response.data.message || 'Bulk operation completed');
+        queryClient.invalidateQueries(['admin', 'categories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Bulk operation failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
+      }
+      toast.error(error.response?.data?.message || 'Bulk operation failed');
+    }
+  });
+};

@@ -135,7 +135,14 @@ export const adminAPI = {
   createCategory: (data) => adminApi.post('/api/admin/categories', data),
   updateCategory: (id, data) => adminApi.put(`/api/admin/categories/${id}`, data),
   deleteCategory: (id) => adminApi.delete(`/api/admin/categories/${id}`),
-  bulkUpdateCategories: (data) => adminApi.post('/api/admin/categories/bulk', data),
+  // Add to your admin.js API file
+bulkUpdateCategories: async ({ ids, operation, data = {} }) => {
+  return axios.post('/api/admin/categories/bulk-update', {
+    ids,
+    operation,
+    data
+  });
+},
   getCategoryStats: () => adminApi.get('/api/admin/categories/stats'),
   
   // Services & Gigs

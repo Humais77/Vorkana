@@ -118,11 +118,11 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
+      {/* Header - Remove extra padding since it's in layout now */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
           <p className="text-gray-600 mt-1">Welcome back! Here's what's happening with your platform.</p>
         </div>
         <div className="flex items-center space-x-3">
@@ -141,18 +141,18 @@ const AdminDashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, index) => (
           <Link
             key={index}
             to={stat.link}
-            className={`${stat.bgColor} border ${stat.borderColor} rounded-xl p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 group`}
+            className={`${stat.bgColor} border ${stat.borderColor} rounded-xl p-5 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 group`}
           >
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">{stat.title}</p>
                 <div className="flex items-baseline space-x-2">
-                  <p className="text-3xl font-bold text-gray-900">{stat.value.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stat.value.toLocaleString()}</p>
                   <span className={`text-sm font-medium ${stat.changePositive ? 'text-green-600' : 'text-red-600'}`}>
                     {stat.changePositive ? <FiArrowUpRight className="inline h-4 w-4" /> : <FiArrowDownRight className="inline h-4 w-4" />}
                     {stat.change}
@@ -163,7 +163,7 @@ const AdminDashboard = () => {
                 {stat.icon}
               </div>
             </div>
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-5 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
@@ -190,10 +190,10 @@ const AdminDashboard = () => {
       </div>
 
       {/* Recent Activity & Platform Health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
@@ -266,7 +266,7 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            <div className="mt-8 pt-6 border-t border-gray-100">
+            <div className="mt-6 pt-5 border-t border-gray-100">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-500">
                   Showing {recentUsers.length > 5 ? '5' : recentUsers.length} of {recentUsers.length} activities
@@ -285,7 +285,7 @@ const AdminDashboard = () => {
 
         {/* Platform Health */}
         <div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm h-full">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Platform Health</h2>
@@ -324,7 +324,7 @@ const AdminDashboard = () => {
               ))}
             </div>
 
-            <div className="mt-8 pt-6 border-t border-gray-100">
+            <div className="mt-6 pt-5 border-t border-gray-100">
               <h3 className="text-sm font-medium text-gray-900 mb-3">Quick Actions</h3>
               <div className="grid grid-cols-2 gap-3">
                 <Link
@@ -343,31 +343,12 @@ const AdminDashboard = () => {
                 </Link>
               </div>
             </div>
-
-            <div className="mt-6 p-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-lg text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-300">System Uptime</p>
-                  <p className="text-2xl font-bold mt-1">30 days</p>
-                </div>
-                <FiServer className="h-8 w-8 text-gray-400" />
-              </div>
-              <div className="mt-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300">Reliability</span>
-                  <span className="font-medium">99.9%</span>
-                </div>
-                <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 rounded-full" style={{ width: '99.9%' }}></div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Recent System Events */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Recent System Events</h2>

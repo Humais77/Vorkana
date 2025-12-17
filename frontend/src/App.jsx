@@ -1,95 +1,49 @@
+// App.jsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
-import { initializeSocket, isSocketConnected, reconnectSocket } from './socket/orderSocket.js';
+import { initializeSocket, isSocketConnected, reconnectSocket } from './socket/orderSocket';
+
+// Providers / Hooks
+import { SecurityProvider } from './context/SecurityContext';
+import { useAuthSync } from './hooks/useAuthSync';
+import { useAuthStore } from './store/useAuthStore';
 
 // Layouts
-import Footer from './layouts/Footer';
-import Navbar from './layouts/Navbar';
+import PublicLayout from './layouts/PublicLayout';
 
 // Pages
 import Home from './layouts/Home';
 import GigCreate from './layouts/pages/GigCreate';
 import GigDetails from './layouts/pages/GigDetails';
-
-// Components
-import OAuthSuccess from './components/OAuthSuccess';
-import AuthModal from './components/AuthModal';
-import SocketStatus from './components/SocketStatus.jsx'; // Add this component
-// import AdminDashboard from './layouts/pages/admin/AdminDashboard.jsx'
-import AdminRoutes from './layouts/pages/admin/AdminRoutes.jsx';
-
-// Hooks
-import { useAuthSync } from "./hooks/useAuthSync";
 import CategoryPage from './layouts/pages/CategoryPage';
 import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
 import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
-import ScrollToTop from './components/ScrollToTop';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
+import OAuthSuccess from './components/OAuthSuccess';
 import AllGigsPage from './components/AllGigsPage';
 import OrderCreate from './components/OrderCreate';
-// import SellerDashboard from './components/SellerDashboard';
 import OrderDetails from './components/OrderDetails';
-import MyOrders from './components/MyOrders.jsx';
-import { SecurityProvider } from './context/SecurityContext.jsx';
-import { useAuthStore } from './store/useAuthStore.js';
+import MyOrders from './components/MyOrders';
 
-// Admin Pages
-import UsersManagement from './components/admin/UsersManagement.jsx';
-import CategoriesManagement from './components/admin/CategoriesManagement';
-import SecurityPage from './components/admin/SecurityPage';
-import ActivityLogPage from './components/admin/ActivityLogPage';
-import SettingsPage from './components/admin/SettingsPage';
+// Admin
+import ProtectedAdminRoute from './ProtectedAdminRoute';
+import AdminLogin from './AdminLogin';
+import AdminLayout from './layouts/pages/admin/AdminLayout';
+import AdminRoutes from './layouts/pages/admin/AdminRoutes';
+
+// Components
+import SocketStatus from './components/SocketStatus';
+import ScrollToTop from './components/ScrollToTop';
 
 const App = () => {
-  // Sync auth state when app loads (using Zustand)
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
+
   const [socketStatus, setSocketStatus] = useState('disconnected');
 
-  const initializeSocketConnection = useCallback(() => {
-    if (isAuthenticated) {
-      const socket = initializeSocket();
-      
-      if (socket) {
-        // Listen for connection status changes
-        socket.on('connect', () => {
-          console.log('Socket connected in App');
-          setSocketStatus('connected');
-        });
-        
-        socket.on('disconnect', () => {
-          console.log('Socket disconnected in App');
-          setSocketStatus('disconnected');
-        });
-        
-        socket.on('connect_error', () => {
-          setSocketStatus('error');
-        });
-      }
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    // Initialize socket when authenticated
-    initializeSocketConnection();
-    
-    // Cleanup on unmount
-    return () => {
-      // Socket cleanup will be handled by socket module
-    };
-  }, [initializeSocketConnection]);
-
-  // Reconnect socket when auth state changes
-  useEffect(() => {
-    if (isAuthenticated && !isSocketConnected()) {
-      console.log('Reconnecting socket due to auth change');
-      initializeSocketConnection();
-    }
-  }, [isAuthenticated, initializeSocketConnection]);
-
-  // Single modal state
+  // Auth Modal State
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
 
@@ -103,69 +57,79 @@ const App = () => {
     setShowAuthModal(true);
   };
 
+  /* ---------------- SOCKET HANDLING ---------------- */
+  const initializeSocketConnection = useCallback(() => {
+    if (!isAuthenticated) return;
+
+    const socket = initializeSocket();
+    if (!socket) return;
+
+    socket.on('connect', () => setSocketStatus('connected'));
+    socket.on('disconnect', () => setSocketStatus('disconnected'));
+    socket.on('connect_error', () => setSocketStatus('error'));
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    initializeSocketConnection();
+  }, [initializeSocketConnection]);
+
+  useEffect(() => {
+    if (isAuthenticated && !isSocketConnected()) {
+      initializeSocketConnection();
+    }
+  }, [isAuthenticated, initializeSocketConnection]);
+
   return (
     <SecurityProvider>
       <BrowserRouter>
         <ScrollToTop />
-        
-        {/* Socket Status Indicator (optional) */}
+
         {process.env.NODE_ENV === 'development' && (
           <div className="fixed bottom-4 right-4 z-50">
-            <SocketStatus 
-              status={socketStatus} 
-              onReconnect={reconnectSocket}
-            />
+            <SocketStatus status={socketStatus} onReconnect={reconnectSocket} />
           </div>
-        )}
-        
-        {/* Pass the modal trigger functions to Navbar */}
-        <Navbar
-          onSigninClick={openSigninModal}
-          onSignupClick={openSignupModal}
-        />
-
-        {/* Single Auth Modal with tabs */}
-        {showAuthModal && (
-          <AuthModal
-            activeTab={activeTab}
-            onSwitchTab={setActiveTab}
-            onClose={() => setShowAuthModal(false)}
-          />
         )}
 
         <Routes>
-          <Route path='/' element={<Home onSigninClick={openSigninModal}
-            onSignupClick={openSignupModal} />} />
-          <Route path='/create-gig' element={<GigCreate />} />
-          <Route path='/gig/:id' element={<GigDetails />} />
-          <Route path='/oauth-success' element={<OAuthSuccess />} />
-          <Route path='/categories/:categoryId' element={<CategoryPage />} />
-          <Route path="/gigs" element={<GigListingsPage />} />
-          <Route path='/profile' element={<Profile />} />
-          <Route path="/services/create" element={<CreateService />} />
-          <Route path='/profile/services' element={<Profile />} />
-          <Route path="/services/:id" element={<ServiceDetails />} />
-          <Route path="/services/" element={<ServiceListingPage />} />
-          <Route path="/all-gigs" element={<AllGigsPage />} />
-          <Route path="/orders/create" element={<OrderCreate />} />
-          {/* <Route path="/seller/dashboard" element={<SellerDashboard />} /> */}
-          <Route path="/orders/:id" element={<OrderDetails />} />
-          <Route path="/my-orders" element={<MyOrders />} />
-          {/* <Route path="/seller/orders" element={<SellerDashboard />} />
-          <Route path="/seller/orders/pending" element={<SellerDashboard />} /> */}
+          <Route
+            element={
+              <PublicLayout
+                showAuthModal={showAuthModal}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                setShowAuthModal={setShowAuthModal}
+                openSigninModal={openSigninModal}
+                openSignupModal={openSignupModal}
+              />
+            }
+          >
+            <Route path="/" element={<Home onSigninClick={openSigninModal} onSignupClick={openSignupModal} />} />
+            <Route path="/create-gig" element={<GigCreate />} />
+            <Route path="/gig/:id" element={<GigDetails />} />
+            <Route path="/categories/:categoryId" element={<CategoryPage />} />
+            <Route path="/gigs" element={<GigListingsPage />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/services/create" element={<CreateService />} />
+            <Route path="/services/:id" element={<ServiceDetails />} />
+            <Route path="/services" element={<ServiceListingPage />} />
+            <Route path="/all-gigs" element={<AllGigsPage />} />
+            <Route path="/orders/create" element={<OrderCreate />} />
+            <Route path="/orders/:id" element={<OrderDetails />} />
+            <Route path="/my-orders" element={<MyOrders />} />
+            <Route path="/oauth-success" element={<OAuthSuccess />} />
+          </Route>
           
-          {/* Admin Routes */}
-          <Route path="/admin/*" element={<AdminRoutes />} />
-          
-          {/* Direct admin routes for debugging
-          <Route path="/admin/dashboard" element={<AdminRoutes />} />
-          <Route path="/admin/users" element={<UsersManagement />} />
-          <Route path="/admin/categories" element={<CategoriesManagement />} />
-          <Route path="/admin/security" element={<SecurityPage />} />
-          <Route path="/admin/activity" element={<ActivityLogPage />} />
-          <Route path="/admin/settings" element={<SettingsPage />} /> */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+
+          {/* ✅ FIXED: Use wildcard (*) for admin route */}
+          <Route path="/admin/*" element={
+            <ProtectedAdminRoute>
+              <AdminLayout>
+                <AdminRoutes />
+              </AdminLayout>
+            </ProtectedAdminRoute>
+          } />
         </Routes>
-        <Footer />
       </BrowserRouter>
     </SecurityProvider>
   );
