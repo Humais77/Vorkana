@@ -101,6 +101,10 @@ export const useAuthStore = create(
           localStorage.setItem("refreshToken", refreshToken);
         }
       },
+      isAdmin: () => {
+    const state = get();
+    return state.user?.role === 'admin' || state.user?.isAdmin === true;
+  },
       
       logout: () => {
         set({ 

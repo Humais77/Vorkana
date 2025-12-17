@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, AlertCircle, Check, ArrowRight } from "lucide-react";
+import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, AlertCircle, Check, ArrowRight, Shield } from "lucide-react";
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,6 +20,9 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   const logoutMutation = useLogout();
 
   const isHomePage = location.pathname === "/";
+
+  // Check if user is admin
+  const isAdminUser = isAuthenticated && (user?.role === 'admin' || user?.isAdmin === true);
 
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -277,75 +280,88 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               )}
 
               {isAuthenticated ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setMenuOpen(!menuOpen)}
-                    className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
-                  >
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-800 text-white font-bold text-lg">
-                      {user?.name?.charAt(0) || 'U'}
-                    </div>
-                    <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
-                  </button>
+                <div className="flex items-center space-x-3">
+                  {/* ADMIN BUTTON - Only shown if user is admin */}
+                  {isAdminUser && (
+                    <Link
+                      to="/admin"
+                      className="md:inline bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-3 py-1 rounded-full  hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
+                    >
+                     
+                      <span>Admin</span>
+                    </Link>
+                  )}
 
-                  <AnimatePresence>
-                    {menuOpen && (
-                      <motion.div
-                        initial="hidden"
-                        animate="visible"
-                        exit="exit"
-                        variants={dropdownAnimation}
-                        className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50"
-                      >
-                        <div className="p-4 border-b border-gray-100">
-                          <div className="font-medium text-gray-900">{user?.name}</div>
-                          <div className="text-sm text-gray-500">{user?.email}</div>
-                          <div className="mt-1">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              User
-                            </span>
+                  <div className="relative">
+                    <button
+                      onClick={() => setMenuOpen(!menuOpen)}
+                      className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
+                    >
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-800 text-white font-bold text-lg">
+                        {user?.name?.charAt(0) || 'U'}
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    <AnimatePresence>
+                      {menuOpen && (
+                        <motion.div
+                          initial="hidden"
+                          animate="visible"
+                          exit="exit"
+                          variants={dropdownAnimation}
+                          className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50"
+                        >
+                          <div className="p-4 border-b border-gray-100">
+                            <div className="font-medium text-gray-900">{user?.name}</div>
+                            <div className="text-sm text-gray-500">{user?.email}</div>
+                            <div className="mt-1">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {isAdminUser ? 'Admin' : 'User'}
+                              </span>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="p-2">
-                          <Link
-                            to="/profile"
-                            onClick={() => setMenuOpen(false)}
-                            className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                          >
-                            <User className="w-4 h-4" />
-                            <span>Profile</span>
-                          </Link>
+                          <div className="p-2">
+                            <Link
+                              to="/profile"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <User className="w-4 h-4" />
+                              <span>Profile</span>
+                            </Link>
 
-                          <Link
-                            to="/my-services"
-                            onClick={() => setMenuOpen(false)}
-                            className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                          >
-                            <Package className="w-4 h-4" />
-                            <span>My Services</span>
-                          </Link>
+                            <Link
+                              to="/my-services"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <Package className="w-4 h-4" />
+                              <span>My Services</span>
+                            </Link>
 
-                          <Link
-                            to="/settings"
-                            onClick={() => setMenuOpen(false)}
-                            className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                          >
-                            <Settings className="w-4 h-4" />
-                            <span>Settings</span>
-                          </Link>
+                            <Link
+                              to="/settings"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <Settings className="w-4 h-4" />
+                              <span>Settings</span>
+                            </Link>
 
-                          <button
-                            onClick={handleLogout}
-                            className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                          >
-                            <LogOut className="w-4 h-4" />
-                            <span>Logout</span>
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                            <button
+                              onClick={handleLogout}
+                              className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <LogOut className="w-4 h-4" />
+                              <span>Logout</span>
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               ) : (
                 <div className="hidden lg:flex items-center space-x-3">
@@ -407,7 +423,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <div className="text-sm text-gray-500 truncate">{user?.email}</div>
                             <div className="mt-1">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                User
+                                {isAdminUser ? 'Admin' : 'User'}
                               </span>
                             </div>
                           </div>

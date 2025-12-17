@@ -15,6 +15,8 @@ import GigDetails from './layouts/pages/GigDetails';
 import OAuthSuccess from './components/OAuthSuccess';
 import AuthModal from './components/AuthModal';
 import SocketStatus from './components/SocketStatus.jsx'; // Add this component
+// import AdminDashboard from './layouts/pages/admin/AdminDashboard.jsx'
+import AdminRoutes from './layouts/pages/admin/AdminRoutes.jsx';
 
 // Hooks
 import { useAuthSync } from "./hooks/useAuthSync";
@@ -32,6 +34,13 @@ import OrderDetails from './components/OrderDetails';
 import MyOrders from './components/MyOrders.jsx';
 import { SecurityProvider } from './context/SecurityContext.jsx';
 import { useAuthStore } from './store/useAuthStore.js';
+
+// Admin Pages
+import UsersManagement from './components/admin/UsersManagement.jsx';
+import CategoriesManagement from './components/admin/CategoriesManagement';
+import SecurityPage from './components/admin/SecurityPage';
+import ActivityLogPage from './components/admin/ActivityLogPage';
+import SettingsPage from './components/admin/SettingsPage';
 
 const App = () => {
   // Sync auth state when app loads (using Zustand)
@@ -144,6 +153,17 @@ const App = () => {
           <Route path="/my-orders" element={<MyOrders />} />
           {/* <Route path="/seller/orders" element={<SellerDashboard />} />
           <Route path="/seller/orders/pending" element={<SellerDashboard />} /> */}
+          
+          {/* Admin Routes */}
+          <Route path="/admin/*" element={<AdminRoutes />} />
+          
+          {/* Direct admin routes for debugging
+          <Route path="/admin/dashboard" element={<AdminRoutes />} />
+          <Route path="/admin/users" element={<UsersManagement />} />
+          <Route path="/admin/categories" element={<CategoriesManagement />} />
+          <Route path="/admin/security" element={<SecurityPage />} />
+          <Route path="/admin/activity" element={<ActivityLogPage />} />
+          <Route path="/admin/settings" element={<SettingsPage />} /> */}
         </Routes>
         <Footer />
       </BrowserRouter>
