@@ -6,12 +6,19 @@ const Service = require('../models/services.model.js');
 const Category = require('../models/category.model.js');
 const User = require('../models/user.model.js');
 const { sanitizeHtml } = require('../utils/sanitize.js');
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
 
-const sanitizeServiceInput = (data, files = {}) => {
+const sanitizeServiceInput = (data) => {
   const sanitized = {};
   
   for (const key in data) {
@@ -43,83 +50,134 @@ const sanitizeServiceInput = (data, files = {}) => {
       sanitized[key] = data[key].map(req => ({
         ...req,
         question: sanitizeHtml(req.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        options: req.options ? req.options.map(opt => sanitizeHtml(opt || '', { allowedTags: [], allowedAttributes: {} }).trim()) : []
+        options: req.options ? req.options.map(opt => sanitizeHtml(opt, { allowedTags: [], allowedAttributes: {} }).trim()) : []
       }));
     } else if (key === 'packages' && Array.isArray(data[key])) {
       sanitized[key] = data[key].map(pkg => ({
         ...pkg,
         name: sanitizeHtml(pkg.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
         description: sanitizeHtml(pkg.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        features: pkg.features ? pkg.features.map(f => sanitizeHtml(f || '', { allowedTags: [], allowedAttributes: {} }).trim()) : []
+        features: pkg.features ? pkg.features.map(feat => sanitizeHtml(feat, { allowedTags: [], allowedAttributes: {} }).trim()) : []
       }));
     } else {
       sanitized[key] = data[key];
     }
   }
   
-  if (files && Array.isArray(files)) {
-    const imageUrls = files.map(file => {
-      const safePath = file.path.replace(/\\/g, '/');
-      const relativePath = `/uploads/${path.basename(safePath)}`;
-      
-      const absolutePath = path.join(__dirname, '../../public', relativePath);
-      if (!fs.existsSync(absolutePath)) {
-        throw new Error(`Uploaded file not found: ${relativePath}`);
-      }
-      
-      const normalizedAbsolute = path.normalize(absolutePath);
-      const uploadsDir = path.join(__dirname, '../../public/uploads');
-      if (!normalizedAbsolute.startsWith(uploadsDir)) {
-        throw new Error(`File path traversal detected: ${relativePath}`);
-      }
-      
-      return relativePath;
-    });
-    
-    if (imageUrls.length > 0) {
-      sanitized.images = imageUrls;
-      
-      if (!sanitized.thumbnail && imageUrls.length > 0) {
-        sanitized.thumbnail = imageUrls[0];
-      }
-    }
-  }
-  
   return sanitized;
 };
-
-const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
+const uploadToCloudinary = async (file, folder = 'services', options = {}) => {
   try {
-    if (!files || !Array.isArray(files)) return;
+    let uploadData;
     
-    for (const file of files) {
-      const isUsed = uploadedImagePaths.some(imgPath => 
-        file.path.includes(path.basename(imgPath))
-      );
-      
-      if (!isUsed && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
+    // Handle different file input types
+    if (file.buffer) {
+      // File from multer memory storage
+      const dataURI = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      uploadData = dataURI;
+    } else if (file.path) {
+      // File from disk storage (fallback)
+      uploadData = file.path;
+    } else if (file.dataURL) {
+      // Base64 data URL from frontend
+      uploadData = file.dataURL;
+    } else {
+      throw new Error('Invalid file format');
     }
+
+    const uploadOptions = {
+      folder: `freelance-platform/${folder}`,
+      resource_type: 'auto',
+      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'],
+      ...options
+    };
+
+    // Apply transformations based on folder type
+    if (folder === 'services') {
+      uploadOptions.transformation = [
+        { width: 1200, height: 800, crop: 'limit' },
+        { quality: 'auto:good' }
+      ];
+    } else if (folder === 'thumbnails') {
+      uploadOptions.transformation = [
+        { width: 400, height: 300, crop: 'fill' },
+        { quality: 'auto:good' }
+      ];
+    }
+
+    const result = await cloudinary.uploader.upload(uploadData, uploadOptions);
+
+    return {
+      url: result.secure_url,
+      public_id: result.public_id,
+      format: result.format,
+      width: result.width,
+      height: result.height,
+      bytes: result.bytes,
+      folder: result.folder
+    };
   } catch (error) {
-    console.error('Error cleaning up uploaded files:', error);
+    console.error('Cloudinary upload error:', error);
+    throw new Error(`Failed to upload to Cloudinary: ${error.message}`);
   }
 };
 
-const deleteImageFiles = (imagePaths) => {
+// Delete from Cloudinary
+const deleteFromCloudinary = async (publicId) => {
   try {
-    if (!Array.isArray(imagePaths)) return;
+    if (!publicId) return;
     
-    for (const imagePath of imagePaths) {
-      const fullPath = path.join(__dirname, '../../public', imagePath);
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-      }
-    }
+    const result = await cloudinary.uploader.destroy(publicId);
+    console.log(`Deleted from Cloudinary: ${publicId}`, result);
   } catch (error) {
-    console.error('Error deleting image files:', error);
+    console.error('Cloudinary delete error:', error);
+    // Don't throw error, just log it
   }
 };
+
+// Extract public_id from Cloudinary URL
+const extractPublicIdFromUrl = (url) => {
+  try {
+    if (!url || !url.includes('cloudinary.com')) return null;
+    
+    // Extract public_id from Cloudinary URL
+    const matches = url.match(/\/v\d+\/([^\/]+)\/([^\.]+)/);
+    if (matches && matches[2]) {
+      return `${matches[1]}/${matches[2]}`;
+    }
+    
+    // Alternative pattern
+    const altMatches = url.match(/image\/upload\/.*\/([^\/\.]+)/);
+    if (altMatches && altMatches[1]) {
+      return altMatches[1];
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error extracting public_id from URL:', error);
+    return null;
+  }
+};
+
+// Cleanup Cloudinary resources
+const cleanupCloudinaryResources = async (urls) => {
+  try {
+    if (!Array.isArray(urls)) return;
+    
+    const deletePromises = urls.map(async (url) => {
+      const publicId = extractPublicIdFromUrl(url);
+      if (publicId) {
+        await deleteFromCloudinary(publicId);
+      }
+    });
+    
+    await Promise.all(deletePromises);
+    console.log(`Cleaned up ${urls.length} resources from Cloudinary`);
+  } catch (error) {
+    console.error('Error cleaning up Cloudinary resources:', error);
+  }
+};
+
 
 const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   const {
@@ -281,7 +339,7 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
 // Create Service
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
+  let cloudinaryImages = [];
   
   try {
     // Security: Only authenticated users can create services
@@ -294,81 +352,155 @@ const createService = async (req, res, next) => {
       });
     }
 
-    // Get uploaded files
-    if (req.files) {
-      uploadedFiles = req.files;
-    }
+    // DEBUG: Log everything about the request
+    console.log('=== CREATE SERVICE REQUEST ===');
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Has files?', req.files ? 'Yes' : 'No');
+    console.log('Number of files:', req.files?.length || 0);
+    console.log('Request body keys:', Object.keys(req.body));
     
-    const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
+    // Check if this is multipart form data
+    const isMultipart = req.headers['content-type']?.includes('multipart/form-data');
+    console.log('Is multipart?', isMultipart);
+
+    // Parse service data
+    let serviceData = {};
     
-    // Verify category exists and is active
-    if (sanitizedData.category) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.category, 
-        isActive: true 
-      });
+    if (isMultipart) {
+      // Handle multipart/form-data
+      console.log('Processing multipart/form-data');
       
-      if (!category) {
-        await cleanupUploadedFiles(uploadedFiles);
-        return res.status(400).json({
-          success: false,
-          message: 'Category not found or inactive',
-          code: 'CATEGORY_NOT_FOUND',
-          requestId
-        });
+      if (req.body.data) {
+        try {
+          serviceData = JSON.parse(req.body.data);
+          console.log('Successfully parsed JSON from data field');
+        } catch (parseError) {
+          console.error('Error parsing JSON from data field:', parseError.message);
+          console.log('Data field content (first 200 chars):', req.body.data?.substring(0, 200));
+          
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid JSON in data field',
+            code: 'INVALID_JSON_DATA',
+            requestId
+          });
+        }
+      } else {
+        // Check if fields are sent individually
+        console.log('No "data" field found. Checking individual fields:');
+        const fieldKeys = Object.keys(req.body);
+        console.log('Available fields:', fieldKeys);
+        
+        // Copy individual fields to serviceData
+        serviceData = { ...req.body };
+      }
+    } else {
+      // Handle application/json
+      console.log('Processing application/json');
+      serviceData = req.body;
+    }
+
+    console.log('Parsed serviceData:', serviceData);
+    
+    // Check for required fields
+    const requiredFields = ['title', 'description', 'category', 'price', 'deliveryTime'];
+    const missingFields = requiredFields.filter(field => {
+      const value = serviceData[field];
+      return value === undefined || value === null || value === '';
+    });
+
+    if (missingFields.length > 0) {
+      console.log('Missing required fields:', missingFields);
+      return res.status(400).json({
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`,
+        code: 'MISSING_REQUIRED_FIELDS',
+        missingFields,
+        requestId
+      });
+    }
+
+    // Log each required field value
+    requiredFields.forEach(field => {
+      console.log(`${field}:`, serviceData[field], 'Type:', typeof serviceData[field]);
+    });
+
+    // Sanitize the data
+    const sanitizedData = sanitizeServiceInput(serviceData);
+    console.log('Sanitized data:', sanitizedData);
+
+    // Handle image uploads
+    if (req.files && req.files.length > 0) {
+      console.log(`Uploading ${req.files.length} images to Cloudinary...`);
+      
+      for (const file of req.files) {
+        try {
+          const result = await uploadToCloudinary(file, 'services');
+          cloudinaryImages.push(result.url);
+          console.log(`Uploaded: ${result.public_id}`);
+        } catch (uploadError) {
+          console.error('Cloudinary upload error:', uploadError);
+          await cleanupCloudinaryResources(cloudinaryImages);
+          
+          return res.status(400).json({
+            success: false,
+            message: `Image upload failed: ${uploadError.message}`,
+            code: 'IMAGE_UPLOAD_FAILED',
+            requestId
+          });
+        }
+      }
+
+      // Add images to service data
+      if (cloudinaryImages.length > 0) {
+        sanitizedData.images = cloudinaryImages;
+        if (!sanitizedData.thumbnail) {
+          sanitizedData.thumbnail = cloudinaryImages[0];
+        }
       }
     }
 
-    // Verify subcategory if provided
-    if (sanitizedData.subcategory) {
-      const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory, 
-        isActive: true,
-        parentCategory: sanitizedData.category 
-      });
-      
-      if (!subcategory) {
-        await cleanupUploadedFiles(uploadedFiles);
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory not found or does not belong to the selected category',
-          code: 'SUBCATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
-    }
+    console.log('Creating service with data:', JSON.stringify(sanitizedData, null, 2));
 
+    // Create the service
     const service = await Service.create({
       ...sanitizedData,
       createdBy: req.user._id,
-      version: 1
+      version: 1,
+      cloudinary: cloudinaryImages.length > 0
     });
 
-    // Security: Audit log
-    logAudit('CREATE', 'SERVICE', service._id, req.user._id, {
-      title: service.title,
-      category: service.category,
-      status: service.status,
-      imagesCount: sanitizedData.images?.length || 0
-    });
-
-    // Security: Remove sensitive data
-    const safeService = service.toObject();
-    delete safeService.__v;
-    delete safeService.lastUpdatedBy;
+    console.log('Service created successfully:', service._id);
 
     res.status(201).json({
       success: true,
-      service: safeService,
+      service: {
+        ...service.toObject(),
+        __v: undefined,
+        lastUpdatedBy: undefined
+      },
       message: 'Service created successfully',
+      cloudinary: {
+        imagesCount: cloudinaryImages.length,
+        uploaded: cloudinaryImages.length > 0
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    // Clean up uploaded files on error
-    await cleanupUploadedFiles(uploadedFiles);
+    console.error('=== CREATE SERVICE CATCH BLOCK ERROR ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error stack:', error.stack);
     
+    // Clean up Cloudinary resources
+    if (cloudinaryImages.length > 0) {
+      await cleanupCloudinaryResources(cloudinaryImages);
+    }
+    
+    // Handle specific errors
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -380,6 +512,8 @@ const createService = async (req, res, next) => {
     
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
+      console.log('Mongoose validation errors:', messages);
+      
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -389,11 +523,10 @@ const createService = async (req, res, next) => {
       });
     }
     
-    logAudit('ERROR', 'SERVICE', 'CREATE', req.user?._id, { error: error.message });
+    console.error('Unexpected error in createService:', error);
     next(error);
   }
 };
-
 // Get Services
 const getServices = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -491,7 +624,7 @@ const getServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes'];
+    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'views', 'likes'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
@@ -595,7 +728,6 @@ const getServices = async (req, res, next) => {
             avgRating: { $avg: '$rating' },
             avgDeliveryTime: { $avg: '$deliveryTime' },
             totalViews: { $sum: '$views' },
-            totalOrders: { $sum: '$ordersCount' },
             totalLikes: { $sum: '$likes' }
           }
         }
@@ -797,7 +929,7 @@ const getServiceById = async (req, res, next) => {
 // Update Service
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
+  let uploadedImages = [];
   
   try {
     const { id } = req.params;
@@ -826,7 +958,6 @@ const updateService = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      logAudit('UNAUTHORIZED_UPDATE', 'SERVICE', id, req.user._id);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -835,11 +966,24 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    if (req.files) {
-      uploadedFiles = req.files;
+    // Parse update data
+    let updateData = {};
+    try {
+      if (req.body.data) {
+        updateData = JSON.parse(req.body.data);
+      } else {
+        updateData = req.body;
+      }
+    } catch (parseError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid update data format',
+        code: 'INVALID_DATA_FORMAT',
+        requestId
+      });
     }
-    
-    const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
+
+    const sanitizedData = sanitizeServiceInput(updateData);
     
     if (!isAdmin) {
       // Regular users cannot update certain fields
@@ -847,132 +991,100 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.isFeatured;
       delete sanitizedData.isRecommended;
       delete sanitizedData.isPopular;
-      delete sanitizedData.ordersCount;
       delete sanitizedData.views;
       delete sanitizedData.likes;
       delete sanitizedData.rating;
       delete sanitizedData.reviewsCount;
     }
 
-    if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.category, 
-        isActive: true 
-      });
+    // Handle new image uploads
+    if (req.files && req.files.length > 0) {
+      const existingImages = service.images || [];
       
-      if (!category) {
-        await cleanupUploadedFiles(uploadedFiles);
-        return res.status(400).json({
-          success: false,
-          message: 'Category not found or inactive',
-          code: 'CATEGORY_NOT_FOUND',
-          requestId
-        });
+      // Upload new images to Cloudinary
+      for (const file of req.files) {
+        try {
+          const result = await uploadToCloudinary(file, 'services');
+          uploadedImages.push(result.url);
+          console.log(`Uploaded new image to Cloudinary: ${result.public_id}`);
+        } catch (uploadError) {
+          console.error('Failed to upload image to Cloudinary:', uploadError);
+          // Clean up already uploaded images
+          await cleanupCloudinaryResources(uploadedImages);
+          return res.status(400).json({
+            success: false,
+            message: `Failed to upload image: ${uploadError.message}`,
+            code: 'IMAGE_UPLOAD_FAILED',
+            requestId
+          });
+        }
       }
-    }
 
-    if (sanitizedData.subcategory && sanitizedData.subcategory !== (service.subcategory?.toString() || '')) {
-      const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory, 
-        isActive: true,
-        parentCategory: sanitizedData.category || service.category 
-      });
+      // Combine existing and new images
+      sanitizedData.images = [...existingImages, ...uploadedImages];
       
-      if (!subcategory) {
-        await cleanupUploadedFiles(uploadedFiles);
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory not found or does not belong to the category',
-          code: 'SUBCATEGORY_NOT_FOUND',
-          requestId
-        });
+      // Limit to 10 images max
+      if (sanitizedData.images.length > 10) {
+        // Remove excess images (remove the oldest ones beyond limit)
+        const excessImages = sanitizedData.images.slice(10);
+        sanitizedData.images = sanitizedData.images.slice(0, 10);
+        
+        // Clean up excess images from Cloudinary
+        await cleanupCloudinaryResources(excessImages);
+        
+        // Also remove from uploadedImages array
+        uploadedImages = uploadedImages.filter(img => sanitizedData.images.includes(img));
       }
     }
 
-    const currentVersion = sanitizedData.version;
-    delete sanitizedData.version;
-
-    const updateData = {
-      ...sanitizedData,
-      lastUpdatedBy: req.user._id,
-      $inc: { version: 1 }
-    };
-
-    if (sanitizedData.status && sanitizedData.status !== service.status) {
-      if (sanitizedData.status === 'active' && !service.publishedAt) {
-        updateData.publishedAt = new Date();
-      }
-    }
-
-    const existingImages = service.images || [];
-    const newImages = sanitizedData.images || [];
-    
+    // Update service
     const updatedService = await Service.findOneAndUpdate(
-      { 
-        _id: id,
-        ...(currentVersion ? { version: currentVersion } : {})
+      { _id: id },
+      {
+        ...sanitizedData,
+        lastUpdatedBy: req.user._id,
+        $inc: { version: 1 }
       },
-      updateData,
       { 
         new: true,
-        runValidators: true,
-        context: 'query'
+        runValidators: true
       }
     ).populate('category', 'name slug').populate('createdBy', 'name picture');
 
     if (!updatedService) {
-      await cleanupUploadedFiles(uploadedFiles, newImages);
-      
-      if (currentVersion) {
-        const currentDoc = await Service.findById(id);
-        return res.status(409).json({
-          success: false,
-          message: 'Service was modified by another user. Please refresh and try again.',
-          code: 'VERSION_CONFLICT',
-          currentVersion: currentDoc?.version,
-          requestId
-        });
-      }
-      
+      // Clean up uploaded images if update failed
+      await cleanupCloudinaryResources(uploadedImages);
       return res.status(404).json({
         success: false,
-        message: 'Service not found during update',
+        message: 'Service update failed',
         code: 'UPDATE_FAILED',
         requestId
       });
     }
 
-    try {
-      const removedImages = existingImages.filter(img => !newImages.includes(img));
-      if (removedImages.length > 0) {
-        deleteImageFiles(removedImages);
-      }
-    } catch (cleanupError) {
-      console.error('Error cleaning up old images:', cleanupError);
-    }
-
-    logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
-      updatedFields: Object.keys(sanitizedData),
-      oldVersion: currentVersion || service.version,
-      newVersion: updatedService.version,
-      statusChanged: sanitizedData.status ? sanitizedData.status !== service.status : false,
-      imagesUpdated: newImages.length > 0
-    });
-
-    const safeService = updatedService.toObject();
-    delete safeService.__v;
-    delete safeService.lastUpdatedBy;
+    console.log(`Service updated with ${uploadedImages.length} new Cloudinary images`);
 
     res.json({
       success: true,
-      service: safeService,
+      service: {
+        ...updatedService.toObject(),
+        __v: undefined,
+        lastUpdatedBy: undefined
+      },
       message: 'Service updated successfully',
+      cloudinary: {
+        newImagesCount: uploadedImages.length,
+        totalImages: updatedService.images ? updatedService.images.length : 0
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
+    // Clean up uploaded images on error
+    if (uploadedImages.length > 0) {
+      await cleanupCloudinaryResources(uploadedImages);
+    }
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -983,17 +1095,16 @@ const updateService = async (req, res, next) => {
       });
     }
     
-    logAudit('ERROR', 'SERVICE', 'UPDATE', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    console.error('Service update error:', error);
     next(error);
   }
 };
 
+
 // Delete Service
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
+  
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
@@ -1022,7 +1133,6 @@ const deleteService = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      logAudit('UNAUTHORIZED_DELETE', 'SERVICE', id, req.user._id);
       return res.status(403).json({
         success: false,
         message: 'You can only delete your own services',
@@ -1031,55 +1141,45 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-    if (force !== 'true' && service.ordersCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete service with active orders',
-        code: 'ACTIVE_ORDERS_EXIST',
-        requestId
-      });
-    }
-
     let result;
     
     if (permanent === 'true' && isAdmin) {
+      // Permanent delete - clean up all Cloudinary resources
       try {
+        // Clean up images
         if (service.images && Array.isArray(service.images)) {
-          deleteImageFiles(service.images);
+          await cleanupCloudinaryResources(service.images);
         }
         
-        if (service.thumbnail) {
-          deleteImageFiles([service.thumbnail]);
+        // Clean up thumbnail
+        if (service.thumbnail && service.thumbnail.includes('cloudinary.com')) {
+          const thumbnailPublicId = extractPublicIdFromUrl(service.thumbnail);
+          if (thumbnailPublicId) {
+            await deleteFromCloudinary(thumbnailPublicId);
+          }
         }
+        
+        console.log(`Cleaned up Cloudinary resources for service: ${id}`);
       } catch (cleanupError) {
-        console.error('Error cleaning up files during permanent delete:', cleanupError);
+        console.error('Error cleaning up Cloudinary resources:', cleanupError);
       }
       
+      // Delete from database
       result = await Service.findByIdAndDelete(id);
-      
-      logAudit('PERMANENT_DELETE', 'SERVICE', id, req.user._id, {
-        title: service.title,
-        createdBy: service.createdBy,
-        force: force === 'true',
-        imagesCleaned: service.images?.length || 0
-      });
       
       res.json({
         success: true,
         message: 'Service permanently deleted',
+        cloudinaryCleaned: true,
         requestId,
         timestamp: new Date().toISOString()
       });
     } else {
+      // Soft delete
       service.isActive = false;
       service.status = 'suspended';
       service.lastUpdatedBy = req.user._id;
       await service.save();
-      
-      logAudit('SOFT_DELETE', 'SERVICE', id, req.user._id, {
-        title: service.title,
-        createdBy: service.createdBy
-      });
       
       res.json({
         success: true,
@@ -1090,10 +1190,7 @@ const deleteService = async (req, res, next) => {
     }
 
   } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'DELETE', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    console.error('Delete service error:', error);
     next(error);
   }
 };
@@ -1204,7 +1301,6 @@ const getServiceStats = async (req, res, next) => {
                 featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
                 recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
                 popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                totalOrders: { $sum: '$ordersCount' },
                 totalViews: { $sum: '$views' },
                 totalLikes: { $sum: '$likes' },
                 avgPrice: { $avg: '$price' },
@@ -1219,7 +1315,6 @@ const getServiceStats = async (req, res, next) => {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
-                totalOrders: { $sum: '$ordersCount' },
                 avgRating: { $avg: '$rating' }
               }
             },
@@ -1238,12 +1333,10 @@ const getServiceStats = async (req, res, next) => {
           ],
           topServices: [
             { $match: { status: 'active', isActive: true } },
-            { $sort: { ordersCount: -1 } },
             { $limit: 10 },
             {
               $project: {
                 title: 1,
-                ordersCount: 1,
                 rating: 1,
                 price: 1,
                 slug: 1
@@ -1272,7 +1365,6 @@ const getServiceStats = async (req, res, next) => {
                 output: {
                   count: { $sum: 1 },
                   avgRating: { $avg: "$rating" },
-                  avgOrders: { $avg: "$ordersCount" }
                 }
               }
             }
@@ -1460,7 +1552,7 @@ const exportServices = async (req, res, next) => {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Category', 'Creator',
         'Price', 'Currency', 'Delivery Time', 'Delivery Unit', 'Revisions',
-        'Rating', 'Reviews Count', 'Orders Count', 'Views', 'Likes',
+        'Rating', 'Reviews Count',  'Views', 'Likes',
         'Status', 'Featured', 'Recommended', 'Popular',
         'Created At', 'Updated At', 'Published At'
       ];
@@ -1479,7 +1571,6 @@ const exportServices = async (req, res, next) => {
         service.revisions || 0,
         service.rating || 0,
         service.reviewsCount || 0,
-        service.ordersCount || 0,
         service.views || 0,
         service.likes || 0,
         service.status || '',
@@ -1576,7 +1667,6 @@ const searchServices = async (req, res, next) => {
       price_desc: { price: -1 },
       rating: { rating: -1 },
       delivery: { deliveryTime: 1 },
-      orders: { ordersCount: -1 },
       newest: { createdAt: -1 }
     };
 
@@ -1585,7 +1675,7 @@ const searchServices = async (req, res, next) => {
     const results = await Service.find(filter, { 
       score: { $meta: 'textScore' } 
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy category')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy category')
     .populate('createdBy', 'name picture')
     .populate('category', 'name slug')
     .sort(sortObj)
@@ -1604,7 +1694,6 @@ const searchServices = async (req, res, next) => {
       deliveryTime: result.deliveryTime,
       deliveryTimeUnit: result.deliveryTimeUnit,
       revisions: result.revisions || 0,
-      ordersCount: result.ordersCount || 0,
       views: result.views || 0,
       thumbnail: result.thumbnail,
       createdBy: {
@@ -1783,9 +1872,9 @@ const getSimilarServices = async (req, res, next) => {
         tags: { $in: service.tags.slice(0, 3) }
       } : {})
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
     .populate('createdBy', 'name picture')
-    .sort({ rating: -1, ordersCount: -1 })
+    .sort({ rating: -1})
     .limit(similarLimit)
     .lean();
 
@@ -1796,9 +1885,9 @@ const getSimilarServices = async (req, res, next) => {
         status: 'active',
         isActive: true
       })
-      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
       .populate('createdBy', 'name picture')
-      .sort({ rating: -1, ordersCount: -1 })
+      .sort({ rating: -1,})
       .limit(similarLimit - similarServices.length)
       .lean();
 
@@ -1815,7 +1904,6 @@ const getSimilarServices = async (req, res, next) => {
       deliveryTime: s.deliveryTime,
       deliveryTimeUnit: s.deliveryTimeUnit,
       revisions: s.revisions || 0,
-      ordersCount: s.ordersCount || 0,
       views: s.views || 0,
       thumbnail: s.thumbnail,
       createdBy: {
@@ -1845,7 +1933,7 @@ const getSimilarServices = async (req, res, next) => {
 // Upload Images
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
+  let uploadedImages = [];
   
   try {
     const { id } = req.params;
@@ -1862,7 +1950,6 @@ const uploadImages = async (req, res, next) => {
     const service = await Service.findById(id);
     
     if (!service) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(404).json({
         success: false,
         message: 'Service not found',
@@ -1875,7 +1962,6 @@ const uploadImages = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -1884,11 +1970,7 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    if (req.files) {
-      uploadedFiles = req.files;
-    }
-
-    if (uploadedFiles.length === 0) {
+    if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No images uploaded',
@@ -1897,16 +1979,36 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    const imageUrls = uploadedFiles.map(file => {
-      const safePath = file.path.replace(/\\/g, '/');
-      return `/uploads/${path.basename(safePath)}`;
-    });
-
     const existingImages = service.images || [];
-    const updatedImages = [...existingImages, ...imageUrls];
     
+    // Upload images to Cloudinary
+    for (const file of req.files) {
+      try {
+        const result = await uploadToCloudinary(file, 'services');
+        uploadedImages.push(result.url);
+        console.log(`Uploaded image to Cloudinary: ${result.public_id}`);
+      } catch (uploadError) {
+        console.error('Failed to upload image to Cloudinary:', uploadError);
+        // Clean up already uploaded images
+        await cleanupCloudinaryResources(uploadedImages);
+        return res.status(400).json({
+          success: false,
+          message: `Failed to upload image: ${uploadError.message}`,
+          code: 'IMAGE_UPLOAD_FAILED',
+          requestId
+        });
+      }
+    }
+
+    // Combine existing and new images
+    const updatedImages = [...existingImages, ...uploadedImages];
+    
+    // Check image limit
     if (updatedImages.length > 10) {
-      await cleanupUploadedFiles(uploadedFiles);
+      // Remove excess images from Cloudinary
+      const excessImages = updatedImages.slice(10);
+      await cleanupCloudinaryResources(excessImages);
+      
       return res.status(400).json({
         success: false,
         message: 'Cannot have more than 10 images',
@@ -1915,38 +2017,38 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
+    // Update service with new images
     service.images = updatedImages;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
     await service.save();
 
-    logAudit('UPLOAD_IMAGES', 'SERVICE', id, req.user._id, {
-      imagesAdded: imageUrls.length,
-      totalImages: updatedImages.length
-    });
+    console.log(`Added ${uploadedImages.length} images to service via Cloudinary`);
 
     res.json({
       success: true,
       message: 'Images uploaded successfully',
-      images: imageUrls,
+      images: uploadedImages,
       totalImages: updatedImages.length,
+      cloudinary: true,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
-    logAudit('ERROR', 'SERVICE', 'UPLOAD_IMAGES', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    // Clean up uploaded images on error
+    if (uploadedImages.length > 0) {
+      await cleanupCloudinaryResources(uploadedImages);
+    }
+    
+    console.error('Image upload error:', error);
     next(error);
   }
 };
-
 // Remove Image
 const removeImage = async (req, res, next) => {
   const requestId = generateRequestId();
+  
   try {
     const { id, imageUrl } = req.params;
     
@@ -1960,10 +2062,12 @@ const removeImage = async (req, res, next) => {
     }
 
     const decodedImageUrl = decodeURIComponent(imageUrl);
-    if (!decodedImageUrl.startsWith('/uploads/')) {
+    
+    // Verify it's a Cloudinary URL
+    if (!decodedImageUrl.includes('cloudinary.com')) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid image URL',
+        message: 'Invalid image URL - must be a Cloudinary URL',
         code: 'INVALID_IMAGE_URL',
         requestId
       });
@@ -2002,8 +2106,17 @@ const removeImage = async (req, res, next) => {
       });
     }
 
+    // Remove image from Cloudinary
+    const publicId = extractPublicIdFromUrl(decodedImageUrl);
+    if (publicId) {
+      await deleteFromCloudinary(publicId);
+      console.log(`Removed image from Cloudinary: ${publicId}`);
+    }
+
+    // Remove from service images array
     service.images.splice(imageIndex, 1);
     
+    // Update thumbnail if this was the thumbnail
     if (service.thumbnail === decodedImageUrl) {
       service.thumbnail = service.images.length > 0 ? service.images[0] : null;
     }
@@ -2012,30 +2125,18 @@ const removeImage = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
-    try {
-      deleteImageFiles([decodedImageUrl]);
-    } catch (cleanupError) {
-      console.error('Error deleting image file:', cleanupError);
-    }
-
-    logAudit('REMOVE_IMAGE', 'SERVICE', id, req.user._id, {
-      imageUrl: decodedImageUrl,
-      remainingImages: service.images.length
-    });
-
     res.json({
       success: true,
       message: 'Image removed successfully',
+      removedImage: decodedImageUrl,
       remainingImages: service.images.length,
+      cloudinary: true,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'REMOVE_IMAGE', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    console.error('Remove image error:', error);
     next(error);
   }
 };
@@ -2043,6 +2144,7 @@ const removeImage = async (req, res, next) => {
 // Set Thumbnail
 const setThumbnail = async (req, res, next) => {
   const requestId = generateRequestId();
+  
   try {
     const { id, imageUrl } = req.params;
     
@@ -2056,10 +2158,12 @@ const setThumbnail = async (req, res, next) => {
     }
 
     const decodedImageUrl = decodeURIComponent(imageUrl);
-    if (!decodedImageUrl.startsWith('/uploads/')) {
+    
+    // Verify it's a Cloudinary URL
+    if (!decodedImageUrl.includes('cloudinary.com')) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid image URL',
+        message: 'Invalid image URL - must be a Cloudinary URL',
         code: 'INVALID_IMAGE_URL',
         requestId
       });
@@ -2088,7 +2192,8 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
-    if (!service.images.includes(decodedImageUrl)) {
+    // Check if image exists in service images
+    if (!service.images || !service.images.includes(decodedImageUrl)) {
       return res.status(400).json({
         success: false,
         message: 'Image not found in service images',
@@ -2097,28 +2202,23 @@ const setThumbnail = async (req, res, next) => {
       });
     }
 
+    // Update thumbnail
     service.thumbnail = decodedImageUrl;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
     await service.save();
 
-    logAudit('SET_THUMBNAIL', 'SERVICE', id, req.user._id, {
-      thumbnail: decodedImageUrl
-    });
-
     res.json({
       success: true,
       message: 'Thumbnail set successfully',
       thumbnail: decodedImageUrl,
+      cloudinary: true,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'SET_THUMBNAIL', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    console.error('Set thumbnail error:', error);
     next(error);
   }
 };
@@ -2126,7 +2226,6 @@ const setThumbnail = async (req, res, next) => {
 // Upload Thumbnail
 const uploadThumbnail = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
   
   try {
     const { id } = req.params;
@@ -2143,7 +2242,6 @@ const uploadThumbnail = async (req, res, next) => {
     const service = await Service.findById(id);
     
     if (!service) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(404).json({
         success: false,
         message: 'Service not found',
@@ -2156,7 +2254,6 @@ const uploadThumbnail = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -2165,9 +2262,7 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    if (req.files && req.files.length > 0) {
-      uploadedFiles = req.files;
-    } else {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
         message: 'No thumbnail uploaded',
@@ -2176,45 +2271,61 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    const thumbnailFile = uploadedFiles[0];
-    const safePath = thumbnailFile.path.replace(/\\/g, '/');
-    const thumbnailUrl = `/uploads/${path.basename(safePath)}`;
+    // Upload thumbnail to Cloudinary
+    let thumbnailResult;
+    try {
+      thumbnailResult = await uploadToCloudinary(req.file, 'thumbnails', {
+        transformation: [
+          { width: 400, height: 300, crop: 'fill' },
+          { quality: 'auto:good' }
+        ]
+      });
+      console.log(`Uploaded thumbnail to Cloudinary: ${thumbnailResult.public_id}`);
+    } catch (uploadError) {
+      console.error('Failed to upload thumbnail to Cloudinary:', uploadError);
+      return res.status(400).json({
+        success: false,
+        message: `Failed to upload thumbnail: ${uploadError.message}`,
+        code: 'THUMBNAIL_UPLOAD_FAILED',
+        requestId
+      });
+    }
 
-    if (service.thumbnail && service.thumbnail !== thumbnailUrl) {
-      try {
-        deleteImageFiles([service.thumbnail]);
-      } catch (cleanupError) {
-        console.error('Error deleting old thumbnail:', cleanupError);
+    const thumbnailUrl = thumbnailResult.url;
+
+    // Delete old thumbnail from Cloudinary if it exists
+    if (service.thumbnail && service.thumbnail.includes('cloudinary.com')) {
+      const oldPublicId = extractPublicIdFromUrl(service.thumbnail);
+      if (oldPublicId) {
+        await deleteFromCloudinary(oldPublicId);
+        console.log(`Removed old thumbnail from Cloudinary: ${oldPublicId}`);
       }
     }
 
+    // Update service
     service.thumbnail = thumbnailUrl;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
     await service.save();
 
-    logAudit('UPLOAD_THUMBNAIL', 'SERVICE', id, req.user._id, {
-      thumbnail: thumbnailUrl
-    });
-
     res.json({
       success: true,
       message: 'Thumbnail uploaded successfully',
       thumbnail: thumbnailUrl,
+      cloudinary: {
+        public_id: thumbnailResult.public_id,
+        width: thumbnailResult.width,
+        height: thumbnailResult.height
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
-    logAudit('ERROR', 'SERVICE', 'UPLOAD_THUMBNAIL', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
+    console.error('Thumbnail upload error:', error);
     next(error);
   }
 };
-
 // Get My Services
 const getMyServices = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -2312,7 +2423,7 @@ const getMyServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
+    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'views', 'likes', 'publishedAt'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
@@ -2514,7 +2625,7 @@ const getAdminServices = async (req, res, next) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Sort options
-    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'ordersCount', 'views'];
+    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'views'];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
     const sortOptions = { [sortField]: sortDirection };

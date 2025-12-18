@@ -13,19 +13,52 @@ const {
 } = require('../middleware/validators/service.validator.js');
 
 const rateLimit = require('express-rate-limit');
+// const { CloudinaryStorage } = require('multer-storage-cloudinary');
+// const cloudinary = require('cloudinary').v2;
+// cloudinary.config({
+//   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+//   api_key: process.env.CLOUDINARY_API_KEY,
+//   api_secret: process.env.CLOUDINARY_API_SECRET
+// });
+const memoryStorage = multer.memoryStorage();
+// Create Cloudinary storage for service images
+// const serviceImageStorage = new CloudinaryStorage({
+//   cloudinary: cloudinary,
+//   params: {
+//     folder: 'freelance-platform/services',
+//     allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+//     transformation: [
+//       { width: 1200, height: 800, crop: 'limit' },
+//       { quality: 'auto:good' }
+//     ],
+//     resource_type: 'auto'
+//   }
+// });
+
+// // Create Cloudinary storage for thumbnails
+// const thumbnailStorage = new CloudinaryStorage({
+//   cloudinary: cloudinary,
+//   params: {
+//     folder: 'freelance-platform/thumbnails',
+//     allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+//     transformation: [
+//       { width: 400, height: 300, crop: 'fill' },
+//       { quality: 'auto:good' }
+//     ],
+//     resource_type: 'image'
+//   }
+// });
 
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  skipSuccessfulRequests: false,
   message: {
     success: false,
     message: 'Too many requests, please try again later.',
     code: 'RATE_LIMIT_EXCEEDED'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+  }
 });
+
 
 const bulkOperationLimiter = rateLimit({
   windowMs: 30 * 60 * 1000,
@@ -43,14 +76,11 @@ const bulkOperationLimiter = rateLimit({
 const imageUploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 20,
-  skipSuccessfulRequests: false,
   message: {
     success: false,
     message: 'Too many image uploads, please try again later.',
     code: 'IMAGE_UPLOAD_LIMIT_EXCEEDED'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+  }
 });
 
 // Configure multer for file uploads
@@ -78,11 +108,11 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|webp|gif|svg/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
+  const extname = allowedTypes.test(file.originalname.toLowerCase().match(/\.[0-9a-z]+$/)?.[0]?.substring(1) || '');
   const mimetype = allowedTypes.test(file.mimetype);
   
   if (extname && mimetype) {
-    const maxSize = 5 * 1024 * 1024;
+    const maxSize = 5 * 1024 * 1024; // 5MB
     
     if (file.size > maxSize) {
       return cb(new Error('File size exceeds 5MB limit'), false);
@@ -94,7 +124,7 @@ const fileFilter = (req, file, cb) => {
     }
     
     const executableExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.py'];
-    const fileExtension = path.extname(originalName);
+    const fileExtension = file.originalname.toLowerCase().match(/\.[0-9a-z]+$/)?.[0] || '';
     if (executableExtensions.includes(fileExtension)) {
       return cb(new Error('Executable files are not allowed'), false);
     }
@@ -106,18 +136,18 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
-  storage: storage,
+  storage: memoryStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 10
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 10 // Max 10 files
   },
   fileFilter: fileFilter
 });
 
 const thumbnailUpload = multer({
-  storage: storage,
+  storage: memoryStorage,
   limits: {
-    fileSize: 2 * 1024 * 1024,
+    fileSize: 2 * 1024 * 1024, // 2MB for thumbnails
     files: 1
   },
   fileFilter: fileFilter
@@ -139,44 +169,13 @@ const handleMulterError = (err, req, res, next) => {
         code: 'TOO_MANY_FILES'
       });
     }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({
-        success: false,
-        message: 'Unexpected file field',
-        code: 'UNEXPECTED_FILE_FIELD'
-      });
-    }
   }
   
-  if (err.message.includes('Invalid file type')) {
+  if (err.message) {
     return res.status(400).json({
       success: false,
       message: err.message,
-      code: 'INVALID_FILE_TYPE'
-    });
-  }
-  
-  if (err.message.includes('File size exceeds')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'FILE_SIZE_EXCEEDED'
-    });
-  }
-  
-  if (err.message.includes('Invalid filename')) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid filename detected',
-      code: 'INVALID_FILENAME'
-    });
-  }
-
-  if (err.message.includes('Executable files are not allowed')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'EXECUTABLE_FILE_NOT_ALLOWED'
+      code: 'UPLOAD_ERROR'
     });
   }
   

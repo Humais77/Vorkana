@@ -51,18 +51,42 @@ const sanitizeInput = (data, options = {}) => {
   return data;
 };
 
-const imageUrlSchema = Joi.string().pattern(
-  /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i
+// Updated image validation for Cloudinary
+const imageUrlSchema = Joi.alternatives().try(
+  // Cloudinary URL pattern
+  Joi.string().pattern(
+    /^https:\/\/res\.cloudinary\.com\/[a-zA-Z0-9_-]+\/image\/upload\/.*\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i
+  ).messages({
+    'string.pattern.base': 'Invalid Cloudinary image URL format',
+  }),
+  
+  // Legacy local upload pattern (for backward compatibility)
+  Joi.string().pattern(
+    /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i
+  ).messages({
+    'string.pattern.base': 'Invalid local image path format',
+  })
 ).custom((value, helpers) => {
-  if (value.includes('..') || value.includes('//')) {
+  if (!value) return value;
+  
+  // Security check
+  if (value.includes('..') || value.includes('//') || value.includes('javascript:')) {
     return helpers.error('any.invalid');
   }
+  
   return value;
 }, 'Image URL validation').messages({
-  'string.pattern.base': 'Invalid image URL format',
-  'any.invalid': 'Invalid image path detected'
+  'any.invalid': 'Invalid image path detected - security violation',
 });
 
+// Also update the images array validation
+const imagesSchema = Joi.array()
+  .items(imageUrlSchema)
+  .max(10)
+  .optional()
+  .messages({
+    'array.max': 'Cannot upload more than 10 images',
+  });
 const packageSchema = Joi.object({
   name: Joi.string()
     .required()

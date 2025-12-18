@@ -247,11 +247,6 @@ const serviceSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Reviews count cannot be negative'],
   },
-  ordersCount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Orders count cannot be negative'],
-  },
   views: {
     type: Number,
     default: 0,
@@ -375,12 +370,7 @@ serviceSchema.virtual('reviews', {
   match: { isActive: true }
 });
 
-serviceSchema.virtual('orders', {
-  ref: 'Order',
-  localField: '_id',
-  foreignField: 'service',
-  match: { isActive: true }
-});
+
 
 serviceSchema.virtual('categoryDetails', {
   ref: 'Category',
@@ -522,7 +512,6 @@ serviceSchema.index({ status: 1, publishedAt: -1 }, { name: 'status_published_de
 serviceSchema.index({ isFeatured: 1, status: 1 }, { name: 'featured_status_idx' });
 serviceSchema.index({ isRecommended: 1, status: 1 }, { name: 'recommended_status_idx' });
 serviceSchema.index({ isPopular: 1, status: 1 }, { name: 'popular_status_idx' });
-serviceSchema.index({ rating: -1, ordersCount: -1 }, { name: 'rating_orders_desc_idx' });
 serviceSchema.index({ 
   title: 'text', 
   description: 'text', 
@@ -544,7 +533,6 @@ serviceSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
 serviceSchema.index({ price: 1, status: 1 }, { name: 'price_status_idx' });
 serviceSchema.index({ deliveryTime: 1, status: 1 }, { name: 'delivery_status_idx' });
 serviceSchema.index({ views: -1, status: 1 }, { name: 'views_status_desc_idx' });
-serviceSchema.index({ ordersCount: -1, status: 1 }, { name: 'orders_status_desc_idx' });
 
 // Query helpers
 serviceSchema.query.active = function() {
@@ -601,48 +589,6 @@ serviceSchema.statics.incrementViews = async function(serviceId) {
   );
 };
 
-serviceSchema.statics.verifyOrderEligibility = async function(serviceId, buyerId) {
-  const Service = mongoose.model('Service');
-  const User = mongoose.model('User');
-  
-  const service = await Service.findById(serviceId);
-  if (!service || !service.isActive || service.status !== 'active') {
-    throw new Error('Service is not available for ordering');
-  }
-  
-  const creator = await User.findById(service.createdBy);
-  if (!creator || !creator.isActive) {
-    throw new Error('Service creator is not available');
-  }
-  
-  const buyer = await User.findById(buyerId);
-  if (!buyer || !buyer.isActive) {
-    throw new Error('Buyer account is not active');
-  }
-  
-  return {
-    service,
-    creator,
-    buyer,
-    eligible: true
-  };
-};
-
-serviceSchema.statics.incrementOrdersCount = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { ordersCount: 1 } },
-    { new: true }
-  );
-};
-
-serviceSchema.statics.decrementOrdersCount = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { ordersCount: -1 } },
-    { new: true }
-  );
-};
 
 serviceSchema.statics.updateRating = async function(serviceId, newRating) {
   const service = await this.findById(serviceId);

@@ -133,122 +133,126 @@ export const servicesAPI = {
   },
   
   create: async (serviceData, files = null) => {
-    try {
-      let response;
+  try {
+   let response;
+    
+    if (files && files.length > 0) {
+      const formData = new FormData();
       
-      if (files && files.length > 0) {
-        const formData = new FormData();
-        
-        formData.append('data', JSON.stringify(serviceData));
-        
-        files.forEach((file) => {
-          formData.append('images', file);
-        });
-        
-        response = await axiosInstance.post('/api/services', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-      } else {
-        response = await axiosInstance.post('/api/services', serviceData);
-      }
+      formData.append('data', JSON.stringify(serviceData));   // ← this is correct
+
+      files.forEach((file) => {
+        formData.append('images', file);                      // ← correct
+      });
       
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          message: response.data.message || 'Service created successfully',
-          service: response.data.service || response.data.data
-        };
-      }
-      
-      return response.data;
-      
-    } catch (error) {
-      let errorMessage = 'Failed to create service';
-      
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400) {
-          if (data.code === 'CATEGORY_NOT_FOUND') {
-            errorMessage = 'Invalid category selected. Please refresh the page and try again.';
-          } else if (data.errors) {
-            const validationErrors = data.errors.map(err => err.message).join(', ');
-            errorMessage = `Validation failed: ${validationErrors}`;
-          } else if (data.message) {
-            errorMessage = data.message;
-          }
-        } else if (status === 401) {
-          errorMessage = 'Please login to create a service';
-        } 
-        // REMOVE: seller-specific restriction
-        // else if (status === 403) {
-        //   errorMessage = 'Only sellers can create services';
-        // } 
-        else if (status === 409) {
-          errorMessage = 'A service with similar title already exists';
-        }
-      }
-      
-      throw new Error(errorMessage);
+      response = await axiosInstance.post('/api/services', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    } else {
+      // ← this was wrong – you were sending json but backend expects multipart when no files
+      // Fix: always send multipart even with no files → backend will parse req.body.data perfectly
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(serviceData));
+      // no images → that's fine
+
+      response = await axiosInstance.post('/api/services', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
     }
-  },
-  
-  update: async (id, updateData, files = null) => {
-    try {
-      let response;
+    
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        message: response.data.message || 'Service created successfully',
+        service: response.data.service
+      };
+    }
+    
+    return response.data;
+    
+  } catch (error) {
+    let errorMessage = 'Failed to create service';
+    
+    if (error.response) {
+      const { data, status } = error.response;
       
-      if (files && files.length > 0) {
-        const formData = new FormData();
-        formData.append('data', JSON.stringify(updateData));
-        
-        files.forEach((file, index) => {
-          formData.append('images', file);
-        });
-        
-        response = await axiosInstance.put(`/api/services/${id}`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-      } else {
-        response = await axiosInstance.put(`/api/services/${id}`, updateData);
-      }
-      
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          message: response.data.message || 'Service updated successfully',
-          service: response.data.service || response.data.data
-        };
-      }
-      
-      return response.data;
-      
-    } catch (error) {
-      let errorMessage = 'Failed to update service';
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400 && data.errors) {
+      if (status === 400) {
+        if (data.code === 'CATEGORY_NOT_FOUND') {
+          errorMessage = 'Invalid category selected. Please refresh the page and try again.';
+        } else if (data.errors) {
           const validationErrors = data.errors.map(err => err.message).join(', ');
           errorMessage = `Validation failed: ${validationErrors}`;
-        } else if (status === 403) {
-          // CHANGE: Update error message to be generic
-          errorMessage = 'You can only update your own services';
-        } else if (status === 404) {
-          errorMessage = 'Service not found';
-        } else if (status === 409) {
-          errorMessage = 'Service was modified by another user. Please refresh and try again.';
-        } else {
-          errorMessage = data?.message || errorMessage;
+        } else if (data.message) {
+          errorMessage = data.message;
         }
+      } else if (status === 401) {
+        errorMessage = 'Please login to create a service';
+      } else if (status === 413) {
+        errorMessage = 'File size too large. Maximum size is 5MB per file.';
+      } else if (status === 409) {
+        errorMessage = 'A service with similar title already exists';
       }
-      
-      throw new Error(errorMessage);
     }
-  },
+    
+    throw new Error(errorMessage);
+  }
+},
+
+update: async (id, updateData, files = null) => {
+  try {
+    let response;
+    
+    if (files && files.length > 0) {
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(updateData));
+      
+      files.forEach((file, index) => {
+        formData.append('images', file);
+      });
+      
+      response = await axiosInstance.put(`/api/services/${id}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    } else {
+      response = await axiosInstance.put(`/api/services/${id}`, updateData);
+    }
+    
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        message: response.data.message || 'Service updated successfully',
+        service: response.data.service || response.data.data
+      };
+    }
+    
+    return response.data;
+    
+  } catch (error) {
+    let errorMessage = 'Failed to update service';
+    if (error.response) {
+      const { data, status } = error.response;
+      
+      if (status === 400 && data.errors) {
+        const validationErrors = data.errors.map(err => err.message).join(', ');
+        errorMessage = `Validation failed: ${validationErrors}`;
+      } else if (status === 403) {
+        errorMessage = 'You can only update your own services';
+      } else if (status === 404) {
+        errorMessage = 'Service not found';
+      } else if (status === 409) {
+        errorMessage = 'Service was modified by another user. Please refresh and try again.';
+      } else if (status === 413) {
+        errorMessage = 'File size too large. Maximum size is 5MB per file.';
+      } else {
+        errorMessage = data?.message || errorMessage;
+      }
+    }
+    
+    throw new Error(errorMessage);
+  }
+},
   
   delete: async (id, options = {}) => {
     try {
@@ -348,7 +352,6 @@ export const servicesAPI = {
         totalServices: 0,
         activeServices: 0,
         draftServices: 0,
-        totalOrders: 0,
         totalRevenue: 0,
         avgRating: 0
       }
@@ -469,4 +472,22 @@ export const servicesAPI = {
       throw new Error(error.response?.data?.message || 'Failed to fetch categories');
     }
   },
+  uploadImage: async (file, type = 'service') => {
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    const endpoint = type === 'thumbnail' ? '/api/uploads/thumbnail' : '/api/uploads/image';
+    
+    const response = await axiosInstance.post(endpoint, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.message || 'Failed to upload image');
+  }
+},
 };
