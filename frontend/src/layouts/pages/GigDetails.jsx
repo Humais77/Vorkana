@@ -37,6 +37,9 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useGigStore } from '../../store/useGigStore';
 import { useGig } from '../../hooks/useGigs';
 
+// Add this import - make sure the path is correct
+import MessagingModal from '../../components/MessagingModal';
+
 const GigDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -44,6 +47,9 @@ const GigDetails = () => {
   // Zustand stores
   const { user, isAuthenticated } = useAuthStore();
   const { setGigDetails, clearGigDetails } = useGigStore();
+  
+  // Add this state for the modal
+  const [showMessaging, setShowMessaging] = useState(false);
   
   // TanStack Query hook for gig data
   const { 
@@ -80,9 +86,10 @@ const GigDetails = () => {
     };
   }, [clearGigDetails]);
 
+  // Update the contact function
   const handleContactSeller = () => {
     if (!isAuthenticated) {
-      toast.error('Please login to contact seller');
+      toast.error('Please login to contact client');
       navigate('/sign-in');
       return;
     }
@@ -92,8 +99,8 @@ const GigDetails = () => {
       return;
     }
     
-    toast.success('Opening chat with client...');
-    // In a real app, navigate to chat with gig creator
+    // Open the messaging modal
+    setShowMessaging(true);
   };
 
   const handleSubmitProposal = () => {
@@ -266,6 +273,14 @@ const GigDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+      {/* Messaging Modal - MOVE THIS TO ROOT LEVEL */}
+      <MessagingModal
+        isOpen={showMessaging}
+        onClose={() => setShowMessaging(false)}
+        receiver={gig.createdBy}
+        gig={gig}
+      />
+      
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -368,7 +383,7 @@ const GigDetails = () => {
                 <div className="flex items-center space-x-4">
                   <div className="relative">
                     <img
-                      src={gig.createdBy?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                      src={gig.createdBy?.picture || gig.createdBy?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
                       alt={gig.createdBy?.fullName || gig.createdBy?.username}
                       className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
                     />
@@ -402,11 +417,11 @@ const GigDetails = () => {
                 </div>
                 {isAuthenticated && user?._id !== gig.createdBy?._id && (
                   <button
-                    onClick={handleContactSeller}
+                    onClick={() => setShowMessaging(true)}
                     className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
                   >
                     <MessageCircle className="h-5 w-5" />
-                    Contact Client
+                    Message Client
                   </button>
                 )}
               </div>
@@ -673,12 +688,12 @@ const GigDetails = () => {
                 )}
 
                 <button
-                  onClick={handleContactSeller}
+                  onClick={() => setShowMessaging(true)}
                   className="w-full py-3 bg-emerald-800/50 text-white rounded-xl hover:bg-emerald-800 transition-all font-medium border border-emerald-500/50"
                   disabled={!isAuthenticated || gig.createdBy?._id === user?._id}
                 >
                   <MessageCircle className="h-4 w-4 inline mr-2" />
-                  {isAuthenticated ? 'Contact Client' : 'Login to Contact'}
+                  {isAuthenticated ? 'Message Client' : 'Login to Message'}
                 </button>
               </div>
 
