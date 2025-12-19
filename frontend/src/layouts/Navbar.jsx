@@ -6,6 +6,7 @@ import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, H
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
+import default_pp from '../assets/default_pp-modified.png'
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -154,7 +155,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 <img
                   src={Logo2}
                   alt="Vorkana Logo"
-                  className="h-7 lg:h-8 w-auto"
+                  className="h-8 lg:h-10 w-auto"
                 />
                 <span className="text-xl lg:text-2xl font-black text-black">
                   Vorkana
@@ -297,9 +298,15 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       onClick={() => setMenuOpen(!menuOpen)}
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
                     >
-                      <div className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-800 text-white font-bold text-lg">
-                        {user?.name?.charAt(0) || 'U'}
-                      </div>
+                      <img
+  src={user?.picture || default_pp}
+  alt="Profile"
+  className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+  onError={(e) => {
+    e.target.onerror = null;
+    e.target.src = default_pp;
+  }}
+/>
                       <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -333,7 +340,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             </Link>
 
                             <Link
-                              to="/my-services"
+                              to="/my-services" 
                               onClick={() => setMenuOpen(false)}
                               className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
                             >

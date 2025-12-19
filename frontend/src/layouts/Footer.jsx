@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
-
+import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter} from 'react-icons/fa6';
+import { } from "react-icons/fa6";
 const Footer = () => {
   const footerLinks = {
     discover: {
@@ -12,28 +13,6 @@ const Footer = () => {
         { label: "Top Rated", path: "/top-rated" },
         { label: "Trending Services", path: "/trending" },
         { label: "Local Freelancers", path: "/local" },
-      ]
-    },
-    freelancers: {
-      title: "For Freelancers",
-      links: [
-        { label: "How to Start", path: "/get-started" },
-        { label: "Create a Profile", path: "/create-profile" },
-        { label: "Find Work", path: "/find-work" },
-        { label: "Membership Plans", path: "/membership" },
-        { label: "Success Stories", path: "/success-stories" },
-        { label: "Community Forum", path: "/community" },
-      ]
-    },
-    clients: {
-      title: "For Clients",
-      links: [
-        { label: "Post a Project", path: "/post-project" },
-        { label: "Browse Talent", path: "/browse-talent" },
-        { label: "Hire Freelancers", path: "/hire" },
-        { label: "Client Resources", path: "/resources" },
-        { label: "Project Management", path: "/project-management" },
-        { label: "Enterprise Solutions", path: "/enterprise" },
       ]
     },
     company: {
@@ -64,7 +43,7 @@ const Footer = () => {
     <footer className="bg-gradient-to-b from-slate-50 to-gray-100 text-gray-800 pt-16 pb-10 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Links */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
+<div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-8 mb-10">
           {Object.values(footerLinks).map((section, index) => (
             <div key={index} className="space-y-4">
               <h3 className="font-bold text-lg text-gray-900 mb-6 border-l-4 border-blue-500 pl-3">
@@ -145,7 +124,7 @@ const Footer = () => {
         </div>
 
         {/* Divider */}
-        <div className="border-t border-gray-300 my-10"></div>
+        <div className="border-t border-gray-300 my-4"></div>
 
         {/* Bottom Section */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-8">
@@ -156,9 +135,7 @@ const Footer = () => {
                 Vorkana
               </span>
             </div>
-            <p className="text-gray-600 text-sm max-w-md mb-4">
-              Connecting businesses with top freelance talent worldwide. Quality work, secure payments, and seamless collaboration.
-            </p>
+            
             <p className="text-gray-500 text-sm">
               © {new Date().getFullYear()} Vorkana. All rights reserved.
             </p>
@@ -166,66 +143,22 @@ const Footer = () => {
 
           {/* Settings & Links */}
           <div className="flex flex-col items-center lg:items-end gap-6">
-            {/* Language & Currency */}
-            <div className="flex flex-wrap items-center justify-center gap-4">
-              <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm">
-                <select className="bg-transparent text-gray-700 text-sm focus:outline-none">
-                  <option>English</option>
-                  <option>Español</option>
-                  <option>Français</option>
-                  <option>Deutsch</option>
-                </select>
-              </div>
-              
-              <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm">
-                <select className="bg-transparent text-gray-700 text-sm focus:outline-none">
-                  <option>USD $</option>
-                  <option>EUR €</option>
-                  <option>GBP £</option>
-                  <option>CAD $</option>
-                </select>
-              </div>
-            </div>
-
             {/* Social Links */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6">
               <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-600 transition-colors duration-200">
-                Facebook
+                <FaFacebook/>
               </a>
               <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-400 transition-colors duration-200">
-                Twitter
+                <FaXTwitter/>
               </a>
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-pink-600 transition-colors duration-200">
-                Instagram
+                <FaInstagram/>
               </a>
               <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-700 transition-colors duration-200">
-                LinkedIn
+                <FaLinkedin/>
               </a>
             </div>
-
-            {/* Policy Links */}
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-600">
-              <Link to="/privacy" className="hover:text-blue-600 transition-colors duration-200">
-                Privacy Policy
-              </Link>
-              <Link to="/terms" className="hover:text-blue-600 transition-colors duration-200">
-                Terms of Service
-              </Link>
-              <Link to="/cookies" className="hover:text-blue-600 transition-colors duration-200">
-                Cookie Policy
-              </Link>
-              <Link to="/sitemap" className="hover:text-blue-600 transition-colors duration-200">
-                Sitemap
-              </Link>
-            </div>
           </div>
-        </div>
-
-        {/* Made with love */}
-        <div className="mt-12 pt-6 border-t border-gray-300 text-center">
-          <p className="text-gray-500 text-sm">
-            Made with passion by the Vorkana team
-          </p>
         </div>
       </div>
     </footer>

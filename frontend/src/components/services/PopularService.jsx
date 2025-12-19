@@ -11,6 +11,7 @@ import {
   Cloud, Database, Gamepad,
   Video, Heart, MessageSquare
 } from "lucide-react";
+import { motion } from "framer-motion";
 
 const services = [
     {
@@ -231,28 +232,27 @@ const PopularServices = () => {
     };
 
     return (
-        <section className="relative py-16 px-4 bg-gradient-to-b from-white to-gray-50">
-            {/* Background Decoration */}
-            <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute -top-20 -right-20 w-60 h-60 bg-blue-500/5 rounded-full blur-3xl"></div>
-                <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-purple-500/5 rounded-full blur-3xl"></div>
-            </div>
-
-            <div className="relative max-w-7xl mx-auto">
+        <section className="relative py-16 px-4 bg-white">
+            <div className="max-w-7xl mx-auto">
                 {/* Header Section */}
                 <div className="text-center mb-12">
                     <div className="flex justify-between items-center mb-6">
                         <div className="text-left">
-                            <h2 className="text-4xl md:text-5xl font-bold text-gray-900">
+                            <motion.h2 
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.5 }}
+                                className="text-4xl md:text-5xl font-bold text-gray-900"
+                            >
                                 Popular Services
-                            </h2>
+                            </motion.h2>
                             <p className="text-gray-600 mt-2">
                                 Browse services by category and find what you need
                             </p>
                         </div>
                         <Link 
                             to="/services"
-                            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium hover:gap-3 transition-all"
+                            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium transition-colors"
                         >
                             View All Services
                             <ChevronRight className="w-4 h-4" />
@@ -263,20 +263,22 @@ const PopularServices = () => {
                 {/* Services Grid with Scroll Buttons */}
                 <div className="relative mb-16">
                     {/* Left Scroll Button */}
-                    <button
+                    <motion.button
                         onClick={scrollLeft}
-                        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-6 z-10 w-12 h-12 rounded-full bg-white shadow-xl border border-gray-200 flex items-center justify-center text-gray-700 hover:text-blue-600 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 group"
+                        
+                        className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-6 z-10 w-12 h-12 rounded-full bg-white shadow-lg border border-gray-200 flex items-center justify-center text-gray-700 hover:text-blue-600 transition-all duration-200"
                     >
-                        <ChevronLeft className="w-6 h-6 group-hover:-translate-x-0.5 transition-transform" />
-                    </button>
+                        <ChevronLeft className="w-6 h-6" />
+                    </motion.button>
 
                     {/* Right Scroll Button */}
-                    <button
+                    <motion.button
                         onClick={scrollRight}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 z-10 w-12 h-12 rounded-full bg-white shadow-xl border border-gray-200 flex items-center justify-center text-gray-700 hover:text-blue-600 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 group"
+                        
+                        className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 z-10 w-12 h-12 rounded-full bg-white shadow-lg border border-gray-200 flex items-center justify-center text-gray-700 hover:text-blue-600 transition-all duration-200"
                     >
-                        <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
-                    </button>
+                        <ChevronRight className="w-6 h-6" />
+                    </motion.button>
 
                     {/* Services Scroll Container */}
                     <div
@@ -284,68 +286,44 @@ const PopularServices = () => {
                         className="flex gap-6 overflow-x-auto scrollbar-hide py-4 px-2"
                         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                     >
-                        {services.map((service) => (
-                            <Link
+                        {services.map((service, index) => (
+                            <motion.div
                                 key={service.id}
-                                to={`/services?q=${encodeURIComponent(service.searchQuery)}`}
-                                className="group flex-shrink-0 w-80 bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-500 border border-gray-200 hover:border-transparent hover:scale-[1.02] relative overflow-hidden"
-                            >
-                                {/* Gradient Background Overlay */}
-                                <div className={`absolute inset-0 bg-gradient-to-br ${service.color} opacity-0 group-hover:opacity-5 transition-opacity duration-500`}></div>
                                 
-                                {/* Service Card Content */}
-                                <div className="relative h-full">
-                                    {/* Image Section */}
-                                    <div className="relative h-48 overflow-hidden">
-                                        <img
-                                            src={service.image}
-                                            alt={service.name}
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                                        />
-                                        {/* Image Overlay Gradient */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
-                                        
-                                        {/* Service Icon */}
-                                        <div className="absolute bottom-4 left-4 w-12 h-12 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center">
-                                            {service.icon}
+                                className="flex-shrink-0 w-64"
+                            >
+                                <Link
+                                    to={`/services?q=${encodeURIComponent(service.searchQuery)}`}
+                                    className="group bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 block"
+                                >
+                                    {/* Service Card Content */}
+                                    <div className="relative h-full">
+                                        {/* Image Section */}
+                                        <div className="relative h-48 overflow-hidden rounded-t-xl">
+                                            <motion.img
+                                                src={service.image}
+                                                alt={service.name}
+                                                className="w-full h-full object-cover"
+                                                whileHover={{ scale: 1.05 }}
+                                                transition={{ duration: 0.3 }}
+                                            />
+                                            
                                         </div>
-                                        
-                                        {/* View Services Button */}
-                                        <div className="absolute bottom-4 right-4">
-                                            <div className="flex items-center gap-1 px-3 py-2 bg-white/90 backdrop-blur-sm rounded-full text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">
-                                                View Services
-                                                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+
+                                        {/* Content Section */}
+                                        <div className="p-5">
+                                            {/* Service Info */}
+                                            <div>
+                                                <h3 className="text-lg font-bold text-gray-900 mb-2">
+                                                    {service.name}
+                                                </h3>
                                             </div>
+                                            
+                                            
                                         </div>
                                     </div>
-
-                                    {/* Content Section */}
-                                    <div className="p-6">
-                                        {/* Service Info */}
-                                        <div className="mb-4">
-                                            <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors duration-300 mb-2">
-                                                {service.name}
-                                            </h3>
-                                            <p className="text-gray-600 text-sm leading-relaxed">
-                                                {service.description}
-                                            </p>
-                                        </div>
-                                        
-                                        {/* Category Tag */}
-                                        <div className="flex items-center justify-between">
-                                            <span className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
-                                                {service.category.toUpperCase()}
-                                            </span>
-                                            <span className="text-xs text-gray-500">
-                                                Click to explore →
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Hover Effect Lines */}
-                                    <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
-                                </div>
-                            </Link>
+                                </Link>
+                            </motion.div>
                         ))}
                     </div>
                 </div>
@@ -357,35 +335,13 @@ const PopularServices = () => {
                     </p>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         <Link
-                            to="/services"
-                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-blue-500  text-white font-bold rounded-full hover:bg-blue-700  transition-all hover:shadow-lg transform hover:-translate-y-0.5"
-                        >
-                            <Sparkles className="w-5 h-5" />
-                            Browse All Services
-                        </Link>
-                        <Link
-                            to="/services/create"
-                            className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-white text-blue-600 border border-blue-200 font-bold rounded-full hover:bg-blue-50 transition-all hover:shadow-lg transform hover:-translate-y-0.5"
-                        >
-                            <Zap className="w-5 h-5" />
-                            Start Selling
-                        </Link>
+                                to="/services"
+                                className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                            >
+                                Browse All Services
+                            </Link>
                     </div>
                 </div>
-                
-                {/* Custom Scrollbar Style */}
-                <style jsx>{`
-                    .scrollbar-hide::-webkit-scrollbar {
-                        display: none;
-                    }
-                    @keyframes shimmer {
-                        0% { transform: translateX(-100%); }
-                        100% { transform: translateX(100%); }
-                    }
-                    .animate-shimmer {
-                        animation: shimmer 2s infinite linear;
-                    }
-                `}</style>
             </div>
         </section>
     );

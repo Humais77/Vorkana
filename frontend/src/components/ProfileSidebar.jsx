@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'react-hot-toast';
+import default_pp from '../assets/default_pp-modified.png'
 
 const ProfileSidebar = () => {
   const { user } = useAuthStore();
@@ -104,21 +105,27 @@ const ProfileSidebar = () => {
     <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 top-8">
     
       <div className="text-center mb-8">
-        <div className="relative mx-auto w-32 h-32 mb-4">
-          <div className="w-full h-full rounded-full flex items-center justify-center text-white text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-600">
-            {(user?.name || 'U').charAt(0).toUpperCase()}
-          </div>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="absolute bottom-0 right-0 w-10 h-10 bg-white rounded-full border-2 border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors"
-          >
-            {isEditing ? (
-              <X className="w-5 h-5 text-gray-600" />
-            ) : (
-              <Edit2 className="w-5 h-5 text-gray-600" />
-            )}
-          </button>
-        </div>
+       <div className="relative mx-auto w-32 h-32 mb-4">
+  <img
+    src={user?.picture || default_pp}
+    alt="Profile"
+    className="w-full h-full rounded-full object-cover border-4 border-white shadow-md"
+    onError={(e) => {
+      e.target.onerror = null;
+      e.target.src = default_pp;
+    }}
+  />
+  <button
+    onClick={() => setIsEditing(!isEditing)}
+    className="absolute bottom-0 right-0 w-10 h-10 bg-white rounded-full border-2 border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors"
+  >
+    {isEditing ? (
+      <X className="w-5 h-5 text-gray-600" />
+    ) : (
+      <Edit2 className="w-5 h-5 text-gray-600" />
+    )}
+  </button>
+</div>
         
         {isEditing ? (
           <input

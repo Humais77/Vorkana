@@ -18,7 +18,7 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       <CategoryGrid />
       <PopularServices />
       <Testimonials />
-      <Stats />
+      {/* <Stats /> */}
       <MakeItHappen onSignupClick={onSignupClick} />
       <CallToAction onSignupClick={onSignupClick} />
       <FAQSection />

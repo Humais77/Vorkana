@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Search, Pause, Play } from "lucide-react";
 import bg_video from '../assets/bg_video.mp4'
-
 const Hero = () => {
   const [paused, setPaused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,11 +27,11 @@ const Hero = () => {
   ];
 
   const trustedCompanies = [
-    { name: "Google", logo: "/google.svg" },
-    { name: "NETFLIX", logo: "/netflix.svg" },
-    { name: "ABC", logo: "/abc.svg" },
-    { name: "PayPal", logo: "/paypal.svg" },
-    { name: "Olympiant", logo: "/olymp.svg" }
+    "Google",
+    "NETFLIX",
+    "ABC",
+    "PayPal",
+    "Olympiant"
   ];
 
   const handleToggle = () => {
@@ -56,10 +55,6 @@ const Hero = () => {
   const handleCategoryClick = (categoryName) => {
     const slug = categoryName.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-');
     window.location.href = `/category/${slug}`;
-  };
-
-  const handleTrustedCompanyClick = (companyName) => {
-    window.location.href = `/company/${companyName.toLowerCase()}`;
   };
 
   return (
@@ -129,7 +124,20 @@ const Hero = () => {
           ))}
         </div>
 
-        
+        {/* Simple Trusted By Section */}
+        <div className="mt-12 flex items-center text-white">
+          <span className="font-medium text-white/90 mr-8">Trusted By:</span>
+          <div className="flex items-center space-x-10">
+            {trustedCompanies.map((company, index) => (
+              <span 
+                key={index}
+                className="font-normal opacity-90 hover:opacity-100 transition-opacity"
+              >
+                {company}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Pause / Play Button */}
