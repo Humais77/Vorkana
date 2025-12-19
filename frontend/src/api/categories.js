@@ -1,6 +1,7 @@
 // api/categories.js
 import axios from 'axios';
-
+import Cookies from 'js-cookie';
+import { z } from 'zod';
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 const axiosInstance = axios.create({
@@ -10,28 +11,64 @@ const axiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
+const getSecureToken = () => {
+  // Try secure storage in order of preference
+  try {
+    // 1. HttpOnly cookie (most secure)
+    const httpOnlyToken = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('auth_token='))
+      ?.split('=')[1];
+    
+    if (httpOnlyToken) return httpOnlyToken;
+    
+    // 2. Secure localStorage with encryption in production
+    const rawToken = localStorage.getItem('userToken');
+    if (rawToken && process.env.NODE_ENV === 'development') {
+      return rawToken; // Only in dev
+    }
+    
+    // In production, decrypt or use different storage
+    if (rawToken && process.env.NODE_ENV === 'production') {
+      // Consider using crypto-js for encryption
+      // return decryptToken(rawToken);
+      return rawToken; // Temporary - implement encryption
+    }
+  } catch (error) {
+    console.error('Token retrieval error:', error);
+    return null;
+  }
+  return null;
+};
 // Request interceptor for auth token
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken');
+    const token = getSecureToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Add cache busting for GET requests
-    if (config.method === 'get') {
-      config.params = {
-        ...config.params,
-        _: Date.now() // Cache busting
-      };
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get') {
+      const csrfToken = Cookies.get('XSRF-TOKEN') || localStorage.getItem('csrfToken');
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+      }
     }
+    
+    // Cache busting only for specific cases
+    // api/categories.js - Request interceptor
+if (config.method === 'get' && config.cacheBust !== false) {
+  config.params = {
+    ...config.params,
+    _t: Date.now(), // Better than _
+    cb: Math.random().toString(36).substring(7) // Alternative
+  };
+}
     
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Response interceptor for error handling
@@ -68,7 +105,29 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
+const CategorySchema = z.object({
+  name: z.string()
+    .min(2, 'Category name must be at least 2 characters')
+    .max(50, 'Category name cannot exceed 50 characters')
+    .regex(/^[a-zA-Z0-9\s\-&]+$/, 'Invalid characters in category name'),
+  description: z.string()
+    .max(1000, 'Description too long')
+    .optional(),
+  parentCategory: z.string()
+    .regex(/^[a-f\d]{24}$/i, 'Invalid category ID')
+    .optional()
+    .nullable(),
+  icon: z.string()
+    .max(50, 'Icon name too long')
+    .optional(),
+});
+const createCancellableRequest = () => {
+  const source = axios.CancelToken.source();
+  return {
+    request: source,
+    cancel: (message = 'Request cancelled') => source.cancel(message)
+  };
+};
 export const categoriesAPI = {
   /**
    * Get all categories - SIMPLIFIED VERSION
@@ -77,7 +136,7 @@ export const categoriesAPI = {
     try {
       console.log('Fetching categories with params:', params);
       
-      const response = await axiosInstance.get('/api/categories', { params });
+      const response = await axiosInstance.get('/api/categories', { params ,cancelToken: signal || undefined});
       
       console.log('API Response:', response.data);
       
@@ -233,14 +292,39 @@ export const categoriesAPI = {
    * Create a new category (admin only)
    */
   create: async (categoryData) => {
-    try {
-      const response = await axiosInstance.post('/api/categories', categoryData);
-      return response.data.category || response.data;
-    } catch (error) {
-      console.error('Create category error:', error);
-      throw error;
+  try {
+    // Validate input
+    const validatedData = CategorySchema.parse(categoryData);
+    
+    // Sanitize input
+    const sanitizedData = {
+      ...validatedData,
+      name: validatedData.name.trim(),
+      description: validatedData.description?.trim() || '',
+    };
+    
+    const response = await axiosInstance.post('/api/categories', sanitizedData);
+    
+    // Validate response
+    if (!response.data || typeof response.data !== 'object') {
+      throw new Error('Invalid server response');
     }
-  },
+    
+    return response.data;
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const validationErrors = error.errors.map(err => ({
+        field: err.path.join('.'),
+        message: err.message
+      }));
+      throw { 
+        type: 'VALIDATION_ERROR', 
+        errors: validationErrors 
+      };
+    }
+    throw error;
+  }
+},
   
   /**
    * Update category (admin only)

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const slugify = require('slugify');
 const Service = require('./services.model');
 const Gig = require('./gig.model');
+const { validateImagePath } = require('../middleware/validators/category.validator');
 
 const categorySchema = new mongoose.Schema({
   name: {
@@ -15,24 +16,33 @@ const categorySchema = new mongoose.Schema({
     validate: {
       validator: function(v) {
 const injectionPatterns = [
-          /\$where/i,
-          /\$ne/i,
-          /\$nin/i,
-          /\$regex/i,
-          /select.*from/i,
-          /insert.*into/i,
-          /update.*set/i,
-          /delete.*from/i,
-          /union.*select/i,
-          /or.*=.*or/i,
-          /'|"|`/,
-          /--/,
-          /;/,
-          /\/\*.*\*\//,
-          /<script/i,
-          /javascript:/i,
-          /on\w+\s*=/
-        ];
+  // SQL Injection
+  /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+  /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
+  /(\%27)|(\')|(\-\-)|(\%3B)|(;)/i,
+  /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
+  
+  // NoSQL Injection
+  /\$where/i,
+  /\$eq.*\{\s*\$ne/i,
+  /\$ne.*null/i,
+  /\$nin.*\[\]/i,
+  /\$regex.*\$options/i,
+  /\$\$.*=.*\$\$/i,
+  
+  // Command Injection
+  /\|\s*\w+/i,
+  /\&\s*\w+/i,
+  /\;\s*\w+/i,
+  /\`.*\`/i,
+  
+  // XSS patterns
+  /<script[^>]*>.*?<\/script>/gi,
+  /javascript\s*:/gi,
+  /on\w+\s*=\s*["'][^"']*["']/gi,
+  /data\s*:/gi,
+  /vbscript\s*:/gi
+];
 // Remove SQL-specific patterns like: /select.*from/i, etc.
         return !injectionPatterns.some(pattern => pattern.test(v));
       },
@@ -64,10 +74,15 @@ const injectionPatterns = [
    validate: {
   validator: function(v) {
     if (!v) return true;
-    // Validate path and prevent traversal
+    
+    // Basic pattern check
     const validPattern = /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
-    return validPattern.test(v) && !v.includes('..') && !v.includes('//'); // GOOD
-  }
+    if (!validPattern.test(v)) return false;
+    
+    // Advanced path traversal check
+    return validateImagePath(v);
+  },
+  message: 'Invalid image path - security violation detected'
 }
   },
   parentCategory: {

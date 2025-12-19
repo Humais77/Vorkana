@@ -1,7 +1,7 @@
 const Joi = require('joi');
 const mongoose = require('mongoose');
 const { sanitizeHtml } = require('../../utils/sanitize');
-
+const xssFilters = require('xss-filters');
 const objectId = Joi.string().custom((value, helpers) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     return helpers.error('any.invalid');
@@ -23,7 +23,62 @@ const sanitizeInput = (data, options = {}) => {
   }
   return data;
 };
-
+const advancedSanitization = (value, options = {}) => {
+  if (typeof value !== 'string') return value;
+  
+  // Remove null bytes
+  value = value.replace(/\0/g, '');
+  
+  // Normalize unicode
+  value = value.normalize('NFKC');
+  
+  // Apply XSS filters
+  value = xssFilters.inHTMLData(value);
+  
+  // Remove control characters (except newline and tab)
+  value = value.replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  
+  // Truncate to prevent DoS
+  const maxLength = options.maxLength || 1000;
+  if (value.length > maxLength) {
+    value = value.substring(0, maxLength);
+  }
+  
+  return value.trim();
+};
+Joi.extend((joi) => ({
+  type: 'secureString',
+  base: joi.string(),
+  messages: {
+    'secureString.injection': '{{#label}} contains malicious content',
+    'secureString.xss': '{{#label}} contains XSS attempt'
+  },
+  validate(value, helpers) {
+    // Check for injections
+    const injectionTests = [
+      /<script[^>]*>.*?<\/script>/gi,
+      /javascript\s*:/gi,
+      /on\w+\s*=/gi,
+      /expression\s*\(/gi,
+      /url\s*\(/gi,
+      /@import/gi,
+      /eval\s*\(/gi,
+      /document\./gi,
+      /window\./gi,
+      /alert\s*\(/gi,
+      /confirm\s*\(/gi,
+      /prompt\s*\(/gi
+    ];
+    
+    for (const test of injectionTests) {
+      if (test.test(value)) {
+        return { value, errors: helpers.error('secureString.xss') };
+      }
+    }
+    
+    return { value };
+  }
+}));
 // Common validation rules
 const nameValidation = Joi.string()
   .min(2)
@@ -74,7 +129,47 @@ const descriptionValidation = Joi.string()
   .max(1000)
   .custom((value) => sanitizeInput(value, { allowHtml: true }), 'XSS prevention')
   .optional();
-
+const validateImagePath = (path) => {
+  if (!path) return true;
+  
+  const invalidPatterns = [
+    /\.\.\//,  // Directory traversal
+    /\.\.\\/,  // Windows traversal
+    /\/\//,    // Double slash
+    /\\\./,    // Backslash dot
+    /^\/?\.\.?(\/|$)/,  // Current/parent directory
+    /^[a-zA-Z]:[\\\/]/, // Windows drive
+    /%2e%2e/i,  // URL encoded ..
+    /\.\.%2f/i,  // ../
+    /%2e\./i,    // ./
+    /\0/,        // Null byte
+    /\|/,        // Pipe
+    /\</,        // Less than
+    /\>/,        // Greater than
+    /\*/,        // Wildcard
+    /\?/,        // Wildcard
+    /\[/,        // Bracket
+    /\]/,        // Bracket
+    /\{/,        // Brace
+    /\}/         // Brace
+  ];
+  
+  // Decode URL encoding multiple times
+  let decoded = path;
+  for (let i = 0; i < 5; i++) {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch (e) {
+      break;
+    }
+  }
+  
+  // Check both original and decoded
+  const pathsToCheck = [path, decoded];
+  return !pathsToCheck.some(p => 
+    invalidPatterns.some(pattern => pattern.test(p))
+  );
+};
 const imageValidation = Joi.string()
   .pattern(/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
   .custom((value, helpers) => {
@@ -533,4 +628,5 @@ module.exports = {
   validateBulk,
   validateQuery,
   objectId,
+  validateImagePath 
 };
