@@ -32,7 +32,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminRefreshToken');
-    window.location.href = '/admin/login';
+    window.location.href = '/';
   };
 
   return (

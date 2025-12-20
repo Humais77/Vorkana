@@ -40,7 +40,7 @@ const userRoutes = require('./routes/user.route.js');
 const orderRoutes = require('./routes/order.route.js'); // Add this
 const adminRoutes = require('./routes/admin.route.js');
 const messagingRoutes = require('./routes/messaging.route.js');
-
+const testRoute = require("./routes/test.route.js")
 // Add to routes
 const passport = require("passport");
 require("./config/passport.js");
@@ -171,6 +171,7 @@ app.use('/api/gigs', gigRoutes);
 app.use('/api/orders', orderRoutes); // Add this
 app.use('/api/admin', adminRoutes);
 app.use('/api/messaging', messagingRoutes);
+app.use('/api/auth', testRoute);
 
 
 

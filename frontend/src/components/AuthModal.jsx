@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaCheck } from 'react-icons/fa';
-import { X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, Globe, Check, ArrowLeft, AlertCircle } from "lucide-react";
+import { 
+  X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, 
+  Globe, Check, ArrowLeft, AlertCircle, Phone, 
+  Calendar, MapPin, Briefcase, GraduationCap,
+  Globe as LanguageIcon, User, Shield
+} from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useLogin, useRegister, validatePassword } from "../hooks/useAuth";
+import { 
+  useLogin, 
+  useRegister, 
+  validatePassword,
+  validateEmail,
+  validatePhoneNumber,
+  validateName,
+  validateDateOfBirth,
+  validateBio
+} from "../hooks/useAuth";
 import { useAuthStore } from "../store/useAuthStore";
 import { motion, AnimatePresence } from "framer-motion";
 import auth_modal_bg from '../assets/auth_modal_bg.png';
@@ -21,19 +35,33 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const [signinData, setSigninData] = useState({
     email: "",
     password: "",
+    deviceToken: "",
+    deviceType: "web"
   });
 
-  // Signup form state
+  // Signup form state with all new fields
   const [signupData, setSignupData] = useState({
     name: "",
     email: "",
     password: "",
+    phoneNumber: "",
+    gender: "",
+    dateOfBirth: "",
+    country: "",
+    city: "",
+    bio: "",
+    languages: [],
+    occupation: "",
+    education: ""
   });
 
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState('');
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Clear errors when switching tabs
   useEffect(() => {
@@ -41,6 +69,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     clearError();
     setShowEmailForm(false);
     setPasswordStrength('');
+    setShowAdvancedFields(false);
   }, [activeTab, clearError]);
 
   // Check password strength on change
@@ -75,14 +104,34 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     clearError();
   };
 
+  const handleLanguageAdd = () => {
+    if (currentLanguage.trim() && !signupData.languages.includes(currentLanguage.trim())) {
+      setSignupData(prev => ({
+        ...prev,
+        languages: [...prev.languages, currentLanguage.trim()]
+      }));
+      setCurrentLanguage('');
+    }
+  };
+
+  const handleLanguageRemove = (language) => {
+    setSignupData(prev => ({
+      ...prev,
+      languages: prev.languages.filter(lang => lang !== language)
+    }));
+  };
+
   const validateSignin = () => {
     const newErrors = {};
-    if (!signinData.email) newErrors.email = "Email is required";
-    if (!signinData.password) newErrors.password = "Password is required";
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (signinData.email && !emailRegex.test(signinData.email)) {
+    
+    if (!signinData.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!validateEmail(signinData.email)) {
       newErrors.email = "Please enter a valid email address";
+    }
+
+    if (!signinData.password) {
+      newErrors.password = "Password is required";
     }
 
     setErrors(newErrors);
@@ -92,29 +141,39 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const validateSignup = () => {
     const newErrors = {};
 
-    if (!signupData.name.trim()) {
-      newErrors.name = "Name is required";
-    } else if (signupData.name.trim().length < 2) {
-      newErrors.name = "Name must be at least 2 characters";
-    } else if (signupData.name.trim().length > 50) {
-      newErrors.name = "Name cannot exceed 50 characters";
+    // Required fields
+    const nameValidation = validateName(signupData.name);
+    if (!nameValidation.valid) {
+      newErrors.name = nameValidation.message;
     }
 
-    if (!signupData.email) {
+    if (!signupData.email.trim()) {
       newErrors.email = "Email is required";
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(signupData.email)) {
-        newErrors.email = "Please enter a valid email address";
+    } else if (!validateEmail(signupData.email)) {
+      newErrors.email = "Please enter a valid email address";
+    }
+
+    const passwordValidation = validatePassword(signupData.password);
+    if (!passwordValidation.valid) {
+      newErrors.password = passwordValidation.message;
+    }
+
+    // Optional field validations
+    if (signupData.phoneNumber && !validatePhoneNumber(signupData.phoneNumber)) {
+      newErrors.phoneNumber = "Please enter a valid phone number";
+    }
+
+    if (signupData.dateOfBirth) {
+      const dobValidation = validateDateOfBirth(signupData.dateOfBirth);
+      if (!dobValidation.valid) {
+        newErrors.dateOfBirth = dobValidation.message;
       }
     }
 
-    if (!signupData.password) {
-      newErrors.password = "Password is required";
-    } else {
-      const validation = validatePassword(signupData.password);
-      if (!validation.valid) {
-        newErrors.password = validation.message;
+    if (signupData.bio) {
+      const bioValidation = validateBio(signupData.bio);
+      if (!bioValidation.valid) {
+        newErrors.bio = bioValidation.message;
       }
     }
 
@@ -126,12 +185,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     e.preventDefault();
     if (!validateSignin()) return;
 
+    setIsSubmitting(true);
     try {
       await loginMutation.mutateAsync(signinData);
       onClose();
-      navigate("/");
+      navigate("/dashboard");
     } catch (error) {
       console.error("Login failed:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -139,19 +201,37 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     e.preventDefault();
     if (!validateSignup()) return;
 
+    setIsSubmitting(true);
     try {
-      await registerMutation.mutateAsync(signupData);
-      toast.success("Please check your email to verify your account.");
+      // Prepare registration data
+      const registrationData = {
+        name: signupData.name,
+        email: signupData.email,
+        password: signupData.password,
+        phoneNumber: signupData.phoneNumber || undefined,
+        gender: signupData.gender || undefined,
+        dateOfBirth: signupData.dateOfBirth || undefined,
+        country: signupData.country || undefined,
+        city: signupData.city || undefined,
+        bio: signupData.bio || undefined,
+        languages: signupData.languages.length > 0 ? signupData.languages : undefined,
+        occupation: signupData.occupation || undefined,
+        education: signupData.education || undefined
+      };
+
+      await registerMutation.mutateAsync(registrationData);
+      toast.success("Registration successful! Please check your email to verify your account.");
       onClose();
       navigate("/verify-email");
     } catch (error) {
       console.error("Registration failed:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleGoogleAuth = () => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    window.location.href = `${backendUrl}/api/auth/google`;
     const width = 600;
     const height = 600;
     const left = (window.innerWidth - width) / 2;
@@ -197,12 +277,20 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(signupData.password) },
   ];
 
+  // Gender options
+  const genderOptions = [
+    { value: '', label: 'Prefer not to say' },
+    { value: 'male', label: 'Male' },
+    { value: 'female', label: 'Female' },
+    { value: 'other', label: 'Other' }
+  ];
+
   // Render social buttons view
   const renderSocialButtons = () => (
     <div className="space-y-3">
       <button
         onClick={handleGoogleAuth}
-        disabled={loading}
+        disabled={loading || isSubmitting}
         className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-sm"
       >
         <img
@@ -215,7 +303,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
       <button
         onClick={() => setShowEmailForm(true)}
-        disabled={loading}
+        disabled={loading || isSubmitting}
         className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-sm"
       >
         <Mail className="w-4 h-4 mr-2" />
@@ -236,7 +324,8 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       <div className="flex gap-2">
         <button
           onClick={() => { }}
-          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm"
+          disabled={loading || isSubmitting}
+          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
             <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85 4.41 4.41 0 0 1-2.68-4.04z" />
@@ -246,7 +335,8 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
         <button
           onClick={() => { }}
-          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm"
+          disabled={loading || isSubmitting}
+          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-4 h-4 mr-1 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
             <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -259,11 +349,12 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
   // Render email form view
   const renderEmailForm = () => (
-    <div>
+    <div className="overflow-y-auto max-h-[500px] pr-2">
       {/* Back Button */}
       <button
         onClick={() => setShowEmailForm(false)}
         className="flex items-center text-gray-600 hover:text-gray-900 mb-3 transition-colors text-sm"
+        disabled={isSubmitting}
       >
         <ArrowLeft className="w-3 h-3 mr-1" />
         Back
@@ -295,7 +386,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               onChange={handleSigninChange}
               className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
               placeholder="you@example.com"
-              disabled={loading || loginMutation.isPending}
+              disabled={loading || loginMutation.isPending || isSubmitting}
               autoFocus
             />
             {errors.email && (
@@ -315,6 +406,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                   onClose();
                   navigate('/forgot-password');
                 }}
+                disabled={isSubmitting}
               >
                 Forgot password?
               </button>
@@ -327,12 +419,13 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 onChange={handleSigninChange}
                 className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm pr-10"
                 placeholder="••••••••"
-                disabled={loading || loginMutation.isPending}
+                disabled={loading || loginMutation.isPending || isSubmitting}
               />
               <button
                 type="button"
                 onClick={togglePasswordVisibility}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                disabled={isSubmitting}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -342,12 +435,23 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             )}
           </div>
 
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="rememberMe"
+              className="w-3 h-3 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+            />
+            <label htmlFor="rememberMe" className="ml-2 text-xs text-gray-600">
+              Remember me on this device
+            </label>
+          </div>
+
           <button
             type="submit"
-            disabled={loading || loginMutation.isPending}
+            disabled={loading || loginMutation.isPending || isSubmitting}
             className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
-            {loginMutation.isPending ? (
+            {loginMutation.isPending || isSubmitting ? (
               <>
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                 Signing In...
@@ -365,7 +469,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         <form onSubmit={handleSignupSubmit} className="space-y-3">
           <div>
             <label className="text-xs font-semibold text-gray-700 mb-1 block">
-              Full Name
+              Full Name *
             </label>
             <input
               type="text"
@@ -374,8 +478,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               onChange={handleSignupChange}
               className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
               placeholder="John Doe"
-              disabled={loading || registerMutation.isPending}
+              disabled={loading || registerMutation.isPending || isSubmitting}
               autoFocus
+              required
             />
             {errors.name && (
               <p className="mt-1 text-xs text-red-600">{errors.name}</p>
@@ -384,7 +489,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
           <div>
             <label className="text-xs font-semibold text-gray-700 mb-1 block">
-              Email Address
+              Email Address *
             </label>
             <input
               type="email"
@@ -393,7 +498,8 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               onChange={handleSignupChange}
               className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
               placeholder="you@example.com"
-              disabled={loading || registerMutation.isPending}
+              disabled={loading || registerMutation.isPending || isSubmitting}
+              required
             />
             {errors.email && (
               <p className="mt-1 text-xs text-red-600">{errors.email}</p>
@@ -402,7 +508,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
           <div>
             <label className="text-xs font-semibold text-gray-700 mb-1 block">
-              Password
+              Password *
             </label>
             <div className="relative">
               <input
@@ -412,12 +518,14 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 onChange={handleSignupChange}
                 className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm pr-10"
                 placeholder="••••••••"
-                disabled={loading || registerMutation.isPending}
+                disabled={loading || registerMutation.isPending || isSubmitting}
+                required
               />
               <button
                 type="button"
                 onClick={togglePasswordVisibility}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                disabled={isSubmitting}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -452,13 +560,25 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               ))}
             </div>
           </div>
+          {/* Terms Agreement */}
+          <div className="flex items-start mt-4">
+            <input
+              type="checkbox"
+              id="terms"
+              className="w-3 h-3 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 mt-0.5"
+              required
+            />
+            <label htmlFor="terms" className="ml-2 text-xs text-gray-600">
+              I agree to the Vorkana Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
+            </label>
+          </div>
 
           <button
             type="submit"
-            disabled={loading || registerMutation.isPending}
-            className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            disabled={loading || registerMutation.isPending || isSubmitting}
+            className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm mt-2"
           >
-            {registerMutation.isPending ? (
+            {registerMutation.isPending || isSubmitting ? (
               <>
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                 Creating Account...
@@ -470,6 +590,21 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               </>
             )}
           </button>
+
+          <p className="text-xs text-gray-500 text-center mt-2">
+            Already have an account?{' '}
+            <button
+              type="button"
+              onClick={() => {
+                onSwitchTab('signin');
+                setShowEmailForm(false);
+              }}
+              className="text-emerald-600 hover:text-emerald-700 font-medium"
+              disabled={isSubmitting}
+            >
+              Sign in here
+            </button>
+          </p>
         </form>
       )}
     </div>
@@ -498,11 +633,12 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           <button
             onClick={onClose}
             className="absolute top-3 right-3 z-10 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+            disabled={isSubmitting}
           >
             <X className="w-4 h-4" />
           </button>
 
-          <div className="flex h-[480px]">
+          <div className="flex h-[600px]">
             {/* Left Side - Benefits */}
             <div
               className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
@@ -542,6 +678,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                           <button
                             onClick={() => onSwitchTab('signup')}
                             className="text-emerald-600 hover:text-emerald-700 font-medium"
+                            disabled={isSubmitting}
                           >
                             Join here
                           </button>
@@ -552,6 +689,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                           <button
                             onClick={() => onSwitchTab('signin')}
                             className="text-emerald-600 hover:text-emerald-700 font-medium"
+                            disabled={isSubmitting}
                           >
                             Sign in
                           </button>
@@ -570,6 +708,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 <div className="pt-3 border-t border-gray-200 mt-3">
                   <p className="text-center text-gray-600 text-xs">
                     By joining, you agree to the Vorkana Terms of Service and Privacy Policy.
+                  </p>
+                  <p className="text-center text-gray-500 text-xs mt-1">
+                    © {new Date().getFullYear()} Vorkana. All rights reserved.
                   </p>
                 </div>
               </div>

@@ -1,0 +1,47 @@
+<h1 class="greeting">Welcome to Vorkana, {{name}}! 👋</h1>
+
+<p class="message">
+    Thank you for creating an account with Vorkana. We're excited to have you join our community of talented professionals.
+</p>
+
+<div class="alert alert-info">
+    <strong>Almost there!</strong> To complete your registration and access all features, please verify your email address.
+</div>
+
+<div class="btn-center">
+    <a href="{{verificationUrl}}" class="btn">{{buttonText}}</a>
+</div>
+
+<p class="message">
+    <strong>Or copy this link to your browser:</strong>
+</p>
+
+<div class="code-block">
+    {{verificationUrl}}
+</div>
+
+<div class="alert alert-warning">
+    <strong>Important:</strong> This verification link expires in <strong>{{expiresIn}}</strong>. 
+    If it expires, you can request a new verification email from your account settings.
+</div>
+
+<h3 style="color: #111827; margin: 32px 0 16px 0;">Once verified, you can:</h3>
+
+<ul class="features-list">
+    <li>Create and manage your professional gigs</li>
+    <li>Browse and order services from talented professionals</li>
+    <li>Build your reputation with reviews and ratings</li>
+    <li>Access premium features as you grow</li>
+    <li>Connect with clients and freelancers worldwide</li>
+</ul>
+
+<p class="message" style="margin-top: 32px;">
+    <strong>Didn't create this account?</strong> 
+    If you didn't sign up for Vorkana, you can safely ignore this email. 
+    The account will be automatically removed if not verified.
+</p>
+
+<p class="message" style="color: #6b7280; font-size: 14px;">
+    Need help? Contact our support team at 
+    <a href="mailto:{{supportEmail}}" style="color: #10b981;">{{supportEmail}}</a>
+</p>

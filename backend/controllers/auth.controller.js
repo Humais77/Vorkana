@@ -7,6 +7,7 @@ const { promisify } = require('util');
 const rateLimit = require('express-rate-limit');
 const blacklist = new Set(); // In production, use Redis
 const mongoose = require('mongoose');
+const EmailService = require('../services/email.service');
 // ========== TOKEN FUNCTIONS ==========
 const generateToken = (id) => {
   return jwt.sign(
@@ -91,16 +92,29 @@ const validateDateOfBirth = (dob) => {
 
 // ========== EMAIL SERVICE ==========
 const sendEmail = async (to, subject, text, html) => {
-  // In production, implement with Nodemailer, SendGrid, etc.
-  if (process.env.NODE_ENV === 'production') {
-    // Implement actual email service
-    console.log(`📧 Production email to ${to}: ${subject}`);
-  } else {
-    console.log(`📧 Development email to ${to}: ${subject}`);
-    console.log(`Text: ${text.substring(0, 100)}...`);
+  try {
+    // For development, still log to console but also send real email
+    console.log(`📧 Sending email to ${to}: ${subject}`);
+    
+    // Send real email using our email service
+    await EmailService.sendEmail(to, subject, 'basic', {
+      subject,
+      body: html || text,
+      name: to.split('@')[0]
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Email sending failed:', error);
+    
+    // Fallback to console in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Development email to ${to}: ${subject}`);
+      console.log(`Text: ${text.substring(0, 200)}...`);
+    }
+    
+    return false;
   }
-  
-  return true;
 };
 
 // ========== AUDIT LOGGING ==========
@@ -193,20 +207,7 @@ const register = async (req, res) => {
 
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-    await sendEmail(
-      user.email,
-      'Verify Your Email Address - Vorkana',
-      `Welcome to Vorkana! Please verify your email by clicking: ${verificationUrl}\n\nThis link will expire in 24 hours.`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #4F46E5;">Welcome to Vorkana!</h1>
-        <p>Please verify your email address by clicking the button below:</p>
-        <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
-        <p>Or copy and paste this link: ${verificationUrl}</p>
-        <p style="color: #666; font-size: 14px;">This link will expire in 24 hours.</p>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #999; font-size: 12px;">If you didn't create an account, you can safely ignore this email.</p>
-      </div>`
-    );
+   await EmailService.sendVerificationEmail(user, verificationToken);
 
     // Generate tokens
     const token = generateToken(user._id);
@@ -587,19 +588,7 @@ const updateProfile = async (req, res) => {
       await updatedUser.save({ validateBeforeSave: false });
 
       const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-      await sendEmail(
-        updatedUser.email,
-        'Verify Your New Email Address - Vorkana',
-        `You've updated your email address. Please verify it by clicking: ${verificationUrl}`,
-        `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #4F46E5;">Verify Your New Email</h1>
-          <p>You've updated your email address on Vorkana. Please verify it by clicking the button below:</p>
-          <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
-          <p>Or copy and paste this link: ${verificationUrl}</p>
-          <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-          <p style="color: #999; font-size: 12px;">If you didn't request this change, please contact our support team immediately.</p>
-        </div>`
-      );
+      await EmailService.sendEmailChangedEmail(updatedUser, user.email);
     }
 
     // Log profile update
@@ -845,6 +834,7 @@ const verifyEmail = async (req, res) => {
     user.emailVerificationToken = undefined;
     user.suspiciousActivityDetected = false;
     await user.save();
+    await EmailService.sendWelcomeEmail(user);
 
     // Log verification
     logSecurityEvent('EMAIL_VERIFIED', user._id, ip, { email: user.email });
@@ -922,19 +912,7 @@ const resendVerificationEmail = async (req, res) => {
 
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-    await sendEmail(
-      user.email,
-      'Verify Your Email Address - Vorkana',
-      `Please verify your email by clicking: ${verificationUrl}`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #4F46E5;">Verify Your Email</h1>
-        <p>We received a request to resend your verification email.</p>
-        <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
-        <p>Or copy and paste this link: ${verificationUrl}</p>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #999; font-size: 12px;">If you didn't request this email, you can safely ignore it.</p>
-      </div>`
-    );
+    await EmailService.sendVerificationEmail(user, verificationToken);
 
     // Log event
     logSecurityEvent('VERIFICATION_EMAIL_RESENT', user._id, ip, { email: user.email });
@@ -1011,22 +989,7 @@ const forgotPassword = async (req, res) => {
 
     // Send reset email
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    await sendEmail(
-      user.email,
-      'Password Reset Request - Vorkana',
-      `You requested a password reset. Click: ${resetUrl}\n\nThis link expires in 15 minutes.\n\nIf you didn't request this, please ignore this email.`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #4F46E5;">Password Reset Request</h1>
-        <p>We received a request to reset your password. Click the button below to proceed:</p>
-        <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Reset Password</a>
-        <p>Or copy and paste this link: ${resetUrl}</p>
-        <div style="background-color: #F3F4F6; padding: 12px; border-radius: 4px; margin: 20px 0;">
-          <p style="margin: 0; color: #6B7280; font-size: 14px;"><strong>⚠️ Important:</strong> This link will expire in 15 minutes.</p>
-        </div>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #999; font-size: 12px;">If you didn't request a password reset, you can safely ignore this email. Your account is secure.</p>
-      </div>`
-    );
+    await EmailService.sendVerificationEmail(user, verificationToken);
 
     // Log security event
     logSecurityEvent('PASSWORD_RESET_REQUESTED', user._id, ip, { email: user.email });
@@ -1112,21 +1075,7 @@ const resetPassword = async (req, res) => {
     logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
 
     // Send confirmation email
-    await sendEmail(
-      user.email,
-      'Password Reset Successful - Vorkana',
-      `Your password was successfully reset on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.\n\nIf you didn't make this change, please contact our support team immediately.`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #10B981;">Password Reset Successful</h1>
-        <p>Your password was successfully reset on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
-        <div style="background-color: #F3F4F6; padding: 12px; border-radius: 4px; margin: 20px 0;">
-          <p style="margin: 0; color: #6B7280; font-size: 14px;"><strong>✅ Your account is now secure.</strong></p>
-        </div>
-        <a href="${process.env.FRONTEND_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #10B981; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Login Now</a>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #DC2626; font-size: 14px;"><strong>If you didn't make this change:</strong> Please contact our support team immediately.</p>
-      </div>`
-    );
+    await EmailService.sendPasswordChangedEmail(user);
 
     res.json({
       success: true,
@@ -1403,26 +1352,7 @@ const deactivateAccount = async (req, res) => {
     logSecurityEvent('ACCOUNT_DEACTIVATED', user._id, req.ip, { reason });
 
     // Send confirmation email
-    await sendEmail(
-      user.email,
-      'Account Deactivated - Vorkana',
-      `Your account has been deactivated as requested.\n\nYou can reactivate your account within 30 days by logging in. After 30 days, your account will be permanently deleted.\n\nReason: ${reason || 'Not specified'}`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #DC2626;">Account Deactivated</h1>
-        <p>Your account has been deactivated as requested.</p>
-        <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px; margin: 20px 0;">
-          <p style="margin: 0; color: #DC2626;"><strong>Important:</strong></p>
-          <ul style="margin: 10px 0; padding-left: 20px;">
-            <li>You can reactivate your account within 30 days by logging in</li>
-            <li>After 30 days, your account will be permanently deleted</li>
-            <li>All your data will be anonymized according to our privacy policy</li>
-          </ul>
-        </div>
-        <p><strong>Reason:</strong> ${reason || 'Not specified'}</p>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #666; font-size: 14px;">If you didn't request this, please contact our support team immediately.</p>
-      </div>`
-    );
+    await EmailService.sendAccountDeactivatedEmail(user, reason);
 
     res.json({
       success: true,
@@ -1499,19 +1429,7 @@ const reactivateAccount = async (req, res) => {
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
 
     // Send reactivation email
-    await sendEmail(
-      user.email,
-      'Account Reactivated - Welcome Back to Vorkana!',
-      `Your account has been successfully reactivated.\n\nWelcome back! We're glad to have you back on Vorkana.`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #10B981;">Welcome Back!</h1>
-        <p>Your account has been successfully reactivated.</p>
-        <p>We're glad to have you back on Vorkana.</p>
-        <a href="${process.env.FRONTEND_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #10B981; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Go to Dashboard</a>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #666; font-size: 14px;">If you have any questions, please contact our support team.</p>
-      </div>`
-    );
+   await EmailService.sendAccountReactivatedEmail(user);
 
     res.json({
       success: true,
