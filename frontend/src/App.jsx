@@ -26,7 +26,7 @@ import AllGigsPage from './components/AllGigsPage';
 import OrderCreate from './components/OrderCreate';
 import OrderDetails from './components/OrderDetails';
 import MyOrders from './components/MyOrders';
-
+import AboutUsPage from './layouts/AboutUsPage';
 // Admin
 import ProtectedAdminRoute from './ProtectedAdminRoute';
 import AdminLogin from './AdminLogin';
@@ -104,6 +104,7 @@ const App = () => {
             }
           >
             <Route path="/" element={<Home onSigninClick={openSigninModal} onSignupClick={openSignupModal} />} />
+            <Route path="/about-us" element={<AboutUsPage />} />
             <Route path="/create-gig" element={<GigCreate />} />
             <Route path="/gig/:id" element={<GigDetails />} />
             <Route path="/categories/:categoryId" element={<CategoryPage />} />

@@ -1,40 +1,40 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter} from 'react-icons/fa6';
-import { } from "react-icons/fa6";
+import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter } from 'react-icons/fa6';
+import TrackedLink from '../components/TrackedLink';
+
 const Footer = () => {
   const footerLinks = {
     discover: {
       title: "Discover",
       links: [
-        { label: "Browse Projects", path: "/projects" },
-        { label: "Find Freelancers", path: "/talent" },
-        { label: "Popular Skills", path: "/skills" },
-        { label: "Top Rated", path: "/top-rated" },
-        { label: "Trending Services", path: "/trending" },
-        { label: "Local Freelancers", path: "/local" },
+        { label: "Browse Projects", path: "/projects", source: "footer", section: "discover" },
+        { label: "Find Freelancers", path: "/talent", source: "footer", section: "discover" },
+        { label: "Popular Skills", path: "/skills", source: "footer", section: "discover" },
+        { label: "Top Rated", path: "/top-rated", source: "footer", section: "discover" },
+        { label: "Trending Services", path: "/trending", source: "footer", section: "discover" },
+        { label: "Local Freelancers", path: "/local", source: "footer", section: "discover" },
       ]
     },
     company: {
       title: "Company",
       links: [
-        { label: "About Us", path: "/about" },
-        { label: "Careers", path: "/careers" },
-        { label: "Press & Media", path: "/press" },
-        { label: "Blog", path: "/blog" },
-        { label: "Affiliate Program", path: "/affiliates" },
-        { label: "Partnerships", path: "/partnerships" },
+        { label: "About Us", path: "/about-us", source: "footer", section: "company", campaign: "about_us_footer" },
+        { label: "Careers", path: "/careers", source: "footer", section: "company", campaign: "careers_footer" },
+        { label: "Press & Media", path: "/press", source: "footer", section: "company", campaign: "press_footer" },
+        { label: "Blog", path: "/blog", source: "footer", section: "company", campaign: "blog_footer" },
+        { label: "Affiliate Program", path: "/affiliates", source: "footer", section: "company", campaign: "affiliates_footer" },
+        { label: "Partnerships", path: "/partnerships", source: "footer", section: "company", campaign: "partnerships_footer" },
       ]
     },
     support: {
       title: "Support",
       links: [
-        { label: "Help Center", path: "/help" },
-        { label: "Contact Support", path: "/contact" },
-        { label: "Trust & Safety", path: "/trust" },
-        { label: "Dispute Resolution", path: "/disputes" },
-        { label: "Payment Protection", path: "/payment-protection" },
-        { label: "FAQ", path: "/faq" },
+        { label: "Help Center", path: "/help", source: "footer", section: "support", campaign: "help_footer" },
+        { label: "Contact Support", path: "/contact", source: "footer", section: "support", campaign: "contact_footer" },
+        { label: "Trust & Safety", path: "/trust", source: "footer", section: "support", campaign: "trust_footer" },
+        { label: "Dispute Resolution", path: "/disputes", source: "footer", section: "support", campaign: "disputes_footer" },
+        { label: "Payment Protection", path: "/payment-protection", source: "footer", section: "support", campaign: "payment_footer" },
+        { label: "FAQ", path: "/faq", source: "footer", section: "support", campaign: "faq_footer" },
       ]
     }
   };
@@ -43,7 +43,7 @@ const Footer = () => {
     <footer className="bg-gradient-to-b from-slate-50 to-gray-100 text-gray-800 pt-16 pb-10 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Links */}
-<div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-8 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-8 mb-10">
           {Object.values(footerLinks).map((section, index) => (
             <div key={index} className="space-y-4">
               <h3 className="font-bold text-lg text-gray-900 mb-6 border-l-4 border-blue-500 pl-3">
@@ -52,12 +52,15 @@ const Footer = () => {
               <ul className="space-y-3">
                 {section.links.map((link, linkIndex) => (
                   <li key={linkIndex}>
-                    <Link 
+                    <TrackedLink 
                       to={link.path}
+                      source={link.source}
+                      medium="website"
+                      campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
                       className="text-gray-600 hover:text-blue-600 transition-colors duration-200 text-sm block py-1"
                     >
                       {link.label}
-                    </Link>
+                    </TrackedLink>
                   </li>
                 ))}
               </ul>
@@ -131,9 +134,15 @@ const Footer = () => {
           {/* Logo & Copyright */}
           <div className="text-center lg:text-left">
             <div className="mb-4">
-              <span className="text-2xl font-bold text-gray-900">
+              <TrackedLink 
+                to="/"
+                source="footer"
+                medium="website"
+                campaign="logo_footer"
+                className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors duration-200"
+              >
                 Vorkana
-              </span>
+              </TrackedLink>
             </div>
             
             <p className="text-gray-500 text-sm">
@@ -141,20 +150,75 @@ const Footer = () => {
             </p>
           </div>
 
-          {/* Settings & Links */}
+          {/* Social Links */}
           <div className="flex flex-col items-center lg:items-end gap-6">
-            {/* Social Links */}
             <div className="flex items-center gap-6">
-              <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-600 transition-colors duration-200">
+              <a 
+                href="https://facebook.com" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-gray-600 hover:text-blue-600 transition-colors duration-200"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.gtag) {
+                    window.gtag('event', 'social_click', {
+                      event_category: 'social',
+                      event_label: 'facebook',
+                      source: 'footer'
+                    });
+                  }
+                }}
+              >
                 <FaFacebook/>
               </a>
-              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-400 transition-colors duration-200">
+              <a 
+                href="https://twitter.com" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-gray-600 hover:text-blue-400 transition-colors duration-200"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.gtag) {
+                    window.gtag('event', 'social_click', {
+                      event_category: 'social',
+                      event_label: 'twitter',
+                      source: 'footer'
+                    });
+                  }
+                }}
+              >
                 <FaXTwitter/>
               </a>
-              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-pink-600 transition-colors duration-200">
+              <a 
+                href="https://instagram.com" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-gray-600 hover:text-pink-600 transition-colors duration-200"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.gtag) {
+                    window.gtag('event', 'social_click', {
+                      event_category: 'social',
+                      event_label: 'instagram',
+                      source: 'footer'
+                    });
+                  }
+                }}
+              >
                 <FaInstagram/>
               </a>
-              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-700 transition-colors duration-200">
+              <a 
+                href="https://linkedin.com" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-gray-600 hover:text-blue-700 transition-colors duration-200"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.gtag) {
+                    window.gtag('event', 'social_click', {
+                      event_category: 'social',
+                      event_label: 'linkedin',
+                      source: 'footer'
+                    });
+                  }
+                }}
+              >
                 <FaLinkedin/>
               </a>
             </div>
