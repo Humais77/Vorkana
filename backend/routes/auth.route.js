@@ -12,7 +12,10 @@ const {
   verifyEmail,
   resendVerificationEmail,
   logout,
-  refreshToken
+  refreshToken,
+  getPublicProfile,
+  deactivateAccount,
+  reactivateAccount
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -25,11 +28,17 @@ const {
 
 const router = express.Router();
 
+// ========== VALIDATION SCHEMAS ==========
 const registerValidation = validateRequest({
   body: {
     name: { type: 'string', minLength: 2, maxLength: 50, required: true },
     email: { type: 'string', format: 'email', required: true },
     password: { type: 'string', minLength: 8, required: true },
+    phoneNumber: { type: 'string', minLength: 10, maxLength: 15, required: false },
+    dateOfBirth: { type: 'string', format: 'date', required: false },
+    gender: { type: 'string', enum: ['male', 'female', 'other', 'prefer-not-to-say', ''], required: false },
+    country: { type: 'string', maxLength: 100, required: false },
+    city: { type: 'string', maxLength: 100, required: false },
     role: { type: 'string', enum: ['user'], default: 'user' }
   }
 });
@@ -37,7 +46,44 @@ const registerValidation = validateRequest({
 const loginValidation = validateRequest({
   body: {
     email: { type: 'string', format: 'email', required: true },
-    password: { type: 'string', required: true }
+    password: { type: 'string', required: true },
+    deviceToken: { type: 'string', required: false },
+    deviceType: { type: 'string', required: false }
+  }
+});
+
+const updateProfileValidation = validateRequest({
+  body: {
+    name: { type: 'string', minLength: 2, maxLength: 50, required: false },
+    email: { type: 'string', format: 'email', required: false },
+    phoneNumber: { type: 'string', minLength: 10, maxLength: 15, required: false },
+    bio: { type: 'string', maxLength: 500, required: false },
+    gender: { type: 'string', enum: ['male', 'female', 'other', 'prefer-not-to-say', ''], required: false },
+    dateOfBirth: { type: 'string', format: 'date', required: false },
+    country: { type: 'string', maxLength: 100, required: false },
+    city: { type: 'string', maxLength: 100, required: false },
+    languages: { type: 'array', items: { type: 'string', maxLength: 50 }, required: false },
+    occupation: { type: 'string', maxLength: 100, required: false },
+    education: { type: 'string', maxLength: 200, required: false },
+    picture: { type: 'string', format: 'url', required: false },
+    privacySettings: { 
+      type: 'object',
+      properties: {
+        profileVisibility: { type: 'string', enum: ['public', 'registered', 'private'], required: false },
+        showEmail: { type: 'boolean', required: false },
+        showPhone: { type: 'boolean', required: false },
+        showLocation: { type: 'boolean', required: false },
+        showLastSeen: { type: 'boolean', required: false }
+      },
+      required: false 
+    }
+  }
+});
+
+const changePasswordValidation = validateRequest({
+  body: {
+    currentPassword: { type: 'string', required: true },
+    newPassword: { type: 'string', minLength: 8, required: true }
   }
 });
 
@@ -54,6 +100,21 @@ const resetPasswordValidation = validateRequest({
   }
 });
 
+const deactivateValidation = validateRequest({
+  body: {
+    password: { type: 'string', required: true },
+    reason: { type: 'string', maxLength: 500, required: false }
+  }
+});
+
+const reactivateValidation = validateRequest({
+  body: {
+    email: { type: 'string', format: 'email', required: true },
+    password: { type: 'string', required: true }
+  }
+});
+
+// ========== AUTHENTICATION ROUTES ==========
 router.post("/register", 
   registerLimiter,
   registerValidation,
@@ -66,9 +127,20 @@ router.post("/login",
   login
 );
 
-router.post("/refresh-token", refreshToken);
+router.post("/refresh-token", 
+  authLimiter,
+  refreshToken
+);
 
-router.get("/verify-email/:token", verifyEmail);
+router.post("/logout", 
+  protect,
+  logout
+);
+
+// ========== EMAIL VERIFICATION ROUTES ==========
+router.get("/verify-email/:token", 
+  verifyEmail
+);
 
 router.post("/resend-verification", 
   passwordResetLimiter,
@@ -76,6 +148,7 @@ router.post("/resend-verification",
   resendVerificationEmail
 );
 
+// ========== PASSWORD MANAGEMENT ROUTES ==========
 router.post("/forgot-password", 
   passwordResetLimiter,
   forgotPasswordValidation,
@@ -88,11 +161,42 @@ router.post("/reset-password",
   resetPassword
 );
 
-router.get("/profile", protect, getProfile);
-router.put("/profile", protect, updateProfile);
-router.post("/change-password", protect, changePassword);
-router.post("/logout", protect, logout);
+// ========== PROFILE ROUTES ==========
+router.get("/profile", 
+  protect, 
+  getProfile
+);
 
+router.put("/profile", 
+  protect,
+  updateProfileValidation,
+  updateProfile
+);
+
+router.post("/change-password", 
+  protect,
+  changePasswordValidation,
+  changePassword
+);
+
+// ========== ACCOUNT MANAGEMENT ROUTES ==========
+router.post("/deactivate", 
+  protect,
+  deactivateValidation,
+  deactivateAccount
+);
+
+router.post("/reactivate", 
+  reactivateValidation,
+  reactivateAccount
+);
+
+// ========== PUBLIC PROFILES ROUTES ==========
+router.get("/profile/:userId/public", 
+  getPublicProfile
+);
+
+// ========== GOOGLE OAUTH ROUTES ==========
 router.get("/google",
   (req, res, next) => {
     const state = crypto.randomBytes(32).toString('hex');
@@ -150,7 +254,14 @@ router.get("/google/callback",
           email: user.email,
           picture: user.picture,
           role: user.role,
-          emailVerified: user.emailVerified
+          emailVerified: user.emailVerified,
+          phoneNumber: user.phoneNumber,
+          country: user.country,
+          city: user.city,
+          bio: user.bio,
+          rating: user.rating,
+          completedOrders: user.completedOrders,
+          isOnline: user.isOnline
         }
       }));
       

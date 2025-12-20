@@ -4,6 +4,7 @@ const validator = require('validator');
 
 const userSchema = new mongoose.Schema(
   {
+    // ========== AUTHENTICATION & SECURITY FIELDS ==========
     googleId: {
       type: String,
       unique: true,
@@ -48,22 +49,153 @@ const userSchema = new mongoose.Schema(
         message: 'Please enter a valid email address'
       }
     },
+    
+    // ========== PROFILE INFORMATION (Visible to other users) ==========
     picture: {
       type: String,
       default: null,
       validate: {
         validator: function (v) {
-          return v === null || validator.isURL(v, { protocols: ['http', 'https'] });
+          return v === null || validator.isURL(v, { 
+            protocols: ['http', 'https'],
+            require_protocol: true 
+          });
         },
         message: 'Please enter a valid URL for the picture'
       }
     },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Bio cannot exceed 500 characters'],
+      default: ''
+    },
+    // Alternative - More flexible phone validation
+phoneNumber: {
+  type: String,
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v || v === '') return true; // Optional field
+      
+      // More flexible validation for international numbers
+      // Allows: +1234567890, 1234567890, (123) 456-7890, 123-456-7890
+      const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/im;
+      
+      return phoneRegex.test(v);
+    },
+    message: 'Please enter a valid phone number (e.g., +1234567890, 1234567890, (123) 456-7890)'
+  }
+},
+    gender: {
+      type: String,
+      enum: ['male', 'female', 'other', 'prefer-not-to-say', ''],
+      default: ''
+    },
+    dateOfBirth: {
+      type: Date,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          const dob = new Date(v);
+          const today = new Date();
+          const age = today.getFullYear() - dob.getFullYear();
+          return age >= 13 && age <= 120;
+        },
+        message: 'You must be at least 13 years old and not older than 120 years'
+      }
+    },
+    country: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Country name too long'],
+      default: ''
+    },
+    city: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'City name too long'],
+      default: ''
+    },
+    languages: [{
+      type: String,
+      trim: true,
+      maxlength: [50, 'Language name too long']
+    }],
+    occupation: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Occupation too long'],
+      default: ''
+    },
+    education: {
+      type: String,
+      trim: true,
+      maxlength: [200, 'Education field too long'],
+      default: ''
+    },
+    
+    // ========== ACCOUNT & SYSTEM FIELDS ==========
     role: {
       type: String,
       enum: ['user', 'admin'],
       default: 'user',
       index: true
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    lastLoginAt: {
+      type: Date
+    },
+    lastSeenAt: {
+      type: Date,
+      default: Date.now
+    },
+    
+    // ========== SECURITY & PRIVACY FIELDS ==========
+    privacySettings: {
+      profileVisibility: {
+        type: String,
+        enum: ['public', 'registered', 'private'],
+        default: 'public'
+      },
+      showEmail: {
+        type: Boolean,
+        default: false
+      },
+      showPhone: {
+        type: Boolean,
+        default: false
+      },
+      showLocation: {
+        type: Boolean,
+        default: true
+      },
+      showLastSeen: {
+        type: Boolean,
+        default: true
+      }
+    },
+    
+    // ========== ACCOUNT METADATA ==========
+    accountType: {
+      type: String,
+      enum: ['basic', 'premium', 'business'],
+      default: 'basic'
+    },
+    subscriptionExpiresAt: {
+      type: Date
+    },
+    
+    // ========== SECURITY FIELDS (Hidden from public) ==========
     resetPasswordToken: {
       type: String,
       select: false
@@ -71,13 +203,6 @@ const userSchema = new mongoose.Schema(
     resetPasswordExpires: {
       type: Date,
       select: false
-    },
-    lastLoginAt: {
-      type: Date
-    },
-    isActive: {
-      type: Boolean,
-      default: true
     },
     failedLoginAttempts: {
       type: Number,
@@ -87,10 +212,6 @@ const userSchema = new mongoose.Schema(
     lockUntil: {
       type: Date,
       select: false
-    },
-    emailVerified: {
-      type: Boolean,
-      default: false
     },
     emailVerificationToken: {
       type: String,
@@ -103,6 +224,60 @@ const userSchema = new mongoose.Schema(
     twoFactorSecret: {
       type: String,
       select: false
+    },
+    lastPasswordChangeAt: {
+      type: Date,
+      default: Date.now,
+      select: false
+    },
+    passwordHistory: [{
+      password: String,
+      changedAt: Date,
+      _id: false
+    }],
+    deviceTokens: [{
+      token: String,
+      deviceType: String,
+      lastUsed: Date,
+      _id: false
+    }],
+    loginHistory: [{
+      ip: String,
+      userAgent: String,
+      timestamp: Date,
+      success: Boolean,
+      _id: false
+    }],
+    suspiciousActivityDetected: {
+      type: Boolean,
+      default: false,
+      select: false
+    },
+    
+    // ========== PLATFORM SPECIFIC FIELDS ==========
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
+    },
+    totalReviews: {
+      type: Number,
+      default: 0
+    },
+    completedOrders: {
+      type: Number,
+      default: 0
+    },
+    responseRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+    responseTime: {
+      type: Number, // in hours
+      default: 0
     }
   },
   {
@@ -110,6 +285,7 @@ const userSchema = new mongoose.Schema(
     toJSON: {
       virtuals: true,
       transform: (doc, ret) => {
+        // Remove sensitive fields
         delete ret.__v;
         delete ret.password;
         delete ret.resetPasswordToken;
@@ -118,12 +294,38 @@ const userSchema = new mongoose.Schema(
         delete ret.lockUntil;
         delete ret.twoFactorSecret;
         delete ret.emailVerificationToken;
+        delete ret.passwordHistory;
+        delete ret.deviceTokens;
+        delete ret.loginHistory;
+        delete ret.suspiciousActivityDetected;
+        
+        // Apply privacy settings
+        if (!ret.privacySettings?.showEmail) {
+          delete ret.email;
+        }
+        if (!ret.privacySettings?.showPhone) {
+          delete ret.phoneNumber;
+        }
+        if (!ret.privacySettings?.showLocation) {
+          delete ret.country;
+          delete ret.city;
+        }
+        if (!ret.privacySettings?.showLastSeen) {
+          delete ret.lastSeenAt;
+        }
+        
+        // Format dates
+        if (ret.dateOfBirth) {
+          ret.dateOfBirth = ret.dateOfBirth.toISOString().split('T')[0];
+        }
+        
         return ret;
       }
     },
     toObject: {
       virtuals: true,
       transform: (doc, ret) => {
+        // Apply same transformations as toJSON
         delete ret.__v;
         delete ret.password;
         delete ret.resetPasswordToken;
@@ -132,15 +334,26 @@ const userSchema = new mongoose.Schema(
         delete ret.lockUntil;
         delete ret.twoFactorSecret;
         delete ret.emailVerificationToken;
+        delete ret.passwordHistory;
+        delete ret.deviceTokens;
+        delete ret.loginHistory;
+        delete ret.suspiciousActivityDetected;
+        
         return ret;
       }
     }
   }
 );
 
+// ========== INDEXES ==========
 userSchema.index({ createdAt: -1 });
-userSchema.index({ isActive: 1 });
+userSchema.index({ 'privacySettings.profileVisibility': 1 });
+userSchema.index({ rating: -1 });
+userSchema.index({ country: 1, city: 1 });
+userSchema.index({ occupation: 1 });
+userSchema.index({ languages: 1 });
 
+// ========== VIRTUALS ==========
 userSchema.virtual('isLocked').get(function () {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
@@ -150,6 +363,34 @@ userSchema.virtual('accountAge').get(function () {
   return Date.now() - this.createdAt.getTime();
 });
 
+userSchema.virtual('age').get(function () {
+  if (!this.dateOfBirth) return null;
+  const today = new Date();
+  const birthDate = new Date(this.dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
+});
+
+userSchema.virtual('isOnline').get(function () {
+  if (!this.lastSeenAt) return false;
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  return this.lastSeenAt > fiveMinutesAgo;
+});
+
+userSchema.virtual('fullLocation').get(function () {
+  const parts = [];
+  if (this.city) parts.push(this.city);
+  if (this.country) parts.push(this.country);
+  return parts.length > 0 ? parts.join(', ') : null;
+});
+
+// ========== MIDDLEWARE ==========
 userSchema.pre('save', async function () {
   if (!this.isModified('password') || !this.password) return;
 
@@ -159,7 +400,25 @@ userSchema.pre('save', async function () {
 
   try {
     const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
+    const hashedPassword = await bcrypt.hash(this.password, salt);
+    
+    // Store old password in history before updating
+    if (this.passwordHistory && this.passwordHistory.length > 0) {
+      // Keep only last 5 passwords
+      if (this.passwordHistory.length >= 5) {
+        this.passwordHistory.shift();
+      }
+    } else {
+      this.passwordHistory = [];
+    }
+    
+    this.passwordHistory.push({
+      password: this.password,
+      changedAt: new Date()
+    });
+    
+    this.password = hashedPassword;
+    this.lastPasswordChangeAt = new Date();
   } catch (error) {
     throw error;
   }
@@ -170,6 +429,20 @@ userSchema.pre('findOneAndUpdate', function (next) {
   next();
 });
 
+// Update lastSeenAt on certain operations
+// Replace the broken pre('findOne') with this:
+userSchema.pre('findOne', async function () {
+  const query = this.getQuery();
+  
+  if (query._id) {
+    // Update the lastSeenAt for the user being viewed/fetched
+    await this.model.updateOne(
+      { _id: query._id },
+      { $set: { lastSeenAt: new Date() } }
+    );
+  }
+});
+// ========== INSTANCE METHODS ==========
 userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.password) return false;
 
@@ -192,6 +465,7 @@ userSchema.methods.incrementLoginAttempts = async function () {
 
   if (this.failedLoginAttempts + 1 >= 5) {
     updates.$set = { lockUntil: Date.now() + 30 * 60 * 1000 };
+    updates.$set.suspiciousActivityDetected = true;
   }
 
   return await this.updateOne(updates);
@@ -199,7 +473,11 @@ userSchema.methods.incrementLoginAttempts = async function () {
 
 userSchema.methods.resetLoginAttempts = async function () {
   return await this.updateOne({
-    $set: { lastLoginAt: new Date() },
+    $set: { 
+      lastLoginAt: new Date(),
+      lastSeenAt: new Date(),
+      suspiciousActivityDetected: false 
+    },
     $unset: {
       failedLoginAttempts: 1,
       lockUntil: 1
@@ -233,6 +511,50 @@ userSchema.methods.createEmailVerificationToken = function () {
   return verificationToken;
 };
 
+userSchema.methods.addLoginHistory = async function (ip, userAgent, success) {
+  const loginEntry = {
+    ip,
+    userAgent,
+    timestamp: new Date(),
+    success
+  };
+
+  if (this.loginHistory.length >= 50) {
+    this.loginHistory.shift();
+  }
+  
+  this.loginHistory.push(loginEntry);
+  return await this.save();
+};
+
+userSchema.methods.addDeviceToken = async function (token, deviceType) {
+  const existing = this.deviceTokens.find(dt => dt.token === token);
+  
+  if (existing) {
+    existing.lastUsed = new Date();
+  } else {
+    if (this.deviceTokens.length >= 10) {
+      // Remove oldest device
+      this.deviceTokens.sort((a, b) => a.lastUsed - b.lastUsed);
+      this.deviceTokens.shift();
+    }
+    
+    this.deviceTokens.push({
+      token,
+      deviceType: deviceType || 'unknown',
+      lastUsed: new Date()
+    });
+  }
+  
+  return await this.save();
+};
+
+userSchema.methods.removeDeviceToken = async function (token) {
+  this.deviceTokens = this.deviceTokens.filter(dt => dt.token !== token);
+  return await this.save();
+};
+
+// ========== STATIC METHODS ==========
 userSchema.statics.findByResetToken = function (token) {
   const crypto = require('crypto');
   const hashedToken = crypto
@@ -246,18 +568,44 @@ userSchema.statics.findByResetToken = function (token) {
   }).select('+password');
 };
 
+// Update the findByVerificationToken method in user.model.js
 userSchema.statics.findByVerificationToken = function (token) {
   const crypto = require('crypto');
-  const hashedToken = crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
+  
+  // Check if token is valid hex string
+  if (!token || token.length !== 64 || !/^[0-9a-fA-F]+$/.test(token)) {
+    return null;
+  }
+  
+  try {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
 
-  return this.findOne({
-    emailVerificationToken: hashedToken
-  });
+    return this.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerified: false // Only find unverified users
+    });
+  } catch (error) {
+    console.error('Error in findByVerificationToken:', error);
+    return null;
+  }
 };
 
+userSchema.statics.findByEmail = function (email) {
+  return this.findOne({ email: email.toLowerCase() });
+};
+
+userSchema.statics.findPublicProfiles = function (filter = {}) {
+  return this.find({
+    ...filter,
+    'privacySettings.profileVisibility': 'public',
+    isActive: true
+  }).select('-email -phoneNumber -privacySettings -loginHistory -deviceTokens -passwordHistory');
+};
+
+// ========== HOOKS ==========
 userSchema.post('save', function (doc) {
   if (doc.isNew) {
     console.log(`✅ New user registered: ${doc.email} (${doc.role})`);

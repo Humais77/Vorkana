@@ -144,7 +144,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 // Body parsing with limits
 app.use(express.json({ 
-  limit: '10mb'
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    try {
+      JSON.parse(buf.toString());
+    } catch (e) {
+      throw new Error('Invalid JSON');
+    }
+  }
 }));
 app.use(express.urlencoded({ 
   extended: true, 

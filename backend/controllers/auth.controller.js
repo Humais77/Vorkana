@@ -4,15 +4,16 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const validator = require('validator');
 const { promisify } = require('util');
+const rateLimit = require('express-rate-limit');
 const blacklist = new Set(); // In production, use Redis
-
+const mongoose = require('mongoose');
 // ========== TOKEN FUNCTIONS ==========
 const generateToken = (id) => {
   return jwt.sign(
     { id }, 
     process.env.JWT_SECRET, 
     {
-      expiresIn: '7d', // Short-lived access token
+      expiresIn: '7d',
       issuer: 'vorkana',
       audience: 'vorkana-web'
     }
@@ -24,7 +25,7 @@ const generateRefreshToken = (id) => {
     { id, type: 'refresh' },
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     {
-      expiresIn: '7d',
+      expiresIn: '30d',
       issuer: 'vorkana',
       audience: 'vorkana-web'
     }
@@ -42,13 +43,10 @@ const verifyRefreshToken = (token) => {
   );
 };
 
-// ========== HELPER FUNCTIONS ==========
-const hashPassword = async (password) => {
-  const salt = await bcrypt.genSalt(12);
-  return await bcrypt.hash(password, salt);
-};
-
+// ========== SECURITY FUNCTIONS ==========
 const validatePassword = (password) => {
+  if (typeof password !== 'string') return false;
+  
   const minLength = 8;
   const hasUpperCase = /[A-Z]/.test(password);
   const hasLowerCase = /[a-z]/.test(password);
@@ -62,12 +60,65 @@ const validatePassword = (password) => {
          hasSpecialChar;
 };
 
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return validator.escape(input.trim());
+  }
+  return input;
+};
+
+const validatePhoneNumber = (phone) => {
+  if (!phone) return true;
+  return validator.isMobilePhone(phone, 'any', { strictMode: false });
+};
+
+const validateDateOfBirth = (dob) => {
+  if (!dob) return true;
+  
+  const date = new Date(dob);
+  if (isNaN(date.getTime())) return false;
+  
+  const today = new Date();
+  const age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    return age - 1 >= 13 && age - 1 <= 120;
+  }
+  
+  return age >= 13 && age <= 120;
+};
+
+// ========== EMAIL SERVICE ==========
 const sendEmail = async (to, subject, text, html) => {
-  // In production, implement actual email sending
-  console.log(`📧 Email to ${to}: ${subject}`);
-  console.log(`Text: ${text}`);
-  console.log(`HTML: ${html}`);
+  // In production, implement with Nodemailer, SendGrid, etc.
+  if (process.env.NODE_ENV === 'production') {
+    // Implement actual email service
+    console.log(`📧 Production email to ${to}: ${subject}`);
+  } else {
+    console.log(`📧 Development email to ${to}: ${subject}`);
+    console.log(`Text: ${text.substring(0, 100)}...`);
+  }
+  
   return true;
+};
+
+// ========== AUDIT LOGGING ==========
+const logSecurityEvent = (event, userId, ip, details = {}) => {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    event,
+    userId,
+    ip,
+    ...details
+  };
+  
+  console.log('[SECURITY]', JSON.stringify(logEntry));
+  
+  // In production, save to security log database
+  if (process.env.NODE_ENV === 'production') {
+    // Implement logging to database or external service
+  }
 };
 
 // ========== CONTROLLER FUNCTIONS ==========
@@ -75,43 +126,97 @@ const sendEmail = async (to, subject, text, html) => {
 // Register new user
 const register = async (req, res) => {
   try {
-    const { name, email, password, role = 'user' } = req.body;
+    const { name, email, password, phoneNumber, dateOfBirth, gender, country, city } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
 
+    // Validate password strength
     if (!validatePassword(password)) {
+      logSecurityEvent('WEAK_PASSWORD_ATTEMPT', null, ip, { email });
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character'
+        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)'
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    // Validate phone number if provided
+    if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid phone number'
+      });
+    }
+
+    // Validate date of birth if provided
+    if (dateOfBirth && !validateDateOfBirth(dateOfBirth)) {
+      return res.status(400).json({
+        success: false,
+        message: 'You must be at least 13 years old and not older than 120 years'
+      });
+    }
+
+    // Check for existing user
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
+      logSecurityEvent('DUPLICATE_REGISTRATION_ATTEMPT', null, ip, { email });
       return res.status(409).json({
         success: false,
         message: 'User already exists with this email'
       });
     }
 
-    const user = await User.create({
-      name: validator.escape(name),
+    // Sanitize inputs
+    const sanitizedData = {
+      name: sanitizeInput(name),
       email: email.toLowerCase(),
       password,
+      phoneNumber: phoneNumber ? sanitizeInput(phoneNumber) : undefined,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      gender: gender || '',
+      country: country ? sanitizeInput(country) : '',
+      city: city ? sanitizeInput(city) : '',
       role: 'user',
-    });
+      privacySettings: {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      }
+    };
 
+    // Create user
+    const user = await User.create(sanitizedData);
+
+    // Generate verification token
     const verificationToken = user.createEmailVerificationToken();
     await user.save({ validateBeforeSave: false });
 
+    // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
     await sendEmail(
       user.email,
-      'Verify Your Email Address',
-      `Please verify your email by clicking: ${verificationUrl}`,
-      `<h1>Verify Your Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`
+      'Verify Your Email Address - Vorkana',
+      `Welcome to Vorkana! Please verify your email by clicking: ${verificationUrl}\n\nThis link will expire in 24 hours.`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">Welcome to Vorkana!</h1>
+        <p>Please verify your email address by clicking the button below:</p>
+        <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
+        <p>Or copy and paste this link: ${verificationUrl}</p>
+        <p style="color: #666; font-size: 14px;">This link will expire in 24 hours.</p>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #999; font-size: 12px;">If you didn't create an account, you can safely ignore this email.</p>
+      </div>`
     );
 
+    // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+
+    // Log registration
+    logSecurityEvent('REGISTRATION_SUCCESS', user._id, ip, { email: user.email });
+
+    // Add to login history
+    await user.addLoginHistory(ip, req.headers['user-agent'], true);
 
     res.status(201).json({
       success: true,
@@ -124,13 +229,18 @@ const register = async (req, res) => {
         email: user.email,
         role: user.role,
         picture: user.picture,
-        emailVerified: user.emailVerified
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber,
+        country: user.country,
+        city: user.city,
+        privacySettings: user.privacySettings
       }
     });
 
   } catch (error) {
     console.error('Registration error:', error);
     
+    // Validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -140,6 +250,7 @@ const register = async (req, res) => {
       });
     }
 
+    // Duplicate key error
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -147,9 +258,11 @@ const register = async (req, res) => {
       });
     }
 
+    // Server error
     res.status(500).json({
       success: false,
-      message: 'Server error during registration'
+      message: 'Server error during registration',
+      code: 'REGISTRATION_ERROR'
     });
   }
 };
@@ -157,29 +270,27 @@ const register = async (req, res) => {
 // Login user
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceToken, deviceType } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
 
-    // Find user
-    const user = await User.findOne({ email: email.toLowerCase() })
-      .select('+password +failedLoginAttempts +lockUntil');
-    
-    // Check account lock
-    if (user && user.lockUntil && user.lockUntil > Date.now()) {
-      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
-      return res.status(423).json({
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({
         success: false,
-        message: `Account is locked. Try again in ${remainingTime} minutes.`
+        message: 'Please provide email and password'
       });
     }
 
-    // Check if user exists and password is correct
-    if (!user || !(await user.comparePassword(password))) {
-      if (user) {
-        await user.incrementLoginAttempts();
-      }
-      
+    // Find user with security fields
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected +emailVerified');
+    
+    // Check if account exists
+    if (!user) {
       // Constant-time delay to prevent timing attacks
       await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
+      logSecurityEvent('LOGIN_FAILED_NO_USER', null, ip, { email });
       
       return res.status(401).json({
         success: false,
@@ -187,30 +298,95 @@ const login = async (req, res) => {
       });
     }
 
+    // Check account lock
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
+      logSecurityEvent('LOGIN_ATTEMPT_LOCKED_ACCOUNT', user._id, ip, { email: user.email });
+      
+      return res.status(423).json({
+        success: false,
+        message: `Account is locked. Try again in ${remainingTime} minutes.`,
+        retryAfter: Math.ceil((user.lockUntil - Date.now()) / 1000),
+        code: 'ACCOUNT_LOCKED'
+      });
+    }
+
     // Check if account is active
     if (!user.isActive) {
+      logSecurityEvent('LOGIN_ATTEMPT_INACTIVE_ACCOUNT', user._id, ip, { email: user.email });
+      
       return res.status(403).json({
         success: false,
-        message: 'Account is deactivated. Please contact support.'
+        message: 'Account is deactivated. Please contact support.',
+        code: 'ACCOUNT_DEACTIVATED'
       });
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    
+    if (!isPasswordValid) {
+      // Log failed attempt
+      await user.incrementLoginAttempts();
+      await user.addLoginHistory(ip, userAgent, false);
+      
+      logSecurityEvent('LOGIN_FAILED_WRONG_PASSWORD', user._id, ip, { 
+        email: user.email,
+        attempts: user.failedLoginAttempts + 1
+      });
+      
+      // Constant-time delay
+      await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+
+    // FIX: Allow login even if email is not verified
+    // But mark it in the response
+    const requiresVerification = !user.emailVerified;
+    
+    if (requiresVerification) {
+      logSecurityEvent('LOGIN_UNVERIFIED_EMAIL', user._id, ip, { email: user.email });
     }
 
     // Reset login attempts on successful login
     await user.resetLoginAttempts();
+    await user.addLoginHistory(ip, userAgent, true);
     
     // Update last login
     user.lastLoginAt = new Date();
+    user.lastSeenAt = new Date();
+    
+    // Store device token for push notifications
+    if (deviceToken) {
+      await user.addDeviceToken(deviceToken, deviceType);
+    }
+    
     await user.save({ validateBeforeSave: false });
 
     // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
+    // Log successful login
+    logSecurityEvent('LOGIN_SUCCESS', user._id, ip, { 
+      email: user.email,
+      deviceType,
+      emailVerified: user.emailVerified
+    });
+
     res.json({
       success: true,
-      message: 'Login successful',
+      message: requiresVerification ? 
+        'Login successful. Please verify your email to access all features.' : 
+        'Login successful',
       token,
       refreshToken,
+      requiresVerification,
       user: {
         _id: user._id,
         name: user.name,
@@ -218,88 +394,26 @@ const login = async (req, res) => {
         role: user.role,
         picture: user.picture,
         emailVerified: user.emailVerified,
-        lastLoginAt: user.lastLoginAt
+        lastLoginAt: user.lastLoginAt,
+        privacySettings: user.privacySettings,
+        phoneNumber: user.phoneNumber,
+        country: user.country,
+        city: user.city,
+        bio: user.bio,
+        rating: user.rating,
+        completedOrders: user.completedOrders,
+        isOnline: user.isOnline
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during login'
-    });
-  }
-};
-
-// Logout
-const logout = async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      // Add to blacklist (in production, use Redis with TTL)
-      blacklist.add(token);
-    }
-    
-    res.json({
-      success: true,
-      message: 'Logged out successfully'
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during logout'
-    });
-  }
-};
-
-// Refresh token
-const refreshToken = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    
-    if (!refreshToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Refresh token is required'
-      });
-    }
-
-    // Verify refresh token
-    const decoded = await verifyRefreshToken(refreshToken);
-    
-    // Check if user still exists
-    const user = await User.findById(decoded.id);
-    if (!user || !user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found or account inactive'
-      });
-    }
-
-    // Generate new tokens
-    const newToken = generateToken(user._id);
-    const newRefreshToken = generateRefreshToken(user._id);
-
-    res.json({
-      success: true,
-      token: newToken,
-      refreshToken: newRefreshToken
-    });
-
-  } catch (error) {
-    console.error('Refresh token error:', error);
-    
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or expired refresh token'
-      });
-    }
+    logSecurityEvent('LOGIN_ERROR', null, req.ip, { error: error.message });
     
     res.status(500).json({
       success: false,
-      message: 'Server error refreshing token'
+      message: 'Server error during login',
+      code: 'LOGIN_ERROR'
     });
   }
 };
@@ -316,6 +430,10 @@ const getProfile = async (req, res) => {
       });
     }
 
+    // Update last seen
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
+
     res.json({
       success: true,
       user: {
@@ -326,9 +444,29 @@ const getProfile = async (req, res) => {
         picture: user.picture,
         emailVerified: user.emailVerified,
         twoFactorEnabled: user.twoFactorEnabled,
+        phoneNumber: user.phoneNumber,
+        bio: user.bio,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        country: user.country,
+        city: user.city,
+        languages: user.languages,
+        occupation: user.occupation,
+        education: user.education,
+        privacySettings: user.privacySettings,
+        accountType: user.accountType,
+        rating: user.rating,
+        totalReviews: user.totalReviews,
+        completedOrders: user.completedOrders,
+        responseRate: user.responseRate,
+        responseTime: user.responseTime,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
-        lastLoginAt: user.lastLoginAt
+        lastLoginAt: user.lastLoginAt,
+        lastSeenAt: user.lastSeenAt,
+        isOnline: user.isOnline,
+        age: user.age,
+        fullLocation: user.fullLocation
       }
     });
   } catch (error) {
@@ -343,72 +481,160 @@ const getProfile = async (req, res) => {
 // Update user profile
 const updateProfile = async (req, res) => {
   try {
-    const { name, email, picture } = req.body;
-    
-    // Validate inputs
-    if (email && !validator.isEmail(email)) {
-      return res.status(400).json({
+    const { 
+      name, 
+      email, 
+      picture, 
+      phoneNumber, 
+      bio, 
+      gender, 
+      dateOfBirth, 
+      country, 
+      city,
+      languages,
+      occupation,
+      education,
+      privacySettings
+    } = req.body;
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: 'Please provide a valid email address'
+        message: 'User not found'
       });
     }
 
-    if (picture && !validator.isURL(picture, { protocols: ['http', 'https'] })) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid URL for the picture'
-      });
+    // Sanitize inputs
+    const updateData = {};
+    if (name) updateData.name = sanitizeInput(name);
+    if (bio !== undefined) updateData.bio = sanitizeInput(bio);
+    if (phoneNumber !== undefined) {
+      if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid phone number'
+        });
+      }
+      updateData.phoneNumber = phoneNumber ? sanitizeInput(phoneNumber) : '';
     }
+    if (gender !== undefined) updateData.gender = gender;
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth && !validateDateOfBirth(dateOfBirth)) {
+        return res.status(400).json({
+          success: false,
+          message: 'You must be at least 13 years old and not older than 120 years'
+        });
+      }
+      updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+    }
+    if (country !== undefined) updateData.country = country ? sanitizeInput(country) : '';
+    if (city !== undefined) updateData.city = city ? sanitizeInput(city) : '';
+    if (languages !== undefined) updateData.languages = languages;
+    if (occupation !== undefined) updateData.occupation = occupation ? sanitizeInput(occupation) : '';
+    if (education !== undefined) updateData.education = education ? sanitizeInput(education) : '';
+    if (privacySettings !== undefined) updateData.privacySettings = privacySettings;
 
-    // Check if email is being changed
-    if (email && email !== req.user.email) {
+    // Handle email change
+    let requiresEmailVerification = false;
+    if (email && email !== user.email) {
+      // Validate email
+      if (!validator.isEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address'
+        });
+      }
+
+      // Check if email is already taken
       const existingUser = await User.findOne({ email: email.toLowerCase() });
-      if (existingUser) {
+      if (existingUser && existingUser._id.toString() !== user._id.toString()) {
         return res.status(409).json({
           success: false,
           message: 'Email already taken'
         });
       }
-      
-      // If email is changed, require verification
-      user.emailVerified = false;
-      const verificationToken = user.createEmailVerificationToken();
-      
-      // Send verification email
-      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-      await sendEmail(
-        email,
-        'Verify Your New Email Address',
-        `Please verify your new email by clicking: ${verificationUrl}`,
-        `<h1>Verify Your New Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your new email.</p>`
-      );
+
+      updateData.email = email.toLowerCase();
+      updateData.emailVerified = false;
+      requiresEmailVerification = true;
     }
 
-    // Build update object with sanitization
-    const updateData = {};
-    if (name) updateData.name = validator.escape(name);
-    if (email) updateData.email = email.toLowerCase();
-    if (picture !== undefined) updateData.picture = picture;
+    // Handle picture URL validation
+    if (picture !== undefined) {
+      if (picture && !validator.isURL(picture, { 
+        protocols: ['http', 'https'],
+        require_protocol: true 
+      })) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid URL for the picture'
+        });
+      }
+      updateData.picture = picture || null;
+    }
 
     // Update user
-    const user = await User.findByIdAndUpdate(
+    const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       updateData,
       { new: true, runValidators: true }
     );
 
+    // Send verification email if email was changed
+    if (requiresEmailVerification) {
+      const verificationToken = updatedUser.createEmailVerificationToken();
+      await updatedUser.save({ validateBeforeSave: false });
+
+      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+      await sendEmail(
+        updatedUser.email,
+        'Verify Your New Email Address - Vorkana',
+        `You've updated your email address. Please verify it by clicking: ${verificationUrl}`,
+        `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #4F46E5;">Verify Your New Email</h1>
+          <p>You've updated your email address on Vorkana. Please verify it by clicking the button below:</p>
+          <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
+          <p>Or copy and paste this link: ${verificationUrl}</p>
+          <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+          <p style="color: #999; font-size: 12px;">If you didn't request this change, please contact our support team immediately.</p>
+        </div>`
+      );
+    }
+
+    // Log profile update
+    logSecurityEvent('PROFILE_UPDATED', user._id, req.ip, {
+      fieldsUpdated: Object.keys(updateData)
+    });
+
     res.json({
       success: true,
-      message: email && email !== req.user.email ? 
+      message: requiresEmailVerification ? 
         'Profile updated. Please verify your new email.' : 
         'Profile updated successfully',
       user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        picture: updatedUser.picture,
+        emailVerified: updatedUser.emailVerified,
+        phoneNumber: updatedUser.phoneNumber,
+        bio: updatedUser.bio,
+        gender: updatedUser.gender,
+        dateOfBirth: updatedUser.dateOfBirth,
+        country: updatedUser.country,
+        city: updatedUser.city,
+        languages: updatedUser.languages,
+        occupation: updatedUser.occupation,
+        education: updatedUser.education,
+        privacySettings: updatedUser.privacySettings,
+        accountType: updatedUser.accountType,
+        rating: updatedUser.rating,
+        completedOrders: updatedUser.completedOrders,
+        isOnline: updatedUser.isOnline,
+        age: updatedUser.age,
+        fullLocation: updatedUser.fullLocation
       }
     });
   } catch (error) {
@@ -430,11 +656,11 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Change password
-// Change password
+// Change password with enhanced security
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
 
     // Validation
     if (!currentPassword || !newPassword) {
@@ -451,8 +677,9 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Get user with password
-    const user = await User.findById(req.user._id).select('+password');
+    // Get user with password and password history
+    const user = await User.findById(req.user._id)
+      .select('+password +passwordHistory +lastPasswordChangeAt');
     
     if (!user) {
       return res.status(404).json({
@@ -464,6 +691,8 @@ const changePassword = async (req, res) => {
     // Verify current password
     const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
+      logSecurityEvent('PASSWORD_CHANGE_FAILED', user._id, ip, { reason: 'wrong_current_password' });
+      
       return res.status(401).json({
         success: false,
         message: 'Current password is incorrect'
@@ -480,73 +709,88 @@ const changePassword = async (req, res) => {
     }
 
     // Validate new password strength
-    const validatePasswordStrength = (password) => {
-      const minLength = 8;
-      const hasUpperCase = /[A-Z]/.test(password);
-      const hasLowerCase = /[a-z]/.test(password);
-      const hasNumbers = /\d/.test(password);
-      const hasSpecialChar = /[@$!%*?&]/.test(password);
-      
-      if (password.length < minLength) {
-        return { valid: false, message: 'Password must be at least 8 characters long' };
-      }
-      
-      if (!hasUpperCase) {
-        return { valid: false, message: 'Password must contain at least one uppercase letter' };
-      }
-      
-      if (!hasLowerCase) {
-        return { valid: false, message: 'Password must contain at least one lowercase letter' };
-      }
-      
-      if (!hasNumbers) {
-        return { valid: false, message: 'Password must contain at least one number' };
-      }
-      
-      if (!hasSpecialChar) {
-        return { valid: false, message: 'Password must contain at least one special character (@$!%*?&)' };
-      }
-      
-      return { valid: true, message: 'Password is strong' };
-    };
-
-    const validationResult = validatePasswordStrength(newPassword);
-    if (!validationResult.valid) {
+    if (!validatePassword(newPassword)) {
       return res.status(400).json({
         success: false,
-        message: validationResult.message
+        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)'
       });
     }
 
-    // Check password history (optional - prevent reusing last 3 passwords)
-    // You can implement this if needed
+    // Check password history (prevent reusing last 3 passwords)
+    if (user.passwordHistory && user.passwordHistory.length > 0) {
+      const lastThreePasswords = user.passwordHistory.slice(-3);
+      
+      for (const oldPassword of lastThreePasswords) {
+        const isOldPassword = await bcrypt.compare(newPassword, oldPassword.password);
+        if (isOldPassword) {
+          return res.status(400).json({
+            success: false,
+            message: 'You cannot reuse your last 3 passwords',
+            code: 'PASSWORD_REUSE'
+          });
+        }
+      }
+    }
 
-    // Set the new password (pre-save hook will hash it)
-    user.password = newPassword;
+    // Minimum time between password changes (optional)
+    const lastChange = user.lastPasswordChangeAt || user.createdAt;
+    const hoursSinceLastChange = (Date.now() - lastChange) / (1000 * 60 * 60);
     
-    // Save without validating the password field (since we already validated)
-    // Or use validateBeforeSave: false
+    if (hoursSinceLastChange < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'You can only change your password once per hour',
+        code: 'PASSWORD_CHANGE_RATE_LIMIT'
+      });
+    }
+
+    // Set the new password
+    user.password = newPassword;
     await user.save({ validateBeforeSave: false });
 
-    // Invalidate current token (add to blacklist)
+    // Invalidate current token
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
-      // Add to blacklist
-      const { tokenBlacklist } = require('../middleware/auth.middleware');
-      tokenBlacklist.add(token);
+      blacklist.add(token);
     }
+
+    // Log password change
+    logSecurityEvent('PASSWORD_CHANGED', user._id, ip, {
+      passwordChangedAt: new Date().toISOString()
+    });
+
+    // Send security notification email
+    await sendEmail(
+      user.email,
+      'Password Changed - Vorkana Security Alert',
+      `Your password was changed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.\n\nIf you didn't make this change, please contact our support team immediately.`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #DC2626;">Security Alert</h1>
+        <p>Your password was changed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
+        <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px; margin: 20px 0;">
+          <p style="margin: 0; color: #DC2626;"><strong>If you didn't make this change:</strong></p>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Contact our support team immediately</li>
+            <li>Check your account for any unauthorized activity</li>
+            <li>Consider enabling two-factor authentication</li>
+          </ul>
+        </div>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #666; font-size: 14px;">This is an automated security alert from Vorkana.</p>
+      </div>`
+    );
 
     res.json({
       success: true,
       message: 'Password changed successfully. Please login again.',
-      // Optional: Provide a logout hint
-      requiresReauth: true
+      requiresReauth: true,
+      securityAlertSent: true
     });
 
   } catch (error) {
     console.error('Change password error:', error);
+    logSecurityEvent('PASSWORD_CHANGE_ERROR', req.user?._id, req.ip, { error: error.message });
     
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -559,55 +803,93 @@ const changePassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error changing password',
-      ...(process.env.NODE_ENV === 'development' && { error: error.message })
+      code: 'PASSWORD_CHANGE_ERROR'
     });
   }
 };
 
-// Verify email
+// Verify email with token validation
 const verifyEmail = async (req, res) => {
   try {
     const { token } = req.params;
+    const ip = req.ip || req.connection.remoteAddress;
     
-    const user = await User.findByVerificationToken(token);
-    if (!user) {
+    if (!token || token.length !== 64) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired verification token'
+        message: 'Invalid verification token format'
+      });
+    }
+
+    const user = await User.findByVerificationToken(token);
+    if (!user) {
+      logSecurityEvent('EMAIL_VERIFICATION_FAILED', null, ip, { reason: 'invalid_token' });
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified',
+        code: 'ALREADY_VERIFIED'
       });
     }
 
     user.emailVerified = true;
     user.emailVerificationToken = undefined;
+    user.suspiciousActivityDetected = false;
     await user.save();
+
+    // Log verification
+    logSecurityEvent('EMAIL_VERIFIED', user._id, ip, { email: user.email });
+
+    // Generate new tokens since email verification status changed
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
 
     res.json({
       success: true,
-      message: 'Email verified successfully'
+      message: 'Email verified successfully',
+      token: newToken,
+      refreshToken: newRefreshToken,
+      redirectUrl: `${process.env.FRONTEND_URL}/dashboard`
     });
   } catch (error) {
     console.error('Verify email error:', error);
+    logSecurityEvent('EMAIL_VERIFICATION_ERROR', null, req.ip, { error: error.message });
+    
     res.status(500).json({
       success: false,
-      message: 'Server error verifying email'
+      message: 'Server error verifying email',
+      code: 'VERIFICATION_ERROR'
     });
   }
 };
 
-// Resend verification email
+// Resend verification email with rate limiting
 const resendVerificationEmail = async (req, res) => {
   try {
     const { email } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
     
     const user = await User.findOne({ email: email.toLowerCase() });
+    
+    // Don't reveal if user exists (security through obscurity)
     if (!user) {
-      // Don't reveal if user exists
+      // Still return success to prevent email enumeration
       return res.json({
         success: true,
         message: 'If an account exists with this email, you will receive a verification email'
       });
     }
 
+    // Check if already verified
     if (user.emailVerified) {
       return res.status(400).json({
         success: false,
@@ -615,18 +897,47 @@ const resendVerificationEmail = async (req, res) => {
       });
     }
 
+    // Rate limiting check (max 3 attempts per hour)
+    const lastVerificationAttempt = user.loginHistory
+      ?.filter(log => log.success === false && log.userAgent?.includes('verification-resend'))
+      .sort((a, b) => b.timestamp - a.timestamp)[0];
+    
+    if (lastVerificationAttempt) {
+      const hoursSinceLastAttempt = (Date.now() - lastVerificationAttempt.timestamp) / (1000 * 60 * 60);
+      if (hoursSinceLastAttempt < 1) {
+        return res.status(429).json({
+          success: false,
+          message: 'Please wait before requesting another verification email',
+          retryAfter: 3600 - Math.floor(hoursSinceLastAttempt * 3600)
+        });
+      }
+    }
+
     // Generate new verification token
     const verificationToken = user.createEmailVerificationToken();
     await user.save({ validateBeforeSave: false });
+
+    // Log resend attempt
+    await user.addLoginHistory(ip, 'verification-resend', true);
 
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
     await sendEmail(
       user.email,
-      'Verify Your Email Address',
+      'Verify Your Email Address - Vorkana',
       `Please verify your email by clicking: ${verificationUrl}`,
-      `<h1>Verify Your Email</h1><p>Click <a href="${verificationUrl}">here</a> to verify your email.</p>`
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">Verify Your Email</h1>
+        <p>We received a request to resend your verification email.</p>
+        <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Verify Email</a>
+        <p>Or copy and paste this link: ${verificationUrl}</p>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #999; font-size: 12px;">If you didn't request this email, you can safely ignore it.</p>
+      </div>`
     );
+
+    // Log event
+    logSecurityEvent('VERIFICATION_EMAIL_RESENT', user._id, ip, { email: user.email });
 
     res.json({
       success: true,
@@ -634,6 +945,8 @@ const resendVerificationEmail = async (req, res) => {
     });
   } catch (error) {
     console.error('Resend verification error:', error);
+    logSecurityEvent('VERIFICATION_RESEND_ERROR', null, req.ip, { error: error.message });
+    
     res.status(500).json({
       success: false,
       message: 'Server error sending verification email'
@@ -641,17 +954,51 @@ const resendVerificationEmail = async (req, res) => {
   }
 };
 
-// Forgot password
+// Forgot password with enhanced security
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
     
     const user = await User.findOne({ email: email.toLowerCase() });
+    
+    // Security: Don't reveal if user exists
     if (!user) {
-      // Security: Don't reveal if user exists
+      // Still log the attempt for security monitoring
+      logSecurityEvent('PASSWORD_RESET_REQUEST_UNKNOWN_EMAIL', null, ip, { email });
+      
+      // Return success to prevent email enumeration
       return res.json({
         success: true,
         message: 'If an account exists with this email, you will receive a password reset link'
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      logSecurityEvent('PASSWORD_RESET_REQUEST_INACTIVE_ACCOUNT', user._id, ip, { email: user.email });
+      
+      // Still return success to prevent enumeration
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a password reset link'
+      });
+    }
+
+    // Rate limiting check (max 3 reset requests per day)
+    const resetAttemptsToday = user.loginHistory
+      ?.filter(log => 
+        log.userAgent?.includes('password-reset') && 
+        new Date(log.timestamp).toDateString() === new Date().toDateString()
+      ).length || 0;
+    
+    if (resetAttemptsToday >= 3) {
+      logSecurityEvent('PASSWORD_RESET_RATE_LIMIT_EXCEEDED', user._id, ip, { email: user.email });
+      
+      return res.status(429).json({
+        success: false,
+        message: 'Too many password reset attempts. Please try again tomorrow.',
+        code: 'RESET_RATE_LIMIT'
       });
     }
 
@@ -659,14 +1006,30 @@ const forgotPassword = async (req, res) => {
     const resetToken = user.createPasswordResetToken();
     await user.save({ validateBeforeSave: false });
 
+    // Log reset request
+    await user.addLoginHistory(ip, 'password-reset', true);
+
     // Send reset email
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
     await sendEmail(
       user.email,
-      'Password Reset Request',
-      `You requested a password reset. Click: ${resetUrl}\n\nThis link expires in 15 minutes.`,
-      `<h1>Password Reset</h1><p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 15 minutes.</p>`
+      'Password Reset Request - Vorkana',
+      `You requested a password reset. Click: ${resetUrl}\n\nThis link expires in 15 minutes.\n\nIf you didn't request this, please ignore this email.`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">Password Reset Request</h1>
+        <p>We received a request to reset your password. Click the button below to proceed:</p>
+        <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Reset Password</a>
+        <p>Or copy and paste this link: ${resetUrl}</p>
+        <div style="background-color: #F3F4F6; padding: 12px; border-radius: 4px; margin: 20px 0;">
+          <p style="margin: 0; color: #6B7280; font-size: 14px;"><strong>⚠️ Important:</strong> This link will expire in 15 minutes.</p>
+        </div>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #999; font-size: 12px;">If you didn't request a password reset, you can safely ignore this email. Your account is secure.</p>
+      </div>`
     );
+
+    // Log security event
+    logSecurityEvent('PASSWORD_RESET_REQUESTED', user._id, ip, { email: user.email });
 
     res.json({
       success: true,
@@ -674,6 +1037,8 @@ const forgotPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Forgot password error:', error);
+    logSecurityEvent('PASSWORD_RESET_ERROR', null, req.ip, { error: error.message });
+    
     res.status(500).json({
       success: false,
       message: 'Server error processing password reset'
@@ -681,39 +1046,87 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// Reset password
+// Reset password with token validation
 const resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
     
+    if (!token || token.length !== 64) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reset token'
+      });
+    }
+
+    // Validate new password
     if (!validatePassword(newPassword)) {
       return res.status(400).json({
         success: false,
-        message: 'New password must be at least 8 characters with uppercase, lowercase, number and special character'
+        message: 'New password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)'
       });
     }
 
     // Find user with valid token
     const user = await User.findByResetToken(token);
     if (!user) {
+      logSecurityEvent('PASSWORD_RESET_FAILED', null, ip, { reason: 'invalid_token' });
+      
       return res.status(400).json({
         success: false,
         message: 'Invalid or expired token'
       });
     }
 
+    // Check if new password is same as any of the last 3 passwords
+    if (user.passwordHistory && user.passwordHistory.length > 0) {
+      const lastThreePasswords = user.passwordHistory.slice(-3);
+      
+      for (const oldPassword of lastThreePasswords) {
+        const isOldPassword = await bcrypt.compare(newPassword, oldPassword.password);
+        if (isOldPassword) {
+          return res.status(400).json({
+            success: false,
+            message: 'You cannot reuse your last 3 passwords',
+            code: 'PASSWORD_REUSE'
+          });
+        }
+      }
+    }
+
     // Set new password
-    user.password = await hashPassword(newPassword);
+    user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
+    user.suspiciousActivityDetected = false;
     
     await user.save();
 
     // Generate new tokens
     const authToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+
+    // Log password reset
+    logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
+
+    // Send confirmation email
+    await sendEmail(
+      user.email,
+      'Password Reset Successful - Vorkana',
+      `Your password was successfully reset on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.\n\nIf you didn't make this change, please contact our support team immediately.`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #10B981;">Password Reset Successful</h1>
+        <p>Your password was successfully reset on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
+        <div style="background-color: #F3F4F6; padding: 12px; border-radius: 4px; margin: 20px 0;">
+          <p style="margin: 0; color: #6B7280; font-size: 14px;"><strong>✅ Your account is now secure.</strong></p>
+        </div>
+        <a href="${process.env.FRONTEND_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #10B981; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Login Now</a>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #DC2626; font-size: 14px;"><strong>If you didn't make this change:</strong> Please contact our support team immediately.</p>
+      </div>`
+    );
 
     res.json({
       success: true,
@@ -724,11 +1137,14 @@ const resetPassword = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        emailVerified: user.emailVerified
       }
     });
   } catch (error) {
     console.error('Reset password error:', error);
+    logSecurityEvent('PASSWORD_RESET_ERROR', null, req.ip, { error: error.message });
+    
     res.status(500).json({
       success: false,
       message: 'Server error resetting password'
@@ -736,69 +1152,401 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// Create admin user (protected - one-time setup)
-const createAdmin = async (req, res) => {
+// Enhanced logout
+const logout = async (req, res) => {
   try {
-    const { email, password, name } = req.body;
-
-    // Only allow in development or with special key
-    const secretKey = req.headers['x-admin-secret'] || req.query.secret;
-    if (process.env.NODE_ENV === 'production' && secretKey !== process.env.ADMIN_CREATE_SECRET) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized'
-      });
+    const token = req.headers.authorization?.split(' ')[1];
+    const { deviceToken } = req.body;
+    
+    if (token) {
+      // Add to blacklist with TTL (7 days in production)
+      blacklist.add(token);
+      
+      // In production with Redis:
+      // await redis.setex(`blacklist:${token}`, 604800, '1');
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: 'User already exists'
-      });
+    // Remove device token for push notifications
+    if (deviceToken && req.user) {
+      const user = await User.findById(req.user._id);
+      if (user) {
+        await user.removeDeviceToken(deviceToken);
+      }
     }
 
-    if (!validatePassword(password)) {
+    // Log logout event
+    logSecurityEvent('LOGOUT', req.user?._id, req.ip, { deviceTokenRemoved: !!deviceToken });
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during logout'
+    });
+  }
+};
+
+// Enhanced refresh token
+const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken: oldRefreshToken, deviceToken } = req.body;
+    
+    if (!oldRefreshToken) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character'
+        message: 'Refresh token is required'
       });
     }
 
-    const hashedPassword = await hashPassword(password);
+    // Verify refresh token
+    const decoded = await verifyRefreshToken(oldRefreshToken);
+    
+    // Check if user still exists and is active
+    const user = await User.findById(decoded.id);
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found or account inactive'
+      });
+    }
 
-    const admin = await User.create({
-      name: validator.escape(name || 'Admin'),
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      role: 'admin',
-      emailVerified: true
+    // Update device token if provided
+    if (deviceToken) {
+      await user.addDeviceToken(deviceToken);
+    }
+
+    // Update last seen
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    // Generate new tokens
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+
+    // Log token refresh
+    logSecurityEvent('TOKEN_REFRESHED', user._id, req.ip, { deviceTokenUpdated: !!deviceToken });
+
+    res.json({
+      success: true,
+      token: newToken,
+      refreshToken: newRefreshToken,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture,
+        emailVerified: user.emailVerified,
+        isOnline: user.isOnline
+      }
     });
 
-    const token = generateToken(admin._id);
-    const refreshToken = generateRefreshToken(admin._id);
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    logSecurityEvent('TOKEN_REFRESH_ERROR', null, req.ip, { error: error.message });
+    
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server error refreshing token'
+    });
+  }
+};
 
-    console.log(`✅ Admin created: ${admin.email}`);
+// Get public user profile (for other users to see)
+const getPublicProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
 
-    res.status(201).json({
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check privacy settings
+    if (user.privacySettings.profileVisibility === 'private') {
+      return res.status(403).json({
+        success: false,
+        message: 'This profile is private'
+      });
+    }
+
+    // Check if profile is only for registered users
+    if (user.privacySettings.profileVisibility === 'registered' && !req.user) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please login to view this profile'
+      });
+    }
+
+    // Build public profile based on privacy settings
+    const publicProfile = {
+      _id: user._id,
+      name: user.name,
+      picture: user.picture,
+      bio: user.bio,
+      rating: user.rating,
+      totalReviews: user.totalReviews,
+      completedOrders: user.completedOrders,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
+      occupation: user.occupation,
+      education: user.education,
+      languages: user.languages,
+      createdAt: user.createdAt,
+      isOnline: user.isOnline,
+      accountType: user.accountType
+    };
+
+    // Add location if allowed
+    if (user.privacySettings.showLocation) {
+      publicProfile.country = user.country;
+      publicProfile.city = user.city;
+      publicProfile.fullLocation = user.fullLocation;
+    }
+
+    // Add contact info if allowed
+    if (user.privacySettings.showEmail && req.user) {
+      publicProfile.email = user.email;
+    }
+    if (user.privacySettings.showPhone && req.user) {
+      publicProfile.phoneNumber = user.phoneNumber;
+    }
+
+    // Add last seen if allowed
+    if (user.privacySettings.showLastSeen) {
+      publicProfile.lastSeenAt = user.lastSeenAt;
+    }
+
+    // Calculate member duration
+    const memberDuration = Math.floor((Date.now() - user.createdAt) / (1000 * 60 * 60 * 24));
+    publicProfile.memberSince = `${memberDuration} days`;
+
+    res.json({
       success: true,
-      message: 'Admin created successfully',
+      profile: publicProfile
+    });
+  } catch (error) {
+    console.error('Get public profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error retrieving profile'
+    });
+  }
+};
+
+// Deactivate account (soft delete)
+const deactivateAccount = async (req, res) => {
+  try {
+    const { password, reason } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required to deactivate account'
+      });
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Incorrect password'
+      });
+    }
+
+    // Deactivate account
+    user.isActive = false;
+    user.deactivatedAt = new Date();
+    user.deactivationReason = reason || 'User requested';
+    
+    await user.save({ validateBeforeSave: false });
+
+    // Invalidate all tokens
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      blacklist.add(token);
+    }
+
+    // Log deactivation
+    logSecurityEvent('ACCOUNT_DEACTIVATED', user._id, req.ip, { reason });
+
+    // Send confirmation email
+    await sendEmail(
+      user.email,
+      'Account Deactivated - Vorkana',
+      `Your account has been deactivated as requested.\n\nYou can reactivate your account within 30 days by logging in. After 30 days, your account will be permanently deleted.\n\nReason: ${reason || 'Not specified'}`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #DC2626;">Account Deactivated</h1>
+        <p>Your account has been deactivated as requested.</p>
+        <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px; margin: 20px 0;">
+          <p style="margin: 0; color: #DC2626;"><strong>Important:</strong></p>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>You can reactivate your account within 30 days by logging in</li>
+            <li>After 30 days, your account will be permanently deleted</li>
+            <li>All your data will be anonymized according to our privacy policy</li>
+          </ul>
+        </div>
+        <p><strong>Reason:</strong> ${reason || 'Not specified'}</p>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #666; font-size: 14px;">If you didn't request this, please contact our support team immediately.</p>
+      </div>`
+    );
+
+    res.json({
+      success: true,
+      message: 'Account deactivated successfully',
+      reactivationDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  } catch (error) {
+    console.error('Deactivate account error:', error);
+    logSecurityEvent('ACCOUNT_DEACTIVATION_ERROR', req.user?._id, req.ip, { error: error.message });
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server error deactivating account'
+    });
+  }
+};
+
+// Reactivate account
+const reactivateAccount = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Account not found'
+      });
+    }
+
+    // Check if account is deactivated
+    if (user.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Account is already active'
+      });
+    }
+
+    // Check if deactivated for more than 30 days
+    if (user.deactivatedAt && (Date.now() - user.deactivatedAt) > 30 * 24 * 60 * 60 * 1000) {
+      return res.status(410).json({
+        success: false,
+        message: 'Account cannot be reactivated after 30 days. Please create a new account.',
+        code: 'ACCOUNT_PERMANENTLY_DELETED'
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      // Log failed reactivation attempt
+      logSecurityEvent('REACTIVATION_FAILED', user._id, ip, { reason: 'wrong_password' });
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Incorrect password'
+      });
+    }
+
+    // Reactivate account
+    user.isActive = true;
+    user.deactivatedAt = undefined;
+    user.deactivationReason = undefined;
+    
+    await user.save({ validateBeforeSave: false });
+
+    // Generate new tokens
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    // Log reactivation
+    logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
+
+    // Send reactivation email
+    await sendEmail(
+      user.email,
+      'Account Reactivated - Welcome Back to Vorkana!',
+      `Your account has been successfully reactivated.\n\nWelcome back! We're glad to have you back on Vorkana.`,
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #10B981;">Welcome Back!</h1>
+        <p>Your account has been successfully reactivated.</p>
+        <p>We're glad to have you back on Vorkana.</p>
+        <a href="${process.env.FRONTEND_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #10B981; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Go to Dashboard</a>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
+        <p style="color: #666; font-size: 14px;">If you have any questions, please contact our support team.</p>
+      </div>`
+    );
+
+    res.json({
+      success: true,
+      message: 'Account reactivated successfully',
       token,
       refreshToken,
       user: {
-        _id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture,
+        emailVerified: user.emailVerified
       }
     });
   } catch (error) {
-    console.error('Create admin error:', error);
+    console.error('Reactivate account error:', error);
+    logSecurityEvent('ACCOUNT_REACTIVATION_ERROR', null, req.ip, { error: error.message });
+    
     res.status(500).json({
       success: false,
-      message: 'Server error creating admin'
+      message: 'Server error reactivating account'
     });
   }
+};
+const handleJSONErrors = (err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON format in request body',
+      error: err.message,
+      code: 'INVALID_JSON'
+    });
+  }
+  next(err);
 };
 
 module.exports = {
@@ -813,7 +1561,10 @@ module.exports = {
   resendVerificationEmail,
   forgotPassword,
   resetPassword,
-  createAdmin,
+  getPublicProfile,
+  deactivateAccount,
+  reactivateAccount,
   generateToken,
-  generateRefreshToken
+  generateRefreshToken,
+  handleJSONErrors
 };
