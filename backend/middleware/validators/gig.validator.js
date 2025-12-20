@@ -274,40 +274,6 @@ const updateSchema = Joi.object({
   abortEarly: false 
 });
 
-// Bid schema
-const bidSchema = Joi.object({
-  proposal: Joi.string().trim().min(20).max(2000).required()
-    .messages({
-      'string.empty': 'Proposal is required',
-      'string.min': 'Proposal must be at least 20 characters',
-      'string.max': 'Proposal cannot exceed 2000 characters',
-    }),
-    
-  price: Joi.number().min(5).max(100000).required()
-    .messages({
-      'number.base': 'Price must be a number',
-      'number.min': 'Minimum price is $5',
-      'number.max': 'Maximum price is $100,000',
-      'any.required': 'Price is required',
-    }),
-    
-  deliveryTime: Joi.number().min(1).max(365).required()
-    .messages({
-      'number.base': 'Delivery time must be a number',
-      'number.min': 'Minimum delivery time is 1 day',
-      'number.max': 'Maximum delivery time is 365 days',
-      'any.required': 'Delivery time is required',
-    }),
-    
-  deliveryTimeUnit: Joi.string().valid('hours', 'days', 'weeks').default('days')
-    .messages({
-      'any.only': 'Invalid delivery time unit',
-    }),
-}).options({ 
-  stripUnknown: true,
-  abortEarly: false 
-});
-
 // Query schema
 const querySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
@@ -336,7 +302,6 @@ const querySchema = Joi.object({
   paymentStatus: Joi.string().valid('pending', 'partial', 'completed', 'refunded', 'disputed'),
   disputeStatus: Joi.string().valid('none', 'open', 'resolved', 'escalated'),
   hasAttachments: Joi.boolean(),
-  hasBids: Joi.boolean(),
   hasMilestones: Joi.boolean(),
   skillsRequired: Joi.string().max(500),
   createdAfter: Joi.date().iso(),
@@ -433,39 +398,7 @@ const validateUpdate = (req, res, next) => {
   }
 };
 
-const validateBid = (req, res, next) => {
-  try {
-    const { error, value } = bidSchema.validate(req.body, { 
-      abortEarly: false,
-      allowUnknown: false 
-    });
-    
-    if (error) {
-      const messages = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message,
-        type: detail.type
-      }));
-      
-      return res.status(400).json({
-        success: false,
-        message: 'Bid validation failed',
-        errors: messages,
-        code: 'BID_VALIDATION_ERROR',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    req.body = value;
-    next();
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: 'Validation server error',
-      code: 'VALIDATION_SERVER_ERROR'
-    });
-  }
-};
+
 
 const validateQuery = (req, res, next) => {
   try {
@@ -520,11 +453,9 @@ const validateQuery = (req, res, next) => {
 module.exports = {
   createSchema,
   updateSchema,
-  bidSchema,
   querySchema,
   validateCreate,
   validateUpdate,
-  validateBid,
   validateQuery,
   objectId,
 };

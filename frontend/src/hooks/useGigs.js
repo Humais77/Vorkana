@@ -387,29 +387,6 @@ export const useSearchGigs = (searchParams = {}) => {
   });
 };
 
-export const useSubmitProposal = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ gigId, proposalData }) => gigsAPI.submitProposal(gigId, proposalData),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: gigKeys.detail(variables.gigId) 
-      });
-      
-      toast.success(data.message || 'Proposal submitted successfully!');
-    },
-    onError: (error) => {
-      if (error.code === 'DUPLICATE_PROPOSAL') {
-        toast.error('You have already submitted a proposal for this gig.');
-      } else if (error.code === 'PRIVATE_GIG') {
-        toast.error('This gig is private and not accepting proposals.');
-      } else {
-        toast.error(error.data?.message || error.message || 'Failed to submit proposal');
-      }
-    },
-  });
-};
 
 export const useExportGigs = () => {
   return useMutation({

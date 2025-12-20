@@ -25,7 +25,6 @@ import {
   Award,
   Globe,
   Zap,
-  Briefcase,
   FileCheck,
   AlertCircle,
   Eye
@@ -65,7 +64,6 @@ const GigDetails = () => {
   // Local state
   const [isLiked, setIsLiked] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-  const [proposalsCount, setProposalsCount] = useState(0);
   const [viewCount, setViewCount] = useState(0);
 
   // Update gig details in store when data loads
@@ -73,7 +71,6 @@ const GigDetails = () => {
     if (gig) {
       setGigDetails(gig);
       // Set derived state
-      setProposalsCount(gig.proposals?.length || 0);
       // Simulate view count (in a real app, this would come from backend)
       setViewCount(Math.floor(Math.random() * 500) + 100);
     }
@@ -103,25 +100,7 @@ const GigDetails = () => {
     setShowMessaging(true);
   };
 
-  const handleSubmitProposal = () => {
-    if (!isAuthenticated) {
-      toast.error('Please login to submit a proposal');
-      navigate('/sign-in');
-      return;
-    }
-    
-    if (gig?.createdBy?._id === user?._id) {
-      toast.error('You cannot submit proposal to your own gig');
-      return;
-    }
-    
-    if (gig?.status !== 'open') {
-      toast.error('This gig is no longer accepting proposals');
-      return;
-    }
-    
-    navigate(`/gig/${id}/submit-proposal`);
-  };
+  
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -342,10 +321,6 @@ const GigDetails = () => {
                     <span className="flex items-center text-gray-500 text-sm">
                       <Eye className="h-4 w-4 mr-1" />
                       {viewCount} views
-                    </span>
-                    <span className="flex items-center text-gray-500 text-sm">
-                      <Users className="h-4 w-4 mr-1" />
-                      {proposalsCount} proposals
                     </span>
                   </div>
                 </div>
@@ -631,71 +606,6 @@ const GigDetails = () => {
           {/* Right Column - Gig Info & Actions */}
           <div className="lg:col-span-1">
             <div className="sticky top-8 space-y-8">
-              {/* Submit Proposal Card */}
-              <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-8 shadow-2xl text-white">
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Briefcase className="h-8 w-8" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2">Submit Your Proposal</h3>
-                  <p className="text-emerald-100">
-                    {gig.status === 'open' 
-                      ? 'Apply now to get this project'
-                      : 'This gig is no longer accepting proposals'}
-                  </p>
-                </div>
-
-                <div className="space-y-4 mb-6">
-                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                    <span>Project Budget</span>
-                    <span className="font-bold">{formatPrice(gig.budget)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                    <span>Proposals Received</span>
-                    <span className="font-bold">{proposalsCount}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                    <span>Timeline</span>
-                    <span className="font-bold">{gig.timeline}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-white/10 rounded-lg backdrop-blur-sm">
-                    <span>Urgency</span>
-                    <span className="font-bold capitalize">{gig.urgency}</span>
-                  </div>
-                </div>
-
-                {gig.status === 'open' && (
-                  <>
-                    <button
-                      onClick={handleSubmitProposal}
-                      className="w-full py-4 bg-white text-emerald-700 rounded-xl hover:bg-emerald-50 transition-all font-bold shadow-lg hover:shadow-xl mb-4"
-                      disabled={!isAuthenticated || gig.createdBy?._id === user?._id}
-                    >
-                      {isAuthenticated 
-                        ? gig.createdBy?._id === user?._id 
-                          ? 'Your Own Gig'
-                          : 'Submit Proposal'
-                        : 'Login to Apply'}
-                    </button>
-                    
-                    {isAuthenticated && gig.createdBy?._id === user?._id && (
-                      <div className="text-center text-emerald-200 text-sm">
-                        <AlertCircle className="h-4 w-4 inline mr-1" />
-                        You cannot apply to your own gig
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <button
-                  onClick={() => setShowMessaging(true)}
-                  className="w-full py-3 bg-emerald-800/50 text-white rounded-xl hover:bg-emerald-800 transition-all font-medium border border-emerald-500/50"
-                  disabled={!isAuthenticated || gig.createdBy?._id === user?._id}
-                >
-                  <MessageCircle className="h-4 w-4 inline mr-2" />
-                  {isAuthenticated ? 'Message Client' : 'Login to Message'}
-                </button>
-              </div>
 
               {/* Project Quick Stats */}
               <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
@@ -712,10 +622,6 @@ const GigDetails = () => {
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${getUrgencyColor(gig.urgency)}`}>
                       {gig.urgency.toUpperCase()}
                     </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Proposals</span>
-                    <span className="font-semibold text-emerald-600">{proposalsCount}</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                     <span className="text-gray-600">Views</span>

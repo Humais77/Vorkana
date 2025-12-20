@@ -127,55 +127,6 @@ const gigSchema = new mongoose.Schema({
     ref: 'User',
     index: true,
   },
-  bids: [{
-    bidder: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    proposal: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: [2000, 'Proposal cannot exceed 2000 characters'],
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: [5, 'Minimum bid price is $5'],
-      max: [100000, 'Maximum bid price is $100,000'],
-    },
-    deliveryTime: {
-      type: Number,
-      required: true,
-      min: [1, 'Minimum delivery time is 1 day'],
-      max: [365, 'Maximum delivery time is 365 days'],
-    },
-    deliveryTimeUnit: {
-      type: String,
-      enum: ['hours', 'days', 'weeks'],
-      default: 'days',
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'accepted', 'rejected', 'withdrawn'],
-      default: 'pending',
-    },
-    submittedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  }],
-  selectedBid: {
-    type: mongoose.Schema.Types.ObjectId,
-    validate: {
-      validator: function(v) {
-        if (!v) return true;
-        return this.bids.some(b => b._id.equals(v));
-      },
-      message: 'Selected bid must be from the bids array'
-    }
-  },
   milestones: [{
     title: {
       type: String,
@@ -536,7 +487,6 @@ gigSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
 gigSchema.index({ visibility: 1, status: 1 }, { name: 'visibility_status_idx' });
 gigSchema.index({ budget: 1, status: 1 }, { name: 'budget_status_idx' });
 gigSchema.index({ deadline: 1 }, { name: 'deadline_idx' });
-gigSchema.index({ 'bids.bidder': 1 }, { name: 'bid_bidder_idx' });
 
 // Query helpers
 gigSchema.query.active = function() {

@@ -10,7 +10,6 @@ const {
   updateGig,
   deleteGig,
   restoreGig,
-  submitBid,
   getGigStats,
   searchGigs,
   exportGigs
@@ -19,7 +18,6 @@ const {
 const { 
   validateCreate, 
   validateUpdate, 
-  validateBid,
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
 const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
@@ -154,17 +152,6 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const bidLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  message: {
-    success: false,
-    message: 'Too many bid submissions, please try again later.',
-    code: 'BID_RATE_LIMIT_EXCEEDED'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // Public routes
 router.get('/', optionalAuth, validateQuery, getGigs);
@@ -175,8 +162,6 @@ router.get('/:id', optionalAuth, getGigById);
 router.get('/stats', protect, gigLimiter, getGigStats);
 router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
 
-// Submit bid (any authenticated user can bid)
-router.post('/:id/bids', protect, bidLimiter, validateBid, submitBid);
 
 // Update gig (creator or admin)
 router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);

@@ -51,7 +51,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     paymentStatus,
     disputeStatus,
     hasAttachments,
-    hasBids,
     hasMilestones,
     skillsRequired,
     createdAfter,
@@ -145,9 +144,7 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     filter.attachments = { $exists: true, $ne: [] };
   }
   
-  if (hasBids === true || hasBids === 'true') {
-    filter.bids = { $exists: true, $ne: [] };
-  }
+  
   
   if (hasMilestones === true || hasMilestones === 'true') {
     filter.milestones = { $exists: true, $ne: [] };
@@ -388,7 +385,6 @@ const getGigs = async (req, res, next) => {
       paymentStatus,
       disputeStatus,
       hasAttachments,
-      hasBids,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -438,7 +434,6 @@ const getGigs = async (req, res, next) => {
       paymentStatus,
       disputeStatus,
       hasAttachments,
-      hasBids,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -1003,10 +998,8 @@ const updateGig = async (req, res, next) => {
       delete sanitizedData.depositPaid;
       delete sanitizedData.rating;
       delete sanitizedData.clientReview;
-      delete sanitizedData.bidderReview;
       delete sanitizedData.disputeStatus;
       delete sanitizedData.disputeReason;
-      delete sanitizedData.selectedBid;
     }
 
     if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
@@ -1376,107 +1369,6 @@ const restoreGig = async (req, res, next) => {
   }
 };
 
-// Submit Bid (Any authenticated user can bid)
-const submitBid = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-  
-  try {
-    const { id } = req.params;
-    const { proposal, price, deliveryTime, deliveryTimeUnit = 'days' } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid gig ID',
-        code: 'INVALID_ID',
-        requestId
-      });
-    }
-
-    const gig = await Gig.findOne({ 
-      _id: id, 
-      status: 'open',
-      deletedAt: null
-    });
-
-    if (!gig) {
-      return res.status(404).json({
-        success: false,
-        message: 'Gig not found or not open for bids',
-        code: 'GIG_NOT_FOUND',
-        requestId
-      });
-    }
-
-    // Check gig visibility
-    if (gig.visibility === 'private' && gig.createdBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'This gig is private',
-        code: 'PRIVATE_GIG',
-        requestId
-      });
-    }
-
-    if (gig.createdBy.toString() === req.user._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot submit bid to your own gig',
-        code: 'SELF_BID',
-        requestId
-      });
-    }
-
-    // Check if user has already submitted a bid
-    const existingBid = gig.bids.find(b => b.bidder.toString() === req.user._id.toString());
-    if (existingBid) {
-      return res.status(400).json({
-        success: false,
-        message: 'You have already submitted a bid for this gig',
-        code: 'DUPLICATE_BID',
-        requestId
-      });
-    }
-
-    const newBid = {
-      bidder: req.user._id,
-      proposal: sanitizeText(proposal),
-      price: parseFloat(price),
-      deliveryTime: parseInt(deliveryTime),
-      deliveryTimeUnit,
-      status: 'pending',
-      submittedAt: new Date()
-    };
-
-    gig.bids.push(newBid);
-    gig.lastUpdatedBy = req.user._id;
-    await gig.save();
-
-    logAudit('SUBMIT_BID', 'GIG', id, req.user._id, {
-      price: newBid.price,
-      deliveryTime: newBid.deliveryTime
-    });
-
-    const responseTime = Date.now() - startTime;
-    
-    res.json({
-      success: true,
-      message: 'Bid submitted successfully',
-      data: newBid,
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-
-  } catch (error) {
-    logAudit('ERROR', 'GIG', 'SUBMIT_BID', req.user._id, { 
-      id, 
-      error: error.message 
-    });
-    next(error);
-  }
-};
 
 // Get Gig Statistics
 const getGigStats = async (req, res, next) => {
@@ -1530,8 +1422,6 @@ const getGigStats = async (req, res, next) => {
                 closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
                 totalBudget: { $sum: '$budget' },
                 avgBudget: { $avg: '$budget' },
-                totalBids: { $sum: { $size: '$bids' } },
-                avgBidsPerGig: { $avg: { $size: '$bids' } }
               }
             }
           ],
@@ -1542,7 +1432,6 @@ const getGigStats = async (req, res, next) => {
                 _id: '$projectCategory',
                 count: { $sum: 1 },
                 avgBudget: { $avg: '$budget' },
-                totalBids: { $sum: { $size: '$bids' } },
                 maxBudget: { $max: '$budget' },
                 minBudget: { $min: '$budget' }
               }
@@ -1578,7 +1467,6 @@ const getGigStats = async (req, res, next) => {
               $project: {
                 title: 1,
                 budget: 1,
-                bidsCount: { $size: '$bids' },
                 slug: 1,
                 projectCategory: 1
               }
@@ -1605,22 +1493,10 @@ const getGigStats = async (req, res, next) => {
                 default: "100000+",
                 output: {
                   count: { $sum: 1 },
-                  avgBids: { $avg: { $size: '$bids' } }
                 }
               }
             }
           ],
-          bidStats: [
-            { $unwind: { path: '$bids', preserveNullAndEmptyArrays: true } },
-            {
-              $group: {
-                _id: '$bids.status',
-                count: { $sum: 1 },
-                avgPrice: { $avg: '$bids.price' },
-                avgDeliveryTime: { $avg: '$bids.deliveryTime' }
-              }
-            }
-          ]
         }
       }
     ]);
@@ -1636,8 +1512,6 @@ const getGigStats = async (req, res, next) => {
         closedGigs: 0,
         totalBudget: 0,
         avgBudget: 0,
-        totalBids: 0,
-        avgBidsPerGig: 0
       }],
       byCategory: [],
       byStatus: [],
@@ -1645,7 +1519,6 @@ const getGigStats = async (req, res, next) => {
       topGigs: [],
       growth: [],
       budgetDistribution: [],
-      bidStats: []
     };
 
     if (!sanitizedStats.overview || sanitizedStats.overview.length === 0) {
@@ -1659,8 +1532,6 @@ const getGigStats = async (req, res, next) => {
         closedGigs: 0,
         totalBudget: 0,
         avgBudget: 0,
-        totalBids: 0,
-        avgBidsPerGig: 0
       }];
     }
 
@@ -1693,8 +1564,6 @@ const getGigStats = async (req, res, next) => {
           closedGigs: 0,
           totalBudget: 0,
           avgBudget: 0,
-          totalBids: 0,
-          avgBidsPerGig: 0
         }],
         byCategory: [],
         byStatus: [],
@@ -1702,7 +1571,6 @@ const getGigStats = async (req, res, next) => {
         topGigs: [],
         growth: [],
         budgetDistribution: [],
-        bidStats: []
       },
       message: 'Error fetching statistics',
       error: error.message,
@@ -1753,7 +1621,7 @@ const exportGigs = async (req, res, next) => {
         'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
         'Category', 'Status', 'Urgency', 'Visibility', 'Created By',
         'Assigned To', 'Created At', 'Updated At', 'Deadline',
-        'Bids Count', 'Skills Required', 'Deliverables'
+        'Skills Required', 'Deliverables'
       ];
 
       const csvRows = gigs.map(gig => [
@@ -1772,7 +1640,6 @@ const exportGigs = async (req, res, next) => {
         new Date(gig.createdAt).toISOString(),
         new Date(gig.updatedAt).toISOString(),
         gig.deadline ? new Date(gig.deadline).toISOString() : '',
-        gig.bids?.length || 0,
         `"${(gig.skillsRequired || []).join(', ').replace(/"/g, '""')}"`,
         `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`
       ]);
@@ -1821,7 +1688,6 @@ module.exports = {
   updateGig,
   deleteGig,
   restoreGig,
-  submitBid,
   getGigStats,
   exportGigs,
 };
