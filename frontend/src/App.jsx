@@ -18,6 +18,7 @@ import GigDetails from './layouts/pages/GigDetails';
 import CategoryPage from './layouts/pages/CategoryPage';
 import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
+import Dashboard from './layouts/pages/Dashboard'; 
 import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
@@ -43,7 +44,6 @@ const App = () => {
 
   const [socketStatus, setSocketStatus] = useState('disconnected');
 
-  // Auth Modal State
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
 
@@ -57,7 +57,6 @@ const App = () => {
     setShowAuthModal(true);
   };
 
-  /* ---------------- SOCKET HANDLING ---------------- */
   const initializeSocketConnection = useCallback(() => {
     if (!isAuthenticated) return;
 
@@ -110,6 +109,7 @@ const App = () => {
             <Route path="/categories/:categoryId" element={<CategoryPage />} />
             <Route path="/gigs" element={<GigListingsPage />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/services/create" element={<CreateService />} />
             <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/services" element={<ServiceListingPage />} />
@@ -122,7 +122,6 @@ const App = () => {
           
           <Route path="/admin/login" element={<AdminLogin />} />
 
-          {/* ✅ FIXED: Use wildcard (*) for admin route */}
           <Route path="/admin/*" element={
             <ProtectedAdminRoute>
               <AdminLayout>

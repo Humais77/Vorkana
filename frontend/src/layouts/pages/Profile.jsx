@@ -1,1277 +1,1269 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Plus,
-  Trash2,
-  CheckSquare,
-  Square,
-  ExternalLink,
-  FileText,
-  DollarSign,
-  Tag,
-  CheckCircle,
-  Loader2,
-  X,
-  Award,
-  User,
-  Briefcase,
-  Grid3x3,
-  List,
-  Edit,
-  Star,
-  Package
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
-import { 
-  useMyGigs, 
-  useDeleteMultipleGigs, 
-  useUpdateMultipleGigsStatus,
-  extractGigsFromResponse
-} from '../../hooks/useGigs';
-import { useMyServices, useDeleteService } from '../../hooks/useServices';
+import {
+  Edit2,
+  MapPin,
+  Mail,
+  Phone,
+  Linkedin,
+  Github,
+  Briefcase,
+  Globe,
+  Calendar,
+  User,
+  Shield,
+  Eye,
+  EyeOff,
+  Languages,
+  Settings,
+  ExternalLink,
+  Save,
+  X,
+  Plus,
+  Eye as EyeIcon,
+  AlertCircle,
+  CheckCircle
+} from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import ProfileSidebar from '../../components/ProfileSidebar';
+import default_pp from '../../assets/default_pp-modified.png';
+import { format, parseISO } from 'date-fns';
 
 const Profile = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { user, isAuthenticated } = useAuthStore();
-  
-  // Parse tab from URL
-  const searchParams = new URLSearchParams(location.search);
-  const urlTab = searchParams.get('tab');
-  
-  const [selectedGigs, setSelectedGigs] = useState([]);
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [allSelected, setAllSelected] = useState(false);
-  const [allServicesSelected, setAllServicesSelected] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState(urlTab || 'services');
-  const [viewMode, setViewMode] = useState('grid');
-  
-  // Use services hook
-  const { 
-    data: servicesResponse, 
-    isLoading: servicesLoading, 
-    error: servicesError, 
-    refetch: refetchServices 
-  } = useMyServices({
-    status: serviceStatusFilter === 'all' ? undefined : serviceStatusFilter,
-    limit: 50,
-    sort: 'createdAt',
-    order: 'desc'
+  const { user, isAuthenticated, updateUser } = useAuthStore();
+
+  // States
+  const [showSetupPrompt, setShowSetupPrompt] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [newLanguage, setNewLanguage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileCompletion, setProfileCompletion] = useState(0);
+  const [missingFields, setMissingFields] = useState([]);
+  const [nextSuggestion, setNextSuggestion] = useState('');
+
+  // Form data
+  const [formData, setFormData] = useState({
+    bio: '',
+    phoneNumber: '',
+    country: '',
+    city: '',
+    languages: [],
+    occupation: '',
+    education: '',
+    gender: '',
+    dateOfBirth: '',
+    github: '',
+    linkedin: '',
+    website: '',
+    privacySettings: {
+      profileVisibility: 'public',
+      showEmail: false,
+      showPhone: false,
+      showLocation: true,
+      showLastSeen: true
+    }
   });
 
-  const services = useMemo(() => {
-  if (!servicesResponse) return [];
-  
-  // Try different response formats
-  if (Array.isArray(servicesResponse)) {
-    return servicesResponse;
-  } else if (servicesResponse.data && Array.isArray(servicesResponse.data)) {
-    return servicesResponse.data;
-  } else if (servicesResponse.services && Array.isArray(servicesResponse.services)) {
-    return servicesResponse.services;
-  }
-  
-  return [];
-}, [servicesResponse]);
-
-  const { 
-    data: gigsResponse, 
-    isLoading: gigsLoading, 
-    error: gigsError, 
-    refetch: refetchGigs 
-  } = useMyGigs({
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    limit: 50,
-    sort: 'createdAt',
-    order: 'desc'
-  });
-
-  const gigs = useMemo(() => 
-    extractGigsFromResponse(gigsResponse) || [], 
-    [gigsResponse]
-  );
-
-  const deleteMultipleGigsMutation = useDeleteMultipleGigs();
-  const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
-  const deleteServiceMutation = useDeleteService();
-  
-  // Calculate stats from actual data
-  const stats = useMemo(() => {
-    const activeServices = services.filter(s => s.status === 'active').length;
-    const activeGigs = gigs.filter(g => g.status === 'active' || g.status === 'open').length;
+  // Calculate profile completion percentage
+  const calculateProfileCompletion = (userData = user, formDataState = formData) => {
+    if (!userData) return 0;
     
-    return {
-      totalGigs: gigs.length,
-      activeGigs: activeGigs,
-      totalServices: services.length,
-      activeServices: activeServices,
+    const fieldWeights = {
+      bio: { weight: 20, value: formDataState.bio?.trim() || userData.bio },
+      occupation: { weight: 15, value: formDataState.occupation?.trim() || userData.occupation },
+      education: { weight: 15, value: formDataState.education?.trim() || userData.education },
+      phoneNumber: { weight: 10, value: formDataState.phoneNumber?.trim() || userData.phoneNumber },
+      country: { weight: 8, value: formDataState.country?.trim() || userData.country },
+      city: { weight: 7, value: formDataState.city?.trim() || userData.city },
+      languages: { weight: 10, value: (formDataState.languages?.length > 0 || userData.languages?.length > 0) },
+      dateOfBirth: { weight: 5, value: formDataState.dateOfBirth || userData.dateOfBirth },
+      gender: { weight: 5, value: formDataState.gender?.trim() || userData.gender },
+      socialLinks: { 
+        weight: 5, 
+        value: (formDataState.linkedin || formDataState.github || formDataState.website || 
+                userData.linkedin || userData.github || userData.website) 
+      }
     };
-  }, [gigs, services]);
 
-  const resetSelection = useCallback(() => {
-    setSelectedGigs([]);
-    setSelectedServices([]);
-    setAllSelected(false);
-    setAllServicesSelected(false);
-  }, []);
+    let totalScore = 0;
+    let maxScore = 0;
 
-  useEffect(() => {
-    resetSelection();
-  }, [gigs, services, resetSelection]);
-
-  // Sync URL with tab state
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const currentTab = searchParams.get('tab') || 'services';
-    if (currentTab !== activeTab) {
-      setActiveTab(currentTab);
-    }
-  }, [location.search, activeTab]);
-
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    // Update URL without reloading page
-    navigate(`/profile?tab=${tab}`, { replace: true });
-  };
-
-  const handleCreateService = () => {
-    navigate('/services/create');
-  };
-
-  const handleCreateGig = () => {
-    navigate('/create-gig');
-  };
-
-  const handleServiceClick = (serviceId) => {
-    navigate(`/services/${serviceId}`);
-  };
-
-  const handleGigClick = (gigId) => {
-    navigate(`/gig/${gigId}`);
-  };
-
-  const handleSelectAll = () => {
-    if (allSelected) {
-      setSelectedGigs([]);
-    } else {
-      const filteredGigs = filterGigs(gigs);
-      setSelectedGigs(filteredGigs.map(gig => gig._id || gig.id));
-    }
-    setAllSelected(!allSelected);
-  };
-
-  const handleSelectAllServices = () => {
-    if (allServicesSelected) {
-      setSelectedServices([]);
-    } else {
-      const filteredServices = filterServices(services);
-      setSelectedServices(filteredServices.map(service => service._id || service.id));
-    }
-    setAllServicesSelected(!allServicesSelected);
-  };
-
-  const handleSelectGig = (gigId) => {
-    setSelectedGigs(prev =>
-      prev.includes(gigId)
-        ? prev.filter(id => id !== gigId)
-        : [...prev, gigId]
-    );
-  };
-
-  const handleSelectService = (serviceId) => {
-    setSelectedServices(prev =>
-      prev.includes(serviceId)
-        ? prev.filter(id => id !== serviceId)
-        : [...prev, serviceId]
-    );
-  };
-
-  const handleDeleteGigs = async () => {
-    if (selectedGigs.length === 0) {
-      toast.error('Please select gigs to delete');
-      return;
-    }
-
-    const confirmed = window.confirm(`Are you sure you want to delete ${selectedGigs.length} gig(s)? This action cannot be undone.`);
-    if (!confirmed) return;
-
-    try {
-      await deleteMultipleGigsMutation.mutateAsync(selectedGigs);
-      resetSelection();
-      toast.success('Gigs deleted successfully!');
-    } catch (error) {
-      toast.error('Failed to delete gigs');
-    }
-  };
-
-  const handleDeleteServices = async () => {
-    if (selectedServices.length === 0) {
-      toast.error('Please select services to delete');
-      return;
-    }
-
-    const confirmed = window.confirm(`Are you sure you want to delete ${selectedServices.length} service(s)? This action cannot be undone.`);
-    if (!confirmed) return;
-
-    try {
-      // Delete services one by one
-      const deletePromises = selectedServices.map(serviceId => 
-        deleteServiceMutation.mutateAsync({ id: serviceId })
-      );
+    Object.entries(fieldWeights).forEach(([field, config]) => {
+      maxScore += config.weight;
       
-      await Promise.all(deletePromises);
-      resetSelection();
-      refetchServices();
-      toast.success('Services deleted successfully!');
-    } catch (error) {
-      toast.error('Failed to delete services');
-    }
+      if (typeof config.value === 'boolean') {
+        if (config.value) totalScore += config.weight;
+      } else if (config.value && config.value !== '') {
+        if (field === 'bio' && config.value.length < 20) {
+          totalScore += Math.min(config.weight, Math.floor((config.value.length / 50) * config.weight));
+        } else {
+          totalScore += config.weight;
+        }
+      }
+    });
+
+    return Math.min(100, Math.round((totalScore / maxScore) * 100));
   };
 
-  const handleUpdateGigStatus = async (status) => {
-    if (selectedGigs.length === 0) {
-      toast.error('Please select gigs to update');
-      return;
+  // Get missing fields
+  const getMissingFields = () => {
+    const missing = [];
+    
+    if (!formData.bio?.trim() && !user?.bio) missing.push({ field: 'bio', label: 'Bio', weight: 20 });
+    if (!formData.occupation?.trim() && !user?.occupation) missing.push({ field: 'occupation', label: 'Occupation', weight: 15 });
+    if (!formData.education?.trim() && !user?.education) missing.push({ field: 'education', label: 'Education', weight: 15 });
+    if (!formData.phoneNumber?.trim() && !user?.phoneNumber) missing.push({ field: 'phoneNumber', label: 'Phone Number', weight: 10 });
+    if ((!formData.country?.trim() && !user?.country) || (!formData.city?.trim() && !user?.city)) {
+      missing.push({ field: 'location', label: 'Location', weight: 15 });
     }
+    if ((formData.languages?.length === 0 && user?.languages?.length === 0)) missing.push({ field: 'languages', label: 'Languages', weight: 10 });
+    
+    // Sort by weight (importance)
+    return missing.sort((a, b) => b.weight - a.weight);
+  };
 
-    try {
-      await updateMultipleGigsStatusMutation.mutateAsync({
-        ids: selectedGigs,
-        status
+  // Get next suggested action
+  const getNextSuggestion = () => {
+    const missing = getMissingFields();
+    
+    if (missing.length === 0) {
+      return 'Your profile is complete!';
+    }
+    
+    const field = missing[0];
+    const suggestions = {
+      'bio': 'Add a bio to',
+      'occupation': 'Add your occupation',
+      'education': 'Add your education',
+      'phoneNumber': 'Add your phone number',
+      'location': 'Add your location',
+      'languages': 'Add languages you speak'
+    };
+    
+    return suggestions[field.field] || `Complete your ${field.label}`;
+  };
+
+  // Initialize form data and calculate completion
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        bio: user.bio || '',
+        phoneNumber: user.phoneNumber || '',
+        country: user.country || '',
+        city: user.city || '',
+        languages: user.languages || [],
+        occupation: user.occupation || '',
+        education: user.education || '',
+        gender: user.gender || '',
+        dateOfBirth: user.dateOfBirth ? format(parseISO(user.dateOfBirth), 'yyyy-MM-dd') : '',
+        github: user.github || '',
+        linkedin: user.linkedin || '',
+        website: user.website || '',
+        privacySettings: user.privacySettings || {
+          profileVisibility: 'public',
+          showEmail: false,
+          showPhone: false,
+          showLocation: true,
+          showLastSeen: true
+        }
       });
-      resetSelection();
-      toast.success(`Gigs marked as ${status}`);
+
+      const completion = calculateProfileCompletion();
+      setProfileCompletion(completion);
+      setMissingFields(getMissingFields());
+      setNextSuggestion(getNextSuggestion());
+      
+      if (completion < 60) {
+        setShowSetupPrompt(true);
+      }
+    }
+  }, [user]);
+
+  // Update completion when formData changes
+  useEffect(() => {
+    if (user) {
+      const completion = calculateProfileCompletion(user, formData);
+      setProfileCompletion(completion);
+      setMissingFields(getMissingFields());
+      setNextSuggestion(getNextSuggestion());
+    }
+  }, [formData, user]);
+
+  // Save handler
+  const handleSave = async (field) => {
+    if (isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      const updateData = {};
+      
+      if (field === 'all') {
+        updateData.bio = formData.bio;
+        updateData.phoneNumber = formData.phoneNumber;
+        updateData.country = formData.country;
+        updateData.city = formData.city;
+        updateData.languages = formData.languages;
+        updateData.occupation = formData.occupation;
+        updateData.education = formData.education;
+        updateData.gender = formData.gender;
+        updateData.dateOfBirth = formData.dateOfBirth || null;
+        updateData.github = formData.github;
+        updateData.linkedin = formData.linkedin;
+        updateData.website = formData.website;
+        updateData.privacySettings = formData.privacySettings;
+        updateData.lastProfileVisit = new Date().toISOString();
+      } else {
+        updateData[field] = formData[field];
+        updateData.lastProfileVisit = new Date().toISOString();
+      }
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (updateUser) {
+        updateUser(updateData);
+      }
+
+      toast.success(field === 'all' ? 'Profile updated!' : `${field} updated!`);
+      setEditingField(null);
+      
+      if (profileCompletion >= 70) {
+        setShowSetupPrompt(false);
+      }
     } catch (error) {
-      toast.error('Failed to update gigs status');
+      toast.error('Failed to update profile');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleUpdateServiceStatus = async (status) => {
-    if (selectedServices.length === 0) {
-      toast.error('Please select services to update');
-      return;
+  const handleCancel = () => {
+    if (user) {
+      setFormData({
+        bio: user.bio || '',
+        phoneNumber: user.phoneNumber || '',
+        country: user.country || '',
+        city: user.city || '',
+        languages: user.languages || [],
+        occupation: user.occupation || '',
+        education: user.education || '',
+        gender: user.gender || '',
+        dateOfBirth: user.dateOfBirth ? format(parseISO(user.dateOfBirth), 'yyyy-MM-dd') : '',
+        github: user.github || '',
+        linkedin: user.linkedin || '',
+        website: user.website || '',
+        privacySettings: user.privacySettings || {
+          profileVisibility: 'public',
+          showEmail: false,
+          showPhone: false,
+          showLocation: true,
+          showLastSeen: true
+        }
+      });
     }
-
-    toast.info('Service status update feature coming soon');
-    // TODO: Implement service status update
+    setEditingField(null);
   };
 
-  const filterGigs = useCallback((gigsToFilter) => {
-    if (statusFilter === 'all') return gigsToFilter;
-    return gigsToFilter.filter(gig => gig.status === statusFilter);
-  }, [statusFilter]);
-
-  const filterServices = useCallback((servicesToFilter) => {
-    if (serviceStatusFilter === 'all') return servicesToFilter;
-    return servicesToFilter.filter(service => service.status === serviceStatusFilter);
-  }, [serviceStatusFilter]);
-
-  const filteredGigs = useMemo(() => filterGigs(gigs), [gigs, filterGigs]);
-  const filteredServices = useMemo(() => filterServices(services), [services, filterServices]);
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active':
-      case 'open': return 'bg-green-100 text-green-800';
-      case 'draft': return 'bg-yellow-100 text-yellow-800';
-      case 'paused': 
-      case 'cancelled': 
-      case 'denied': 
-      case 'suspended': return 'bg-orange-100 text-orange-800';
-      case 'completed': 
-      case 'closed': 
-      case 'pending': return 'bg-blue-100 text-blue-800';
-      case 'in_progress': return 'bg-purple-100 text-purple-800';
-      case 'assigned': return 'bg-indigo-100 text-indigo-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const addLanguage = () => {
+    if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
+      setFormData({
+        ...formData,
+        languages: [...formData.languages, newLanguage.trim()]
+      });
+      setNewLanguage('');
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'active':
-      case 'open': return <CheckCircle className="w-4 h-4" />;
-      case 'draft': return <FileText className="w-4 h-4" />;
-      case 'paused': 
-      case 'cancelled': 
-      case 'denied': 
-      case 'suspended': return <X className="w-4 h-4" />;
-      case 'completed': 
-      case 'closed': 
-      case 'pending': return <Award className="w-4 h-4" />;
-      case 'in_progress': return <Loader2 className="w-4 h-4 animate-spin" />;
-      case 'assigned': return <User className="w-4 h-4" />;
-      default: return null;
+  const removeLanguage = (language) => {
+    setFormData({
+      ...formData,
+      languages: formData.languages.filter(l => l !== language)
+    });
+  };
+
+  const calculateAge = (dateString) => {
+    if (!dateString) return null;
+    const today = new Date();
+    const birthDate = new Date(dateString);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    
+    return age;
+  };
+
+  const togglePrivacySetting = (setting) => {
+    setFormData({
+      ...formData,
+      privacySettings: {
+        ...formData.privacySettings,
+        [setting]: !formData.privacySettings[setting]
+      }
+    });
+  };
+
+  const setProfileVisibility = (visibility) => {
+    setFormData({
+      ...formData,
+      privacySettings: {
+        ...formData.privacySettings,
+        profileVisibility: visibility
+      }
+    });
+  };
+
+  const handleCompleteNow = () => {
+    const missing = getMissingFields();
+    if (missing.length > 0) {
+      const fieldMap = {
+        'bio': 'bio',
+        'occupation': 'professional',
+        'education': 'professional',
+        'phoneNumber': 'phone',
+        'location': 'location',
+        'languages': 'languages'
+      };
+      setEditingField(fieldMap[missing[0].field] || 'bio');
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please sign in to view your profile</h2>
-          <Link
-            to="/sign-in"
-            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            Sign In
-          </Link>
+  const renderPreviewMode = () => (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <EyeIcon className="w-5 h-5 text-gray-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Profile Preview</h2>
         </div>
+        <button
+          onClick={() => setIsPreviewMode(false)}
+          className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          Exit Preview
+        </button>
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Left Sidebar - Profile Info */}
-          <div className="lg:col-span-1">
-            <ProfileSidebar />
-          </div>
-
-          <div className="lg:col-span-3">
-            <Dashboard 
-              activeTab={activeTab}
-              handleTabChange={handleTabChange}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              selectedGigs={selectedGigs}
-              selectedServices={selectedServices}
-              allSelected={allSelected}
-              allServicesSelected={allServicesSelected}
-              statusFilter={statusFilter}
-              serviceStatusFilter={serviceStatusFilter}
-              filteredGigs={filteredGigs}
-              filteredServices={filteredServices}
-              servicesLoading={servicesLoading}
-              gigsLoading={gigsLoading}
-              stats={stats}
-              handleSelectAll={handleSelectAll}
-              handleSelectAllServices={handleSelectAllServices}
-              handleSelectGig={handleSelectGig}
-              handleSelectService={handleSelectService}
-              handleUpdateGigStatus={handleUpdateGigStatus}
-              handleUpdateServiceStatus={handleUpdateServiceStatus}
-              handleDeleteGigs={handleDeleteGigs}
-              handleDeleteServices={handleDeleteServices}
-              handleGigClick={handleGigClick}
-              handleServiceClick={handleServiceClick}
-              handleCreateGig={handleCreateGig}
-              handleCreateService={handleCreateService}
-              setStatusFilter={setStatusFilter}
-              setServiceStatusFilter={setServiceStatusFilter}
-              getStatusColor={getStatusColor}
-              getStatusIcon={getStatusIcon}
-              deleteMultipleGigsMutation={deleteMultipleGigsMutation}
-              updateMultipleGigsStatusMutation={updateMultipleGigsStatusMutation}
-            />
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <img
+            src={user?.picture || default_pp}
+            alt={user?.name}
+            className="w-16 h-16 rounded-full object-cover border border-gray-300"
+          />
+          <div>
+            <h3 className="font-semibold text-gray-900">{user?.name}</h3>
+            {formData.privacySettings.showEmail && (
+              <p className="text-gray-600 text-sm">{user?.email}</p>
+            )}
+            {(formData.city || formData.country) && formData.privacySettings.showLocation && (
+              <p className="text-gray-500 text-sm flex items-center gap-1 mt-1">
+                <MapPin className="w-3 h-3" />
+                {formData.city}{formData.city && formData.country && ', '}{formData.country}
+              </p>
+            )}
           </div>
         </div>
+
+        {formData.bio && (
+          <div>
+            <h4 className="font-medium text-gray-700 mb-2">About</h4>
+            <p className="text-gray-600 text-sm">{formData.bio}</p>
+          </div>
+        )}
+
+        {(formData.occupation || formData.education) && (
+          <div className="grid grid-cols-2 gap-4">
+            {formData.occupation && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-500">Occupation</h4>
+                <p className="text-gray-900">{formData.occupation}</p>
+              </div>
+            )}
+            {formData.education && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-500">Education</h4>
+                <p className="text-gray-900">{formData.education}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {formData.languages.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-700 mb-2">Languages</h4>
+            <div className="flex flex-wrap gap-2">
+              {formData.languages.map((lang, idx) => (
+                <span key={idx} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                  {lang}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-};
 
-const Dashboard = ({
-  activeTab,
-  handleTabChange,
-  viewMode,
-  setViewMode,
-  selectedGigs,
-  selectedServices,
-  allSelected,
-  allServicesSelected,
-  statusFilter,
-  serviceStatusFilter,
-  filteredGigs,
-  filteredServices,
-  servicesLoading,
-  gigsLoading,
-  stats,
-  handleSelectAll,
-  handleSelectAllServices,
-  handleSelectGig,
-  handleSelectService,
-  handleUpdateGigStatus,
-  handleUpdateServiceStatus,
-  handleDeleteGigs,
-  handleDeleteServices,
-  handleGigClick,
-  handleServiceClick,
-  handleCreateGig,
-  handleCreateService,
-  setStatusFilter,
-  setServiceStatusFilter,
-  getStatusColor,
-  getStatusIcon,
-  deleteMultipleGigsMutation,
-  updateMultipleGigsStatusMutation
-}) => {
-  const isLoading = activeTab === 'services' ? servicesLoading : gigsLoading;
-  const hasSelectedItems = activeTab === 'services' 
-    ? selectedServices.length > 0 
-    : selectedGigs.length > 0;
-  const selectedCount = activeTab === 'services' 
-    ? selectedServices.length 
-    : selectedGigs.length;
-  const items = activeTab === 'services' ? filteredServices : filteredGigs;
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please sign in</h2>
+          <button
+            onClick={() => navigate('/sign-in')}
+            className="px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800"
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {/* Header Section */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleCreateGig}
-              disabled={isLoading}
-              className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Gig
-            </button>
-            <button
-              onClick={handleCreateService}
-              disabled={isLoading}
-              className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Service
-            </button>
-          </div>
-        </div>
-        
-        {/* Stats Counts Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-            <div className="flex items-center">
-              <Package className="w-5 h-5 text-blue-600 mr-2" />
-              <span className="text-sm font-medium text-blue-900">Total Services</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-2">{stats.totalServices}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-blue-600">
-                ({stats.activeServices} active)
-              </span>
-            </div>
-          </div>
-          <div className="bg-green-50 rounded-xl p-4 border border-green-100">
-            <div className="flex items-center">
-              <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-              <span className="text-sm font-medium text-green-900">Active Services</span>
-            </div>
-            <p className="text-2xl font-bold text-green-900 mt-2">{stats.activeServices}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-green-600">
-                of {stats.totalServices} total
-              </span>
-            </div>
-          </div>
-          <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
-            <div className="flex items-center">
-              <FileText className="w-5 h-5 text-orange-600 mr-2" />
-              <span className="text-sm font-medium text-orange-900">Total Gigs</span>
-            </div>
-            <p className="text-2xl font-bold text-orange-900 mt-2">{stats.totalGigs}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-orange-600">
-                ({stats.activeGigs} active)
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <div className="flex border border-gray-200 rounded-xl overflow-hidden">
-              <button
-                onClick={() => handleTabChange('services')}
-                className={`px-5 py-2 font-medium transition-all ${
-                  activeTab === 'services'
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Briefcase className="w-4 h-4" />
-                  Services ({stats.totalServices})
-                </div>
-              </button>
-              <button
-                onClick={() => handleTabChange('gigs')}
-                className={`px-5 py-2 font-medium transition-all ${
-                  activeTab === 'gigs'
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  Gigs ({stats.totalGigs})
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 ${viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-              >
-                <Grid3x3 className="w-5 h-5 text-gray-600" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-2 ${viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-              >
-                <List className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bulk Actions Bar */}
-      <AnimatePresence>
-        {hasSelectedItems && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2 }}
-            className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200 p-4 mb-6"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center">
-                <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
-                <span className="font-medium text-blue-900">
-                  {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
-                </span>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Setup Prompt */}
+        {showSetupPrompt && (
+          <div className="mb-8 bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <AlertCircle className="w-6 h-6 text-gray-600" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900 mb-1">Complete your profile</h3>
+                <p className="text-gray-600 text-sm">
+                  {nextSuggestion}
+                </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {activeTab === 'gigs' ? (
-                  <>
-                    <button
-                      onClick={() => handleUpdateGigStatus('active')}
-                      disabled={updateMultipleGigsStatusMutation.isPending}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
-                    </button>
-                    <button
-                      onClick={() => handleUpdateGigStatus('paused')}
-                      disabled={updateMultipleGigsStatusMutation.isPending}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
-                    </button>
-                    <button
-                      onClick={handleDeleteGigs}
-                      disabled={deleteMultipleGigsMutation.isPending}
-                      className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </>
+              <button
+                onClick={() => setShowSetupPrompt(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Profile Completion</span>
+                <span>{profileCompletion}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    profileCompletion >= 80 ? 'bg-green-600' :
+                    profileCompletion >= 60 ? 'bg-yellow-500' : 'bg-gray-900'
+                  }`}
+                  style={{ width: `${profileCompletion}%` }}
+                />
+              </div>
+            </div>
+            
+            
+            
+            <div className="flex gap-3">
+              <button
+                onClick={handleCompleteNow}
+                className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800"
+              >
+                Complete Now
+              </button>
+              <button
+                onClick={() => setShowSetupPrompt(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
+              >
+                Complete Later
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <img
+                src={user?.picture || default_pp}
+                alt={user?.name}
+                className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow"
+              />
+              
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{user?.name}</h1>
+              <p className="text-gray-600 mt-1">{user?.email}</p>
+              
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setIsPreviewMode(true)}
+              className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+            >
+              <EyeIcon className="w-4 h-4" />
+              Preview
+            </button>
+            
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 flex items-center gap-2"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Dashboard
+            </button>
+          </div>
+        </div>
+
+        {/* Preview Mode */}
+        {isPreviewMode && renderPreviewMode()}
+
+        {/* Edit Mode */}
+        {!isPreviewMode && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Bio Section */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-gray-900">About Me</h2>
+                    
+                  </div>
+                  <button
+                    onClick={() => editingField === 'bio' ? handleCancel() : setEditingField('bio')}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    {editingField === 'bio' ? (
+                      <X className="w-5 h-5" />
+                    ) : (
+                      <Edit2 className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+                
+                {editingField === 'bio' ? (
+                  <div>
+                    <textarea
+                      value={formData.bio}
+                      onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                      className="w-full p-3 border border-gray-300 rounded-lg resize-none mb-3"
+                      rows="4"
+                      placeholder="Tell us about yourself..."
+                      maxLength="500"
+                    />
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">{formData.bio.length}/500 characters</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave('bio')}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancel}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
-                  <>
+                  <p className="text-gray-600">
+                    {formData.bio || (
+                      <span className="text-gray-400">
+                        Add a bio 
+                        <button
+                          onClick={() => setEditingField('bio')}
+                          className="ml-2 text-gray-900 hover:underline"
+                        >
+                          + Add bio
+                        </button>
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              {/* Professional Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Occupation & Education */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                        <Briefcase className="w-5 h-5 text-gray-600" />
+                        Professional
+                      </h3>
+                      
+                    </div>
                     <button
-                      onClick={() => handleUpdateServiceStatus('active')}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                      onClick={() => setEditingField('professional')}
+                      className="text-gray-500 hover:text-gray-700"
                     >
-                      Activate
+                      <Edit2 className="w-5 h-5" />
                     </button>
+                  </div>
+                  
+                  {editingField === 'professional' ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Occupation (15%)</label>
+                        <input
+                          type="text"
+                          value={formData.occupation}
+                          onChange={(e) => setFormData({...formData, occupation: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                          placeholder="Your occupation"
+                        />
+                        <label className="block text-sm text-gray-600 mb-1">Education (15%)</label>
+                        <input
+                          type="text"
+                          value={formData.education}
+                          onChange={(e) => setFormData({...formData, education: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded-lg"
+                          placeholder="Your education"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave('all')}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancel}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-sm text-gray-500">Occupation</h4>
+                        <p className="text-gray-900">
+                          {formData.occupation || (
+                            <span className="text-gray-400">
+                              Add occupation
+                              <button
+                                onClick={() => setEditingField('professional')}
+                                className="ml-2 text-gray-900 hover:underline"
+                              >
+                                + Add
+                              </button>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm text-gray-500">Education</h4>
+                        <p className="text-gray-900">
+                          {formData.education || (
+                            <span className="text-gray-400">
+                              Add education 
+                              <button
+                                onClick={() => setEditingField('professional')}
+                                className="ml-2 text-gray-900 hover:underline"
+                              >
+                                + Add
+                              </button>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Personal Info */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <User className="w-5 h-5 text-gray-600" />
+                      Personal
+                    </h3>
                     <button
-                      onClick={() => handleUpdateServiceStatus('paused')}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors"
+                      onClick={() => setEditingField('personal')}
+                      className="text-gray-500 hover:text-gray-700"
                     >
-                      Pause
+                      <Edit2 className="w-5 h-5" />
                     </button>
-                    <button
-                      onClick={handleDeleteServices}
-                      className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
-                    </button>
-                  </>
+                  </div>
+                  
+                  {editingField === 'personal' ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Gender (5%)</label>
+                        <select
+                          value={formData.gender}
+                          onChange={(e) => setFormData({...formData, gender: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                        >
+                          <option value="">Select gender</option>
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                          <option value="other">Other</option>
+                          <option value="prefer-not-to-say">Prefer not to say</option>
+                        </select>
+                        <label className="block text-sm text-gray-600 mb-1">Date of Birth (5%)</label>
+                        <input
+                          type="date"
+                          value={formData.dateOfBirth}
+                          onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})}
+                          className="w-full p-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave('all')}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancel}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-sm text-gray-500">Gender</h4>
+                        <p className="text-gray-900 capitalize">
+                          {formData.gender ? formData.gender.replace(/-/g, ' ') : (
+                            <span className="text-gray-400">Not specified</span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm text-gray-500">Date of Birth</h4>
+                        <p className="text-gray-900">
+                          {formData.dateOfBirth ? (
+                            <>
+                              {format(new Date(formData.dateOfBirth), 'MMM d, yyyy')}
+                              {calculateAge(formData.dateOfBirth) && (
+                                <span className="text-gray-500 text-sm ml-2">
+                                  ({calculateAge(formData.dateOfBirth)} years)
+                                </span>
+                              )}
+                            </>
+                          ) : 'Not specified'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Languages */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <Languages className="w-5 h-5 text-gray-600" />
+                      Languages
+                    </h3>
+                    
+                  </div>
+                  <button
+                    onClick={() => setEditingField('languages')}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    {editingField === 'languages' ? (
+                      <X className="w-5 h-5" />
+                    ) : (
+                      <Edit2 className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+                
+                {editingField === 'languages' ? (
+                  <div>
+                    <div className="flex gap-2 mb-3">
+                      <input
+                        type="text"
+                        value={newLanguage}
+                        onChange={(e) => setNewLanguage(e.target.value)}
+                        placeholder="Add language"
+                        className="flex-1 p-2 border border-gray-300 rounded-lg"
+                        onKeyPress={(e) => e.key === 'Enter' && addLanguage()}
+                      />
+                      <button
+                        onClick={addLanguage}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {formData.languages.map((language, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full"
+                        >
+                          {language}
+                          <button
+                            onClick={() => removeLanguage(language)}
+                            className="text-gray-500 hover:text-gray-700"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSave('languages')}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.languages.length > 0 ? (
+                      formData.languages.map((language, index) => (
+                        <span
+                          key={index}
+                          className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                        >
+                          {language}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-gray-400">
+                        Add languages
+                        <button
+                          onClick={() => setEditingField('languages')}
+                          className="ml-2 text-gray-900 hover:underline"
+                        >
+                          + Add languages
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-          </motion.div>
+
+            {/* Right Column */}
+            <div className="space-y-6">
+              {/* Location */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <MapPin className="w-5 h-5 text-gray-600" />
+                      Location
+                    </h3>
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      15%
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setEditingField('location')}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <Edit2 className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                {editingField === 'location' ? (
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Country (8%)</label>
+                    <input
+                      type="text"
+                      value={formData.country}
+                      onChange={(e) => setFormData({...formData, country: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                      placeholder="Country"
+                    />
+                    <label className="block text-sm text-gray-600 mb-1">City (7%)</label>
+                    <input
+                      type="text"
+                      value={formData.city}
+                      onChange={(e) => setFormData({...formData, city: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                      placeholder="City"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSave('all')}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-600">
+                    {formData.city && formData.country ? (
+                      `${formData.city}, ${formData.country}`
+                    ) : formData.city ? (
+                      formData.city
+                    ) : formData.country ? (
+                      formData.country
+                    ) : (
+                      <span className="text-gray-400">
+                        Add location 
+                        <button
+                          onClick={() => setEditingField('location')}
+                          className="ml-2 text-gray-900 hover:underline"
+                        >
+                          + Add location
+                        </button>
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              {/* Contact */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">Contact</h3>
+                    
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Mail className="w-5 h-5 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Email</p>
+                        <p className="text-gray-900">{user?.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => togglePrivacySetting('showEmail')}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      {formData.privacySettings.showEmail ? (
+                        <Eye className="w-4 h-4" />
+                      ) : (
+                        <EyeOff className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Phone className="w-5 h-5 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Phone Number</p>
+                        <p className="text-gray-900">
+                          {formData.phoneNumber || (
+                            <span className="text-gray-400">
+                              Add phone 
+                              <button
+                                onClick={() => setEditingField('phone')}
+                                className="ml-2 text-gray-900 hover:underline"
+                              >
+                                + Add
+                              </button>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {formData.phoneNumber && (
+                        <button
+                          onClick={() => setEditingField('phone')}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => togglePrivacySetting('showPhone')}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        {formData.privacySettings.showPhone ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {editingField === 'phone' && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <input
+                      type="tel"
+                      value={formData.phoneNumber}
+                      onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})}
+                      placeholder="Phone number"
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-2"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSave('phoneNumber')}
+                        className="px-3 py-1 bg-gray-900 text-white text-sm rounded hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-3 py-1 border border-gray-300 text-sm rounded hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Social Links */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">Social Links</h3>
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      5%
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setEditingField('social')}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <Edit2 className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                {editingField === 'social' ? (
+                  <div>
+                    <input
+                      type="url"
+                      value={formData.linkedin}
+                      onChange={(e) => setFormData({...formData, linkedin: e.target.value})}
+                      placeholder="LinkedIn URL"
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                    />
+                    <input
+                      type="url"
+                      value={formData.github}
+                      onChange={(e) => setFormData({...formData, github: e.target.value})}
+                      placeholder="GitHub URL"
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                    />
+                    <input
+                      type="url"
+                      value={formData.website}
+                      onChange={(e) => setFormData({...formData, website: e.target.value})}
+                      placeholder="Website URL"
+                      className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSave('all')}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {formData.linkedin && (
+                      <a
+                        href={formData.linkedin}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-gray-600 hover:text-gray-900"
+                      >
+                        <Linkedin className="w-5 h-5" />
+                        LinkedIn
+                      </a>
+                    )}
+                    {formData.github && (
+                      <a
+                        href={formData.github}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-gray-600 hover:text-gray-900"
+                      >
+                        <Github className="w-5 h-5" />
+                        GitHub
+                      </a>
+                    )}
+                    {formData.website && (
+                      <a
+                        href={formData.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-gray-600 hover:text-gray-900"
+                      >
+                        <Globe className="w-5 h-5" />
+                        Website
+                      </a>
+                    )}
+                    {!formData.linkedin && !formData.github && !formData.website && (
+                      <p className="text-gray-400">
+                        Add social links (+5%)
+                        <button
+                          onClick={() => setEditingField('social')}
+                          className="ml-2 text-gray-900 hover:underline"
+                        >
+                          + Add links
+                        </button>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Privacy */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-gray-600" />
+                    Privacy
+                  </h3>
+                  <button
+                    onClick={() => setEditingField('privacy')}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    {editingField === 'privacy' ? (
+                      <X className="w-5 h-5" />
+                    ) : (
+                      <Edit2 className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+                
+                {editingField === 'privacy' ? (
+                  <div>
+                    <div className="space-y-3 mb-4">
+                      <label className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Show email</span>
+                        <input
+                          type="checkbox"
+                          checked={formData.privacySettings.showEmail}
+                          onChange={() => togglePrivacySetting('showEmail')}
+                          className="toggle"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Show phone</span>
+                        <input
+                          type="checkbox"
+                          checked={formData.privacySettings.showPhone}
+                          onChange={() => togglePrivacySetting('showPhone')}
+                          className="toggle"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">Show location</span>
+                        <input
+                          type="checkbox"
+                          checked={formData.privacySettings.showLocation}
+                          onChange={() => togglePrivacySetting('showLocation')}
+                          className="toggle"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSave('privacySettings')}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-700">Email</span>
+                      <span className="text-sm">{formData.privacySettings.showEmail ? 'Public' : 'Private'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-700">Phone</span>
+                      <span className="text-sm">{formData.privacySettings.showPhone ? 'Public' : 'Private'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-700">Location</span>
+                      <span className="text-sm">{formData.privacySettings.showLocation ? 'Public' : 'Private'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
-      </AnimatePresence>
 
-      {/* Filter Bar */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center">
-              <button
-                onClick={activeTab === 'services' ? handleSelectAllServices : handleSelectAll}
-                disabled={isLoading || items.length === 0}
-                className="flex items-center mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {activeTab === 'services' 
-                  ? allServicesSelected
-                    ? <CheckSquare className="w-5 h-5 text-green-600" />
-                    : <Square className="w-5 h-5 text-gray-400" />
-                  : allSelected
-                    ? <CheckSquare className="w-5 h-5 text-blue-600" />
-                    : <Square className="w-5 h-5 text-gray-400" />
-                }
-              </button>
-              <span className="text-gray-600">Select All</span>
-            </div>
-            <span className="text-gray-500">
-              {items.length} {activeTab === 'services' ? 'service' : 'gig'}{items.length !== 1 ? 's' : ''} found
-            </span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <select
-              value={activeTab === 'services' ? serviceStatusFilter : statusFilter}
-              onChange={(e) => activeTab === 'services' 
-                ? setServiceStatusFilter(e.target.value)
-                : setStatusFilter(e.target.value)
-              }
-              disabled={isLoading}
-              className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
-            >
-              <option value="all">All Status</option>
-              {activeTab === 'services' ? (
-                <>
-                  <option value="draft">Draft</option>
-                  <option value="pending">Pending</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="denied">Denied</option>
-                  <option value="suspended">Suspended</option>
-                </>
-              ) : (
-                <>
-                  <option value="open">Open</option>
-                  <option value="active">Active</option>
-                  <option value="draft">Draft</option>
-                  <option value="paused">Paused</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="closed">Closed</option>
-                </>
-              )}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Content Area */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab + viewMode}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {activeTab === 'services' ? (
-            viewMode === 'grid' ? (
-              <ServicesGridView 
-                services={filteredServices}
-                isLoading={isLoading}
-                selectedServices={selectedServices}
-                handleSelectService={handleSelectService}
-                handleServiceClick={handleServiceClick}
-                getStatusColor={getStatusColor}
-                getStatusIcon={getStatusIcon}
-              />
-            ) : (
-              <ServicesListView 
-                services={filteredServices}
-                isLoading={isLoading}
-                selectedServices={selectedServices}
-                handleSelectService={handleSelectService}
-                handleServiceClick={handleServiceClick}
-                handleCreateService={handleCreateService}
-                serviceStatusFilter={serviceStatusFilter}
-                getStatusColor={getStatusColor}
-                getStatusIcon={getStatusIcon}
-              />
-            )
-          ) : (
-            viewMode === 'grid' ? (
-              <GigsGridView 
-                gigs={filteredGigs}
-                isLoading={isLoading}
-                selectedGigs={selectedGigs}
-                handleSelectGig={handleSelectGig}
-                handleGigClick={handleGigClick}
-                getStatusColor={getStatusColor}
-                getStatusIcon={getStatusIcon}
-              />
-            ) : (
-              <GigsListView 
-                gigs={filteredGigs}
-                isLoading={isLoading}
-                selectedGigs={selectedGigs}
-                handleSelectGig={handleSelectGig}
-                handleGigClick={handleGigClick}
-                handleDeleteGigs={handleDeleteGigs}
-                handleCreateGig={handleCreateGig}
-                statusFilter={statusFilter}
-                getStatusColor={getStatusColor}
-                getStatusIcon={getStatusIcon}
-              />
-            )
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </>
-  );
-};
-
-// ServicesGridView component
-const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your services...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (services.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Briefcase className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
-          <p className="text-gray-600 mb-6">You haven't created any services yet</p>
-          <button
-            onClick={() => window.location.href = '/services/create'}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Service
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ staggerChildren: 0.1 }}
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-    >
-      {services.map((service) => (
-        <motion.div
-          key={service._id || service.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ y: -5 }}
-          className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
-        >
-          <div className="p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center">
-                <button
-                  onClick={() => handleSelectService(service._id || service.id)}
-                  className="mr-3"
-                >
-                  {selectedServices.includes(service._id || service.id) ? (
-                    <CheckSquare className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-                <div>
-                  <h4 
-                    className="font-medium text-gray-900 hover:text-green-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleServiceClick(service._id || service.id)}
-                  >
-                    {service.title || 'Untitled Service'}
-                  </h4>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(service.status)}`}>
-                    {getStatusIcon(service.status)}
-                    <span className="ml-1">
-                      {service.status ? 
-                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-              {service.shortDescription || service.description || 'No description available'}
-            </p>
-
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="font-bold text-gray-900">
-                  ${service.price || 0}
-                </span>
-              </div>
-            </div>
-
+        {/* Save All Button */}
+        {editingField && !isPreviewMode && (
+          <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200">
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                <span className="text-xs text-gray-600">
-                  {service.category?.name || 'Uncategorized'}
-                </span>
+              <div>
+                <p className="font-medium text-gray-900">Unsaved changes</p>
+                <p className="text-sm text-gray-600">Save to update profile completion: {profileCompletion}%</p>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex gap-3">
                 <button
-                  onClick={() => handleServiceClick(service._id || service.id)}
-                  className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                  title="View Details"
+                  onClick={() => handleSave('all')}
+                  disabled={isSaving}
+                  className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                 >
-                  <ExternalLink className="w-4 h-4" />
+                  {isSaving ? 'Saving...' : 'Save All'}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Discard
                 </button>
               </div>
             </div>
           </div>
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-};
-
-// ServicesListView
-const ServicesListView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, handleCreateService, serviceStatusFilter, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your services...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (services.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Briefcase className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
-          <p className="text-gray-600 mb-6">
-            {serviceStatusFilter === 'all' 
-              ? "You haven't created any services yet"
-              : `No services with status "${serviceStatusFilter}" found`}
-          </p>
-          <button
-            onClick={handleCreateService}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Service
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Service</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {services.map((service) => (
-              <motion.tr
-                key={service._id || service.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
-                className="transition-colors"
-              >
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => handleSelectService(service._id || service.id)}
-                      className="mr-3"
-                    >
-                      {selectedServices.includes(service._id || service.id) ? (
-                        <CheckSquare className="w-5 h-5 text-green-600" />
-                      ) : (
-                        <Square className="w-5 h-5 text-gray-400" />
-                      )}
-                    </button>
-                    <div 
-                      className="cursor-pointer"
-                      onClick={() => handleServiceClick(service._id || service.id)}
-                    >
-                      <h4 className="font-medium text-gray-900 hover:text-green-600">
-                        {service.title || 'Untitled Service'}
-                      </h4>
-                      <div className="flex items-center mt-1">
-                        <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-600">
-                          {service.category?.name || 'Uncategorized'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
-                    {getStatusIcon(service.status)}
-                    <span className="ml-1">
-                      {service.status ? 
-                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                    <span className="font-medium">
-                      ${service.price || 0}
-                    </span>
-                  </div>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
+        )}
       </div>
-    </motion.div>
-  );
-};
-
-// GigsGridView
-const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your gigs...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (gigs.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No gigs found</h3>
-          <p className="text-gray-600 mb-6">You haven't created any gigs yet</p>
-          <button
-            onClick={() => window.location.href = '/create-gig'}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Gig
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ staggerChildren: 0.1 }}
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-    >
-      {gigs.map((gig) => (
-        <motion.div
-          key={gig._id || gig.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ y: -5 }}
-          className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
-        >
-          <div className="p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center">
-                <button
-                  onClick={() => handleSelectGig(gig._id || gig.id)}
-                  className="mr-3"
-                >
-                  {selectedGigs.includes(gig._id || gig.id) ? (
-                    <CheckSquare className="w-5 h-5 text-blue-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-                <div>
-                  <h4 
-                    className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleGigClick(gig._id || gig.id)}
-                  >
-                    {gig.title || 'Untitled Gig'}
-                  </h4>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(gig.status)}`}>
-                    {getStatusIcon(gig.status)}
-                    <span className="ml-1">
-                      {gig.status ? 
-                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-              {gig.description || 'No description available'}
-            </p>
-
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="font-bold text-gray-900">
-                  ${gig.budget || gig.price || 0}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                <span className="text-xs text-gray-600">
-                  {gig.category?.name || 'Uncategorized'}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handleGigClick(gig._id || gig.id)}
-                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="View Details"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-};
-
-// GigsListView
-const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, handleDeleteGigs, handleCreateGig, statusFilter, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your gigs...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (gigs.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No gigs found</h3>
-          <p className="text-gray-600 mb-6">
-            {statusFilter === 'all' 
-              ? "You haven't created any gigs yet"
-              : `No gigs with status "${statusFilter}" found`}
-          </p>
-          <button
-            onClick={handleCreateGig}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Gig
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Gig</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Budget</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {gigs.map((gig) => (
-              <motion.tr
-                key={gig._id || gig.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
-                className="transition-colors"
-              >
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => handleSelectGig(gig._id || gig.id)}
-                      className="mr-3"
-                    >
-                      {selectedGigs.includes(gig._id || gig.id) ? (
-                        <CheckSquare className="w-5 h-5 text-blue-600" />
-                      ) : (
-                        <Square className="w-5 h-5 text-gray-400" />
-                      )}
-                    </button>
-                    <div 
-                      className="cursor-pointer"
-                      onClick={() => handleGigClick(gig._id || gig.id)}
-                    >
-                      <h4 className="font-medium text-gray-900 hover:text-blue-600">
-                        {gig.title || 'Untitled Gig'}
-                      </h4>
-                      <div className="flex items-center mt-1">
-                        <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-600">
-                          {gig.category?.name || 'Uncategorized'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(gig.status)}`}>
-                    {getStatusIcon(gig.status)}
-                    <span className="ml-1">
-                      {gig.status ? 
-                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                    <span className="font-medium">
-                      ${gig.budget || gig.price || 0}
-                    </span>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handleGigClick(gig._id || gig.id)}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="View Details"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </motion.div>
+    </div>
   );
 };
 

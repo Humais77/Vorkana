@@ -219,7 +219,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             ))}
                           </div>
                         </div>
-                        
+
                         <div>
                           <h4 className="text-sm font-semibold text-gray-700 mb-2">Quick Links</h4>
                           <div className="space-y-1">
@@ -288,7 +288,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       to="/admin"
                       className="md:inline bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-3 py-1 rounded-full  hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
                     >
-                     
+
                       <span>Admin</span>
                     </Link>
                   )}
@@ -299,14 +299,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
                     >
                       <img
-  src={user?.picture || default_pp}
-  alt="Profile"
-  className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
-  onError={(e) => {
-    e.target.onerror = null;
-    e.target.src = default_pp;
-  }}
-/>
+                        src={user?.picture || default_pp}
+                        alt="Profile"
+                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = default_pp;
+                        }}
+                      />
                       <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -323,7 +323,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <div className="font-medium text-gray-900">{user?.name}</div>
                             <div className="text-sm text-gray-500">{user?.email}</div>
                             <div className="mt-1">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium${isAdminUser
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-green-100 text-green-700'
+                                  }`}
+                              >
                                 {isAdminUser ? 'Admin' : 'User'}
                               </span>
                             </div>
@@ -340,22 +345,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             </Link>
 
                             <Link
-                              to="/my-services" 
+                              to="/dashboard"
                               onClick={() => setMenuOpen(false)}
                               className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
                             >
                               <Package className="w-4 h-4" />
-                              <span>My Services</span>
+                              <span>Dashboard</span>
                             </Link>
 
-                            <Link
-                              to="/settings"
-                              onClick={() => setMenuOpen(false)}
-                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                            >
-                              <Settings className="w-4 h-4" />
-                              <span>Settings</span>
-                            </Link>
 
                             <button
                               onClick={handleLogout}
@@ -540,12 +537,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         </Link>
 
                         <Link
-                          to="/my-services"
+                          to="/dashboard"
                           onClick={() => setMobileMenuOpen(false)}
                           className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200"
                         >
                           <Package className="w-5 h-5 text-gray-600" />
-                          <span className="font-medium text-gray-800">My Services</span>
+                          <span className="font-medium text-gray-800">Dashboard</span>
                         </Link>
 
                         <Link
