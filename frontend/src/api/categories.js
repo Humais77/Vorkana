@@ -136,7 +136,7 @@ export const categoriesAPI = {
     try {
       console.log('Fetching categories with params:', params);
       
-      const response = await axiosInstance.get('/api/categories', { params ,cancelToken: signal || undefined});
+      const response = await axiosInstance.get('/api/categories', { params});
       
       console.log('API Response:', response.data);
       

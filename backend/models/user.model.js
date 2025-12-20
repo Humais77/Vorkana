@@ -429,13 +429,10 @@ userSchema.pre('findOneAndUpdate', function (next) {
   next();
 });
 
-// Update lastSeenAt on certain operations
-// Replace the broken pre('findOne') with this:
 userSchema.pre('findOne', async function () {
   const query = this.getQuery();
   
   if (query._id) {
-    // Update the lastSeenAt for the user being viewed/fetched
     await this.model.updateOne(
       { _id: query._id },
       { $set: { lastSeenAt: new Date() } }

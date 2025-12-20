@@ -595,7 +595,6 @@ const getServices = async (req, res, next) => {
             avgRating: { $avg: '$rating' },
             avgDeliveryTime: { $avg: '$deliveryTime' },
             totalViews: { $sum: '$views' },
-            totalOrders: { $sum: '$ordersCount' },
             totalLikes: { $sum: '$likes' }
           }
         }
@@ -847,7 +846,6 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.isFeatured;
       delete sanitizedData.isRecommended;
       delete sanitizedData.isPopular;
-      delete sanitizedData.ordersCount;
       delete sanitizedData.views;
       delete sanitizedData.likes;
       delete sanitizedData.rating;
@@ -1031,14 +1029,6 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-    if (force !== 'true' && service.ordersCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete service with active orders',
-        code: 'ACTIVE_ORDERS_EXIST',
-        requestId
-      });
-    }
 
     let result;
     
@@ -1204,7 +1194,6 @@ const getServiceStats = async (req, res, next) => {
                 featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
                 recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
                 popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                totalOrders: { $sum: '$ordersCount' },
                 totalViews: { $sum: '$views' },
                 totalLikes: { $sum: '$likes' },
                 avgPrice: { $avg: '$price' },
@@ -1219,7 +1208,6 @@ const getServiceStats = async (req, res, next) => {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
-                totalOrders: { $sum: '$ordersCount' },
                 avgRating: { $avg: '$rating' }
               }
             },
@@ -1238,12 +1226,10 @@ const getServiceStats = async (req, res, next) => {
           ],
           topServices: [
             { $match: { status: 'active', isActive: true } },
-            { $sort: { ordersCount: -1 } },
             { $limit: 10 },
             {
               $project: {
                 title: 1,
-                ordersCount: 1,
                 rating: 1,
                 price: 1,
                 slug: 1
@@ -1272,7 +1258,6 @@ const getServiceStats = async (req, res, next) => {
                 output: {
                   count: { $sum: 1 },
                   avgRating: { $avg: "$rating" },
-                  avgOrders: { $avg: "$ordersCount" }
                 }
               }
             }
@@ -1460,7 +1445,7 @@ const exportServices = async (req, res, next) => {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Category', 'Creator',
         'Price', 'Currency', 'Delivery Time', 'Delivery Unit', 'Revisions',
-        'Rating', 'Reviews Count', 'Orders Count', 'Views', 'Likes',
+        'Rating', 'Reviews Count',  'Views', 'Likes',
         'Status', 'Featured', 'Recommended', 'Popular',
         'Created At', 'Updated At', 'Published At'
       ];
@@ -1479,7 +1464,6 @@ const exportServices = async (req, res, next) => {
         service.revisions || 0,
         service.rating || 0,
         service.reviewsCount || 0,
-        service.ordersCount || 0,
         service.views || 0,
         service.likes || 0,
         service.status || '',
@@ -1576,7 +1560,6 @@ const searchServices = async (req, res, next) => {
       price_desc: { price: -1 },
       rating: { rating: -1 },
       delivery: { deliveryTime: 1 },
-      orders: { ordersCount: -1 },
       newest: { createdAt: -1 }
     };
 
@@ -1585,7 +1568,7 @@ const searchServices = async (req, res, next) => {
     const results = await Service.find(filter, { 
       score: { $meta: 'textScore' } 
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy category')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy category')
     .populate('createdBy', 'name picture')
     .populate('category', 'name slug')
     .sort(sortObj)
@@ -1604,7 +1587,6 @@ const searchServices = async (req, res, next) => {
       deliveryTime: result.deliveryTime,
       deliveryTimeUnit: result.deliveryTimeUnit,
       revisions: result.revisions || 0,
-      ordersCount: result.ordersCount || 0,
       views: result.views || 0,
       thumbnail: result.thumbnail,
       createdBy: {
@@ -1783,9 +1765,9 @@ const getSimilarServices = async (req, res, next) => {
         tags: { $in: service.tags.slice(0, 3) }
       } : {})
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
     .populate('createdBy', 'name picture')
-    .sort({ rating: -1, ordersCount: -1 })
+    .sort({ rating: -1 })
     .limit(similarLimit)
     .lean();
 
@@ -1796,9 +1778,9 @@ const getSimilarServices = async (req, res, next) => {
         status: 'active',
         isActive: true
       })
-      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions ordersCount views thumbnail createdBy')
+      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
       .populate('createdBy', 'name picture')
-      .sort({ rating: -1, ordersCount: -1 })
+      .sort({ rating: -1,})
       .limit(similarLimit - similarServices.length)
       .lean();
 
@@ -1815,7 +1797,6 @@ const getSimilarServices = async (req, res, next) => {
       deliveryTime: s.deliveryTime,
       deliveryTimeUnit: s.deliveryTimeUnit,
       revisions: s.revisions || 0,
-      ordersCount: s.ordersCount || 0,
       views: s.views || 0,
       thumbnail: s.thumbnail,
       createdBy: {

@@ -348,7 +348,6 @@ export const servicesAPI = {
         totalServices: 0,
         activeServices: 0,
         draftServices: 0,
-        totalOrders: 0,
         totalRevenue: 0,
         avgRating: 0
       }
