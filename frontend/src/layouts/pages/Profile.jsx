@@ -29,9 +29,16 @@ import { toast } from 'react-hot-toast';
 import default_pp from '../../assets/default_pp-modified.png';
 import { format, parseISO } from 'date-fns';
 
+// Import API hooks
+import { useUpdateProfile, useGetProfile } from '../../hooks/useAuth';
+
 const Profile = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, updateUser } = useAuthStore();
+
+  // API hooks
+  const updateProfileMutation = useUpdateProfile();
+  const { refetch: refetchProfile } = useGetProfile();
 
   // States
   const [showSetupPrompt, setShowSetupPrompt] = useState(false);
@@ -134,7 +141,7 @@ const Profile = () => {
     
     const field = missing[0];
     const suggestions = {
-      'bio': 'Add a bio to',
+      'bio': 'Add a bio to introduce yourself',
       'occupation': 'Add your occupation',
       'education': 'Add your education',
       'phoneNumber': 'Add your phone number',
@@ -175,6 +182,7 @@ const Profile = () => {
       setMissingFields(getMissingFields());
       setNextSuggestion(getNextSuggestion());
       
+      // Show setup prompt if profile is less than 60% complete
       if (completion < 60) {
         setShowSetupPrompt(true);
       }
@@ -191,7 +199,7 @@ const Profile = () => {
     }
   }, [formData, user]);
 
-  // Save handler
+  // Save handler - NOW UPDATES DATABASE
   const handleSave = async (field) => {
     if (isSaving) return;
     
@@ -200,6 +208,7 @@ const Profile = () => {
       const updateData = {};
       
       if (field === 'all') {
+        // Prepare all data for API
         updateData.bio = formData.bio;
         updateData.phoneNumber = formData.phoneNumber;
         updateData.country = formData.country;
@@ -213,27 +222,38 @@ const Profile = () => {
         updateData.linkedin = formData.linkedin;
         updateData.website = formData.website;
         updateData.privacySettings = formData.privacySettings;
-        updateData.lastProfileVisit = new Date().toISOString();
       } else {
+        // Prepare specific field for API
         updateData[field] = formData[field];
-        updateData.lastProfileVisit = new Date().toISOString();
       }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Call the API mutation
+      const result = await updateProfileMutation.mutateAsync(updateData);
       
-      if (updateUser) {
-        updateUser(updateData);
+      if (result.success) {
+        // Update local state with the response data
+        if (updateUser) {
+          updateUser(result.user || updateData);
+        }
+        
+        // Refetch profile to get latest data
+        await refetchProfile();
+        
+        toast.success(field === 'all' ? 'Profile updated successfully!' : `${field} updated successfully!`);
+        setEditingField(null);
+        
+        // Hide setup prompt if profile is sufficiently complete
+        const newCompletion = calculateProfileCompletion();
+        if (newCompletion >= 70) {
+          setShowSetupPrompt(false);
+        }
+      } else {
+        throw new Error(result.message || 'Update failed');
       }
-
-      toast.success(field === 'all' ? 'Profile updated!' : `${field} updated!`);
-      setEditingField(null);
       
-      if (profileCompletion >= 70) {
-        setShowSetupPrompt(false);
-      }
     } catch (error) {
-      toast.error('Failed to update profile');
+      console.error('Error updating profile:', error);
+      toast.error(error.message || 'Failed to update profile. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -435,7 +455,7 @@ const Profile = () => {
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900 mb-1">Complete your profile</h3>
                 <p className="text-gray-600 text-sm">
-                  {nextSuggestion}
+                  {nextSuggestion} - {profileCompletion}% complete
                 </p>
               </div>
               <button
@@ -463,7 +483,21 @@ const Profile = () => {
               </div>
             </div>
             
-            
+            {/* Missing Fields */}
+            {missingFields.length > 0 && (
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">Missing information:</p>
+                <div className="space-y-1">
+                  {missingFields.slice(0, 3).map((field, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">•</span>
+                      <span className="text-gray-700">{field.label}</span>
+                      <span className="text-xs text-gray-500">({field.weight}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <div className="flex gap-3">
               <button
@@ -473,10 +507,11 @@ const Profile = () => {
                 Complete Now
               </button>
               <button
-                onClick={() => setShowSetupPrompt(false)}
+                onClick={() => handleSave('all')}
                 className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
+                disabled={isSaving}
               >
-                Complete Later
+                {isSaving ? 'Saving...' : 'Save & Continue'}
               </button>
             </div>
           </div>
@@ -496,7 +531,9 @@ const Profile = () => {
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{user?.name}</h1>
               <p className="text-gray-600 mt-1">{user?.email}</p>
-              
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-sm text-gray-500">Profile: {profileCompletion}% complete</span>
+              </div>
             </div>
           </div>
 
@@ -532,7 +569,9 @@ const Profile = () => {
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-semibold text-gray-900">About Me</h2>
-                    
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      20%
+                    </span>
                   </div>
                   <button
                     onClick={() => editingField === 'bio' ? handleCancel() : setEditingField('bio')}
@@ -561,9 +600,10 @@ const Profile = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleSave('bio')}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                          disabled={isSaving}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                         >
-                          Save
+                          {isSaving ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancel}
@@ -578,7 +618,7 @@ const Profile = () => {
                   <p className="text-gray-600">
                     {formData.bio || (
                       <span className="text-gray-400">
-                        Add a bio 
+                        Add a bio to introduce yourself
                         <button
                           onClick={() => setEditingField('bio')}
                           className="ml-2 text-gray-900 hover:underline"
@@ -601,7 +641,9 @@ const Profile = () => {
                         <Briefcase className="w-5 h-5 text-gray-600" />
                         Professional
                       </h3>
-                      
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                        30%
+                      </span>
                     </div>
                     <button
                       onClick={() => setEditingField('professional')}
@@ -634,9 +676,10 @@ const Profile = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleSave('all')}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                          disabled={isSaving}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                         >
-                          Save
+                          {isSaving ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancel}
@@ -687,10 +730,15 @@ const Profile = () => {
                 {/* Personal Info */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                      <User className="w-5 h-5 text-gray-600" />
-                      Personal
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                        <User className="w-5 h-5 text-gray-600" />
+                        Personal
+                      </h3>
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                        10%
+                      </span>
+                    </div>
                     <button
                       onClick={() => setEditingField('personal')}
                       className="text-gray-500 hover:text-gray-700"
@@ -725,9 +773,10 @@ const Profile = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleSave('all')}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                          disabled={isSaving}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                         >
-                          Save
+                          {isSaving ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancel}
@@ -775,7 +824,9 @@ const Profile = () => {
                       <Languages className="w-5 h-5 text-gray-600" />
                       Languages
                     </h3>
-                    
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      10%
+                    </span>
                   </div>
                   <button
                     onClick={() => setEditingField('languages')}
@@ -828,9 +879,10 @@ const Profile = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleSave('languages')}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                       >
-                        Save
+                        {isSaving ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={handleCancel}
@@ -853,7 +905,7 @@ const Profile = () => {
                       ))
                     ) : (
                       <span className="text-gray-400">
-                        Add languages
+                        Add languages you speak
                         <button
                           onClick={() => setEditingField('languages')}
                           className="ml-2 text-gray-900 hover:underline"
@@ -910,9 +962,10 @@ const Profile = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleSave('all')}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                       >
-                        Save
+                        {isSaving ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={handleCancel}
@@ -932,7 +985,7 @@ const Profile = () => {
                       formData.country
                     ) : (
                       <span className="text-gray-400">
-                        Add location 
+                        Add your location
                         <button
                           onClick={() => setEditingField('location')}
                           className="ml-2 text-gray-900 hover:underline"
@@ -950,7 +1003,9 @@ const Profile = () => {
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-gray-900">Contact</h3>
-                    
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      10%
+                    </span>
                   </div>
                 </div>
                 
@@ -983,7 +1038,7 @@ const Profile = () => {
                         <p className="text-gray-900">
                           {formData.phoneNumber || (
                             <span className="text-gray-400">
-                              Add phone 
+                              Add phone number
                               <button
                                 onClick={() => setEditingField('phone')}
                                 className="ml-2 text-gray-900 hover:underline"
@@ -1030,9 +1085,10 @@ const Profile = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleSave('phoneNumber')}
-                        className="px-3 py-1 bg-gray-900 text-white text-sm rounded hover:bg-gray-800"
+                        disabled={isSaving}
+                        className="px-3 py-1 bg-gray-900 text-white text-sm rounded hover:bg-gray-800 disabled:opacity-50"
                       >
-                        Save
+                        {isSaving ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={handleCancel}
@@ -1088,9 +1144,10 @@ const Profile = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleSave('all')}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                       >
-                        Save
+                        {isSaving ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={handleCancel}
@@ -1137,7 +1194,7 @@ const Profile = () => {
                     )}
                     {!formData.linkedin && !formData.github && !formData.website && (
                       <p className="text-gray-400">
-                        Add social links (+5%)
+                        Add social links
                         <button
                           onClick={() => setEditingField('social')}
                           className="ml-2 text-gray-900 hover:underline"
@@ -1199,13 +1256,35 @@ const Profile = () => {
                           className="toggle"
                         />
                       </label>
+                      <div className="mt-4">
+                        <label className="block text-sm text-gray-700 mb-2">Profile Visibility</label>
+                        <div className="space-y-2">
+                          {['public', 'registered', 'private'].map((visibility) => (
+                            <label key={visibility} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                checked={formData.privacySettings.profileVisibility === visibility}
+                                onChange={() => setProfileVisibility(visibility)}
+                                className="text-blue-600"
+                              />
+                              <span className="capitalize">{visibility}</span>
+                              <span className="text-xs text-gray-500">
+                                {visibility === 'public' && 'Anyone can see your profile'}
+                                {visibility === 'registered' && 'Only registered users'}
+                                {visibility === 'private' && 'Only you'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleSave('privacySettings')}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                       >
-                        Save
+                        {isSaving ? 'Saving...' : 'Save'}
                       </button>
                       <button
                         onClick={handleCancel}
@@ -1216,7 +1295,13 @@ const Profile = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-700">Profile Visibility</span>
+                      <span className="text-sm font-medium capitalize">
+                        {formData.privacySettings.profileVisibility}
+                      </span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-700">Email</span>
                       <span className="text-sm">{formData.privacySettings.showEmail ? 'Public' : 'Private'}</span>
@@ -1247,10 +1332,10 @@ const Profile = () => {
               <div className="flex gap-3">
                 <button
                   onClick={() => handleSave('all')}
-                  disabled={isSaving}
+                  disabled={isSaving || updateProfileMutation.isPending}
                   className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                 >
-                  {isSaving ? 'Saving...' : 'Save All'}
+                  {isSaving || updateProfileMutation.isPending ? 'Saving...' : 'Save All'}
                 </button>
                 <button
                   onClick={handleCancel}
