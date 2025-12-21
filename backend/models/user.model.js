@@ -424,9 +424,8 @@ userSchema.pre('save', async function () {
   }
 });
 
-userSchema.pre('findOneAndUpdate', function (next) {
+userSchema.pre('findOneAndUpdate',async function () {
   this.set({ updatedAt: new Date() });
-  next();
 });
 
 userSchema.pre('findOne', async function () {

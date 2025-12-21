@@ -59,6 +59,8 @@ import TrustSafetyPage from './layouts/pages/footer/TrustSafetyPage';
 import DisputesPage from './layouts/pages/footer/DisputesPage';
 import PaymentProtectionPage from './layouts/pages/footer/PaymentProtectionPage';
 import FaqPage from './layouts/pages/footer/FaqPage';
+import SearchResults from './layouts/pages/SearchResults';
+
 const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
@@ -182,6 +184,7 @@ const App = () => {
             <Route path="/disputes" element={<DisputesPage />} />
             <Route path="/payment-protection" element={<PaymentProtectionPage />} />
             <Route path="/faq" element={<FaqPage />} />
+            <Route path="/search" element={<SearchResults />} />
           </Route>
 
           <Route path="/admin/login" element={<AdminLogin />} />
