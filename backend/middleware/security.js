@@ -150,13 +150,28 @@ module.exports = function (app) {
     // Check content type
     const contentType = req.headers['content-type'];
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-      if (!contentType || !contentType.includes('application/json')) {
-        return res.status(415).json({
-          success: false,
-          message: 'Unsupported media type'
-        });
-      }
-    }
+
+  // ✅ Allow multipart/form-data (file uploads)
+  if (contentType?.startsWith('multipart/form-data')) {
+    return next();
+  }
+
+  // ✅ Allow JSON APIs
+  if (contentType?.includes('application/json')) {
+    return next();
+  }
+
+  // ✅ Allow empty body (PATCH without payload etc.)
+  if (!contentType) {
+    return next();
+  }
+
+  return res.status(415).json({
+    success: false,
+    message: 'Unsupported media type'
+  });
+}
+
     
     // Validate JSON for JSON requests
     if (contentType && contentType.includes('application/json')) {

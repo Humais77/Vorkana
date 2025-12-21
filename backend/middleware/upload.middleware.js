@@ -3,18 +3,17 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const { uploadToCloudinary, cleanupLocalFiles } = require('../utils/cloudinary');
+const fs = require('fs');
+
+// Create temp directory if it doesn't exist
+const tempDir = path.join(__dirname, '../../temp_uploads');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
 
 // Configure multer for temporary storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const tempDir = path.join(__dirname, '../../temp_uploads');
-    
-    // Create temp directory if it doesn't exist
-    const fs = require('fs');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
     cb(null, tempDir);
   },
   filename: function (req, file, cb) {
@@ -59,24 +58,62 @@ const fileFilter = (req, file, cb) => {
   cb(new Error('Invalid file type. Only images (jpeg, jpg, png, webp, gif, svg) are allowed.'), false);
 };
 
+// Profile picture specific filter
+// upload.middleware.js - Update the profile picture filter
+const profilePictureFilter = (req, file, cb) => {
+  console.log('Profile picture filter - File details:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  });
+
+  // Allow PNG, JPEG, JPG, WebP
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  
+  if (allowedTypes.includes(file.mimetype)) {
+    const maxSize = 2 * 1024 * 1024; // 2MB for profile pictures
+    
+    if (file.size > maxSize) {
+      console.log('File too large:', file.size);
+      return cb(new Error(`Profile picture size exceeds ${maxSize / (1024 * 1024)}MB limit`), false);
+    }
+    
+    // Security checks
+    const originalName = file.originalname.toLowerCase();
+    if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
+      console.log('Invalid filename:', originalName);
+      return cb(new Error('Invalid filename'), false);
+    }
+    
+    console.log('File accepted:', file.originalname);
+    return cb(null, true);
+  }
+  
+  console.log('Invalid file type:', file.mimetype);
+  cb(new Error(`Invalid file type. Only images (JPEG, JPG, PNG, WebP) are allowed for profile pictures. Received: ${file.mimetype}`));
+};
 // Create upload instances
 const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024,
-    files: parseInt(process.env.MAX_FILES_PER_UPLOAD) || 10
-  },
-  fileFilter: fileFilter
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: profilePictureFilter
 });
 
+const storageMemory = multer.memoryStorage();
 const thumbnailUpload = multer({
+  storage: storageMemory,
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+  fileFilter
+});
+
+const profilePicUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 2 * 1024 * 1024, // 2MB for thumbnails
+    fileSize: 2 * 1024 * 1024, // 2MB for profile pictures
     files: 1
   },
-  fileFilter: fileFilter
-});
+  fileFilter: profilePictureFilter
+}).single('profilePicture'); // Use 'profilePicture' as field name
 
 /**
  * Process uploaded files to Cloudinary
@@ -129,6 +166,59 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
 };
 
 /**
+ * Process profile picture upload to Cloudinary
+ * @param {Object} file - Multer file object
+ * @param {string} userId - User ID for unique naming
+ * @returns {Promise<Object>} Upload result
+ */
+const processProfilePictureUpload = async (file, userId) => {
+  if (!file) {
+    throw new Error('No file provided');
+  }
+  
+  try {
+    // Generate a unique public ID using userId and timestamp
+    const publicId = `profile_${userId}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    
+    const result = await uploadToCloudinary(file.path, {
+  folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER}/profiles`,
+  public_id: publicId,
+  overwrite: true,
+  invalidate: true, // 🔥 VERY IMPORTANT
+  resource_type: 'image',
+  transformation: [
+    { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+    { quality: 'auto:best', fetch_format: 'auto' }
+  ]
+});
+
+    
+    // Clean up local file
+    await cleanupLocalFiles(file.path);
+    
+    if (result.success) {
+      return {
+        url: result.data.url,
+        public_id: result.data.public_id,
+        format: result.data.format,
+        size: result.data.bytes,
+        width: result.data.width,
+        height: result.data.height
+      };
+    } else {
+      throw new Error('Upload to Cloudinary failed');
+    }
+  } catch (error) {
+    console.error('Profile picture upload error:', error);
+    // Ensure local file cleanup even on error
+    if (file.path) {
+      await cleanupLocalFiles(file.path).catch(console.error);
+    }
+    throw error;
+  }
+};
+
+/**
  * Handle multer errors
  */
 const handleMulterError = (err, req, res, next) => {
@@ -178,7 +268,9 @@ const handleMulterError = (err, req, res, next) => {
 module.exports = {
   upload,
   thumbnailUpload,
+  profilePicUpload,
   processUploadToCloudinary,
+  processProfilePictureUpload,
   handleMulterError,
   cleanupLocalFiles
 };

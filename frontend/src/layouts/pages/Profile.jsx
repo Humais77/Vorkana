@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import {
@@ -23,15 +23,16 @@ import {
   Plus,
   Eye as EyeIcon,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import default_pp from '../../assets/default_pp-modified.png';
 import { format, parseISO } from 'date-fns';
-
+import { useProfilePicture } from '../../hooks/useProfilePicture';
 // Import API hooks
 import { useUpdateProfile, useGetProfile } from '../../hooks/useAuth';
-
+import { createImagePreview } from '../../utils/imageUtils';
 const Profile = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, updateUser } = useAuthStore();
@@ -49,10 +50,16 @@ const Profile = () => {
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [missingFields, setMissingFields] = useState([]);
   const [nextSuggestion, setNextSuggestion] = useState('');
+const [tempPicture, setTempPicture] = useState(null); // For immediate preview
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
 
+  const fileInputRef = useRef(null);
+  const profileImageRef = useRef(null);
+
+  const { uploadProfilePicture } = useProfilePicture();
   // Form data
   const [formData, setFormData] = useState({
-    bio: '',
+    bio: '',  
     phoneNumber: '',
     country: '',
     city: '',
@@ -198,7 +205,69 @@ const Profile = () => {
       setNextSuggestion(getNextSuggestion());
     }
   }, [formData, user]);
+ const handleProfilePictureClick = () => {
+    fileInputRef.current?.click();
+  };
 
+ const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File size must be less than 2MB');
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Only image files (JPEG, JPG, PNG, WebP) are allowed');
+      return;
+    }
+    
+    try {
+      setIsUploadingPicture(true);
+      
+      // Create immediate preview
+      const previewUrl = await createImagePreview(file);
+      setTempPicture(previewUrl);
+      
+      // Upload the file
+      const pictureUrl = await uploadProfilePicture(file);
+      
+      if (pictureUrl) {
+        // Update form data
+        updateUser({
+  ...user,
+  picture: pictureUrl,
+  updatedAt: Date.now(),
+});
+        // Clear temp picture after successful upload
+        setTempPicture(null);
+        
+        // Update the image element immediately with cache busting
+        if (profileImageRef.current) {
+          const img = profileImageRef.current;
+          img.src = `${pictureUrl}?t=${Date.now()}`;
+          img.style.opacity = '0.9';
+          setTimeout(() => {
+            img.style.opacity = '1';
+          }, 100);
+        }
+        
+        toast.success('Profile picture updated successfully!');
+      }
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+      // Revert to original picture
+      setTempPicture(null);
+    } finally {
+      setIsUploadingPicture(false);
+      // Reset file input
+      event.target.value = '';
+    }
+  };
   // Save handler - NOW UPDATES DATABASE
   const handleSave = async (field) => {
     if (isSaving) return;
@@ -520,13 +589,45 @@ const Profile = () => {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <img
-                src={user?.picture || default_pp}
-                alt={user?.name}
-                className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow"
+            <div className="relative group">
+              <div className="relative">
+                <img
+                  ref={profileImageRef}
+                  src={(user?.picture
+      ? `${user.picture}?v=${user.updatedAt || Date.now()}`
+      : default_pp)}
+                  alt={user?.name}
+                  className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow transition-all duration-300"
+                  style={{
+                    opacity: isUploadingPicture ? 0.7 : 1,
+                    filter: isUploadingPicture ? 'blur(1px)' : 'none'
+                  }}
+                />
+                <div 
+                  className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
+                  onClick={handleProfilePictureClick}
+                >
+                  {isUploadingPicture ? (
+                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                  ) : (
+                    <Edit2 className="w-6 h-6 text-white" />
+                  )}
+                </div>
+                {isUploadingPicture && (
+                  <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                    <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 animate-pulse"></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                className="hidden"
               />
-              
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{user?.name}</h1>

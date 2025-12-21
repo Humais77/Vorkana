@@ -64,6 +64,12 @@ const userSchema = new mongoose.Schema(
         message: 'Please enter a valid URL for the picture'
       }
     },
+    pictureHistory: [{
+  url: String,
+  public_id: String,
+  uploadedAt: Date,
+  _id: false
+}],
     bio: {
       type: String,
       trim: true,
