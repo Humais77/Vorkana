@@ -33,10 +33,14 @@ import ProtectedAdminRoute from './ProtectedAdminRoute';
 import AdminLogin from './AdminLogin';
 import AdminLayout from './layouts/pages/admin/AdminLayout';
 import AdminRoutes from './layouts/pages/admin/AdminRoutes';
-
+import VerifyEmail from './components/VerifyEmail';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
+import AccountDeactivated from './components/AccountDeactivated';
 // Components
 import SocketStatus from './components/SocketStatus';
 import ScrollToTop from './components/ScrollToTop';
+import VerifiedPage from './components/VerifiedPage';
 
 const App = () => {
   useAuthSync();
@@ -77,6 +81,24 @@ const App = () => {
       initializeSocketConnection();
     }
   }, [isAuthenticated, initializeSocketConnection]);
+  // Add this useEffect to clean up reset tokens
+useEffect(() => {
+  // Clean up reset token from localStorage on app load
+  const cleanupResetToken = () => {
+    if (localStorage.getItem('resetToken')) {
+      localStorage.removeItem('resetToken');
+    }
+  };
+  
+  cleanupResetToken();
+  
+  // Also clean up on page unload
+  window.addEventListener('beforeunload', cleanupResetToken);
+  
+  return () => {
+    window.removeEventListener('beforeunload', cleanupResetToken);
+  };
+}, []);
 
   return (
     <SecurityProvider>
@@ -118,6 +140,14 @@ const App = () => {
             <Route path="/orders/:id" element={<OrderDetails />} />
             <Route path="/my-orders" element={<MyOrders />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            
+<Route path="/verified" element={<VerifiedPage />} />
+<Route path="/verify-email/:token?" element={<VerifyEmail />} />
+  <Route path="/verify-email/:token" element={<VerifyEmail />} />
+  <Route path="/forgot-password" element={<ForgotPassword />} />
+  <Route path="/reset-password" element={<ResetPassword />} />
+  <Route path="/account-deactivated" element={<AccountDeactivated />} />
           </Route>
           
           <Route path="/admin/login" element={<AdminLogin />} />

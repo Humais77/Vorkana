@@ -399,17 +399,18 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               <label className="text-xs font-semibold text-gray-700">
                 Password
               </label>
-              <button
-                type="button"
-                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                onClick={() => {
-                  onClose();
-                  navigate('/forgot-password');
-                }}
-                disabled={isSubmitting}
-              >
-                Forgot password?
-              </button>
+          
+<button
+  type="button"
+  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+  onClick={() => {
+    onClose();
+    navigate('/forgot-password');
+  }}
+  disabled={isSubmitting}
+>
+  Forgot password?
+</button>
             </div>
             <div className="relative">
               <input
