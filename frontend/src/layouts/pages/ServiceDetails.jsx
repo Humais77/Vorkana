@@ -19,7 +19,12 @@ import {
   Loader2,
   ExternalLink,
   HelpCircle,
-  Package as PackageIcon
+  Package as PackageIcon,
+  Image as ImageIcon,
+  Maximize2,
+  ChevronLeft,
+  ChevronRight,
+  Download
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useService, useDeleteService } from '../../hooks/useServices';
@@ -41,6 +46,8 @@ const ServiceDetails = () => {
 
   const [selectedPackage, setSelectedPackage] = useState(0);
   const [deleting, setDeleting] = useState(false);
+const [selectedImageIndex, setSelectedImageIndex] = useState(null);
+const [showImageModal, setShowImageModal] = useState(false);
 
   useEffect(() => {
     if (service && service._id) {
@@ -114,7 +121,31 @@ const ServiceDetails = () => {
   user._id === service.createdBy._id ||
   user._id === service.createdBy
 );
+const openImageModal = (index) => {
+  setSelectedImageIndex(index);
+  setShowImageModal(true);
+};
 
+const closeImageModal = () => {
+  setShowImageModal(false);
+  setSelectedImageIndex(null);
+};
+
+const nextImage = () => {
+  if (service?.images && service.images.length > 0) {
+    setSelectedImageIndex((prev) => 
+      prev === null || prev === service.images.length - 1 ? 0 : prev + 1
+    );
+  }
+};
+
+const prevImage = () => {
+  if (service?.images && service.images.length > 0) {
+    setSelectedImageIndex((prev) => 
+      prev === null || prev === 0 ? service.images.length - 1 : prev - 1
+    );
+  }
+};
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
@@ -242,6 +273,79 @@ const ServiceDetails = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Service Details */}
           <div className="lg:col-span-2 space-y-8">
+            {service.images && service.images.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <ImageIcon className="w-6 h-6 mr-2 text-blue-600" />
+                Service Images
+              </h2>
+              
+              {/* Thumbnail Preview */}
+              {service.thumbnail && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Thumbnail</h3>
+                  <div className="relative">
+                    <img
+                      src={service.thumbnail.url}
+                      alt={`${service.title} thumbnail`}
+                      className="w-full h-64 object-cover rounded-lg shadow-lg"
+                    />
+                    <button
+                      onClick={() => {
+                        const thumbIndex = service.images.findIndex(img => 
+                          img.public_id === service.thumbnail?.public_id
+                        );
+                        if (thumbIndex !== -1) openImageModal(thumbIndex);
+                      }}
+                      className="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-colors"
+                    >
+                      <Maximize2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* All Images Grid */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  All Images ({service.images.length})
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {service.images.map((image, index) => (
+                    <div
+                      key={image.public_id || index}
+                      className="relative group cursor-pointer"
+                      onClick={() => openImageModal(index)}
+                    >
+                      <img
+                        src={image.url}
+                        alt={`${service.title} - Image ${index + 1}`}
+                        className="w-full h-32 object-cover rounded-lg group-hover:opacity-90 transition-opacity"
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 rounded-lg flex items-center justify-center">
+                        <Maximize2 className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      {service.thumbnail?.public_id === image.public_id && (
+                        <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                          Thumbnail
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Image Info */}
+              {service.images.length > 0 && (
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    Click on any image to view it in full size. 
+                    {service.thumbnail && ' The thumbnail is highlighted in blue.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
             {/* Short Description */}
             {service.shortDescription && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
@@ -256,48 +360,6 @@ const ServiceDetails = () => {
                 <p className="text-gray-700 whitespace-pre-wrap">{service.description}</p>
               </div>
             </div>
-            // Add this section in ServiceDetails.jsx after the description section
-{/* Gallery */}
-{service.images && service.images.length > 0 && (
-  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-    <h2 className="text-xl font-bold text-gray-900 mb-6">Service Gallery</h2>
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      {service.images.map((imageUrl, index) => (
-        <div key={index} className="group relative">
-          <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
-            <img
-              src={imageUrl}
-              alt={`${service.title} - Image ${index + 1}`}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
-            />
-          </div>
-          {service.thumbnail === imageUrl && (
-            <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
-              Thumbnail
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-
-{/* Thumbnail Display */}
-{service.thumbnail && (
-  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-    <h2 className="text-xl font-bold text-gray-900 mb-6">Featured Image</h2>
-    <div className="max-w-2xl mx-auto">
-      <div className="relative rounded-xl overflow-hidden bg-gray-100">
-        <img
-          src={service.thumbnail}
-          alt={`${service.title} - Thumbnail`}
-          className="w-full h-auto max-h-[400px] object-contain"
-        />
-      </div>
-    </div>
-  </div>
-)}
 
             {/* Features */}
             {service.features && service.features.length > 0 && (
@@ -458,6 +520,70 @@ const ServiceDetails = () => {
 
         </div>
       </div>
+      {showImageModal && service?.images && service.images.length > 0 && (
+      <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
+        <div className="relative max-w-4xl max-h-[90vh]">
+          {/* Close Button */}
+          <button
+            onClick={closeImageModal}
+            className="absolute -top-12 right-0 text-white hover:text-gray-300 z-10"
+          >
+            <X className="w-8 h-8" />
+          </button>
+
+          {/* Image */}
+          <div className="relative">
+            <img
+              src={service.images[selectedImageIndex].url}
+              alt={`${service.title} - Image ${selectedImageIndex + 1}`}
+              className="max-w-full max-h-[70vh] object-contain rounded-lg"
+            />
+            
+            {/* Navigation Buttons */}
+            {service.images.length > 1 && (
+              <>
+                <button
+                  onClick={prevImage}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-colors"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={nextImage}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-colors"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+
+            {/* Download Button */}
+            <a
+              href={service.images[selectedImageIndex].url}
+              download={`${service.title}-image-${selectedImageIndex + 1}.${service.images[selectedImageIndex].format || 'jpg'}`}
+              className="absolute bottom-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-lg hover:bg-opacity-70 transition-colors flex items-center gap-2"
+            >
+              <Download className="w-5 h-5" />
+              Download
+            </a>
+          </div>
+
+          {/* Image Info */}
+          <div className="mt-4 text-white">
+            <p className="text-sm">
+              Image {selectedImageIndex + 1} of {service.images.length}
+              {service.thumbnail?.public_id === service.images[selectedImageIndex].public_id && 
+                ' • Thumbnail'}
+            </p>
+            {service.images[selectedImageIndex].width && service.images[selectedImageIndex].height && (
+              <p className="text-xs text-gray-300 mt-1">
+                {service.images[selectedImageIndex].width} × {service.images[selectedImageIndex].height} pixels
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 };

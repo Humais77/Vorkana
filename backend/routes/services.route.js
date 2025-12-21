@@ -11,12 +11,7 @@ const {
   validateBulk, 
   validateQuery 
 } = require('../middleware/validators/service.validator.js');
-const { 
-  upload, 
-  thumbnailUpload, 
-  processUploadToCloudinary,
-  handleMulterError 
-} = require('../middleware/upload.middleware.js');
+
 const rateLimit = require('express-rate-limit');
 
 const serviceLimiter = rateLimit({
@@ -110,83 +105,94 @@ const fileFilter = (req, file, cb) => {
   cb(new Error('Invalid file type. Only images (jpeg, jpg, png, webp, gif, svg) are allowed.'), false);
 };
 
-// const upload = multer({
-//   storage: storage,
-//   limits: {
-//     fileSize: 5 * 1024 * 1024,
-//     files: 10
-//   },
-//   fileFilter: fileFilter
-// });
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 10
+  },
+  fileFilter: fileFilter
+});
 
-// const thumbnailUpload = multer({
-//   storage: storage,
-//   limits: {
-//     fileSize: 2 * 1024 * 1024,
-//     files: 1
-//   },
-//   fileFilter: fileFilter
-// });
+const thumbnailUpload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 2 * 1024 * 1024,
+    files: 1
+  },
+  fileFilter: fileFilter
+});
+const uploadWithThumbnail = multer({
+  storage: storage,
+  limits: { 
+    fileSize: 5 * 1024 * 1024, // 5MB max per file
+    files: 11 // 1 thumbnail + 10 images max
+  },
+  fileFilter: fileFilter
+}).fields([
+  { name: 'images', maxCount: 10 },
+  { name: 'thumbnail', maxCount: 1 }
+]);
 
-// const handleMulterError = (err, req, res, next) => {
-//   if (err instanceof multer.MulterError) {
-//     if (err.code === 'LIMIT_FILE_SIZE') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'File size too large. Maximum size is 5MB per file (2MB for thumbnails).',
-//         code: 'FILE_TOO_LARGE'
-//       });
-//     }
-//     if (err.code === 'LIMIT_FILE_COUNT') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Too many files. Maximum 10 files allowed for service images.',
-//         code: 'TOO_MANY_FILES'
-//       });
-//     }
-//     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Unexpected file field',
-//         code: 'UNEXPECTED_FILE_FIELD'
-//       });
-//     }
-//   }
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'File size too large. Maximum size is 5MB per file (2MB for thumbnails).',
+        code: 'FILE_TOO_LARGE'
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many files. Maximum 10 files allowed for service images.',
+        code: 'TOO_MANY_FILES'
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Unexpected file field',
+        code: 'UNEXPECTED_FILE_FIELD'
+      });
+    }
+  }
   
-//   if (err.message.includes('Invalid file type')) {
-//     return res.status(400).json({
-//       success: false,
-//       message: err.message,
-//       code: 'INVALID_FILE_TYPE'
-//     });
-//   }
+  if (err.message.includes('Invalid file type')) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: 'INVALID_FILE_TYPE'
+    });
+  }
   
-//   if (err.message.includes('File size exceeds')) {
-//     return res.status(400).json({
-//       success: false,
-//       message: err.message,
-//       code: 'FILE_SIZE_EXCEEDED'
-//     });
-//   }
+  if (err.message.includes('File size exceeds')) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: 'FILE_SIZE_EXCEEDED'
+    });
+  }
   
-//   if (err.message.includes('Invalid filename')) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Invalid filename detected',
-//       code: 'INVALID_FILENAME'
-//     });
-//   }
+  if (err.message.includes('Invalid filename')) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid filename detected',
+      code: 'INVALID_FILENAME'
+    });
+  }
 
-//   if (err.message.includes('Executable files are not allowed')) {
-//     return res.status(400).json({
-//       success: false,
-//       message: err.message,
-//       code: 'EXECUTABLE_FILE_NOT_ALLOWED'
-//     });
-//   }
+  if (err.message.includes('Executable files are not allowed')) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: 'EXECUTABLE_FILE_NOT_ALLOWED'
+    });
+  }
   
-//   next(err);
-// };
+  next(err);
+};
 
 // ============================================
 // PUBLIC ROUTES
@@ -227,25 +233,8 @@ router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 router.post('/', 
   protect, 
   serviceLimiter, 
-  upload.array('images', 10), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      // Process uploaded files to Cloudinary
-      if (req.files && req.files.length > 0) {
-        const cloudinaryUrls = await processUploadToCloudinary(req.files, 'services');
-        req.body.images = cloudinaryUrls.map(item => item.url);
-        
-        // Set first image as thumbnail if not specified
-        if (cloudinaryUrls.length > 0 && !req.body.thumbnail) {
-          req.body.thumbnail = cloudinaryUrls[0].url;
-        }
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
+  uploadWithThumbnail, // This handles both thumbnail and images
+  handleMulterError, 
   validateCreate, 
   controller.createService
 );
@@ -255,19 +244,7 @@ router.put('/:id',
   protect, 
   serviceLimiter, 
   upload.array('images', 10), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      // Process uploaded files to Cloudinary
-      if (req.files && req.files.length > 0) {
-        const cloudinaryUrls = await processUploadToCloudinary(req.files, 'services');
-        req.body.newImages = cloudinaryUrls.map(item => item.url); // Store as newImages for controller
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   validateUpdate, 
   controller.updateService
 );
@@ -289,37 +266,21 @@ router.patch('/:id/restore',
 // Upload additional images to my service
 router.post('/:id/images', 
   protect, 
-  serviceLimiter, 
+  imageUploadLimiter, 
   upload.array('images', 10), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'No images uploaded',
-          code: 'NO_IMAGES'
-        });
-      }
-      
-      const cloudinaryUrls = await processUploadToCloudinary(req.files, 'services');
-      req.cloudinaryUrls = cloudinaryUrls;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   controller.uploadImages
 );
+
 // Remove specific image from my service
-router.delete('/:id/images/:imageUrl', 
+router.delete('/:id/images/:publicId', 
   protect, 
   serviceLimiter, 
   controller.removeImage
 );
 
 // Set existing image as thumbnail for my service
-router.put('/:id/thumbnail/:imageUrl', 
+router.put('/:id/thumbnail/:publicId', 
   protect, 
   serviceLimiter, 
   controller.setThumbnail
@@ -328,36 +289,12 @@ router.put('/:id/thumbnail/:imageUrl',
 // Upload new thumbnail for my service
 router.post('/:id/thumbnail', 
   protect, 
-  serviceLimiter, 
+  imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No thumbnail uploaded',
-          code: 'NO_THUMBNAIL'
-        });
-      }
-      
-      const cloudinaryUrls = await processUploadToCloudinary([req.file], 'services/thumbnails');
-      if (cloudinaryUrls.length > 0) {
-        req.cloudinaryThumbnail = cloudinaryUrls[0].url;
-        next();
-      } else {
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to upload thumbnail',
-          code: 'THUMBNAIL_UPLOAD_FAILED'
-        });
-      }
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   controller.uploadThumbnail
 );
+
 // ============================================
 // ADMIN ROUTES
 // ============================================
@@ -368,18 +305,7 @@ router.put('/admin/:id',
   adminOnly, 
   serviceLimiter, 
   upload.array('images', 10), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      if (req.files && req.files.length > 0) {
-        const cloudinaryUrls = await processUploadToCloudinary(req.files, 'services');
-        req.body.newImages = cloudinaryUrls.map(item => item.url);
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   validateUpdate, 
   controller.updateService
 );
@@ -423,30 +349,14 @@ router.get('/admin/export',
 router.post('/admin/:id/images', 
   protect, 
   adminOnly, 
-  serviceLimiter, 
+  imageUploadLimiter, 
   upload.array('images', 10), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'No images uploaded',
-          code: 'NO_IMAGES'
-        });
-      }
-      
-      const cloudinaryUrls = await processUploadToCloudinary(req.files, 'services');
-      req.cloudinaryUrls = cloudinaryUrls;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   controller.uploadImages
 );
+
 // Remove specific image (admin)
-router.delete('/admin/:id/images/:imageUrl', 
+router.delete('/admin/:id/images/:publicId', 
   protect, 
   adminOnly, 
   serviceLimiter, 
@@ -454,7 +364,7 @@ router.delete('/admin/:id/images/:imageUrl',
 );
 
 // Set existing image as thumbnail (admin)
-router.put('/admin/:id/thumbnail/:imageUrl', 
+router.put('/admin/:id/thumbnail/:publicId', 
   protect, 
   adminOnly, 
   serviceLimiter, 
@@ -465,36 +375,12 @@ router.put('/admin/:id/thumbnail/:imageUrl',
 router.post('/admin/:id/thumbnail', 
   protect, 
   adminOnly, 
-  serviceLimiter, 
+  imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
-  handleMulterError,
-  async (req, res, next) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No thumbnail uploaded',
-          code: 'NO_THUMBNAIL'
-        });
-      }
-      
-      const cloudinaryUrls = await processUploadToCloudinary([req.file], 'services/thumbnails');
-      if (cloudinaryUrls.length > 0) {
-        req.cloudinaryThumbnail = cloudinaryUrls[0].url;
-        next();
-      } else {
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to upload thumbnail',
-          code: 'THUMBNAIL_UPLOAD_FAILED'
-        });
-      }
-    } catch (error) {
-      next(error);
-    }
-  },
+  handleMulterError, 
   controller.uploadThumbnail
 );
+
 // ============================================
 // BATCH OPERATION ROUTES (Admin only)
 // ============================================

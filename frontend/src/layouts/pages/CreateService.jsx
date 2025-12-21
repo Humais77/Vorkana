@@ -30,12 +30,11 @@ import {
   Type,
   Layers,
   Sparkles,
-  ImageIcon
+ 
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
 import { toast } from 'react-hot-toast';
-import ImageUpload from '../../components/ImageUpload.jsx';
 
 const CreateService = () => {
   const navigate = useNavigate();
@@ -119,6 +118,10 @@ const CreateService = () => {
   });
   const [newRequirementOption, setNewRequirementOption] = useState('');
   const [newPackageFeature, setNewPackageFeature] = useState('');
+  const [uploadedImages, setUploadedImages] = useState([]);
+const [uploadingImages, setUploadingImages] = useState(false);
+const [thumbnailFile, setThumbnailFile] = useState(null);
+const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
 
   // Update subcategories when category changes
   useEffect(() => {
@@ -396,14 +399,100 @@ const CreateService = () => {
 
     return errors;
   };
+  const handleImageUpload = async (files) => {
+  if (uploadingImages) return;
+  
+  const newFiles = Array.from(files);
+  
+  // Validate file count
+  if (uploadedImages.length + newFiles.length > 10) {
+    toast.error('Maximum 10 images allowed');
+    return;
+  }
+  
+  // Validate each file
+  for (const file of newFiles) {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(`${file.name} exceeds 5MB limit`);
+      return;
+    }
+    
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error(`${file.name} is not a valid image type`);
+      return;
+    }
+  }
+  
+  setUploadingImages(true);
+  
+  try {
+    // Create preview URLs for immediate display
+    const previewImages = newFiles.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }));
+    
+    setUploadedImages(prev => [...prev, ...previewImages]);
+    
+    toast.success(`${newFiles.length} image(s) added successfully`);
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    toast.error('Failed to add images');
+  } finally {
+    setUploadingImages(false);
+  }
+};
+
+const handleThumbnailUpload = (file) => {
+  if (uploadingThumbnail) return;
+  
+  // Validate file
+  if (file.size > 2 * 1024 * 1024) {
+    toast.error('Thumbnail exceeds 2MB limit');
+    return;
+  }
+  
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    toast.error('Invalid image type for thumbnail');
+    return;
+  }
+  
+  setThumbnailFile({
+    file,
+    preview: URL.createObjectURL(file),
+    name: file.name,
+    size: file.size,
+    type: file.type
+  });
+  
+  toast.success('Thumbnail selected');
+};
+
+const removeImage = (index) => {
+  const image = uploadedImages[index];
+  URL.revokeObjectURL(image.preview); // Clean up memory
+  setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  toast.success('Image removed');
+};
+
+const removeThumbnail = () => {
+  if (thumbnailFile) {
+    URL.revokeObjectURL(thumbnailFile.preview);
+    setThumbnailFile(null);
+    toast.success('Thumbnail removed');
+  }
+};
 
   // Submit Handler
   const handleSubmit = async (e, status = 'draft') => {
     e.preventDefault();
 
-    console.log('=== FORM SUBMISSION STARTED ===');
-    console.log('Status:', status);
-    console.log('Form data state:', formData);
+    
 
     // Check if user is logged in
     const token = localStorage.getItem('token') || localStorage.getItem('userToken');
@@ -455,64 +544,83 @@ const CreateService = () => {
   revisions: parseInt(formData.revisions) || 1,
   gigType: formData.gigType,
   status: status,
-  // REMOVE: sellerLevel: formData.sellerLevel,
-  userLevel: formData.userLevel, // Optional
+  userLevel: formData.userLevel,
   isFeatured: formData.isFeatured,
   isRecommended: formData.isRecommended,
   isPopular: formData.isPopular,
 };
 
+// Change this variable name - it's conflicting with the state variable
+const submitFormData = new FormData();
+
+// Only append the fields the backend expects as text/json
+submitFormData.append('title', serviceData.title);
+submitFormData.append('description', serviceData.description);
+submitFormData.append('category', serviceData.category);
+submitFormData.append('price', serviceData.price);
+submitFormData.append('currency', serviceData.currency);
+submitFormData.append('deliveryTime', serviceData.deliveryTime);
+submitFormData.append('deliveryTimeUnit', serviceData.deliveryTimeUnit);
+submitFormData.append('revisions', serviceData.revisions);
+submitFormData.append('gigType', serviceData.gigType);
+submitFormData.append('status', status); // ← explicit and only once
+submitFormData.append('userLevel', serviceData.userLevel);
+
+// Optional fields
+if (serviceData.shortDescription) submitFormData.append('shortDescription', serviceData.shortDescription);
+if (serviceData.subcategory) submitFormData.append('subcategory', serviceData.subcategory);
+if (serviceData.metaTitle) submitFormData.append('metaTitle', serviceData.metaTitle);
+if (serviceData.metaDescription) submitFormData.append('metaDescription', serviceData.metaDescription);
+
+// Arrays – stringify complex ones
+if (serviceData.tags?.length > 0) submitFormData.append('tags', JSON.stringify(serviceData.tags));
+if (serviceData.searchKeywords?.length > 0) submitFormData.append('searchKeywords', JSON.stringify(serviceData.searchKeywords));
+if (serviceData.features?.length > 0) submitFormData.append('features', JSON.stringify(serviceData.features));
+if (serviceData.requirements?.length > 0) submitFormData.append('requirements', JSON.stringify(serviceData.requirements));
+if (serviceData.faqs?.length > 0) submitFormData.append('faqs', JSON.stringify(serviceData.faqs));
+if (serviceData.packages?.length > 0) submitFormData.append('packages', JSON.stringify(serviceData.packages));
+
+// Booleans
+submitFormData.append('isFeatured', serviceData.isFeatured);
+submitFormData.append('isRecommended', serviceData.isRecommended);
+submitFormData.append('isPopular', serviceData.isPopular);
+  if (thumbnailFile) {
+    submitFormData.append('thumbnail', thumbnailFile.file);
+  }
+uploadedImages.forEach((img) => {
+    submitFormData.append('images', img.file);
+  });
+
     // Add optional fields only if they have values
-    if (formData.shortDescription.trim()) {
-      serviceData.shortDescription = formData.shortDescription.trim();
-    }
-
-    if (formData.subcategory) {
-      serviceData.subcategory = formData.subcategory;
-    }
-
-    if (formData.metaTitle.trim()) {
-      serviceData.metaTitle = formData.metaTitle.trim();
-    }
-
-    if (formData.metaDescription.trim()) {
-      serviceData.metaDescription = formData.metaDescription.trim();
-    }
-
-    // Add arrays only if they have items
-    if (formData.tags.length > 0) {
-      serviceData.tags = formData.tags.filter(tag => tag.trim() !== '');
-    }
-
-    if (formData.searchKeywords.length > 0) {
-      serviceData.searchKeywords = formData.searchKeywords.filter(keyword => keyword.trim() !== '');
-    }
-
-    if (formData.features.length > 0) {
-      serviceData.features = formData.features;
-    }
-
-    if (formData.requirements.length > 0) {
-      serviceData.requirements = formData.requirements;
-    }
-
-    if (formData.faqs.length > 0) {
-      serviceData.faqs = formData.faqs;
-    }
-
-    if (formData.packages.length > 0) {
-      serviceData.packages = formData.packages;
-    }
-
+    
     console.log('Final service data to submit:', JSON.stringify(serviceData, null, 2));
     console.log('Selected category ID:', formData.category);
 
     try {
-      console.log('Calling mutateAsync...');
       await createServiceMutation.mutateAsync({
-        serviceData,
-        files: null
-      });
+      serviceData: {
+        // Include all your service data
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        price: parseFloat(formData.price),
+        currency: formData.currency,
+        deliveryTime: parseInt(formData.deliveryTime),
+        deliveryTimeUnit: formData.deliveryTimeUnit,
+        revisions: parseInt(formData.revisions) || 1,
+        gigType: formData.gigType,
+        status: status,
+        userLevel: formData.userLevel,
+        isFeatured: formData.isFeatured,
+        isRecommended: formData.isRecommended,
+        isPopular: formData.isPopular,
+        // Add optional fields
+        ...(formData.shortDescription && { shortDescription: formData.shortDescription.trim() }),
+        ...(formData.subcategory && { subcategory: formData.subcategory }),
+        // ... other fields
+      },
+      files: submitFormData
+    });
       
       // Navigation is handled in the mutation's onSuccess callback
       // No need to navigate here
@@ -735,6 +843,163 @@ const CreateService = () => {
               <Briefcase className="w-6 h-6 mr-2 text-blue-600" />
               Basic Information
             </h2>
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+          <Upload className="w-6 h-6 mr-2 text-blue-600" />
+          Service Images
+        </h2>
+
+        <div className="space-y-8">
+          {/* Image Upload */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
+            <div className="space-y-4">
+              {/* Upload Area */}
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
+                <input
+                  type="file"
+                  id="image-upload"
+                  multiple
+                  accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                  onChange={(e) => handleImageUpload(e.target.files)}
+                  className="hidden"
+                  disabled={uploadingImages || createServiceMutation.isPending}
+                />
+                <label htmlFor="image-upload" className="cursor-pointer">
+                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">
+                    Upload Service Images
+                  </h4>
+                  <p className="text-gray-600 mb-4">
+                    Drag & drop images or click to browse
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
+                  </p>
+                </label>
+              </div>
+
+              {/* Image Preview Grid */}
+              {uploadedImages.length > 0 && (
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-medium text-gray-900">
+                      Selected Images ({uploadedImages.length}/10)
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                        setUploadedImages([]);
+                      }}
+                      className="text-sm text-red-600 hover:text-red-700"
+                      disabled={createServiceMutation.isPending}
+                    >
+                      Remove All
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {uploadedImages.map((image, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={image.preview}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          disabled={createServiceMutation.isPending}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                          {image.name.substring(0, 20)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Thumbnail Upload */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+            <div className="space-y-4">
+              <p className="text-gray-600 text-sm">
+                The thumbnail is the main image displayed in service listings. 
+                It should be eye-catching and representative of your service.
+              </p>
+
+              {thumbnailFile ? (
+                <div className="flex items-start gap-4">
+                  <div className="relative">
+                    <img
+                      src={thumbnailFile.preview}
+                      alt="Thumbnail preview"
+                      className="w-32 h-32 object-cover rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeThumbnail}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                      disabled={createServiceMutation.isPending}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                    <p className="text-gray-500 text-sm">
+                      {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
+                    </p>
+                    <p className="text-gray-500 text-sm mt-2">
+                      This image will be used as the service thumbnail.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                  <input
+                    type="file"
+                    id="thumbnail-upload"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                    className="hidden"
+                    disabled={uploadingThumbnail || createServiceMutation.isPending}
+                  />
+                  <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                    <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-1">
+                      Upload Thumbnail
+                    </h4>
+                    <p className="text-gray-600 text-sm mb-2">
+                      Recommended: 800×600 pixels, max 2MB
+                    </p>
+                    <p className="text-gray-500 text-xs">
+                      Click to browse or drag & drop
+                    </p>
+                  </label>
+                </div>
+              )}
+
+              {/* Tip */}
+              {uploadedImages.length > 0 && !thumbnailFile && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-700">
+                    <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
+                    after creating the service.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
             <div className="space-y-6">
               <div>
@@ -1855,64 +2120,6 @@ const CreateService = () => {
               </div>
             </div>
           </div>
-          {/* Section 9: Image Upload with Cloudinary */}
-<div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-  <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-    <ImageIcon className="w-6 h-6 mr-2 text-rose-600" />
-    Service Images & Gallery
-  </h2>
-  
-  <div className="space-y-4">
-    <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-100 rounded-xl p-6">
-      <div className="flex items-start">
-        <div className="w-10 h-10 bg-rose-100 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
-          <Upload className="w-5 h-5 text-rose-600" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-gray-900 mb-2">Cloudinary Image Upload</h3>
-          <p className="text-gray-600 mb-3">
-            Upload high-quality images to showcase your service. All images are securely stored on Cloudinary and automatically optimized for fast loading.
-          </p>
-          <ul className="space-y-1 text-sm text-gray-600">
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
-              Maximum 10 images per service
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
-              5MB maximum per image
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
-              Automatic optimization and CDN delivery
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    
-    <ImageUpload
-      maxImages={10}
-      onImagesUploaded={(images) => {
-        // Handle images uploaded - they will be automatically processed by the backend middleware
-        toast.success(`${images.length} images uploaded successfully!`);
-      }}
-      onThumbnailSet={(thumbnailUrl) => {
-        // Update form data with thumbnail URL
-        setFormData(prev => ({ ...prev, thumbnail: thumbnailUrl }));
-      }}
-    />
-    
-    {formData.thumbnail && (
-      <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-        <div className="flex items-center">
-          <CheckCircle className="w-5 h-5 text-green-500 mr-2 flex-shrink-0" />
-          <p className="text-green-700 font-medium">Thumbnail set!</p>
-        </div>
-      </div>
-    )}
-  </div>
-</div>
 
           {/* Validation Summary */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">

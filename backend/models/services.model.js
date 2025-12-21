@@ -127,24 +127,48 @@ const serviceSchema = new mongoose.Schema({
     max: [99, 'Maximum revisions is 99'],
   },
   images: [{
-    type: String,
-    validate: {
-      validator: function(v) {
-        return /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v) && !v.includes('..');
-      },
-      message: 'Invalid image URL format or path traversal detected',
+    url: {
+      type: String,
+      required: true,
+      validate: {
+        validator: function(v) {
+          return /^https?:\/\//.test(v);
+        },
+        message: 'Image must be a valid URL'
+      }
     },
+    public_id: {
+      type: String,
+      required: true
+    },
+    width: Number,
+    height: Number,
+    size: Number,
+    format: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
   }],
   thumbnail: {
-    type: String,
-    validate: {
-      validator: function(v) {
-        if (!v) return true;
-        return /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i.test(v) && !v.includes('..');
-      },
-      message: 'Invalid thumbnail URL format or path traversal detected',
+    url: {
+      type: String,
+      validate: {
+        validator: function(v) {
+          if (!v) return true;
+          return /^https?:\/\//.test(v);
+        },
+        message: 'Thumbnail must be a valid URL'
+      }
     },
+    public_id: String,
+    width: Number,
+    height: Number,
+    size: Number,
+    format: String,
+    uploadedAt: Date
   },
+
   tags: [{
     type: String,
     trim: true,

@@ -1,4 +1,3 @@
-// services.js - Updated for Cloudinary integration
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
@@ -11,24 +10,12 @@ const axiosInstance = axios.create({
   },
 });
 
-// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('userToken') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
-    // Log requests in development
-    if (import.meta.env.DEV) {
-      console.log('API Request:', {
-        method: config.method,
-        url: config.url,
-        data: config.data,
-        headers: config.headers
-      });
-    }
-    
     return config;
   },
   (error) => {
@@ -36,29 +23,11 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
-    // Log responses in development
-    if (import.meta.env.DEV) {
-      console.log('API Response:', {
-        status: response.status,
-        url: response.config.url,
-        data: response.data
-      });
-    }
     return response;
   },
   (error) => {
-    if (import.meta.env.DEV) {
-      console.error('API Error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        url: error.config?.url
-      });
-    }
-    
     if (error.code === 'ECONNABORTED') {
       throw new Error('Request timeout. Please check your connection.');
     }
@@ -72,20 +41,9 @@ axiosInstance.interceptors.response.use(
 );
 
 export const servicesAPI = {
-  // ============================================
-  // CRUD Operations
-  // ============================================
-  
   getAll: async (filters = {}) => {
     try {
-      const cleanFilters = {};
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== 'undefined' && filters[key] !== '') {
-          cleanFilters[key] = filters[key];
-        }
-      });
-      
-      const queryString = new URLSearchParams(cleanFilters).toString();
+      const queryString = new URLSearchParams(filters).toString();
       const response = await axiosInstance.get(`/api/services${queryString ? '?' + queryString : ''}`);
       
       if (response.data && response.data.success) {
@@ -95,70 +53,61 @@ export const servicesAPI = {
       return response.data || [];
       
     } catch (error) {
-      const message = error.response?.data?.message || 'Failed to fetch services';
-      console.error('Get all services error:', error.response?.data || error.message);
-      throw new Error(message);
+      throw new Error(error.response?.data?.message || 'Failed to fetch services');
     }
   },
   
   getMyServices: async (filters = {}) => {
-    try {
-      const cleanFilters = {};
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== 'undefined' && filters[key] !== '') {
-          cleanFilters[key] = filters[key];
-        }
-      });
-      
-      const queryString = new URLSearchParams(cleanFilters).toString();
-      
-      if (import.meta.env.DEV) {
-        console.log('Fetching my services with filters:', cleanFilters);
+  try {
+    const cleanFilters = {};
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== 'undefined' && filters[key] !== '') {
+        cleanFilters[key] = filters[key];
       }
-      
-      const response = await axiosInstance.get(`/api/services/my-services${queryString ? '?' + queryString : ''}`);
-      
-      if (import.meta.env.DEV) {
-        console.log('My services response:', response.data);
-      }
-      
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          data: response.data.data || [],
-          pagination: response.data.pagination || null,
-          summary: response.data.summary || null
-        };
-      }
-      
-      return response.data || { success: false, data: [] };
-      
-    } catch (error) {
-      console.error('Error fetching my services:', error.response?.data || error.message);
-      
-      let errorMessage = 'Failed to fetch your services';
-      if (error.response) {
-        if (error.response.status === 401) {
-          errorMessage = 'Please login to view your services';
-        } else if (error.response.status === 404) {
-          errorMessage = 'Services endpoint not found. Please contact support.';
-        } else {
-          errorMessage = error.response.data?.message || errorMessage;
-        }
-      }
-      
-      throw new Error(errorMessage);
+    });
+    
+    const queryString = new URLSearchParams(cleanFilters).toString();
+    
+    // DEBUG: Log the URL
+    console.log('Fetching serivces with filters:',cleanFilters);
+    
+    const response = await axiosInstance.get(`/api/services/my-services${queryString ? '?' + queryString : ''}`);
+    
+    console.log('Response status:', response.status);
+    console.log('Response data:', response.data);
+    
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        data: response.data.data || [],
+        pagination: response.data.pagination || null
+      };
     }
-  },
-  
-  getById: async (identifier, options = {}) => {
+    
+    return response.data || { success: false, data: [] };
+    
+  } catch (error) {
+    console.error('Error fetching my services:', error);
+    console.error('Error response:', error.response);
+    
+    let errorMessage = 'Failed to fetch your services';
+    if (error.response) {
+      if (error.response.status === 401) {
+        errorMessage = 'Please login to view your services';
+      } else if (error.response.status === 404) {
+        // This indicates route not found
+        errorMessage = 'Services endpoint not found. Please contact support.';
+      } else {
+        errorMessage = error.response.data?.message || errorMessage;
+      }
+    }
+    
+    throw new Error(errorMessage);
+  }
+},
+  getById: async (identifier) => {
     try {
-      const { incrementView = true } = options;
-      const queryString = new URLSearchParams({
-        incrementView: incrementView.toString()
-      }).toString();
-      
-      const response = await axiosInstance.get(`/api/services/${identifier}${queryString ? '?' + queryString : ''}`);
+      const response = await axiosInstance.get(`/api/services/${identifier}`);
       
       if (response.data && response.data.success) {
         return response.data.service || response.data.data;
@@ -169,15 +118,13 @@ export const servicesAPI = {
     } catch (error) {
       let errorMessage = 'Failed to fetch service';
       if (error.response) {
-        const { status, data } = error.response;
+        const { status } = error.response;
         if (status === 404) {
           errorMessage = 'Service not found';
         } else if (status === 400) {
           errorMessage = 'Invalid service ID';
-        } else if (status === 403) {
-          errorMessage = 'Access to this service is restricted';
         } else {
-          errorMessage = data?.message || errorMessage;
+          errorMessage = error.response.data?.message || errorMessage;
         }
       }
       
@@ -185,41 +132,55 @@ export const servicesAPI = {
     }
   },
   
-  // ============================================
-  // Create & Update with File Uploads
-  // ============================================
-  
   create: async (serviceData, files = null) => {
     try {
-      const formData = new FormData();
-      
-      // Append all service data as JSON string
-      formData.append('data', JSON.stringify(serviceData));
-      
-      // Append files if any
-      if (files && Array.isArray(files)) {
-        files.forEach((file) => {
-          if (file && file instanceof File) {
-            formData.append('images', file);
-          }
-        });
-      }
-      
-      const response = await axiosInstance.post('/api/services', formData, {
+     let response;
+    
+    if (files && files instanceof FormData) {
+      // If files is already FormData (with serviceData appended)
+      response = await axiosInstance.post('/api/services', files, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
+    } else if (files && files.length > 0) {
+      // If separate files array
+      const formData = new FormData();
       
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          message: response.data.message || 'Service created successfully',
-          service: response.data.service || response.data.data
-        };
-      }
+      formData.append('data', JSON.stringify(serviceData));
+       Object.keys(serviceData).forEach(key => {
+        if (serviceData[key] !== undefined && serviceData[key] !== null) {
+          formData.append(key, 
+            typeof serviceData[key] === 'object' 
+              ? JSON.stringify(serviceData[key]) 
+              : serviceData[key]
+          );
+        }
+      });
       
-      return response.data;
+      files.forEach((file) => {
+        formData.append('images', file);
+      });
+      
+     response = await axiosInstance.post('/api/services', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    } else {
+      // No files
+      response = await axiosInstance.post('/api/services', serviceData);
+    }
+    
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        message: response.data.message || 'Service created successfully',
+        service: response.data.service || response.data.data
+      };
+    }
+    
+    return response.data;
       
     } catch (error) {
       let errorMessage = 'Failed to create service';
@@ -230,8 +191,6 @@ export const servicesAPI = {
         if (status === 400) {
           if (data.code === 'CATEGORY_NOT_FOUND') {
             errorMessage = 'Invalid category selected. Please refresh the page and try again.';
-          } else if (data.code === 'SUBCATEGORY_NOT_FOUND') {
-            errorMessage = 'Invalid subcategory selected.';
           } else if (data.errors) {
             const validationErrors = data.errors.map(err => err.message).join(', ');
             errorMessage = `Validation failed: ${validationErrors}`;
@@ -240,10 +199,13 @@ export const servicesAPI = {
           }
         } else if (status === 401) {
           errorMessage = 'Please login to create a service';
-        } else if (status === 409) {
+        } 
+        // REMOVE: seller-specific restriction
+        // else if (status === 403) {
+        //   errorMessage = 'Only sellers can create services';
+        // } 
+        else if (status === 409) {
           errorMessage = 'A service with similar title already exists';
-        } else if (status === 413) {
-          errorMessage = 'File size too large. Maximum 5MB per file.';
         }
       }
       
@@ -259,10 +221,8 @@ export const servicesAPI = {
         const formData = new FormData();
         formData.append('data', JSON.stringify(updateData));
         
-        files.forEach((file) => {
-          if (file && file instanceof File) {
-            formData.append('images', file);
-          }
+        files.forEach((file, index) => {
+          formData.append('images', file);
         });
         
         response = await axiosInstance.put(`/api/services/${id}`, formData, {
@@ -293,6 +253,7 @@ export const servicesAPI = {
           const validationErrors = data.errors.map(err => err.message).join(', ');
           errorMessage = `Validation failed: ${validationErrors}`;
         } else if (status === 403) {
+          // CHANGE: Update error message to be generic
           errorMessage = 'You can only update your own services';
         } else if (status === 404) {
           errorMessage = 'Service not found';
@@ -307,17 +268,9 @@ export const servicesAPI = {
     }
   },
   
-  // ============================================
-  // Delete Operations
-  // ============================================
-  
   delete: async (id, options = {}) => {
     try {
-      const { permanent = false } = options;
-      const queryString = new URLSearchParams({
-        permanent: permanent.toString()
-      }).toString();
-      
+      const queryString = new URLSearchParams(options).toString();
       const response = await axiosInstance.delete(`/api/services/${id}${queryString ? '?' + queryString : ''}`);
       
       if (response.data && response.data.success) {
@@ -335,11 +288,12 @@ export const servicesAPI = {
         const { status, data } = error.response;
         
         if (status === 403) {
+          // CHANGE: Update error message
           errorMessage = 'You can only delete your own services';
         } else if (status === 404) {
           errorMessage = 'Service not found';
         } else if (status === 400) {
-          errorMessage = data?.message || 'Cannot delete service';
+          errorMessage = data?.message || 'Cannot delete service with active orders';
         } else {
           errorMessage = data?.message || errorMessage;
         }
@@ -358,125 +312,9 @@ export const servicesAPI = {
     }
   },
   
-  // ============================================
-  // Image Management with Cloudinary
-  // ============================================
-  
-  uploadImages: async (serviceId, files) => {
-    try {
-      if (!files || !Array.isArray(files) || files.length === 0) {
-        throw new Error('No files provided');
-      }
-      
-      const formData = new FormData();
-      files.forEach(file => {
-        if (file && file instanceof File) {
-          formData.append('images', file);
-        }
-      });
-      
-      const response = await axiosInstance.post(`/api/services/${serviceId}/images`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return response.data;
-      
-    } catch (error) {
-      let errorMessage = 'Failed to upload images';
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400) {
-          if (data.code === 'MAX_IMAGES_EXCEEDED') {
-            errorMessage = 'Cannot upload more than 10 images per service';
-          } else if (data.code === 'NO_IMAGES') {
-            errorMessage = 'No images provided';
-          } else if (data.code === 'FILE_TOO_LARGE') {
-            errorMessage = 'File size too large. Maximum 5MB per file.';
-          } else {
-            errorMessage = data.message || errorMessage;
-          }
-        } else if (status === 413) {
-          errorMessage = 'Total file size exceeds limit';
-        }
-      }
-      
-      throw new Error(errorMessage);
-    }
-  },
-  
-  removeImage: async (serviceId, imageUrl) => {
-    try {
-      // Cloudinary URLs might have special characters
-      const encodedUrl = encodeURIComponent(imageUrl);
-      const response = await axiosInstance.delete(`/api/services/${serviceId}/images/${encodedUrl}`);
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to remove image');
-    }
-  },
-  
-  setThumbnail: async (serviceId, imageUrl) => {
-    try {
-      const encodedUrl = encodeURIComponent(imageUrl);
-      const response = await axiosInstance.put(`/api/services/${serviceId}/thumbnail/${encodedUrl}`);
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to set thumbnail');
-    }
-  },
-  
-  uploadThumbnail: async (serviceId, file) => {
-    try {
-      if (!file || !(file instanceof File)) {
-        throw new Error('No thumbnail file provided');
-      }
-      
-      const formData = new FormData();
-      formData.append('thumbnail', file);
-      
-      const response = await axiosInstance.post(`/api/services/${serviceId}/thumbnail`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return response.data;
-      
-    } catch (error) {
-      let errorMessage = 'Failed to upload thumbnail';
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400) {
-          if (data.code === 'FILE_TOO_LARGE') {
-            errorMessage = 'Thumbnail size too large. Maximum 2MB.';
-          } else if (data.code === 'NO_THUMBNAIL') {
-            errorMessage = 'No thumbnail file provided';
-          }
-        }
-      }
-      
-      throw new Error(errorMessage);
-    }
-  },
-  
-  // ============================================
-  // Search & Discovery
-  // ============================================
-  
   search: async (searchParams) => {
     try {
-      const cleanParams = {};
-      Object.keys(searchParams).forEach(key => {
-        if (searchParams[key] !== undefined && searchParams[key] !== '') {
-          cleanParams[key] = searchParams[key];
-        }
-      });
-      
-      const queryString = new URLSearchParams(cleanParams).toString();
+      const queryString = new URLSearchParams(searchParams).toString();
       const response = await axiosInstance.get(`/api/services/search${queryString ? '?' + queryString : ''}`);
       
       if (response.data && response.data.success) {
@@ -506,10 +344,6 @@ export const servicesAPI = {
     }
   },
   
-  // ============================================
-  // Interactions
-  // ============================================
-  
   toggleLike: async (serviceId, action = 'toggle') => {
     try {
       const response = await axiosInstance.post(`/api/services/${serviceId}/like`, { action });
@@ -519,63 +353,93 @@ export const servicesAPI = {
     }
   },
   
-  incrementViews: async (serviceId) => {
-    try {
-      const response = await axiosInstance.post(`/api/services/${serviceId}/views`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to increment views:', error);
-      return null;
-    }
-  },
-  
-  // ============================================
-  // Categories
-  // ============================================
-  
-  getCategories: async () => {
-    try {
-      const response = await axiosInstance.get('/api/categories?isActive=true&populate=true');
-      
-      if (response.data && response.data.success) {
-        return response.data.data || [];
-      }
-      
-      return response.data || [];
-      
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      throw new Error(error.response?.data?.message || 'Failed to fetch categories');
-    }
-  },
-  
-  // ============================================
-  // Admin Operations
-  // ============================================
-  
-  getServiceStats: async (filters = {}) => {
+  getStats: async (filters = {}) => {
     try {
       const queryString = new URLSearchParams(filters).toString();
+      // CHANGE: Update endpoint from seller to user
       const response = await axiosInstance.get(`/api/services/admin/stats${queryString ? '?' + queryString : ''}`);
       return response.data;
     } catch (error) {
-      console.error('Error fetching service stats:', error);
-      // Return default stats on error
       return {
-        success: true,
-        data: {
-          totalServices: 0,
-          activeServices: 0,
-          draftServices: 0,
-          totalRevenue: 0,
-          avgRating: 0
-        }
-      };
+      success: true,
+      data: {
+        totalServices: 0,
+        activeServices: 0,
+        draftServices: 0,
+        totalRevenue: 0,
+        avgRating: 0
+      }
+    };
+      throw new Error(error.response?.data?.message || 'Failed to fetch service statistics');
+    }
+  },
+  
+  uploadImages: async (serviceId, files) => {
+  try {
+    const formData = new FormData();
+    
+    if (Array.isArray(files)) {
+      files.forEach(file => {
+        formData.append('images', file);
+      });
+    } else if (files) {
+      formData.append('images', files);
+    }
+    
+    const response = await axiosInstance.post(`/api/services/${serviceId}/images`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data;
+    
+  } catch (error) {
+    throw new Error(error.response?.data?.message || 'Failed to upload images');
+  }
+},
+  
+  removeImage: async (serviceId, publicId) => {
+  try {
+    const encodedId = encodeURIComponent(publicId);
+    const response = await axiosInstance.delete(`/api/services/${serviceId}/images/${encodedId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.message || 'Failed to remove image');
+  }
+},
+  
+  setThumbnail: async (serviceId, publicId) => {
+  try {
+    const encodedId = encodeURIComponent(publicId);
+    const response = await axiosInstance.put(`/api/services/${serviceId}/thumbnail/${encodedId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.message || 'Failed to set thumbnail');
+  }
+},
+  
+  uploadThumbnail: async (serviceId, file) => {
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+      
+      const response = await axiosInstance.post(`/api/services/${serviceId}/thumbnail`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to upload thumbnail');
     }
   },
   
   bulkOperation: async (ids, operation, data = {}) => {
     try {
+      // CHANGE: Update endpoint from seller to user
       const response = await axiosInstance.post('/api/services/admin/bulk', {
         ids,
         operation,
@@ -592,6 +456,7 @@ export const servicesAPI = {
   export: async (filters = {}) => {
     try {
       const queryString = new URLSearchParams(filters).toString();
+      // CHANGE: Update endpoint from seller to user
       const response = await axiosInstance.get(`/api/services/admin/export${queryString ? '?' + queryString : ''}`, {
         responseType: 'blob'
       });
@@ -603,45 +468,27 @@ export const servicesAPI = {
     }
   },
   
-  // ============================================
-  // Helper Methods
-  // ============================================
-  
-  validateImageFile: (file) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    
-    if (!allowedTypes.includes(file.type)) {
-      throw new Error('Invalid file type. Only images (JPEG, PNG, WebP, GIF, SVG) are allowed.');
+  incrementViews: async (serviceId) => {
+    try {
+      const response = await axiosInstance.post(`/api/services/${serviceId}/views`);
+      return response.data;
+    } catch (error) {
+      return null;
     }
-    
-    if (file.size > maxSize) {
-      throw new Error('File size exceeds 5MB limit.');
-    }
-    
-    return true;
   },
   
-  validateThumbnailFile: (file) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const maxSize = 2 * 1024 * 1024; // 2MB
-    
-    if (!allowedTypes.includes(file.type)) {
-      throw new Error('Invalid thumbnail type. Only JPEG, PNG, and WebP are allowed.');
+  getCategories: async () => {
+    try {
+      const response = await axiosInstance.get('/api/categories?isActive=true');
+      
+      if (response.data && response.data.success) {
+        return response.data.data || [];
+      }
+      
+      return response.data || [];
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to fetch categories');
     }
-    
-    if (file.size > maxSize) {
-      throw new Error('Thumbnail size exceeds 2MB limit.');
-    }
-    
-    return true;
   },
-  
-  formatFileSize: (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
 };
