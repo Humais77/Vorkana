@@ -18,7 +18,7 @@ import GigDetails from './layouts/pages/GigDetails';
 import CategoryPage from './layouts/pages/CategoryPage';
 import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
-import Dashboard from './layouts/pages/Dashboard'; 
+import Dashboard from './layouts/pages/Dashboard';
 import CreateService from './layouts/pages/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
@@ -42,6 +42,23 @@ import SocketStatus from './components/SocketStatus';
 import ScrollToTop from './components/ScrollToTop';
 import VerifiedPage from './components/VerifiedPage';
 
+import ProjectsPage from './layouts/pages/footer/ProjectsPage';
+import TalentPage from './layouts/pages/footer/TalentPage';
+import SkillsPage from './layouts/pages/footer/SkillsPage';
+import TopRatedPage from './layouts/pages/footer/TopRatedPage';
+import TrendingPage from './layouts/pages/footer/TrendingPage';
+import LocalFreelancersPage from './layouts/pages/footer/LocalFreelancersPage';
+import CareersPage from './layouts/pages/footer/CareersPage';
+import PressPage from './layouts/pages/footer/PressPage';
+import BlogPage from './layouts/pages/footer/BlogPage';
+import AffiliatesPage from './layouts/pages/footer/AffiliatesPage';
+import PartnershipsPage from './layouts/pages/footer/PartnershipsPage';
+import HelpCenterPage from './layouts/pages/footer/HelpCenterPage';
+import ContactPage from './layouts/pages/footer/ContactPage';
+import TrustSafetyPage from './layouts/pages/footer/TrustSafetyPage';
+import DisputesPage from './layouts/pages/footer/DisputesPage';
+import PaymentProtectionPage from './layouts/pages/footer/PaymentProtectionPage';
+import FaqPage from './layouts/pages/footer/FaqPage';
 const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
@@ -82,23 +99,23 @@ const App = () => {
     }
   }, [isAuthenticated, initializeSocketConnection]);
   // Add this useEffect to clean up reset tokens
-useEffect(() => {
-  // Clean up reset token from localStorage on app load
-  const cleanupResetToken = () => {
-    if (localStorage.getItem('resetToken')) {
-      localStorage.removeItem('resetToken');
-    }
-  };
-  
-  cleanupResetToken();
-  
-  // Also clean up on page unload
-  window.addEventListener('beforeunload', cleanupResetToken);
-  
-  return () => {
-    window.removeEventListener('beforeunload', cleanupResetToken);
-  };
-}, []);
+  useEffect(() => {
+    // Clean up reset token from localStorage on app load
+    const cleanupResetToken = () => {
+      if (localStorage.getItem('resetToken')) {
+        localStorage.removeItem('resetToken');
+      }
+    };
+
+    cleanupResetToken();
+
+    // Also clean up on page unload
+    window.addEventListener('beforeunload', cleanupResetToken);
+
+    return () => {
+      window.removeEventListener('beforeunload', cleanupResetToken);
+    };
+  }, []);
 
   return (
     <SecurityProvider>
@@ -141,15 +158,32 @@ useEffect(() => {
             <Route path="/my-orders" element={<MyOrders />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
-            
-<Route path="/verified" element={<VerifiedPage />} />
-<Route path="/verify-email/:token?" element={<VerifyEmail />} />
-  <Route path="/verify-email/:token" element={<VerifyEmail />} />
-  <Route path="/forgot-password" element={<ForgotPassword />} />
-  <Route path="/reset-password" element={<ResetPassword />} />
-  <Route path="/account-deactivated" element={<AccountDeactivated />} />
+
+            <Route path="/verified" element={<VerifiedPage />} />
+            <Route path="/verify-email/:token?" element={<VerifyEmail />} />
+            <Route path="/verify-email/:token" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/account-deactivated" element={<AccountDeactivated />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/talent" element={<TalentPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/top-rated" element={<TopRatedPage />} />
+            <Route path="/trending" element={<TrendingPage />} />
+            <Route path="/local" element={<LocalFreelancersPage />} />
+            <Route path="/careers" element={<CareersPage />} />
+            <Route path="/press" element={<PressPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/affiliates" element={<AffiliatesPage />} />
+            <Route path="/partnerships" element={<PartnershipsPage />} />
+            <Route path="/help" element={<HelpCenterPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/trust" element={<TrustSafetyPage />} />
+            <Route path="/disputes" element={<DisputesPage />} />
+            <Route path="/payment-protection" element={<PaymentProtectionPage />} />
+            <Route path="/faq" element={<FaqPage />} />
           </Route>
-          
+
           <Route path="/admin/login" element={<AdminLogin />} />
 
           <Route path="/admin/*" element={
