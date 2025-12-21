@@ -35,7 +35,7 @@ import { useUpdateProfile, useGetProfile } from '../../hooks/useAuth';
 import { createImagePreview } from '../../utils/imageUtils';
 const Profile = () => {
   const navigate = useNavigate();
-  const { user, isAuthenticated, updateUser } = useAuthStore();
+  const { user, isAuthenticated, setUser } = useAuthStore();
 
   // API hooks
   const updateProfileMutation = useUpdateProfile();
@@ -81,45 +81,74 @@ const [tempPicture, setTempPicture] = useState(null); // For immediate preview
   });
 
   // Calculate profile completion percentage
-  const calculateProfileCompletion = (userData = user, formDataState = formData) => {
-    if (!userData) return 0;
-    
-    const fieldWeights = {
-      bio: { weight: 20, value: formDataState.bio?.trim() || userData.bio },
-      occupation: { weight: 15, value: formDataState.occupation?.trim() || userData.occupation },
-      education: { weight: 15, value: formDataState.education?.trim() || userData.education },
-      phoneNumber: { weight: 10, value: formDataState.phoneNumber?.trim() || userData.phoneNumber },
-      country: { weight: 8, value: formDataState.country?.trim() || userData.country },
-      city: { weight: 7, value: formDataState.city?.trim() || userData.city },
-      languages: { weight: 10, value: (formDataState.languages?.length > 0 || userData.languages?.length > 0) },
-      dateOfBirth: { weight: 5, value: formDataState.dateOfBirth || userData.dateOfBirth },
-      gender: { weight: 5, value: formDataState.gender?.trim() || userData.gender },
-      socialLinks: { 
-        weight: 5, 
-        value: (formDataState.linkedin || formDataState.github || formDataState.website || 
-                userData.linkedin || userData.github || userData.website) 
-      }
-    };
-
-    let totalScore = 0;
-    let maxScore = 0;
-
-    Object.entries(fieldWeights).forEach(([field, config]) => {
-      maxScore += config.weight;
-      
-      if (typeof config.value === 'boolean') {
-        if (config.value) totalScore += config.weight;
-      } else if (config.value && config.value !== '') {
-        if (field === 'bio' && config.value.length < 20) {
-          totalScore += Math.min(config.weight, Math.floor((config.value.length / 50) * config.weight));
-        } else {
-          totalScore += config.weight;
-        }
-      }
-    });
-
-    return Math.min(100, Math.round((totalScore / maxScore) * 100));
+  // Update this function to properly sync with user state
+const calculateProfileCompletion = (currentUser = user, currentFormData = formData) => {
+  if (!currentUser) return 0;
+  
+  // Use form data for editing, fall back to user data
+  const fieldWeights = {
+    bio: { 
+      weight: 20, 
+      value: currentFormData.bio?.trim() || currentUser.bio?.trim() 
+    },
+    occupation: { 
+      weight: 15, 
+      value: currentFormData.occupation?.trim() || currentUser.occupation?.trim() 
+    },
+    education: { 
+      weight: 15, 
+      value: currentFormData.education?.trim() || currentUser.education?.trim() 
+    },
+    phoneNumber: { 
+      weight: 10, 
+      value: currentFormData.phoneNumber?.trim() || currentUser.phoneNumber?.trim() 
+    },
+    country: { 
+      weight: 8, 
+      value: currentFormData.country?.trim() || currentUser.country?.trim() 
+    },
+    city: { 
+      weight: 7, 
+      value: currentFormData.city?.trim() || currentUser.city?.trim() 
+    },
+    languages: { 
+      weight: 10, 
+      value: (currentFormData.languages?.length > 0 || currentUser.languages?.length > 0) 
+    },
+    dateOfBirth: { 
+      weight: 5, 
+      value: currentFormData.dateOfBirth || currentUser.dateOfBirth 
+    },
+    gender: { 
+      weight: 5, 
+      value: currentFormData.gender?.trim() || currentUser.gender?.trim() 
+    },
+    socialLinks: { 
+      weight: 5, 
+      value: (currentFormData.linkedin || currentFormData.github || currentFormData.website || 
+              currentUser.linkedin || currentUser.github || currentUser.website) 
+    }
   };
+
+  let totalScore = 0;
+  let maxScore = 0;
+
+  Object.entries(fieldWeights).forEach(([field, config]) => {
+    maxScore += config.weight;
+    
+    if (typeof config.value === 'boolean') {
+      if (config.value) totalScore += config.weight;
+    } else if (config.value && config.value !== '') {
+      if (field === 'bio' && config.value.length < 20) {
+        totalScore += Math.min(config.weight, Math.floor((config.value.length / 50) * config.weight));
+      } else {
+        totalScore += config.weight;
+      }
+    }
+  });
+
+  return Math.min(100, Math.round((totalScore / maxScore) * 100));
+};
 
   // Get missing fields
   const getMissingFields = () => {
@@ -208,6 +237,49 @@ const [tempPicture, setTempPicture] = useState(null); // For immediate preview
  const handleProfilePictureClick = () => {
     fileInputRef.current?.click();
   };
+  // Add this useEffect after the existing useEffect
+useEffect(() => {
+  const syncFormDataWithUser = () => {
+    if (user) {
+      // Check if formData is significantly different from user data
+      const userFields = {
+        bio: user.bio || '',
+        phoneNumber: user.phoneNumber || '',
+        country: user.country || '',
+        city: user.city || '',
+        languages: user.languages || [],
+        occupation: user.occupation || '',
+        education: user.education || '',
+        gender: user.gender || '',
+        dateOfBirth: user.dateOfBirth || '',
+        github: user.github || '',
+        linkedin: user.linkedin || '',
+        website: user.website || '',
+        privacySettings: user.privacySettings || {
+          profileVisibility: 'public',
+          showEmail: false,
+          showPhone: false,
+          showLocation: true,
+          showLastSeen: true
+        }
+      };
+
+      // Only update if formData is empty or significantly different
+      const shouldUpdate = Object.keys(userFields).some(key => {
+        if (key === 'privacySettings') {
+          return JSON.stringify(formData[key]) !== JSON.stringify(userFields[key]);
+        }
+        return formData[key] !== userFields[key];
+      });
+
+      if (shouldUpdate && editingField === null) {
+        setFormData(userFields);
+      }
+    }
+  };
+
+  syncFormDataWithUser();
+}, [user, editingField]);
 
  const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -238,11 +310,15 @@ const [tempPicture, setTempPicture] = useState(null); // For immediate preview
       
       if (pictureUrl) {
         // Update form data
-        updateUser({
+       // Optimistically update local store
+setUser({
   ...user,
   picture: pictureUrl,
   updatedAt: Date.now(),
 });
+
+// Optional: refetch profile to confirm
+refetchProfile();
         // Clear temp picture after successful upload
         setTempPicture(null);
         
@@ -270,63 +346,112 @@ const [tempPicture, setTempPicture] = useState(null); // For immediate preview
   };
   // Save handler - NOW UPDATES DATABASE
   const handleSave = async (field) => {
-    if (isSaving) return;
+  if (isSaving) return;
+  
+  setIsSaving(true);
+  try {
+    const updateData = {};
     
-    setIsSaving(true);
-    try {
-      const updateData = {};
-      
-      if (field === 'all') {
-        // Prepare all data for API
-        updateData.bio = formData.bio;
-        updateData.phoneNumber = formData.phoneNumber;
-        updateData.country = formData.country;
-        updateData.city = formData.city;
-        updateData.languages = formData.languages;
-        updateData.occupation = formData.occupation;
-        updateData.education = formData.education;
-        updateData.gender = formData.gender;
-        updateData.dateOfBirth = formData.dateOfBirth || null;
-        updateData.github = formData.github;
-        updateData.linkedin = formData.linkedin;
-        updateData.website = formData.website;
-        updateData.privacySettings = formData.privacySettings;
-      } else {
-        // Prepare specific field for API
-        updateData[field] = formData[field];
-      }
-
-      // Call the API mutation
-      const result = await updateProfileMutation.mutateAsync(updateData);
-      
-      if (result.success) {
-        // Update local state with the response data
-        if (updateUser) {
-          updateUser(result.user || updateData);
+    // Determine which fields to update based on what's being edited
+    if (field === 'all') {
+      // Update all form fields
+      Object.keys(formData).forEach(key => {
+        // Skip privacySettings if not changed
+        if (key !== 'privacySettings' || 
+            JSON.stringify(formData.privacySettings) !== JSON.stringify(user?.privacySettings || {})) {
+          updateData[key] = formData[key];
         }
-        
-        // Refetch profile to get latest data
-        await refetchProfile();
-        
-        toast.success(field === 'all' ? 'Profile updated successfully!' : `${field} updated successfully!`);
-        setEditingField(null);
-        
-        // Hide setup prompt if profile is sufficiently complete
-        const newCompletion = calculateProfileCompletion();
-        if (newCompletion >= 70) {
-          setShowSetupPrompt(false);
-        }
-      } else {
-        throw new Error(result.message || 'Update failed');
-      }
-      
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      toast.error(error.message || 'Failed to update profile. Please try again.');
-    } finally {
-      setIsSaving(false);
+      });
+    } else if (field === 'bio') {
+      updateData.bio = formData.bio;
+    } else if (field === 'phoneNumber') {
+      updateData.phoneNumber = formData.phoneNumber;
+    } else if (field === 'professional') {
+      updateData.occupation = formData.occupation;
+      updateData.education = formData.education;
+    } else if (field === 'personal') {
+      updateData.gender = formData.gender;
+      updateData.dateOfBirth = formData.dateOfBirth || null;
+    } else if (field === 'languages') {
+      updateData.languages = formData.languages;
+    } else if (field === 'location') {
+      updateData.country = formData.country;
+      updateData.city = formData.city;
+    } else if (field === 'social') {
+      updateData.linkedin = formData.linkedin;
+      updateData.github = formData.github;
+      updateData.website = formData.website;
+    } else if (field === 'privacySettings') {
+      updateData.privacySettings = formData.privacySettings;
+    } else {
+      // Generic field update
+      updateData[field] = formData[field];
     }
-  };
+
+    // Call the API mutation
+    const result = await updateProfileMutation.mutateAsync(updateData);
+    
+    if (result.success) {
+      // Update local store with the response data
+      if (result.user) {
+        await updateProfileMutation.mutateAsync(updateData);
+toast.success('Profile updated successfully!');
+await refetchProfile(); // Syncs store automatically
+        
+        // Update formData with the latest user data to keep in sync
+        setFormData(prev => ({
+          ...prev,
+          bio: result.user.bio || '',
+          phoneNumber: result.user.phoneNumber || '',
+          country: result.user.country || '',
+          city: result.user.city || '',
+          languages: result.user.languages || [],
+          occupation: result.user.occupation || '',
+          education: result.user.education || '',
+          gender: result.user.gender || '',
+          dateOfBirth: result.user.dateOfBirth || '',
+          github: result.user.github || '',
+          linkedin: result.user.linkedin || '',
+          website: result.user.website || '',
+          privacySettings: result.user.privacySettings || {
+            profileVisibility: 'public',
+            showEmail: false,
+            showPhone: false,
+            showLocation: true,
+            showLastSeen: true
+          }
+        }));
+      }
+      
+      // Refetch profile to ensure consistency
+      await refetchProfile();
+      
+      toast.success(
+        field === 'all' 
+          ? 'Profile updated successfully!' 
+          : `${field === 'professional' ? 'Professional details' : field} updated successfully!`
+      );
+      setEditingField(null);
+      
+      // Hide setup prompt if profile is sufficiently complete
+      const newCompletion = calculateProfileCompletion(result.user || user, formData);
+      if (newCompletion >= 70) {
+        setShowSetupPrompt(false);
+      }
+    } else {
+      throw new Error(result.message || 'Update failed');
+    }
+    
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    toast.error(error.message || 'Failed to update profile. Please try again.');
+    
+    // Re-fetch the latest user data on error
+    await refetchProfile();
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleCancel = () => {
     if (user) {

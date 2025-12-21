@@ -503,7 +503,10 @@ const updateProfile = async (req, res) => {
       languages,
       occupation,
       education,
-      privacySettings
+      privacySettings,
+      github,
+      linkedin,
+      website
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -514,9 +517,27 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    // Sanitize inputs
+    // Prepare update data
     const updateData = {};
     if (name) updateData.name = sanitizeInput(name);
+    if (email && email !== user.email) {
+      // Handle email change with verification
+      if (!validator.isEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address'
+        });
+      }
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email already taken'
+        });
+      }
+      updateData.email = email.toLowerCase();
+      updateData.emailVerified = false;
+    }
     if (bio !== undefined) updateData.bio = sanitizeInput(bio);
     if (phoneNumber !== undefined) {
       if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
@@ -525,7 +546,7 @@ const updateProfile = async (req, res) => {
           message: 'Please provide a valid phone number'
         });
       }
-      updateData.phoneNumber = phoneNumber ? sanitizeInput(phoneNumber) : '';
+      updateData.phoneNumber = phoneNumber || '';
     }
     if (gender !== undefined) updateData.gender = gender;
     if (dateOfBirth !== undefined) {
@@ -535,85 +556,39 @@ const updateProfile = async (req, res) => {
           message: 'You must be at least 13 years old and not older than 120 years'
         });
       }
-      updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+      updateData.dateOfBirth = dateOfBirth || null;
     }
-    if (country !== undefined) updateData.country = country ? sanitizeInput(country) : '';
-    if (city !== undefined) updateData.city = city ? sanitizeInput(city) : '';
-    if (languages !== undefined) updateData.languages = languages;
-    if (occupation !== undefined) updateData.occupation = occupation ? sanitizeInput(occupation) : '';
-    if (education !== undefined) updateData.education = education ? sanitizeInput(education) : '';
+    if (country !== undefined) updateData.country = country || '';
+    if (city !== undefined) updateData.city = city || '';
+    if (languages !== undefined) updateData.languages = languages || [];
+    if (occupation !== undefined) updateData.occupation = occupation || '';
+    if (education !== undefined) updateData.education = education || '';
+    if (github !== undefined) updateData.github = github || '';
+    if (linkedin !== undefined) updateData.linkedin = linkedin || '';
+    if (website !== undefined) updateData.website = website || '';
     if (privacySettings !== undefined) updateData.privacySettings = privacySettings;
-
-    // Handle email change
-    let requiresEmailVerification = false;
-    if (email && email !== user.email) {
-      // Validate email
-      if (!validator.isEmail(email)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid email address'
-        });
-      }
-
-      // Check if email is already taken
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
-      if (existingUser && existingUser._id.toString() !== user._id.toString()) {
-        return res.status(409).json({
-          success: false,
-          message: 'Email already taken'
-        });
-      }
-
-      updateData.email = email.toLowerCase();
-      updateData.emailVerified = false;
-      requiresEmailVerification = true;
-    }
-
-    // Handle picture URL validation
-    if (picture !== undefined) {
-      if (picture && !validator.isURL(picture, { 
-        protocols: ['http', 'https'],
-        require_protocol: true 
-      })) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid URL for the picture'
-        });
-      }
-      updateData.picture = picture || null;
-    }
-
-    // Update user
+    
+    // Update the user
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
-      updateData,
-      { new: true, runValidators: true }
+      { $set: updateData },
+      { 
+        new: true, 
+        runValidators: true,
+        fields: '-password -passwordHistory -resetPasswordToken -resetPasswordExpires -failedLoginAttempts -lockUntil -twoFactorSecret -emailVerificationToken -deviceTokens -loginHistory -suspiciousActivityDetected'
+      }
     );
 
-    // Send verification email if email was changed
-    if (requiresEmailVerification) {
-      const verificationToken = updatedUser.createEmailVerificationToken();
-      await updatedUser.save({ validateBeforeSave: false });
-
-      // FIXED: Send email changed notification using EmailService
-      try {
-        await EmailService.sendEmailChangedEmail(updatedUser, user.email);
-      } catch (emailError) {
-        console.error('Failed to send email changed notification:', emailError);
-        // Don't fail the update if email fails
-      }
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found after update'
+      });
     }
-
-    // Log profile update
-    logSecurityEvent('PROFILE_UPDATED', user._id, req.ip, {
-      fieldsUpdated: Object.keys(updateData)
-    });
 
     res.json({
       success: true,
-      message: requiresEmailVerification ? 
-        'Profile updated. Please verify your new email.' : 
-        'Profile updated successfully',
+      message: 'Profile updated successfully',
       user: {
         _id: updatedUser._id,
         name: updatedUser.name,
@@ -630,15 +605,19 @@ const updateProfile = async (req, res) => {
         languages: updatedUser.languages,
         occupation: updatedUser.occupation,
         education: updatedUser.education,
+        github: updatedUser.github,
+        linkedin: updatedUser.linkedin,
+        website: updatedUser.website,
         privacySettings: updatedUser.privacySettings,
-        accountType: updatedUser.accountType,
         rating: updatedUser.rating,
         completedOrders: updatedUser.completedOrders,
         isOnline: updatedUser.isOnline,
-        age: updatedUser.age,
-        fullLocation: updatedUser.fullLocation
+        lastSeenAt: updatedUser.lastSeenAt,
+        createdAt: updatedUser.createdAt,
+        updatedAt: updatedUser.updatedAt
       }
     });
+    
   } catch (error) {
     console.error('Update profile error:', error);
     

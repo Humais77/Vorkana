@@ -97,7 +97,6 @@ const corsOptions = {
     'X-CSRF-Token',
     'X-Admin-Access'  // Add admin-specific headers
   ],
-  credentials: true,
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204

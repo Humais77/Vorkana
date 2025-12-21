@@ -9,7 +9,6 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // For cookies in production
 });
 
 // Request interceptor
