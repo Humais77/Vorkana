@@ -15,7 +15,8 @@ const {
   refreshToken,
   getPublicProfile,
   deactivateAccount,
-  reactivateAccount
+  reactivateAccount,
+  verifyEmailRedirect
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -141,12 +142,41 @@ router.post("/logout",
 router.get("/verify-email/:token", 
   verifyEmail
 );
-
+router.get("/verify/:token", verifyEmailRedirect);
 router.post("/resend-verification", 
   passwordResetLimiter,
   validateRequest({ body: { email: { type: 'string', format: 'email', required: true } } }),
   resendVerificationEmail
 );
+router.get("/verified-status", (req, res) => {
+  const { token, status } = req.query;
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Verification Status - Vorkana</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <script>
+        // Post message to parent window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'email-verification',
+            token: '${token}',
+            status: '${status}'
+          }, '${process.env.FRONTEND_URL}');
+          window.close();
+        }
+      </script>
+    </head>
+    <body>
+      <p>Please close this window and return to the app.</p>
+    </body>
+    </html>
+  `;
+  
+  res.send(html);
+});
 
 // ========== PASSWORD MANAGEMENT ROUTES ==========
 router.post("/forgot-password", 

@@ -208,7 +208,16 @@ const register = async (req, res) => {
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
    await EmailService.sendVerificationEmail(user, verificationToken);
-
+try {
+      await EmailService.sendVerificationEmail(user, verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail registration if email fails
+      logSecurityEvent('EMAIL_SEND_FAILED', user._id, ip, { 
+        email: user.email,
+        error: emailError.message 
+      });
+    }
     // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -479,7 +488,6 @@ const getProfile = async (req, res) => {
   }
 };
 
-// Update user profile
 const updateProfile = async (req, res) => {
   try {
     const { 
@@ -587,8 +595,13 @@ const updateProfile = async (req, res) => {
       const verificationToken = updatedUser.createEmailVerificationToken();
       await updatedUser.save({ validateBeforeSave: false });
 
-      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-      await EmailService.sendEmailChangedEmail(updatedUser, user.email);
+      // FIXED: Send email changed notification using EmailService
+      try {
+        await EmailService.sendEmailChangedEmail(updatedUser, user.email);
+      } catch (emailError) {
+        console.error('Failed to send email changed notification:', emailError);
+        // Don't fail the update if email fails
+      }
     }
 
     // Log profile update
@@ -645,7 +658,6 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Change password with enhanced security
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -738,9 +750,9 @@ const changePassword = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     // Invalidate current token
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      blacklist.add(token);
+    const authToken = req.headers.authorization?.split(' ')[1];
+    if (authToken) {
+      blacklist.add(authToken);
     }
 
     // Log password change
@@ -748,26 +760,13 @@ const changePassword = async (req, res) => {
       passwordChangedAt: new Date().toISOString()
     });
 
-    // Send security notification email
-    await sendEmail(
-      user.email,
-      'Password Changed - Vorkana Security Alert',
-      `Your password was changed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.\n\nIf you didn't make this change, please contact our support team immediately.`,
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #DC2626;">Security Alert</h1>
-        <p>Your password was changed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
-        <div style="background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 12px; margin: 20px 0;">
-          <p style="margin: 0; color: #DC2626;"><strong>If you didn't make this change:</strong></p>
-          <ul style="margin: 10px 0; padding-left: 20px;">
-            <li>Contact our support team immediately</li>
-            <li>Check your account for any unauthorized activity</li>
-            <li>Consider enabling two-factor authentication</li>
-          </ul>
-        </div>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;">
-        <p style="color: #666; font-size: 14px;">This is an automated security alert from Vorkana.</p>
-      </div>`
-    );
+    // FIXED: Send security notification email using EmailService
+    try {
+      await EmailService.sendPasswordChangedEmail(user, ip);
+    } catch (emailError) {
+      console.error('Failed to send password changed email:', emailError);
+      // Don't fail the operation if email fails
+    }
 
     res.json({
       success: true,
@@ -834,7 +833,14 @@ const verifyEmail = async (req, res) => {
     user.emailVerificationToken = undefined;
     user.suspiciousActivityDetected = false;
     await user.save();
-    await EmailService.sendWelcomeEmail(user);
+    
+    // Send welcome email
+    try {
+      await EmailService.sendWelcomeEmail(user);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+      // Don't fail verification if email fails
+    }
 
     // Log verification
     logSecurityEvent('EMAIL_VERIFIED', user._id, ip, { email: user.email });
@@ -861,7 +867,6 @@ const verifyEmail = async (req, res) => {
     });
   }
 };
-
 // Resend verification email with rate limiting
 const resendVerificationEmail = async (req, res) => {
   try {
@@ -910,9 +915,21 @@ const resendVerificationEmail = async (req, res) => {
     // Log resend attempt
     await user.addLoginHistory(ip, 'verification-resend', true);
 
-    // Send verification email
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-    await EmailService.sendVerificationEmail(user, verificationToken);
+    // FIXED: Send verification email using EmailService
+    try {
+      await EmailService.sendVerificationEmail(user, verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      logSecurityEvent('VERIFICATION_EMAIL_SEND_FAILED', user._id, ip, { 
+        email: user.email,
+        error: emailError.message 
+      });
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email. Please try again later.'
+      });
+    }
 
     // Log event
     logSecurityEvent('VERIFICATION_EMAIL_RESENT', user._id, ip, { email: user.email });
@@ -942,7 +959,6 @@ const forgotPassword = async (req, res) => {
     
     // Security: Don't reveal if user exists
     if (!user) {
-      // Still log the attempt for security monitoring
       logSecurityEvent('PASSWORD_RESET_REQUEST_UNKNOWN_EMAIL', null, ip, { email });
       
       // Return success to prevent email enumeration
@@ -987,9 +1003,26 @@ const forgotPassword = async (req, res) => {
     // Log reset request
     await user.addLoginHistory(ip, 'password-reset', true);
 
-    // Send reset email
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    await EmailService.sendVerificationEmail(user, verificationToken);
+    // FIXED: Send password reset email using EmailService
+    try {
+      await EmailService.sendPasswordResetEmail(user, resetToken);
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+      logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', user._id, ip, { 
+        email: user.email,
+        error: emailError.message 
+      });
+      
+      // Rollback token generation
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save({ validateBeforeSave: false });
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset email. Please try again later.'
+      });
+    }
 
     // Log security event
     logSecurityEvent('PASSWORD_RESET_REQUESTED', user._id, ip, { email: user.email });
@@ -1074,8 +1107,13 @@ const resetPassword = async (req, res) => {
     // Log password reset
     logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
 
-    // Send confirmation email
-    await EmailService.sendPasswordChangedEmail(user);
+    // FIXED: Send confirmation email using EmailService
+    try {
+      await EmailService.sendPasswordChangedEmail(user, ip);
+    } catch (emailError) {
+      console.error('Failed to send password changed email:', emailError);
+      // Don't fail the reset if email fails
+    }
 
     res.json({
       success: true,
@@ -1305,7 +1343,6 @@ const getPublicProfile = async (req, res) => {
   }
 };
 
-// Deactivate account (soft delete)
 const deactivateAccount = async (req, res) => {
   try {
     const { password, reason } = req.body;
@@ -1351,8 +1388,13 @@ const deactivateAccount = async (req, res) => {
     // Log deactivation
     logSecurityEvent('ACCOUNT_DEACTIVATED', user._id, req.ip, { reason });
 
-    // Send confirmation email
-    await EmailService.sendAccountDeactivatedEmail(user, reason);
+    // FIXED: Send deactivation email using EmailService
+    try {
+      await EmailService.sendAccountDeactivatedEmail(user, reason);
+    } catch (emailError) {
+      console.error('Failed to send account deactivated email:', emailError);
+      // Don't fail deactivation if email fails
+    }
 
     res.json({
       success: true,
@@ -1370,7 +1412,6 @@ const deactivateAccount = async (req, res) => {
   }
 };
 
-// Reactivate account
 const reactivateAccount = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -1405,7 +1446,6 @@ const reactivateAccount = async (req, res) => {
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      // Log failed reactivation attempt
       logSecurityEvent('REACTIVATION_FAILED', user._id, ip, { reason: 'wrong_password' });
       
       return res.status(401).json({
@@ -1428,8 +1468,13 @@ const reactivateAccount = async (req, res) => {
     // Log reactivation
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
 
-    // Send reactivation email
-   await EmailService.sendAccountReactivatedEmail(user);
+    // FIXED: Send reactivation email using EmailService
+    try {
+      await EmailService.sendAccountReactivatedEmail(user);
+    } catch (emailError) {
+      console.error('Failed to send account reactivated email:', emailError);
+      // Don't fail reactivation if email fails
+    }
 
     res.json({
       success: true,
@@ -1466,7 +1511,675 @@ const handleJSONErrors = (err, req, res, next) => {
   }
   next(err);
 };
+// In your auth.controller.js, add this function:
 
+const verifyEmailRedirect = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const ip = req.ip || req.connection.remoteAddress;
+    
+    if (!token || token.length !== 64) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Token - Vorkana</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .container { max-width: 500px; margin: 0 auto; }
+            .error { color: #dc2626; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1 class="error">Invalid Verification Link</h1>
+            <p>The verification link is invalid or has expired.</p>
+            <a href="${process.env.FRONTEND_URL}/resend-verification">Resend Verification Email</a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    const user = await User.findByVerificationToken(token);
+    if (!user) {
+      logSecurityEvent('EMAIL_VERIFICATION_FAILED_REDIRECT', null, ip, { reason: 'invalid_token' });
+      
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Token - Vorkana</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .container { max-width: 500px; margin: 0 auto; }
+            .error { color: #dc2626; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1 class="error">Invalid Verification Link</h1>
+            <p>The verification link has expired.</p>
+            <a href="${process.env.FRONTEND_URL}/resend-verification">Request a new verification email</a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    // Check if already verified
+    if (user.emailVerified) {
+      return res.redirect(`${process.env.FRONTEND_URL}/verified?status=already`);
+    }
+
+    // Verify the email
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.suspiciousActivityDetected = false;
+    await user.save();
+    
+    // Send welcome email
+    try {
+      await EmailService.sendWelcomeEmail(user);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+    }
+
+    // Log verification
+    logSecurityEvent('EMAIL_VERIFIED_REDIRECT', user._id, ip, { email: user.email });
+
+    // Generate new tokens
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+
+    // Create a redirect page with token storage
+    const redirectHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Email Verified - Vorkana</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+          }
+          .success-icon {
+            font-size: 48px;
+            color: #10b981;
+            margin-bottom: 20px;
+          }
+          h1 {
+            color: #111827;
+            margin-bottom: 10px;
+          }
+          p {
+            color: #4b5563;
+            margin-bottom: 30px;
+            line-height: 1.6;
+          }
+          .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #10b981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+          }
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="success-icon">✓</div>
+          <h1>Email Verified Successfully!</h1>
+          <p>Your email has been verified. You're being redirected to the app...</p>
+          <div class="spinner"></div>
+        </div>
+        <script>
+          // Store tokens in localStorage and redirect
+          localStorage.setItem('userToken', '${newToken}');
+          localStorage.setItem('refreshToken', '${newRefreshToken}');
+          
+          // Redirect after a short delay
+          setTimeout(() => {
+            window.location.href = '${process.env.FRONTEND_URL}/verified?status=success&token=${newToken}';
+          }, 1500);
+        </script>
+      </body>
+      </html>
+    `;
+
+    res.send(redirectHtml);
+
+  } catch (error) {
+    console.error('Verify email redirect error:', error);
+    
+    const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Error - Vorkana</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: #fef2f2;
+          }
+          .container { 
+            max-width: 500px; 
+            margin: 0 auto; 
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          }
+          .error-icon {
+            color: #dc2626;
+            font-size: 48px;
+            margin-bottom: 20px;
+          }
+          .error { 
+            color: #dc2626; 
+            margin-bottom: 20px;
+          }
+          .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #10b981;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-top: 20px;
+          }
+          .btn:hover {
+            background: #059669;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="error-icon">⚠️</div>
+          <h1 class="error">Verification Error</h1>
+          <p>There was an error verifying your email. Please try again.</p>
+          <a href="${process.env.FRONTEND_URL}/resend-verification" class="btn">
+            Resend Verification Email
+          </a>
+          <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
+            <a href="${process.env.FRONTEND_URL}" style="color: #10b981;">Return to Home</a>
+          </p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    res.status(500).send(errorHtml);
+  }
+};
+// Password reset redirect handler
+const resetPasswordRedirect = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const ip = req.ip || req.connection.remoteAddress;
+    
+    if (!token || token.length !== 64) {
+      logSecurityEvent('PASSWORD_RESET_INVALID_TOKEN_REDIRECT', null, ip, { token });
+      
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invalid Reset Link - Vorkana</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta http-equiv="refresh" content="3;url=${process.env.FRONTEND_URL}/forgot-password">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              margin: 0; padding: 0;
+              background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .container { 
+              background: white; 
+              border-radius: 16px; 
+              padding: 40px; 
+              max-width: 500px; 
+              width: 90%;
+              text-align: center;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            }
+            .error-icon {
+              color: #dc2626;
+              font-size: 48px;
+              margin-bottom: 20px;
+            }
+            h1 { 
+              color: #111827; 
+              margin-bottom: 10px; 
+            }
+            p { 
+              color: #4b5563; 
+              margin-bottom: 20px; 
+              line-height: 1.6;
+            }
+            .spinner {
+              display: inline-block;
+              width: 20px;
+              height: 20px;
+              border: 3px solid #f3f3f3;
+              border-top: 3px solid #dc2626;
+              border-radius: 50%;
+              animation: spin 1s linear infinite;
+              margin-right: 10px;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .link {
+              color: #10b981;
+              text-decoration: none;
+              font-weight: 500;
+            }
+            .link:hover {
+              text-decoration: underline;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error-icon">⚠️</div>
+            <h1>Invalid Reset Link</h1>
+            <p>The password reset link is invalid or has expired.</p>
+            <p>Redirecting you to request a new reset link...</p>
+            <p><span class="spinner"></span> 3 seconds</p>
+            <p style="margin-top: 20px;">
+              <a href="${process.env.FRONTEND_URL}/forgot-password" class="link">
+                Click here if not redirected
+              </a>
+            </p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    const user = await User.findByResetToken(token);
+    if (!user) {
+      logSecurityEvent('PASSWORD_RESET_EXPIRED_TOKEN_REDIRECT', null, ip, { token });
+      
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Expired Reset Link - Vorkana</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta http-equiv="refresh" content="3;url=${process.env.FRONTEND_URL}/forgot-password">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              margin: 0; padding: 0;
+              background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .container { 
+              background: white; 
+              border-radius: 16px; 
+              padding: 40px; 
+              max-width: 500px; 
+              width: 90%;
+              text-align: center;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            }
+            .warning-icon {
+              color: #f59e0b;
+              font-size: 48px;
+              margin-bottom: 20px;
+            }
+            h1 { 
+              color: #111827; 
+              margin-bottom: 10px; 
+            }
+            p { 
+              color: #4b5563; 
+              margin-bottom: 20px; 
+              line-height: 1.6;
+            }
+            .spinner {
+              display: inline-block;
+              width: 20px;
+              height: 20px;
+              border: 3px solid #f3f3f3;
+              border-top: 3px solid #f59e0b;
+              border-radius: 50%;
+              animation: spin 1s linear infinite;
+              margin-right: 10px;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .btn {
+              display: inline-block;
+              padding: 12px 24px;
+              background: #10b981;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: 500;
+              margin-top: 10px;
+            }
+            .btn:hover {
+              background: #059669;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="warning-icon">⏰</div>
+            <h1>Reset Link Expired</h1>
+            <p>This password reset link has expired. Please request a new one.</p>
+            <p>Redirecting you to request a new reset link...</p>
+            <p><span class="spinner"></span> 3 seconds</p>
+            <div style="margin-top: 20px;">
+              <a href="${process.env.FRONTEND_URL}/forgot-password" class="btn">
+                Request New Reset Link
+              </a>
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    // Check if token is expired
+    if (user.resetPasswordExpires < Date.now()) {
+      logSecurityEvent('PASSWORD_RESET_EXPIRED_REDIRECT', user._id, ip, { email: user.email });
+      
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Link Expired - Vorkana</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta http-equiv="refresh" content="5;url=${process.env.FRONTEND_URL}/forgot-password">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              margin: 0; padding: 0;
+              background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .container { 
+              background: white; 
+              border-radius: 16px; 
+              padding: 40px; 
+              max-width: 500px; 
+              width: 90%;
+              text-align: center;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            }
+            .warning-icon {
+              color: #f59e0b;
+              font-size: 48px;
+              margin-bottom: 20px;
+            }
+            h1 { 
+              color: #111827; 
+              margin-bottom: 10px; 
+            }
+            p { 
+              color: #4b5563; 
+              margin-bottom: 20px; 
+              line-height: 1.6;
+            }
+            .countdown {
+              font-size: 24px;
+              font-weight: bold;
+              color: #10b981;
+              margin: 20px 0;
+            }
+            .btn {
+              display: inline-block;
+              padding: 12px 24px;
+              background: #10b981;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: 500;
+            }
+            .btn:hover {
+              background: #059669;
+            }
+          </style>
+          <script>
+            let countdown = 5;
+            const countdownElement = document.getElementById('countdown');
+            const interval = setInterval(() => {
+              countdown--;
+              countdownElement.textContent = countdown;
+              if (countdown <= 0) {
+                clearInterval(interval);
+              }
+            }, 1000);
+          </script>
+        </head>
+        <body>
+          <div class="container">
+            <div class="warning-icon">⏰</div>
+            <h1>Reset Link Has Expired</h1>
+            <p>Password reset links are valid for 15 minutes only.</p>
+            <p>Please request a new reset link.</p>
+            <div class="countdown" id="countdown">5</div>
+            <p>Redirecting in <span id="countdown">5</span> seconds...</p>
+            <div style="margin-top: 20px;">
+              <a href="${process.env.FRONTEND_URL}/forgot-password" class="btn">
+                Get New Reset Link
+              </a>
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    // Valid token - redirect to frontend with token
+    logSecurityEvent('PASSWORD_RESET_REDIRECT_SUCCESS', user._id, ip, { email: user.email });
+
+    // Create redirect page
+    const redirectHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Reset Password - Vorkana</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+          }
+          .success-icon {
+            color: #10b981;
+            font-size: 48px;
+            margin-bottom: 20px;
+          }
+          h1 {
+            color: #111827;
+            margin-bottom: 10px;
+          }
+          p {
+            color: #4b5563;
+            margin-bottom: 30px;
+            line-height: 1.6;
+          }
+          .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #10b981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+          }
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="success-icon">🔒</div>
+          <h1>Reset Your Password</h1>
+          <p>You're being redirected to reset your password...</p>
+          <div class="spinner"></div>
+        </div>
+        <script>
+          // Store token in localStorage and redirect
+          localStorage.setItem('resetToken', '${token}');
+          
+          // Redirect to frontend reset page
+          setTimeout(() => {
+            window.location.href = '${process.env.FRONTEND_URL}/reset-password?token=${token}';
+          }, 1000);
+          
+          // Fallback: If localStorage fails, use URL parameter
+          setTimeout(() => {
+            window.location.href = '${process.env.FRONTEND_URL}/reset-password?token=${token}';
+          }, 2000);
+        </script>
+      </body>
+      </html>
+    `;
+
+    res.send(redirectHtml);
+
+  } catch (error) {
+    console.error('Reset password redirect error:', error);
+    
+    const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Error - Vorkana</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            margin: 0; padding: 0;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .container { 
+            background: white; 
+            border-radius: 16px; 
+            padding: 40px; 
+            max-width: 500px; 
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+          }
+          .error-icon {
+            color: #dc2626;
+            font-size: 48px;
+            margin-bottom: 20px;
+          }
+          h1 { 
+            color: #dc2626; 
+            margin-bottom: 10px; 
+          }
+          p { 
+            color: #4b5563; 
+            margin-bottom: 20px; 
+            line-height: 1.6;
+          }
+          .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #10b981;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            margin-top: 10px;
+          }
+          .btn:hover {
+            background: #059669;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="error-icon">⚠️</div>
+          <h1>Something Went Wrong</h1>
+          <p>We encountered an error processing your reset request.</p>
+          <p>Please try requesting a new password reset link.</p>
+          <div style="margin-top: 20px;">
+            <a href="${process.env.FRONTEND_URL}/forgot-password" class="btn">
+              Request New Reset Link
+            </a>
+          </div>
+          <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
+            <a href="${process.env.FRONTEND_URL}" style="color: #10b981;">Return to Home</a>
+          </p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    res.status(500).send(errorHtml);
+  }
+};
 module.exports = {
   register,
   login,
@@ -1484,5 +2197,7 @@ module.exports = {
   reactivateAccount,
   generateToken,
   generateRefreshToken,
+  verifyEmailRedirect,
+  resetPasswordRedirect ,
   handleJSONErrors
 };

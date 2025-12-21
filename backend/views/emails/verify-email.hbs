@@ -1,47 +1,98 @@
-<h1 class="greeting">Welcome to Vorkana, {{name}}! 👋</h1>
+<div class="alert alert-info">
+    <div class="alert-icon">🔒</div>
+    <div class="alert-content">
+        <div class="alert-title">Action Required: Email Verification</div>
+        <p class="message-secondary">Please verify your email address to access all features and secure your account.</p>
+    </div>
+</div>
+
+<h1 class="greeting">Welcome to Vorkana, {{name}}!</h1>
 
 <p class="message">
-    Thank you for creating an account with Vorkana. We're excited to have you join our community of talented professionals.
+    Thank you for joining Vorkana, the professional network connecting talent with opportunity. 
+    We're excited to have you as part of our community.
 </p>
 
-<div class="alert alert-info">
-    <strong>Almost there!</strong> To complete your registration and access all features, please verify your email address.
+<div class="card">
+    <h3 class="card-title">Complete Your Registration</h3>
+    <p class="message mb-8">
+        To protect your account and unlock all Vorkana features, please verify your email address by clicking the button below.
+    </p>
+    
+    <div class="btn-center">
+    <a href="{{verificationUrl}}" 
+       target="_blank" 
+       rel="noopener noreferrer"
+       class="btn">
+        {{buttonText}}
+    </a>
+</div>
 </div>
 
-<div class="btn-center">
-    <a href="{{verificationUrl}}" class="btn">{{buttonText}}</a>
-</div>
-
-<p class="message">
-    <strong>Or copy this link to your browser:</strong>
+<p class="message text-center">
+    <strong>Or copy and paste this URL into your browser:</strong>
 </p>
 
 <div class="code-block">
     {{verificationUrl}}
 </div>
 
-<div class="alert alert-warning">
-    <strong>Important:</strong> This verification link expires in <strong>{{expiresIn}}</strong>. 
-    If it expires, you can request a new verification email from your account settings.
+<div class="alert alert-warning mt-8">
+    <div class="alert-icon">⏰</div>
+    <div class="alert-content">
+        <div class="alert-title">Link Expiration Notice</div>
+        <p class="message-secondary">
+            This verification link expires in <strong>{{expiresIn}}</strong>. 
+            If it expires, you can request a new verification email from your account settings.
+        </p>
+    </div>
 </div>
 
-<h3 style="color: #111827; margin: 32px 0 16px 0;">Once verified, you can:</h3>
+<div class="divider"></div>
 
-<ul class="features-list">
-    <li>Create and manage your professional gigs</li>
-    <li>Browse and order services from talented professionals</li>
-    <li>Build your reputation with reviews and ratings</li>
-    <li>Access premium features as you grow</li>
-    <li>Connect with clients and freelancers worldwide</li>
-</ul>
+<h2 class="greeting" style="font-size: 22px; margin-bottom: 24px;">What You Can Do After Verification</h2>
 
-<p class="message" style="margin-top: 32px;">
-    <strong>Didn't create this account?</strong> 
-    If you didn't sign up for Vorkana, you can safely ignore this email. 
-    The account will be automatically removed if not verified.
-</p>
+<div class="grid grid-2">
+    <div class="card">
+        <div style="font-size: 24px; color: #10b981; margin-bottom: 12px;">💼</div>
+        <h3 class="card-title">Create Professional Gigs</h3>
+        <p class="message-secondary">Showcase your skills and services to clients worldwide.</p>
+    </div>
+    
+    <div class="card">
+        <div style="font-size: 24px; color: #3b82f6; margin-bottom: 12px;">🤝</div>
+        <h3 class="card-title">Connect with Professionals</h3>
+        <p class="message-secondary">Build your network and collaborate with industry experts.</p>
+    </div>
+    
+    <div class="card">
+        <div style="font-size: 24px; color: #8b5cf6; margin-bottom: 12px;">⭐</div>
+        <h3 class="card-title">Build Your Reputation</h3>
+        <p class="message-secondary">Earn reviews and ratings to establish credibility.</p>
+    </div>
+    
+    <div class="card">
+        <div style="font-size: 24px; color: #f59e0b; margin-bottom: 12px;">📊</div>
+        <h3 class="card-title">Access Analytics</h3>
+        <p class="message-secondary">Track your performance and optimize your offerings.</p>
+    </div>
+</div>
 
-<p class="message" style="color: #6b7280; font-size: 14px;">
-    Need help? Contact our support team at 
-    <a href="mailto:{{supportEmail}}" style="color: #10b981;">{{supportEmail}}</a>
+<div class="alert alert-danger mt-8">
+    <div class="alert-icon">⚠️</div>
+    <div class="alert-content">
+        <div class="alert-title">Security Notice</div>
+        <p class="message-secondary">
+            <strong>Didn't create this account?</strong> 
+            If you didn't sign up for Vorkana, you can safely ignore this email. 
+            The account will be automatically removed if not verified within {{expiresIn}}.
+        </p>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<p class="message text-center">
+    Need assistance? Our support team is here to help.<br>
+    Contact us at <a href="mailto:{{supportEmail}}" style="color: #10b981; font-weight: 500;">{{supportEmail}}</a>
 </p>

@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{subject}} - Vorkana</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Base Styles */
+        /* Modern Reset */
         * {
             margin: 0;
             padding: 0;
@@ -13,80 +14,120 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             line-height: 1.6;
-            color: #374151;
+            color: #1f2937;
             background-color: #f9fafb;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            padding: 20px;
         }
         
-        .email-container {
+        /* Modern Container */
+        .email-wrapper {
             max-width: 600px;
             margin: 0 auto;
             background: #ffffff;
-            border-radius: 12px;
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: 
+                0 1px 3px rgba(0, 0, 0, 0.05),
+                0 20px 40px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e5e7eb;
         }
         
-        /* Header */
+        /* Professional Header */
         .email-header {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            padding: 40px 32px;
+            background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+            padding: 48px 40px;
             text-align: center;
-            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+        }
+        
+        .logo-container {
+            position: relative;
+            z-index: 2;
         }
         
         .logo {
-            font-size: 32px;
-            font-weight: 700;
+            font-size: 36px;
+            font-weight: 800;
+            color: white;
             margin-bottom: 8px;
-            letter-spacing: -0.5px;
+            letter-spacing: -0.025em;
         }
         
         .tagline {
             font-size: 14px;
-            opacity: 0.9;
             font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            letter-spacing: 0.025em;
+            text-transform: uppercase;
         }
         
-        /* Content */
-        .email-content {
-            padding: 40px 32px;
+        /* Main Content */
+        .email-body {
+            padding: 48px 40px;
         }
         
+        /* Professional Greeting */
         .greeting {
-            font-size: 24px;
-            font-weight: 600;
+            font-size: 28px;
+            font-weight: 700;
             color: #111827;
-            margin-bottom: 16px;
+            margin-bottom: 24px;
+            line-height: 1.3;
+            letter-spacing: -0.025em;
         }
         
+        /* Refined Message Styling */
         .message {
             font-size: 16px;
             color: #4b5563;
             margin-bottom: 24px;
+            line-height: 1.7;
         }
         
-        /* Button */
+        .message-secondary {
+            font-size: 14px;
+            color: #6b7280;
+            line-height: 1.6;
+        }
+        
+        /* Modern Button */
         .btn {
             display: inline-block;
-            padding: 14px 32px;
+            padding: 16px 40px;
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white !important;
+            color: white;
             text-decoration: none;
-            border-radius: 8px;
+            border-radius: 10px;
             font-weight: 600;
             font-size: 16px;
             text-align: center;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            cursor: pointer;
+            box-shadow: 
+                0 2px 4px rgba(16, 185, 129, 0.25),
+                0 10px 20px rgba(16, 185, 129, 0.15);
         }
         
         .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 4px 8px rgba(16, 185, 129, 0.3),
+                0 15px 25px rgba(16, 185, 129, 0.2);
         }
         
         .btn-center {
@@ -94,74 +135,112 @@
             margin: 32px 0;
         }
         
-        /* Alert Boxes */
+        /* Enhanced Alert System */
         .alert {
-            padding: 20px;
-            border-radius: 8px;
+            padding: 24px;
+            border-radius: 12px;
             margin: 24px 0;
-            border-left: 4px solid;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            border: 1px solid transparent;
+        }
+        
+        .alert-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        
+        .alert-content {
+            flex: 1;
+        }
+        
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 16px;
         }
         
         .alert-info {
-            background-color: #eff6ff;
-            border-left-color: #3b82f6;
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border-color: #93c5fd;
             color: #1e40af;
         }
         
         .alert-warning {
-            background-color: #fef3c7;
-            border-left-color: #f59e0b;
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-color: #fbbf24;
             color: #92400e;
         }
         
-        .alert-danger {
-            background-color: #fef2f2;
-            border-left-color: #dc2626;
-            color: #991b1b;
-        }
-        
         .alert-success {
-            background-color: #f0fdf4;
-            border-left-color: #10b981;
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            border-color: #86efac;
             color: #065f46;
         }
         
-        /* List */
-        .features-list {
-            list-style: none;
-            margin: 24px 0;
+        .alert-danger {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            border-color: #fca5a5;
+            color: #991b1b;
         }
         
-        .features-list li {
-            padding: 8px 0;
-            padding-left: 28px;
-            position: relative;
-        }
-        
-        .features-list li:before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: #10b981;
-            font-weight: bold;
-        }
-        
-        /* Code Block */
+        /* Modern Code Block */
         .code-block {
-            background: #f3f4f6;
-            padding: 16px;
-            border-radius: 6px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
             font-size: 14px;
-            margin: 16px 0;
+            margin: 20px 0;
             word-break: break-all;
-            color: #111827;
+            color: #1e293b;
+            border: 1px solid #e2e8f0;
+            line-height: 1.5;
         }
         
-        /* Footer */
+        /* Card System */
+        .card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 12px;
+        }
+        
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            gap: 24px;
+            margin: 32px 0;
+        }
+        
+        .grid-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        /* Modern Footer */
         .email-footer {
-            padding: 32px;
-            background: #f9fafb;
+            padding: 32px 40px;
+            background: #f8fafc;
             text-align: center;
             border-top: 1px solid #e5e7eb;
         }
@@ -169,64 +248,122 @@
         .footer-text {
             font-size: 14px;
             color: #6b7280;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            line-height: 1.5;
         }
         
         .footer-links {
-            margin-top: 16px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #e5e7eb;
         }
         
         .footer-links a {
             color: #6b7280;
             text-decoration: none;
             font-size: 14px;
-            margin: 0 8px;
+            font-weight: 500;
+            margin: 0 16px;
+            transition: color 0.2s ease;
         }
         
         .footer-links a:hover {
-            color: #374151;
+            color: #10b981;
         }
         
-        /* Responsive */
+        /* Responsive Design */
         @media (max-width: 640px) {
-            .email-content {
-                padding: 24px;
+            body {
+                padding: 12px;
             }
             
-            .email-header {
+            .email-header,
+            .email-body {
                 padding: 32px 24px;
             }
             
             .greeting {
-                font-size: 20px;
+                font-size: 24px;
             }
             
             .btn {
-                padding: 12px 24px;
+                padding: 14px 32px;
                 width: 100%;
             }
+            
+            .grid-2,
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .email-footer {
+                padding: 24px;
+            }
+        }
+        
+        /* Utility Classes */
+        .text-center {
+            text-align: center;
+        }
+        
+        .text-muted {
+            color: #6b7280;
+        }
+        
+        .mb-4 {
+            margin-bottom: 16px;
+        }
+        
+        .mb-8 {
+            margin-bottom: 32px;
+        }
+        
+        .mt-4 {
+            margin-top: 16px;
+        }
+        
+        .mt-8 {
+            margin-top: 32px;
+        }
+        
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #e5e7eb, transparent);
+            margin: 32px 0;
         }
     </style>
 </head>
 <body>
-    <div class="email-container">
+    <div class="email-wrapper">
         <div class="email-header">
-            <div class="logo">Vorkana</div>
-            <div class="tagline">Where Talent Meets Opportunity</div>
+            <div class="header-overlay"></div>
+            <div class="logo-container">
+                <div class="logo">Vorkana</div>
+                <div class="tagline">Professional Network for Talent</div>
+            </div>
         </div>
         
-        <div class="email-content">
+        <div class="email-body">
             {{{body}}}
         </div>
         
         <div class="email-footer">
-            <p class="footer-text">© {{currentYear}} Vorkana. All rights reserved.</p>
-            <p class="footer-text">This email was sent to you because you have an account with Vorkana.</p>
+            <p class="footer-text mb-4">
+                © {{currentYear}} Vorkana, Inc. All rights reserved.<br>
+                123 Business Street, Suite 100, San Francisco, CA 94107
+            </p>
+            
+            <p class="footer-text text-muted mb-8">
+                This is an automated message from Vorkana. Please do not reply directly to this email.
+            </p>
+            
+            <div class="divider"></div>
             
             <div class="footer-links">
-                <a href="{{frontendUrl}}/help">Help Center</a> | 
-                <a href="{{frontendUrl}}/contact">Contact Us</a> | 
-                <a href="{{frontendUrl}}/privacy">Privacy Policy</a> | 
+                <a href="{{frontendUrl}}/help">Help Center</a>
+                <a href="{{frontendUrl}}/contact">Contact Support</a>
+                <a href="{{frontendUrl}}/privacy">Privacy Policy</a>
+                <a href="{{frontendUrl}}/terms">Terms of Service</a>
                 <a href="{{frontendUrl}}/unsubscribe">Unsubscribe</a>
             </div>
         </div>
