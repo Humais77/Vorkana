@@ -7,6 +7,7 @@ import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
 import default_pp from '../assets/default_pp-modified.png'
+import SearchComponent from "../components/Search/SearchComponent";
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -163,30 +164,26 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </Link>
 
               {isHomePage ? (
-                showSearch && (
-                  <div className="hidden lg:block flex-1 max-w-2xl">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search for services, freelancers, or categories..."
-                        className="w-full px-4 py-2.5 pl-12 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-transparent transition-all duration-200"
-                      />
-                      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    </div>
-                  </div>
-                )
-              ) : (
-                <div className="hidden lg:block flex-1 max-w-2xl">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search for services, freelancers, or categories..."
-                      className="w-full px-4 py-2.5 pl-12 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-transparent transition-all duration-200"
-                    />
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  </div>
-                </div>
-              )}
+  showSearch && (
+    <div className="hidden lg:block flex-1 max-w-2xl">
+      <SearchComponent 
+        placeholder="Search for services, freelancers, or categories..."
+        variant="navbar"
+        onSearchSelect={(query) => {
+      // Optional: Handle search selection
+      console.log('Search selected:', query);
+    }}
+      />
+    </div>
+  )
+) : (
+  <div className="hidden lg:block flex-1 max-w-2xl">
+    <SearchComponent 
+      placeholder="Search for services, freelancers, or categories..."
+      variant="navbar"
+    />
+  </div>
+)}
             </div>
 
             <div className="hidden lg:block mx-6">
@@ -254,31 +251,27 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             <div className="flex items-center space-x-4">
-              {isHomePage ? (
-                showSearch && (
-                  <div className="lg:hidden flex-1 max-w-xs">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search..."
-                        className="w-full px-4 py-2 pl-10 pr-3 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-transparent transition-all duration-200"
-                      />
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    </div>
-                  </div>
-                )
-              ) : (
-                <div className="lg:hidden flex-1 max-w-xs">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search..."
-                      className="w-full px-4 py-2 pl-10 pr-3 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-transparent transition-all duration-200"
-                    />
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-              )}
+             {isHomePage ? (
+  showSearch && (
+    <div className="hidden lg:block flex-1 max-w-2xl">
+      <SearchComponent 
+        placeholder="Search for services, freelancers, or categories..."
+        variant="navbar"
+        onSearchSelect={() => {
+          // Handle search selection if needed
+        }}
+      />
+    </div>
+  )
+) : (
+  <div className="hidden lg:block flex-1 max-w-2xl">
+    <SearchComponent 
+      placeholder="Search for services, freelancers, or categories..."
+      variant="navbar"
+    />
+  </div>
+)}
+
 
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">

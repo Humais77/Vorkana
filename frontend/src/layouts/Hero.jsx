@@ -60,7 +60,7 @@ const Hero = () => {
   return (
     <section className="relative w-full h-[70vh] md:h-[85vh] overflow-hidden flex items-center">
       {/* Background Video - Only show on md and above */}
-      {!isMobile && (
+      {/* {!isMobile && (
         <video
           id="heroVideo"
           autoPlay
@@ -70,7 +70,7 @@ const Hero = () => {
           className="absolute inset-0 w-full h-full object-cover"
           src={bg_video}
         />
-      )}
+      )} */}
 
       {/* Green gradient background only for mobile */}
       {isMobile && (

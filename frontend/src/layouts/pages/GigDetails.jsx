@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Star, 
   Heart, 
@@ -27,7 +27,12 @@ import {
   Zap,
   FileCheck,
   AlertCircle,
-  Eye
+  Eye,
+  Briefcase,
+  Languages,
+  GraduationCap,
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -99,8 +104,6 @@ const GigDetails = () => {
     // Open the messaging modal
     setShowMessaging(true);
   };
-
-  
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -181,6 +184,37 @@ const GigDetails = () => {
     return `${Math.floor(diffInHours / 168)}w ago`;
   };
 
+  // Calculate account age
+  const calculateAccountAge = (createdAt) => {
+    if (!createdAt) return '';
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diffYears = now.getFullYear() - created.getFullYear();
+    return `${diffYears} year${diffYears !== 1 ? 's' : ''}`;
+  };
+
+  // Calculate age from date of birth
+  const calculateAge = (dateOfBirth) => {
+    if (!dateOfBirth) return null;
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    
+    return age;
+  };
+
+  // Check if user is online
+  const isUserOnline = (lastSeenAt) => {
+    if (!lastSeenAt) return false;
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return new Date(lastSeenAt) > fiveMinutesAgo;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
@@ -249,6 +283,12 @@ const GigDetails = () => {
   const deadlineDate = gig.deadline ? new Date(gig.deadline) : null;
   const daysUntilDeadline = deadlineDate ? 
     Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+  // Extract user details from gig
+  const gigUser = gig.createdBy;
+  const userAge = calculateAge(gigUser?.dateOfBirth);
+  const accountAge = calculateAccountAge(gigUser?.createdAt);
+  const isOnline = isUserOnline(gigUser?.lastSeenAt);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
@@ -353,51 +393,139 @@ const GigDetails = () => {
                 </div>
               </div>
 
-              {/* Client Info */}
+              {/* Enhanced User Info - Now Clickable */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
-                <div className="flex items-center space-x-4">
+                <Link 
+                  to={`/profile/${gigUser?._id}`}
+                  className="flex items-center space-x-4 group cursor-pointer flex-1"
+                >
                   <div className="relative">
                     <img
-                      src={gig.createdBy?.picture || gig.createdBy?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
-                      alt={gig.createdBy?.fullName || gig.createdBy?.username}
-                      className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
+                      src={gigUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                      alt={gigUser?.name}
+                      className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
                     />
-                    {gig.createdBy?.isVerified && (
+                    {isOnline && (
+                      <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+                    )}
+                    {gigUser?.isVerified && (
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
                         <CheckCircle className="h-3 w-3 text-white" />
                       </div>
                     )}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
-                      <span className="font-bold text-gray-900 text-lg">
-                        {gig.createdBy?.fullName || gig.createdBy?.username || 'Client'}
+                      <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors">
+                        {gigUser?.name || 'User'}
                       </span>
                       <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                        Client
+                        {gigUser?.role === 'admin' ? 'Admin' : 'Client'}
                       </span>
+                      {isOnline && (
+                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full flex items-center gap-1">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          Online
+                        </span>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                      {gig.createdBy?.rating && renderStars(gig.createdBy.rating)}
-                      <span className="flex items-center">
-                        <Calendar className="h-4 w-4 mr-1" />
-                        Member since {new Date(gig.createdBy?.createdAt).getFullYear() || '2022'}
-                      </span>
-                      <span className="flex items-center">
-                        <Globe className="h-4 w-4 mr-1" />
-                        {gig.country}
+                    
+                    {/* Enhanced User Details */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                      {gigUser?.occupation && (
+                        <span className="flex items-center">
+                          <Briefcase className="h-4 w-4 mr-1" />
+                          {gigUser.occupation}
+                        </span>
+                      )}
+                      
+                      {gigUser?.country && (
+                        <span className="flex items-center">
+                          <MapPin className="h-4 w-4 mr-1" />
+                          {gigUser.city ? `${gigUser.city}, ${gigUser.country}` : gigUser.country}
+                        </span>
+                      )}
+                      
+                      {gigUser?.rating && (
+                        <span className="flex items-center">
+                          {renderStars(gigUser.rating)}
+                          <span className="ml-1">({gigUser.totalReviews || 0})</span>
+                        </span>
+                      )}
+                      
+                      {gigUser?.education && (
+                        <span className="flex items-center">
+                          <GraduationCap className="h-4 w-4 mr-1" />
+                          {gigUser.education}
+                        </span>
+                      )}
+                      
+                      {gigUser?.languages && gigUser.languages.length > 0 && (
+                        <span className="flex items-center">
+                          <Languages className="h-4 w-4 mr-1" />
+                          {gigUser.languages.length} language{gigUser.languages.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      
+                      {gigUser?.createdAt && (
+                        <span className="flex items-center">
+                          <Calendar className="h-4 w-4 mr-1" />
+                          Member for {accountAge}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* User Stats */}
+                    <div className="flex flex-wrap gap-4 mt-3">
+                      {gigUser?.completedOrders !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Activity className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm text-gray-600">
+                            {gigUser.completedOrders} completed order{gigUser.completedOrders !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {gigUser?.responseRate && (
+                        <div className="flex items-center gap-1">
+                          <TrendingUp className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm text-gray-600">
+                            {gigUser.responseRate}% response rate
+                          </span>
+                        </div>
+                      )}
+                      
+                      {gigUser?.responseTime && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm text-gray-600">
+                            Avg. response: {gigUser.responseTime}h
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* View Profile Link */}
+                    <div className="mt-2">
+                      <span className="text-emerald-600 text-sm font-medium group-hover:text-emerald-700 flex items-center gap-1">
+                        View Full Profile
+                        <ExternalLink className="h-3 w-3" />
                       </span>
                     </div>
                   </div>
-                </div>
-                {isAuthenticated && user?._id !== gig.createdBy?._id && (
-                  <button
-                    onClick={() => setShowMessaging(true)}
-                    className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
-                  >
-                    <MessageCircle className="h-5 w-5" />
-                    Message Client
-                  </button>
+                </Link>
+                
+                {/* Message Button - Only show if not the current user's gig */}
+                {isAuthenticated && user?._id !== gigUser?._id && (
+                  <div className="sm:self-start">
+                    <button
+                      onClick={() => setShowMessaging(true)}
+                      className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                    >
+                      <MessageCircle className="h-5 w-5" />
+                      Message Client
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -530,6 +658,78 @@ const GigDetails = () => {
                 </div>
               </div>
 
+              {/* Enhanced Gig Details */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                  <FileText className="h-6 w-6 text-emerald-600" />
+                  Project Details
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Project Requirements */}
+                  <div className="bg-gray-50 rounded-xl p-6">
+                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <Target className="h-5 w-5 text-emerald-600" />
+                      Requirements
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                        <span className="text-gray-600">Communication Method</span>
+                        <span className="font-semibold text-gray-900">{gig.communication}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                        <span className="text-gray-600">Project Type</span>
+                        <span className="font-semibold text-gray-900">
+                          {gig.visibility === 'public' ? 'Public Project' : 
+                           gig.visibility === 'private' ? 'Private Project' : 'Invite Only'}
+                        </span>
+                      </div>
+                      {gig.requirementsDocument && (
+                        <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                          <span className="text-gray-600">Requirements Document</span>
+                          <a 
+                            href={gig.requirementsDocument} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                          >
+                            Download
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Project Timeline Details */}
+                  <div className="bg-gray-50 rounded-xl p-6">
+                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-emerald-600" />
+                      Timeline Details
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                        <span className="text-gray-600">Created</span>
+                        <span className="font-semibold text-gray-900">{timeAgo}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                        <span className="text-gray-600">Last Updated</span>
+                        <span className="font-semibold text-gray-900">
+                          {calculateTimeAgo(gig.updatedAt)}
+                        </span>
+                      </div>
+                      {gig.deadline && (
+                        <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
+                          <span className="text-gray-600">Deadline</span>
+                          <span className="font-semibold text-gray-900">
+                            {new Date(gig.deadline).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Skills Required */}
               {gig.skillsRequired && gig.skillsRequired.length > 0 && (
                 <div className="mb-8">
@@ -565,6 +765,42 @@ const GigDetails = () => {
                           <CheckCircle className="h-3 w-3 text-white" />
                         </div>
                         <span className="text-gray-700">{deliverable}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Milestones (if any) */}
+              {gig.milestones && gig.milestones.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <Package className="h-6 w-6 text-emerald-600" />
+                    Project Milestones
+                  </h2>
+                  <div className="space-y-4">
+                    {gig.milestones.map((milestone, index) => (
+                      <div key={index} className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="font-semibold text-gray-900">{milestone.title}</h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            milestone.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            milestone.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                            milestone.status === 'paid' ? 'bg-purple-100 text-purple-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {milestone.status.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </div>
+                        {milestone.description && (
+                          <p className="text-gray-600 mb-3">{milestone.description}</p>
+                        )}
+                        <div className="flex justify-between items-center text-sm text-gray-500">
+                          <span>Amount: {formatPrice(milestone.amount)}</span>
+                          {milestone.dueDate && (
+                            <span>Due: {new Date(milestone.dueDate).toLocaleDateString()}</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -635,6 +871,12 @@ const GigDetails = () => {
                     <span className="text-gray-600">Communication</span>
                     <span className="font-semibold text-gray-900">{gig.communication}</span>
                   </div>
+                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <span className="text-gray-600">Visibility</span>
+                    <span className="font-semibold text-gray-900 capitalize">
+                      {gig.visibility.replace('_', ' ')}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -685,57 +927,121 @@ const GigDetails = () => {
                 </div>
               </div>
 
-              {/* Client Information */}
+              {/* Enhanced User Information Card */}
               <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Client Information</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Client Profile</h3>
                 <div className="space-y-4">
-                  {gig.fullName && (
-                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      <User className="h-5 w-5 text-gray-600 mr-3" />
-                      <div>
-                        <h4 className="font-semibold text-gray-900">Name</h4>
-                        <p className="text-sm text-gray-600">{gig.fullName}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {gig.country && (
-                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      <MapPin className="h-5 w-5 text-gray-600 mr-3" />
-                      <div>
-                        <h4 className="font-semibold text-gray-900">Location</h4>
-                        <p className="text-sm text-gray-600">{gig.country}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {gig.communication && (
-                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      {gig.communication === 'Phone' ? (
-                        <Phone className="h-5 w-5 text-gray-600 mr-3" />
-                      ) : gig.communication === 'Email' ? (
-                        <Mail className="h-5 w-5 text-gray-600 mr-3" />
-                      ) : (
-                        <MessageCircle className="h-5 w-5 text-gray-600 mr-3" />
+                  <Link 
+                    to={`/profile/${gigUser?._id}`}
+                    className="flex items-center space-x-3 group cursor-pointer p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <div className="relative">
+                      <img
+                        src={gigUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                        alt={gigUser?.name}
+                        className="w-12 h-12 rounded-full border-2 border-white group-hover:border-emerald-100 transition-colors"
+                      />
+                      {isOnline && (
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
                       )}
-                      <div>
-                        <h4 className="font-semibold text-gray-900">Preferred Contact</h4>
-                        <p className="text-sm text-gray-600">{gig.communication}</p>
-                      </div>
                     </div>
-                  )}
+                    <div>
+                      <h4 className="font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">
+                        {gigUser?.name}
+                      </h4>
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        View Profile
+                        <ExternalLink className="h-3 w-3" />
+                      </p>
+                    </div>
+                  </Link>
 
-                  {gig.createdBy?.rating && (
-                    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      <TrendingUp className="h-5 w-5 text-gray-600 mr-3" />
-                      <div>
-                        <h4 className="font-semibold text-gray-900">Client Rating</h4>
-                        <div className="flex items-center">
-                          {renderStars(gig.createdBy.rating)}
+                  {/* User Details Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {gigUser?.country && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <MapPin className="h-4 w-4 text-gray-600 mr-2" />
+                        <div className="truncate">
+                          <h4 className="text-xs text-gray-500">Location</h4>
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {gigUser.country}
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {gigUser?.occupation && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <Briefcase className="h-4 w-4 text-gray-600 mr-2" />
+                        <div className="truncate">
+                          <h4 className="text-xs text-gray-500">Occupation</h4>
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {gigUser.occupation}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {gigUser?.rating && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <TrendingUp className="h-4 w-4 text-gray-600 mr-2" />
+                        <div>
+                          <h4 className="text-xs text-gray-500">Rating</h4>
+                          <div className="flex items-center">
+                            <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
+                            <span className="text-sm font-medium text-gray-900 ml-1">
+                              {gigUser.rating.toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {gigUser?.completedOrders !== undefined && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <Activity className="h-4 w-4 text-gray-600 mr-2" />
+                        <div>
+                          <h4 className="text-xs text-gray-500">Completed</h4>
+                          <p className="text-sm font-medium text-gray-900">
+                            {gigUser.completedOrders}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {gigUser?.accountType && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <Award className="h-4 w-4 text-gray-600 mr-2" />
+                        <div>
+                          <h4 className="text-xs text-gray-500">Account Type</h4>
+                          <p className="text-sm font-medium text-gray-900 capitalize">
+                            {gigUser.accountType}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {gigUser?.languages && gigUser.languages.length > 0 && (
+                      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <Languages className="h-4 w-4 text-gray-600 mr-2" />
+                        <div>
+                          <h4 className="text-xs text-gray-500">Languages</h4>
+                          <p className="text-sm font-medium text-gray-900">
+                            {gigUser.languages.length}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* View Full Profile Button */}
+                  <Link 
+                    to={`/profile/${gigUser?._id}`}
+                    className=" w-full text-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium flex items-center justify-center gap-2"
+                  >
+                    <User className="h-4 w-4" />
+                    View Full Profile
+                  </Link>
                 </div>
               </div>
 
