@@ -58,42 +58,6 @@ app.set('io', io);
 
 // ========== CRITICAL FIX: COOKIE PARSER MUST BE FIRST ==========
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
-
-// ========== SECURITY MIDDLEWARE ==========
-security(app);
-
-// Helmet for security headers
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
-
-// Import ipKeyGenerator from express-rate-limit
-const { ipKeyGenerator } = require('express-rate-limit');
-
-// Global rate limiting
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: ipKeyGenerator,
-  skip: (req) => {
-    return req.path === '/health';
-  }
-});
-
-// Apply global rate limiting
-app.use(globalLimiter);
-
-// Prevent parameter pollution
-app.use(hpp());
-
-// CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -138,10 +102,47 @@ const corsOptions = {
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
+app.use(cors(corsOptions));
+
+// ========== SECURITY MIDDLEWARE ==========
+security(app);
+
+// // Helmet for security headers
+// app.use(helmet({
+//   contentSecurityPolicy: false,
+//   crossOriginEmbedderPolicy: false
+// }));
+
+// Import ipKeyGenerator from express-rate-limit
+const { ipKeyGenerator } = require('express-rate-limit');
+
+// Global rate limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: ipKeyGenerator,
+  skip: (req) => {
+    return req.path === '/health';
+  }
+});
+
+// Apply global rate limiting
+app.use(globalLimiter);
+
+// Prevent parameter pollution
+app.use(hpp());
+
+// CORS configuration
+
 
 // ========== MIDDLEWARE ==========
 // CRITICAL: Apply CORS middleware FIRST
-app.use(cors(corsOptions));
 // Body parsing with limits
 app.use(express.json({ 
   limit: '10mb',

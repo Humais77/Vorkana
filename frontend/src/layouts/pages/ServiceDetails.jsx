@@ -256,6 +256,48 @@ const ServiceDetails = () => {
                 <p className="text-gray-700 whitespace-pre-wrap">{service.description}</p>
               </div>
             </div>
+            // Add this section in ServiceDetails.jsx after the description section
+{/* Gallery */}
+{service.images && service.images.length > 0 && (
+  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+    <h2 className="text-xl font-bold text-gray-900 mb-6">Service Gallery</h2>
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      {service.images.map((imageUrl, index) => (
+        <div key={index} className="group relative">
+          <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
+            <img
+              src={imageUrl}
+              alt={`${service.title} - Image ${index + 1}`}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              loading="lazy"
+            />
+          </div>
+          {service.thumbnail === imageUrl && (
+            <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+              Thumbnail
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+{/* Thumbnail Display */}
+{service.thumbnail && (
+  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+    <h2 className="text-xl font-bold text-gray-900 mb-6">Featured Image</h2>
+    <div className="max-w-2xl mx-auto">
+      <div className="relative rounded-xl overflow-hidden bg-gray-100">
+        <img
+          src={service.thumbnail}
+          alt={`${service.title} - Thumbnail`}
+          className="w-full h-auto max-h-[400px] object-contain"
+        />
+      </div>
+    </div>
+  </div>
+)}
 
             {/* Features */}
             {service.features && service.features.length > 0 && (

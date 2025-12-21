@@ -6,6 +6,10 @@ const Service = require('../models/services.model.js');
 const Category = require('../models/category.model.js');
 const User = require('../models/user.model.js');
 const { sanitizeHtml } = require('../utils/sanitize.js');
+const { 
+  deleteFromCloudinary, 
+  extractPublicIdFromUrl 
+} = require('../utils/cloudinary.js');
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
@@ -106,18 +110,27 @@ const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
   }
 };
 
-const deleteImageFiles = (imagePaths) => {
+const deleteImageFiles = async (imageUrls) => {
   try {
-    if (!Array.isArray(imagePaths)) return;
+    if (!Array.isArray(imageUrls)) return;
     
-    for (const imagePath of imagePaths) {
-      const fullPath = path.join(__dirname, '../../public', imagePath);
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
+    const deletePromises = imageUrls.map(async (imageUrl) => {
+      if (!imageUrl) return;
+      
+      const publicId = extractPublicIdFromUrl(imageUrl);
+      if (publicId) {
+        const result = await deleteFromCloudinary(publicId);
+        if (!result.success) {
+          console.error('Failed to delete image from Cloudinary:', imageUrl, result.error);
+        }
+        return result;
       }
-    }
+      return null;
+    });
+    
+    await Promise.allSettled(deletePromises);
   } catch (error) {
-    console.error('Error deleting image files:', error);
+    console.error('Error deleting images from Cloudinary:', error);
   }
 };
 
@@ -293,7 +306,21 @@ const createService = async (req, res, next) => {
         requestId
       });
     }
+    let serviceData = req.body;
 
+    // === ADD THIS BLOCK ===
+    if (req.body.data) {
+      try {
+        serviceData = JSON.parse(req.body.data);
+      } catch (parseError) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid data format',
+          code: 'INVALID_JSON_DATA',
+          requestId
+        });
+      }
+    }
     // Get uploaded files
     if (req.files) {
       uploadedFiles = req.files;
@@ -833,6 +860,21 @@ const updateService = async (req, res, next) => {
         requestId
       });
     }
+    let serviceData = req.body;
+
+    // === ADD THIS BLOCK ===
+    if (req.body.data) {
+      try {
+        serviceData = JSON.parse(req.body.data);
+      } catch (parseError) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid data format',
+          code: 'INVALID_JSON_DATA',
+          requestId
+        });
+      }
+    }
 
     if (req.files) {
       uploadedFiles = req.files;
@@ -1029,17 +1071,17 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-
     let result;
     
     if (permanent === 'true' && isAdmin) {
       try {
+        // Delete all images from Cloudinary
         if (service.images && Array.isArray(service.images)) {
-          deleteImageFiles(service.images);
+          await deleteImageFiles(service.images);
         }
         
         if (service.thumbnail) {
-          deleteImageFiles([service.thumbnail]);
+          await deleteImageFiles([service.thumbnail]);
         }
       } catch (cleanupError) {
         console.error('Error cleaning up files during permanent delete:', cleanupError);
@@ -1826,7 +1868,6 @@ const getSimilarServices = async (req, res, next) => {
 // Upload Images
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
   
   try {
     const { id } = req.params;
@@ -1843,7 +1884,6 @@ const uploadImages = async (req, res, next) => {
     const service = await Service.findById(id);
     
     if (!service) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(404).json({
         success: false,
         message: 'Service not found',
@@ -1856,7 +1896,6 @@ const uploadImages = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -1865,11 +1904,7 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    if (req.files) {
-      uploadedFiles = req.files;
-    }
-
-    if (uploadedFiles.length === 0) {
+    if (!req.cloudinaryUrls || req.cloudinaryUrls.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No images uploaded',
@@ -1878,16 +1913,14 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    const imageUrls = uploadedFiles.map(file => {
-      const safePath = file.path.replace(/\\/g, '/');
-      return `/uploads/${path.basename(safePath)}`;
-    });
-
     const existingImages = service.images || [];
-    const updatedImages = [...existingImages, ...imageUrls];
+    const newImageUrls = req.cloudinaryUrls.map(item => item.url);
+    const updatedImages = [...existingImages, ...newImageUrls];
     
     if (updatedImages.length > 10) {
-      await cleanupUploadedFiles(uploadedFiles);
+      // Delete newly uploaded images since we can't use them
+      await deleteImageFiles(newImageUrls);
+      
       return res.status(400).json({
         success: false,
         message: 'Cannot have more than 10 images',
@@ -1902,21 +1935,25 @@ const uploadImages = async (req, res, next) => {
     await service.save();
 
     logAudit('UPLOAD_IMAGES', 'SERVICE', id, req.user._id, {
-      imagesAdded: imageUrls.length,
+      imagesAdded: newImageUrls.length,
       totalImages: updatedImages.length
     });
 
     res.json({
       success: true,
       message: 'Images uploaded successfully',
-      images: imageUrls,
+      images: newImageUrls,
       totalImages: updatedImages.length,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
+    // Clean up uploaded images on error
+    if (req.cloudinaryUrls) {
+      await deleteImageFiles(req.cloudinaryUrls.map(item => item.url));
+    }
+    
     logAudit('ERROR', 'SERVICE', 'UPLOAD_IMAGES', req.user._id, { 
       id: req.params.id, 
       error: error.message 
@@ -1941,10 +1978,12 @@ const removeImage = async (req, res, next) => {
     }
 
     const decodedImageUrl = decodeURIComponent(imageUrl);
-    if (!decodedImageUrl.startsWith('/uploads/')) {
+    
+    // Validate it's a Cloudinary URL
+    if (!decodedImageUrl.includes('res.cloudinary.com')) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid image URL',
+        message: 'Invalid image URL format',
         code: 'INVALID_IMAGE_URL',
         requestId
       });
@@ -1983,8 +2022,10 @@ const removeImage = async (req, res, next) => {
       });
     }
 
+    // Remove from array
     service.images.splice(imageIndex, 1);
     
+    // Update thumbnail if this was the thumbnail
     if (service.thumbnail === decodedImageUrl) {
       service.thumbnail = service.images.length > 0 ? service.images[0] : null;
     }
@@ -1993,11 +2034,8 @@ const removeImage = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
-    try {
-      deleteImageFiles([decodedImageUrl]);
-    } catch (cleanupError) {
-      console.error('Error deleting image file:', cleanupError);
-    }
+    // Delete from Cloudinary
+    await deleteImageFiles([decodedImageUrl]);
 
     logAudit('REMOVE_IMAGE', 'SERVICE', id, req.user._id, {
       imageUrl: decodedImageUrl,
@@ -2020,6 +2058,7 @@ const removeImage = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Set Thumbnail
 const setThumbnail = async (req, res, next) => {
@@ -2107,7 +2146,6 @@ const setThumbnail = async (req, res, next) => {
 // Upload Thumbnail
 const uploadThumbnail = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
   
   try {
     const { id } = req.params;
@@ -2124,7 +2162,6 @@ const uploadThumbnail = async (req, res, next) => {
     const service = await Service.findById(id);
     
     if (!service) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(404).json({
         success: false,
         message: 'Service not found',
@@ -2137,7 +2174,6 @@ const uploadThumbnail = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      await cleanupUploadedFiles(uploadedFiles);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -2146,9 +2182,7 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    if (req.files && req.files.length > 0) {
-      uploadedFiles = req.files;
-    } else {
+    if (!req.cloudinaryThumbnail) {
       return res.status(400).json({
         success: false,
         message: 'No thumbnail uploaded',
@@ -2157,37 +2191,34 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    const thumbnailFile = uploadedFiles[0];
-    const safePath = thumbnailFile.path.replace(/\\/g, '/');
-    const thumbnailUrl = `/uploads/${path.basename(safePath)}`;
-
-    if (service.thumbnail && service.thumbnail !== thumbnailUrl) {
-      try {
-        deleteImageFiles([service.thumbnail]);
-      } catch (cleanupError) {
-        console.error('Error deleting old thumbnail:', cleanupError);
-      }
+    // Delete old thumbnail if it exists
+    if (service.thumbnail && service.thumbnail !== req.cloudinaryThumbnail) {
+      await deleteImageFiles([service.thumbnail]);
     }
 
-    service.thumbnail = thumbnailUrl;
+    service.thumbnail = req.cloudinaryThumbnail;
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
     await service.save();
 
     logAudit('UPLOAD_THUMBNAIL', 'SERVICE', id, req.user._id, {
-      thumbnail: thumbnailUrl
+      thumbnail: req.cloudinaryThumbnail
     });
 
     res.json({
       success: true,
       message: 'Thumbnail uploaded successfully',
-      thumbnail: thumbnailUrl,
+      thumbnail: req.cloudinaryThumbnail,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
+    // Clean up uploaded thumbnail on error
+    if (req.cloudinaryThumbnail) {
+      await deleteImageFiles([req.cloudinaryThumbnail]);
+    }
+    
     logAudit('ERROR', 'SERVICE', 'UPLOAD_THUMBNAIL', req.user._id, { 
       id: req.params.id, 
       error: error.message 

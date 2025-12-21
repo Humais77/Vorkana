@@ -38,9 +38,9 @@ module.exports = function (app) {
           upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
         }
       },
-      crossOriginResourcePolicy: { policy: "same-origin" },
-      crossOriginEmbedderPolicy: false,
-      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+      crossOriginResourcePolicy: false,        // <<< ADD THIS
+    crossOriginEmbedderPolicy: false,        // <<< ADD THIS (already disabled in main, but safe)
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       strictTransportSecurity: {
         maxAge: 31536000,

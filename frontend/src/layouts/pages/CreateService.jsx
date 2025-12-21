@@ -29,11 +29,13 @@ import {
   FileText,
   Type,
   Layers,
-  Sparkles
+  Sparkles,
+  ImageIcon
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
 import { toast } from 'react-hot-toast';
+import ImageUpload from '../../components/ImageUpload.jsx';
 
 const CreateService = () => {
   const navigate = useNavigate();
@@ -1853,6 +1855,64 @@ const CreateService = () => {
               </div>
             </div>
           </div>
+          {/* Section 9: Image Upload with Cloudinary */}
+<div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+  <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+    <ImageIcon className="w-6 h-6 mr-2 text-rose-600" />
+    Service Images & Gallery
+  </h2>
+  
+  <div className="space-y-4">
+    <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-100 rounded-xl p-6">
+      <div className="flex items-start">
+        <div className="w-10 h-10 bg-rose-100 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+          <Upload className="w-5 h-5 text-rose-600" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-gray-900 mb-2">Cloudinary Image Upload</h3>
+          <p className="text-gray-600 mb-3">
+            Upload high-quality images to showcase your service. All images are securely stored on Cloudinary and automatically optimized for fast loading.
+          </p>
+          <ul className="space-y-1 text-sm text-gray-600">
+            <li className="flex items-center">
+              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+              Maximum 10 images per service
+            </li>
+            <li className="flex items-center">
+              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+              5MB maximum per image
+            </li>
+            <li className="flex items-center">
+              <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+              Automatic optimization and CDN delivery
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    
+    <ImageUpload
+      maxImages={10}
+      onImagesUploaded={(images) => {
+        // Handle images uploaded - they will be automatically processed by the backend middleware
+        toast.success(`${images.length} images uploaded successfully!`);
+      }}
+      onThumbnailSet={(thumbnailUrl) => {
+        // Update form data with thumbnail URL
+        setFormData(prev => ({ ...prev, thumbnail: thumbnailUrl }));
+      }}
+    />
+    
+    {formData.thumbnail && (
+      <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="flex items-center">
+          <CheckCircle className="w-5 h-5 text-green-500 mr-2 flex-shrink-0" />
+          <p className="text-green-700 font-medium">Thumbnail set!</p>
+        </div>
+      </div>
+    )}
+  </div>
+</div>
 
           {/* Validation Summary */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
