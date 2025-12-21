@@ -230,18 +230,11 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     }
   };
 
+  // FIXED: Google OAuth in same tab
   const handleGoogleAuth = () => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    const width = 600;
-    const height = 600;
-    const left = (window.innerWidth - width) / 2;
-    const top = (window.innerHeight - height) / 2;
-
-    window.open(
-      `${backendUrl}/api/auth/google`,
-      'Google Login',
-      `width=${width},height=${height},top=${top},left=${left}`
-    );
+    // Redirect in the same window/tab
+    window.location.href = `${backendUrl}/api/auth/google`;
   };
 
   const togglePasswordVisibility = () => {
@@ -399,18 +392,17 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               <label className="text-xs font-semibold text-gray-700">
                 Password
               </label>
-          
-<button
-  type="button"
-  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-  onClick={() => {
-    onClose();
-    navigate('/forgot-password');
-  }}
-  disabled={isSubmitting}
->
-  Forgot password?
-</button>
+              <button
+                type="button"
+                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                onClick={() => {
+                  onClose();
+                  navigate('/forgot-password');
+                }}
+                disabled={isSubmitting}
+              >
+                Forgot password?
+              </button>
             </div>
             <div className="relative">
               <input
