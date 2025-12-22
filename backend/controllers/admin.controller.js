@@ -3,7 +3,6 @@ const User = require('../models/user.model.js');
 const Category = require('../models/category.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
-const Order = require('../models/order.model.js');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -628,7 +627,6 @@ const getServiceStats = async (req, res) => {
                 featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
                 recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
                 popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                totalOrders: { $sum: '$ordersCount' },
                 totalViews: { $sum: '$views' },
                 totalLikes: { $sum: '$likes' },
                 avgPrice: { $avg: '$price' },
@@ -644,7 +642,6 @@ const getServiceStats = async (req, res) => {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
-                totalOrders: { $sum: '$ordersCount' },
                 avgRating: { $avg: '$rating' },
                 avgPrice: { $avg: '$price' }
               }
@@ -682,7 +679,6 @@ const getServiceStats = async (req, res) => {
                   week: { $week: '$createdAt' }
                 },
                 count: { $sum: 1 },
-                totalOrders: { $sum: '$ordersCount' }
               }
             },
             { $sort: { '_id.year': -1, '_id.month': -1, '_id.week': -1 } },

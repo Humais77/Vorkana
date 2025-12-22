@@ -1,7 +1,6 @@
 // App.jsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
-import { initializeSocket, isSocketConnected, reconnectSocket } from './socket/orderSocket';
 
 // Providers / Hooks
 import { SecurityProvider } from './context/SecurityContext';
@@ -24,9 +23,6 @@ import ServiceDetails from './layouts/pages/ServiceDetails';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
 import OAuthSuccess from './components/OAuthSuccess';
 import AllGigsPage from './components/AllGigsPage';
-import OrderCreate from './components/OrderCreate';
-import OrderDetails from './components/OrderDetails';
-import MyOrders from './components/MyOrders';
 import AboutUsPage from './layouts/AboutUsPage';
 // Admin
 import ProtectedAdminRoute from './ProtectedAdminRoute';
@@ -37,8 +33,7 @@ import VerifyEmail from './components/VerifyEmail';
 import ForgotPassword from './components/ForgotPassword';
 import ResetPassword from './components/ResetPassword';
 import AccountDeactivated from './components/AccountDeactivated';
-// Components
-import SocketStatus from './components/SocketStatus';
+
 import ScrollToTop from './components/ScrollToTop';
 import VerifiedPage from './components/VerifiedPage';
 
@@ -65,7 +60,6 @@ const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
 
-  const [socketStatus, setSocketStatus] = useState('disconnected');
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
@@ -80,29 +74,7 @@ const App = () => {
     setShowAuthModal(true);
   };
 
-  const initializeSocketConnection = useCallback(() => {
-    if (!isAuthenticated) return;
-
-    const socket = initializeSocket();
-    if (!socket) return;
-
-    socket.on('connect', () => setSocketStatus('connected'));
-    socket.on('disconnect', () => setSocketStatus('disconnected'));
-    socket.on('connect_error', () => setSocketStatus('error'));
-  }, [isAuthenticated]);
-
   useEffect(() => {
-    initializeSocketConnection();
-  }, [initializeSocketConnection]);
-
-  useEffect(() => {
-    if (isAuthenticated && !isSocketConnected()) {
-      initializeSocketConnection();
-    }
-  }, [isAuthenticated, initializeSocketConnection]);
-  // Add this useEffect to clean up reset tokens
-  useEffect(() => {
-    // Clean up reset token from localStorage on app load
     const cleanupResetToken = () => {
       if (localStorage.getItem('resetToken')) {
         localStorage.removeItem('resetToken');
@@ -123,12 +95,6 @@ const App = () => {
     <SecurityProvider>
       <BrowserRouter>
         <ScrollToTop />
-
-        {process.env.NODE_ENV === 'development' && (
-          <div className="fixed bottom-4 right-4 z-50">
-            <SocketStatus status={socketStatus} onReconnect={reconnectSocket} />
-          </div>
-        )}
 
         <Routes>
           <Route
@@ -155,9 +121,6 @@ const App = () => {
             <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/services" element={<ServiceListingPage />} />
             <Route path="/all-gigs" element={<AllGigsPage />} />
-            <Route path="/orders/create" element={<OrderCreate />} />
-            <Route path="/orders/:id" element={<OrderDetails />} />
-            <Route path="/my-orders" element={<MyOrders />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
 

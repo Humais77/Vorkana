@@ -20,125 +20,6 @@ const securityHeaders = (req, res, next) => {
   next();
 };
 
-// Order-specific rate limiting
-const orderCreationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => ipKeyGenerator(req),  // Fixed: pass the request object
-  message: {
-    success: false,
-    message: 'Too many orders created. Please try again later.',
-    code: 'ORDER_CREATION_LIMIT'
-  }
-});
-
-const orderUpdateLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 20,
-  keyGenerator: (req) => `${ipKeyGenerator(req)}-${req.params.id}`,  // Fixed: pass request object
-  message: {
-    success: false,
-    message: 'Too many order updates. Please try again later.',
-    code: 'ORDER_UPDATE_LIMIT'
-  }
-});
-
-// Input sanitization for orders
-const sanitizeOrderInput = (req, res, next) => {
-  const sanitize = (obj) => {
-    if (!obj || typeof obj !== 'object') return obj;
-    
-    const sanitized = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (typeof value === 'string') {
-        // Remove potential dangerous characters
-        sanitized[key] = value.replace(/[<>'"/\\]/g, '');
-      } else if (Array.isArray(value)) {
-        sanitized[key] = value.map(item => 
-          typeof item === 'string' ? item.replace(/[<>'"/\\]/g, '') : item
-        );
-      } else if (value && typeof value === 'object') {
-        sanitized[key] = sanitize(value);
-      } else {
-        sanitized[key] = value;
-      }
-    }
-    return sanitized;
-  };
-
-  if (req.body) {
-    req.body = sanitize(req.body);
-  }
-  if (req.query) {
-    req.query = sanitize(req.query);
-  }
-  
-  next();
-};
-
-// Validate order ownership
-const validateOrderOwnership = async (req, res, next) => {
-  try {
-    const Order = require('../models/order.model');
-    const { id } = req.params;
-    
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Order ID is required',
-        code: 'ORDER_ID_REQUIRED'
-      });
-    }
-
-    const order = await Order.findById(id).lean();
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: 'Order not found',
-        code: 'ORDER_NOT_FOUND'
-      });
-    }
-
-    const isBuyer = order.buyer.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === 'admin';
-
-    if (!isBuyer && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied to this order',
-        code: 'ORDER_ACCESS_DENIED'
-      });
-    }
-
-    req.order = order;
-    req.isBuyer = isBuyer;
-    next();
-  } catch (error) {
-    console.error('Order ownership validation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error validating order ownership',
-      code: 'OWNERSHIP_VALIDATION_ERROR'
-    });
-  }
-};
-
-// Check if order can be modified
-const validateOrderModifiable = (req, res, next) => {
-  const modifiableStatuses = ['pending', 'accepted', 'in_progress', 'delivered', 'revision'];
-  
-  if (!modifiableStatuses.includes(req.order.status)) {
-    return res.status(400).json({
-      success: false,
-      message: `Order cannot be modified in ${req.order.status} status`,
-      code: 'ORDER_NOT_MODIFIABLE'
-    });
-  }
-  
-  next();
-};
-
-// File upload validation
 const validateFileUpload = (req, res, next) => {
   if (!req.files || req.files.length === 0) {
     return next();
@@ -213,8 +94,6 @@ const auditLog = (action) => {
         duration: `${duration}ms`,
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        orderId: req.params?.id,
-        orderNumber: req.order?.orderNumber
       };
 
       console.log('[ORDER_AUDIT]', JSON.stringify(logData));
@@ -229,11 +108,6 @@ const auditLog = (action) => {
 module.exports = {
   requestIdMiddleware,
   securityHeaders,
-  orderCreationLimiter,
-  orderUpdateLimiter,
-  sanitizeOrderInput,
-  validateOrderOwnership,
-  validateOrderModifiable,
   validateFileUpload,
   auditLog
 };

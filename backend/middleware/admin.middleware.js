@@ -172,11 +172,6 @@ const requirePermission = (permission) => {
       'manage_gigs': ['admin', 'super_admin', 'moderator'],
       'export_gigs': ['admin', 'super_admin'],
       
-      // Orders
-      'view_orders': ['admin', 'super_admin', 'moderator'],  // ADD THIS
-      'manage_orders': ['admin', 'super_admin', 'moderator'],
-      'export_orders': ['admin', 'super_admin'],
-      
       // Analytics
       'view_analytics': ['admin', 'super_admin'],
       'export_data': ['admin', 'super_admin'],

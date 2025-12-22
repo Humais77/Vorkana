@@ -411,7 +411,6 @@ const login = async (req, res) => {
         city: user.city,
         bio: user.bio,
         rating: user.rating,
-        completedOrders: user.completedOrders,
         isOnline: user.isOnline
       }
     });
@@ -467,7 +466,6 @@ const getProfile = async (req, res) => {
         accountType: user.accountType,
         rating: user.rating,
         totalReviews: user.totalReviews,
-        completedOrders: user.completedOrders,
         responseRate: user.responseRate,
         responseTime: user.responseTime,
         createdAt: user.createdAt,
@@ -610,7 +608,6 @@ const updateProfile = async (req, res) => {
         website: updatedUser.website,
         privacySettings: updatedUser.privacySettings,
         rating: updatedUser.rating,
-        completedOrders: updatedUser.completedOrders,
         isOnline: updatedUser.isOnline,
         lastSeenAt: updatedUser.lastSeenAt,
         createdAt: updatedUser.createdAt,
@@ -1274,7 +1271,6 @@ const getPublicProfile = async (req, res) => {
       bio: user.bio,
       rating: user.rating,
       totalReviews: user.totalReviews,
-      completedOrders: user.completedOrders,
       responseRate: user.responseRate,
       responseTime: user.responseTime,
       occupation: user.occupation,

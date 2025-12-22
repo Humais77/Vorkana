@@ -6,7 +6,6 @@ const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const http = require('http'); // Add this
-const { initSocket } = require('./socket/order.socket'); // Add this
 
 
 dotenv.config();
@@ -37,9 +36,7 @@ const categoryRoutes = require('./routes/category.route.js');
 const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
-const orderRoutes = require('./routes/order.route.js'); // Add this
 const adminRoutes = require('./routes/admin.route.js');
-const testRoute = require("./routes/test.route.js")
 const searchRoute = require("./routes/search.routes.js")
 const passport = require("passport");
 require("./config/passport.js");
@@ -47,15 +44,9 @@ require("./config/passport.js");
 connectDB();
 
 const app = express();
-const server = http.createServer(app); // Create HTTP server
+const server = http.createServer(app); 
 
-// Initialize Socket.io
-const io = initSocket(server);
 
-// Make io accessible in routes if needed
-app.set('io', io);
-
-// ========== CRITICAL FIX: COOKIE PARSER MUST BE FIRST ==========
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
 const allowedOrigins = [
   'http://localhost:3000',
@@ -63,10 +54,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
-// Enhanced CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -83,8 +72,8 @@ const corsOptions = {
     'X-Request-ID',
     'X-CSRF-Token',
     'Accept',
-    'X-Admin-Request', // Add this line - fix the header name
-    'X-Admin-Token'    // Add if you're using admin tokens
+    'X-Admin-Request', 
+    'X-Admin-Token'    
   ],
   exposedHeaders: [
     'X-Request-ID',
@@ -94,7 +83,7 @@ const corsOptions = {
     'X-Current-Page',
     'X-Response-Time',
     'X-CSRF-Token',
-    'X-Admin-Access'  // Add admin-specific headers
+    'X-Admin-Access'  
   ],
   maxAge: 86400,
   preflightContinue: false,
@@ -102,19 +91,10 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// ========== SECURITY MIDDLEWARE ==========
 security(app);
 
-// // Helmet for security headers
-// app.use(helmet({
-//   contentSecurityPolicy: false,
-//   crossOriginEmbedderPolicy: false
-// }));
-
-// Import ipKeyGenerator from express-rate-limit
 const { ipKeyGenerator } = require('express-rate-limit');
 
-// Global rate limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
@@ -130,18 +110,10 @@ const globalLimiter = rateLimit({
   }
 });
 
-// Apply global rate limiting
 app.use(globalLimiter);
 
-// Prevent parameter pollution
 app.use(hpp());
 
-// CORS configuration
-
-
-// ========== MIDDLEWARE ==========
-// CRITICAL: Apply CORS middleware FIRST
-// Body parsing with limits
 app.use(express.json({ 
   limit: '10mb',
   verify: (req, res, buf) => {
@@ -158,23 +130,17 @@ app.use(express.urlencoded({
   parameterLimit: 100
 }));
 
-// Initialize passport
 app.use(passport.initialize());
 
-// ========== ROUTES ==========
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
-app.use('/api/orders', orderRoutes); 
 app.use('/api/admin', adminRoutes);
-app.use('/api/auth', testRoute);
 app.use('/api/search', searchRoute);
 
 
-
-// ========== HEALTH CHECK ==========
 app.get('/health', (req, res) => {
   res.json({ 
     success: true, 
@@ -185,9 +151,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ========== ERROR HANDLING ==========
-
-// 404 handler
 app.use((req, res, next) => {
   res.status(404).json({
     success: false,
@@ -196,7 +159,6 @@ app.use((req, res, next) => {
   });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error('🔴 Unhandled Error:', {
     message: err.message,
@@ -205,8 +167,6 @@ app.use((err, req, res, next) => {
     ip: req.ip,
     timestamp: new Date().toISOString()
   });
-
-  // Handle CORS errors
   if (err.message === 'Not allowed by CORS policy') {
     return res.status(403).json({
       success: false,
@@ -214,7 +174,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Handle rate limit errors
   if (err.status === 429) {
     return res.status(429).json({
       success: false,
@@ -222,7 +181,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Handle JWT errors
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
@@ -237,7 +195,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Default error
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
 
@@ -251,4 +208,4 @@ app.use((err, req, res, next) => {
   });
 });
 
-module.exports = { app, server }; // Export both app and server 
+module.exports = { app, server };
