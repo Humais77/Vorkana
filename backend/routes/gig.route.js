@@ -12,7 +12,12 @@ const {
   restoreGig,
   getGigStats,
   searchGigs,
-  exportGigs
+  exportGigs,
+  // New image-related functions
+  uploadImages,
+  removeImage,
+  setThumbnail,
+  uploadThumbnail
 } = require('../controllers/gig.controller.js');
 
 const { 
@@ -21,6 +26,7 @@ const {
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
 const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const { handleMulterError } = require('../middleware/upload.middleware.js');
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -36,13 +42,17 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname).toLowerCase();
-    const filename = `${file.fieldname}-${uniqueSuffix}${ext}`;
+    const sanitizedName = file.originalname
+      .replace(path.extname(file.originalname), '')
+      .replace(/[^a-zA-Z0-9-_]/g, '_')
+      .substring(0, 50);
+    const filename = `${sanitizedName}-${uniqueSuffix}${ext}`;
     cb(null, filename);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|pdf|doc|docx|zip|rar/;
+  const allowedTypes = /jpeg|jpg|png|pdf|doc|docx|zip|rar|webp|gif/i;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
   const mimetype = allowedTypes.test(file.mimetype);
   
@@ -56,6 +66,13 @@ const fileFilter = (req, file, cb) => {
     const originalName = file.originalname.toLowerCase();
     if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
       return cb(new Error('Invalid filename'), false);
+    }
+    
+    // Security check for executable files
+    const executableExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.py'];
+    const fileExtension = path.extname(originalName);
+    if (executableExtensions.includes(fileExtension)) {
+      return cb(new Error('Executable files are not allowed'), false);
     }
     
     return cb(null, true);
@@ -73,10 +90,54 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
+// Configure multer for images (different from regular files)
+const imageFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|webp|gif/i;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
+  const mimetype = allowedTypes.test(file.mimetype);
+  
+  if (extname && mimetype) {
+    const maxSize = 5 * 1024 * 1024; // 5MB for images
+    
+    if (file.size > maxSize) {
+      return cb(new Error('Image size exceeds 5MB limit'), false);
+    }
+    
+    const originalName = file.originalname.toLowerCase();
+    if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
+      return cb(new Error('Invalid filename'), false);
+    }
+    
+    return cb(null, true);
+  }
+  
+  cb(new Error('Invalid image type. Only JPEG, JPG, PNG, WebP, and GIF are allowed.'), false);
+};
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 10
+  },
+  fileFilter: imageFilter
+});
+
+const thumbnailUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1
+  },
+  fileFilter: imageFilter
+});
+
 const handleMultipleFileFields = (req, res, next) => {
   upload.fields([
     { name: 'attachments', maxCount: 5 },
-    { name: 'files', maxCount: 5 }
+    { name: 'files', maxCount: 5 },
+    { name: 'images', maxCount: 10 },
+    { name: 'thumbnail', maxCount: 1 }
   ])(req, res, (err) => {
     if (err) {
       return handleMulterError(err, req, res, next);
@@ -85,56 +146,22 @@ const handleMultipleFileFields = (req, res, next) => {
   });
 };
 
-const handleMulterError = (err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        message: 'File size too large. Maximum size is 10MB per file.',
-        code: 'FILE_TOO_LARGE'
-      });
+const handleImageUpload = (req, res, next) => {
+  imageUpload.array('images', 10)(req, res, (err) => {
+    if (err) {
+      return handleMulterError(err, req, res, next);
     }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
-        success: false,
-        message: 'Too many files. Maximum 10 files allowed.',
-        code: 'TOO_MANY_FILES'
-      });
+    next();
+  });
+};
+
+const handleThumbnailUpload = (req, res, next) => {
+  thumbnailUpload.single('thumbnail')(req, res, (err) => {
+    if (err) {
+      return handleMulterError(err, req, res, next);
     }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({
-        success: false,
-        message: 'Unexpected file field. Only "attachments" and "files" fields are allowed.',
-        code: 'UNEXPECTED_FILE_FIELD'
-      });
-    }
-  }
-  
-  if (err.message.includes('Invalid file type')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'INVALID_FILE_TYPE'
-    });
-  }
-  
-  if (err.message.includes('File size exceeds')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'FILE_SIZE_EXCEEDED'
-    });
-  }
-  
-  if (err.message.includes('Invalid filename')) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid filename detected',
-      code: 'INVALID_FILENAME'
-    });
-  }
-  
-  next(err);
+    next();
+  });
 };
 
 // Rate limiting
@@ -152,7 +179,6 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-
 // Public routes
 router.get('/', optionalAuth, validateQuery, getGigs);
 router.get('/search', optionalAuth, validateQuery, searchGigs);
@@ -162,9 +188,14 @@ router.get('/:id', optionalAuth, getGigById);
 router.get('/stats', protect, gigLimiter, getGigStats);
 router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
 
-
 // Update gig (creator or admin)
 router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+
+// Image management routes
+router.post('/:id/images/upload', protect, gigLimiter, handleImageUpload, uploadImages);
+router.delete('/:id/images/:publicId', protect, gigLimiter, removeImage);
+router.put('/:id/thumbnail/:publicId', protect, gigLimiter, setThumbnail);
+router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload, uploadThumbnail);
 
 // Delete gig (creator or admin)
 router.delete('/:id', protect, gigLimiter, deleteGig);

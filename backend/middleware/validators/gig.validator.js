@@ -22,6 +22,26 @@ const secureDocument = Joi.string().pattern(
   'string.pattern.base': 'Invalid document filename format'
 });
 
+const cloudinaryImage = Joi.object({
+  url: Joi.string().uri().required(),
+  public_id: Joi.string().required(),
+  width: Joi.number().integer().min(1),
+  height: Joi.number().integer().min(1),
+  size: Joi.number().integer().min(1),
+  format: Joi.string(),
+  uploadedAt: Joi.date()
+});
+
+const thumbnailSchema = Joi.object({
+  url: Joi.string().uri(),
+  public_id: Joi.string(),
+  width: Joi.number().integer().min(1),
+  height: Joi.number().integer().min(1),
+  size: Joi.number().integer().min(1),
+  format: Joi.string(),
+  uploadedAt: Joi.date()
+});
+
 // Create schema
 const createSchema = Joi.object({
   title: Joi.string().trim().min(5).max(200).required()
@@ -103,6 +123,14 @@ const createSchema = Joi.object({
     .messages({
       'any.only': 'Invalid communication method',
     }),
+    
+  // Image fields
+  images: Joi.array().max(10).items(cloudinaryImage)
+    .messages({
+      'array.max': 'Cannot upload more than 10 images',
+    }),
+    
+  thumbnail: thumbnailSchema.optional(),
     
   attachments: Joi.array().max(5).items(secureAttachment)
     .messages({
@@ -220,6 +248,14 @@ const updateSchema = Joi.object({
       'any.only': 'Invalid communication method',
     }),
     
+  // Image fields for update
+  images: Joi.array().max(10).items(cloudinaryImage)
+    .messages({
+      'array.max': 'Cannot upload more than 10 images',
+    }),
+    
+  thumbnail: thumbnailSchema,
+    
   attachments: Joi.array().max(5).items(secureAttachment)
     .messages({
       'array.max': 'Cannot upload more than 5 attachments',
@@ -301,6 +337,7 @@ const querySchema = Joi.object({
   visibility: Joi.string().valid('public', 'private', 'invite_only'),
   paymentStatus: Joi.string().valid('pending', 'partial', 'completed', 'refunded', 'disputed'),
   disputeStatus: Joi.string().valid('none', 'open', 'resolved', 'escalated'),
+  hasImages: Joi.boolean(),
   hasAttachments: Joi.boolean(),
   hasMilestones: Joi.boolean(),
   skillsRequired: Joi.string().max(500),
@@ -397,8 +434,6 @@ const validateUpdate = (req, res, next) => {
     });
   }
 };
-
-
 
 const validateQuery = (req, res, next) => {
   try {

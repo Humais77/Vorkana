@@ -181,7 +181,37 @@ export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, data }) => gigsAPI.update(id, data),
+    mutationFn: async ({ id, data, files = null }) => {
+      // If there are files, use FormData
+      if (files) {
+        const formData = new FormData();
+        
+        // Append all data
+        Object.keys(data).forEach(key => {
+          if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+            if (typeof data[key] === 'object') {
+              formData.append(key, JSON.stringify(data[key]));
+            } else {
+              formData.append(key, data[key]);
+            }
+          }
+        });
+        
+        // Append files
+        if (files.thumbnail) {
+          formData.append('thumbnail', files.thumbnail);
+        }
+        if (files.images) {
+          files.images.forEach(img => {
+            formData.append('images', img);
+          });
+        }
+        
+        return gigsAPI.update(id, formData);
+      } else {
+        return gigsAPI.update(id, data);
+      }
+    },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ 
         queryKey: gigKeys.detail(variables.id) 
@@ -455,6 +485,81 @@ export const useToggleGigSelection = () => {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+    },
+  });
+};
+export const useUploadGigImages = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, files }) => {
+      return gigsAPI.uploadImages(gigId, files);
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        toast.success(data.message || 'Images uploaded successfully!');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to upload images');
+    },
+  });
+};
+
+export const useRemoveGigImage = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, publicId }) => {
+      return gigsAPI.removeImage(gigId, publicId);
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        toast.success(data.message || 'Image removed successfully!');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to remove image');
+    },
+  });
+};
+
+export const useSetGigThumbnail = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, publicId }) => {
+      return gigsAPI.setThumbnail(gigId, publicId);
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        toast.success(data.message || 'Thumbnail updated successfully!');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to set thumbnail');
+    },
+  });
+};
+
+export const useUploadGigThumbnail = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, file }) => {
+      return gigsAPI.uploadThumbnail(gigId, file);
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        toast.success(data.message || 'Thumbnail uploaded successfully!');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to upload thumbnail');
     },
   });
 };

@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Gig = require('../models/gig.model.js');
 const Category = require('../models/category.model.js');
-const User = require('../models/user.model.js');
+const { 
+  processUploadToCloudinary, 
+  deleteCloudinaryImages
+} = require('../middleware/upload.middleware.js');
 const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
 
 const generateRequestId = () => {
@@ -32,7 +35,50 @@ const sanitizeGigInput = (data) => {
   
   return sanitized;
 };
+const uploadGigImages = async (files, gigId) => {
+  if (!files || !Array.isArray(files) || files.length === 0) {
+    return [];
+  }
+  
+  const uploadedImages = await processUploadToCloudinary(files, 'gigs');
+  
+  return uploadedImages.map(image => ({
+    url: image.url,
+    public_id: image.public_id,
+    width: image.width,
+    height: image.height,
+    size: image.size,
+    format: image.format,
+    uploadedAt: new Date()
+  }));
+};
 
+const uploadGigThumbnail = async (file, gigId) => {
+  if (!file) {
+    return null;
+  }
+  
+  const uploadedImage = await processUploadToCloudinary([file], 'gigs/thumbnails', {
+    transformation: [
+      { width: 800, height: 600, crop: 'fill', gravity: 'auto' },
+      { quality: 'auto:best', fetch_format: 'auto' }
+    ]
+  });
+  
+  if (uploadedImage.length === 0) {
+    return null;
+  }
+  
+  return {
+    url: uploadedImage[0].url,
+    public_id: uploadedImage[0].public_id,
+    width: uploadedImage[0].width,
+    height: uploadedImage[0].height,
+    size: uploadedImage[0].size,
+    format: uploadedImage[0].format,
+    uploadedAt: new Date()
+  };
+};
 const buildSecureGigQuery = (queryParams, userRole, userId) => {
   const {
     search,
@@ -51,6 +97,7 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     paymentStatus,
     disputeStatus,
     hasAttachments,
+    hasImages,
     hasMilestones,
     skillsRequired,
     createdAfter,
@@ -144,7 +191,9 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     filter.attachments = { $exists: true, $ne: [] };
   }
   
-  
+  if (hasImages === true || hasImages === 'true') {
+    filter.images = { $exists: true, $ne: [] };
+  }
   
   if (hasMilestones === true || hasMilestones === 'true') {
     filter.milestones = { $exists: true, $ne: [] };
@@ -208,10 +257,10 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   return filter;
 };
-
 const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:GIG] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
+
 
 // Create Gig
 const createGig = async (req, res, next) => {
@@ -275,27 +324,89 @@ const createGig = async (req, res, next) => {
       fullName: req.user.name || sanitizedData.fullName || 'User',
       oauthEmail: req.user.email || sanitizedData.oauthEmail,
       createdBy: req.user._id,
-      version: 1
+      version: 1,
+      images: [],
+      thumbnail: null
     };
 
-    // Process uploaded files
-    if (req.files && req.files.length > 0) {
-      const attachments = [];
-      const files = [];
+    // Process uploaded images
+    const uploadedImages = [];
+    const uploadedThumbnail = [];
+    
+    // Check for thumbnail
+    if (req.files && req.files.thumbnail) {
+      uploadedThumbnail.push(...req.files.thumbnail);
+    }
+    
+    // Check for other images
+    if (req.files && req.files.images) {
+      uploadedImages.push(...req.files.images);
+    }
+
+    // Upload thumbnail first
+    if (uploadedThumbnail.length > 0) {
+      const thumbnailUpload = await uploadGigThumbnail(uploadedThumbnail[0], req.user._id);
       
-      req.files.forEach(file => {
-        const filePath = `/uploads/${file.filename}`;
+      if (thumbnailUpload) {
+        gigData.thumbnail = thumbnailUpload;
+        gigData.images.push({
+          url: thumbnailUpload.url,
+          public_id: thumbnailUpload.public_id,
+          width: thumbnailUpload.width,
+          height: thumbnailUpload.height,
+          size: thumbnailUpload.size,
+          format: thumbnailUpload.format,
+          uploadedAt: thumbnailUpload.uploadedAt
+        });
+      }
+    }
+
+    // Upload other images
+    if (uploadedImages.length > 0) {
+      const images = await uploadGigImages(uploadedImages, req.user._id);
+      
+      if (images.length > 0) {
+        // Add images to array, avoiding duplicates
+        images.forEach(image => {
+          const exists = gigData.images.some(img => img.public_id === image.public_id);
+          if (!exists) {
+            gigData.images.push(image);
+          }
+        });
         
-        if (file.fieldname === 'attachments') {
-          attachments.push(filePath);
-        } else if (file.fieldname === 'files') {
-          files.push(filePath);
+        // Set thumbnail if not already set
+        if (!gigData.thumbnail && images.length > 0) {
+          gigData.thumbnail = {
+            url: images[0].url,
+            public_id: images[0].public_id,
+            width: images[0].width,
+            height: images[0].height,
+            size: images[0].size,
+            format: images[0].format,
+            uploadedAt: images[0].uploadedAt
+          };
         }
+      }
+    }
+
+    // Process uploaded files (attachments)
+    if (req.files && req.files.attachments) {
+      const attachments = req.files.attachments.map(file => {
+        const filePath = `/uploads/${file.filename}`;
+        return filePath;
       });
       
       if (attachments.length > 0) {
         gigData.attachments = attachments;
       }
+    }
+    
+    // Process uploaded files (general files)
+    if (req.files && req.files.files) {
+      const files = req.files.files.map(file => {
+        const filePath = `/uploads/${file.filename}`;
+        return filePath;
+      });
       
       if (files.length > 0) {
         gigData.files = files;
@@ -307,7 +418,9 @@ const createGig = async (req, res, next) => {
     logAudit('CREATE', 'GIG', gig._id, req.user._id, {
       title: gig.title,
       category: gig.projectCategory,
-      budget: gig.budget
+      budget: gig.budget,
+      imagesCount: gig.images.length,
+      hasThumbnail: !!gig.thumbnail
     });
 
     // Populate category info for response
@@ -1042,22 +1155,63 @@ const updateGig = async (req, res, next) => {
       $inc: { version: 1 }
     };
 
-    if (req.files && req.files.length > 0) {
-      const attachments = gig.attachments || [];
-      const files = gig.files || [];
-      
-      req.files.forEach(file => {
-        const filePath = `/uploads/${file.filename}`;
-        
-        if (file.fieldname === 'attachments') {
-          attachments.push(filePath);
-        } else {
-          files.push(filePath);
+    // Process uploaded images
+    const existingImages = gig.images || [];
+    let newImages = [];
+    
+    // Check for thumbnail
+    if (req.files && req.files.thumbnail) {
+      const thumbnailUpload = await uploadGigThumbnail(req.files.thumbnail[0], gig._id);
+      if (thumbnailUpload) {
+        updateData.thumbnail = thumbnailUpload;
+        newImages.push(thumbnailUpload);
+      }
+    }
+    
+    // Check for other images
+    if (req.files && req.files.images) {
+      const images = await uploadGigImages(req.files.images, gig._id);
+      newImages = [...newImages, ...images];
+    }
+    
+    // Combine images if new ones were uploaded
+    if (newImages.length > 0) {
+      const combinedImages = [...existingImages];
+      newImages.forEach(image => {
+        const exists = combinedImages.some(img => img.public_id === image.public_id);
+        if (!exists) {
+          combinedImages.push(image);
         }
       });
       
-      updateData.attachments = attachments;
-      updateData.files = files;
+      updateData.images = combinedImages;
+      
+      // Set thumbnail if not already set
+      if (!updateData.thumbnail && newImages.length > 0) {
+        updateData.thumbnail = {
+          url: newImages[0].url,
+          public_id: newImages[0].public_id,
+          width: newImages[0].width,
+          height: newImages[0].height,
+          size: newImages[0].size,
+          format: newImages[0].format,
+          uploadedAt: newImages[0].uploadedAt
+        };
+      }
+    }
+
+    // Process uploaded files (attachments)
+    if (req.files && req.files.attachments) {
+      const existingAttachments = gig.attachments || [];
+      const newAttachments = req.files.attachments.map(file => `/uploads/${file.filename}`);
+      updateData.attachments = [...existingAttachments, ...newAttachments];
+    }
+    
+    // Process uploaded files (general files)
+    if (req.files && req.files.files) {
+      const existingFiles = gig.files || [];
+      const newFiles = req.files.files.map(file => `/uploads/${file.filename}`);
+      updateData.files = [...existingFiles, ...newFiles];
     }
 
     const updatedGig = await Gig.findOneAndUpdate(
@@ -1075,6 +1229,11 @@ const updateGig = async (req, res, next) => {
     ).populate('projectCategory', 'name slug').populate('createdBy', 'name email');
 
     if (!updatedGig) {
+      // Clean up uploaded images if update failed
+      if (newImages.length > 0) {
+        await deleteCloudinaryImages(newImages);
+      }
+      
       if (currentVersion) {
         const currentDoc = await Gig.findById(id);
         return res.status(409).json({
@@ -1097,7 +1256,8 @@ const updateGig = async (req, res, next) => {
     logAudit('UPDATE', 'GIG', updatedGig._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
       oldVersion: currentVersion || gig.version,
-      newVersion: updatedGig.version
+      newVersion: updatedGig.version,
+      imagesUpdated: newImages.length > 0
     });
 
     const safeGig = updatedGig.toObject();
@@ -1135,6 +1295,425 @@ const updateGig = async (req, res, next) => {
     }
     
     logAudit('ERROR', 'GIG', 'UPDATE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+const uploadImages = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const gig = await Gig.findById(id);
+    
+    if (!gig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gig not found',
+        code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    const isOwner = gig.createdBy.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    
+    if (!isOwner && !isAdmin && !isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own gigs',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No images uploaded',
+        code: 'NO_IMAGES',
+        requestId
+      });
+    }
+
+    // Upload images to Cloudinary
+    const uploadedImages = await uploadGigImages(req.files, id);
+    
+    if (uploadedImages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to upload images',
+        code: 'UPLOAD_FAILED',
+        requestId
+      });
+    }
+
+    const existingImages = gig.images || [];
+    const updatedImages = [...existingImages, ...uploadedImages];
+    
+    if (updatedImages.length > 10) {
+      // Delete newly uploaded images from Cloudinary
+      await deleteCloudinaryImages(uploadedImages);
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot have more than 10 images',
+        code: 'MAX_IMAGES_EXCEEDED',
+        requestId
+      });
+    }
+
+    // Update gig
+    gig.images = updatedImages;
+    
+    // Set thumbnail if not already set
+    if (!gig.thumbnail && uploadedImages.length > 0) {
+      gig.thumbnail = {
+        url: uploadedImages[0].url,
+        public_id: uploadedImages[0].public_id,
+        width: uploadedImages[0].width,
+        height: uploadedImages[0].height,
+        size: uploadedImages[0].size,
+        format: uploadedImages[0].format,
+        uploadedAt: uploadedImages[0].uploadedAt
+      };
+    }
+    
+    gig.lastUpdatedBy = req.user._id;
+    gig.version += 1;
+    await gig.save();
+
+    logAudit('UPLOAD_IMAGES', 'GIG', id, req.user._id, {
+      imagesAdded: uploadedImages.length,
+      totalImages: updatedImages.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Images uploaded successfully',
+      images: uploadedImages,
+      totalImages: updatedImages.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Upload images error:', error);
+    logAudit('ERROR', 'GIG', 'UPLOAD_IMAGES', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Remove Image from Gig
+const removeImage = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    const { id, publicId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const gig = await Gig.findById(id);
+    
+    if (!gig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gig not found',
+        code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    const isOwner = gig.createdBy.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    
+    if (!isOwner && !isAdmin && !isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own gigs',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Find image by public_id
+    const imageIndex = gig.images.findIndex(img => img.public_id === publicId);
+    if (imageIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Image not found in gig',
+        code: 'IMAGE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    const imageToRemove = gig.images[imageIndex];
+    
+    // Remove image from array
+    gig.images.splice(imageIndex, 1);
+    
+    // If this was the thumbnail, set a new one or null
+    if (gig.thumbnail && gig.thumbnail.public_id === publicId) {
+      gig.thumbnail = gig.images.length > 0 ? {
+        url: gig.images[0].url,
+        public_id: gig.images[0].public_id,
+        width: gig.images[0].width,
+        height: gig.images[0].height,
+        size: gig.images[0].size,
+        format: gig.images[0].format,
+        uploadedAt: gig.images[0].uploadedAt || new Date()
+      } : null;
+    }
+    
+    gig.lastUpdatedBy = req.user._id;
+    gig.version += 1;
+    await gig.save();
+
+    // Delete image from Cloudinary
+    await deleteCloudinaryImages([imageToRemove]);
+
+    logAudit('REMOVE_IMAGE', 'GIG', id, req.user._id, {
+      imagePublicId: publicId,
+      remainingImages: gig.images.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Image removed successfully',
+      remainingImages: gig.images.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Remove image error:', error);
+    logAudit('ERROR', 'GIG', 'REMOVE_IMAGE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Set Thumbnail for Gig
+const setThumbnail = async (req, res, next) => {
+  const requestId = generateRequestId();
+  try {
+    const { id, publicId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const gig = await Gig.findById(id);
+    
+    if (!gig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gig not found',
+        code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    const isOwner = gig.createdBy.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    
+    if (!isOwner && !isAdmin && !isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own gigs',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    // Find image by public_id
+    const image = gig.images.find(img => img.public_id === publicId);
+    if (!image) {
+      return res.status(400).json({
+        success: false,
+        message: 'Image not found in gig images',
+        code: 'IMAGE_NOT_IN_GIG',
+        requestId
+      });
+    }
+
+    // Update thumbnail
+    gig.thumbnail = {
+      url: image.url,
+      public_id: image.public_id,
+      width: image.width,
+      height: image.height,
+      size: image.size,
+      format: image.format,
+      uploadedAt: image.uploadedAt || new Date()
+    };
+    
+    gig.lastUpdatedBy = req.user._id;
+    gig.version += 1;
+    await gig.save();
+
+    logAudit('SET_THUMBNAIL', 'GIG', id, req.user._id, {
+      thumbnail: image.url
+    });
+
+    res.json({
+      success: true,
+      message: 'Thumbnail set successfully',
+      thumbnail: image,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Set thumbnail error:', error);
+    logAudit('ERROR', 'GIG', 'SET_THUMBNAIL', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    next(error);
+  }
+};
+
+// Upload Thumbnail for Gig
+const uploadThumbnail = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    const { id } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    const gig = await Gig.findById(id);
+    
+    if (!gig) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gig not found',
+        code: 'GIG_NOT_FOUND',
+        requestId
+      });
+    }
+
+    const isOwner = gig.createdBy.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    
+    if (!isOwner && !isAdmin && !isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own gigs',
+        code: 'OWNERSHIP_REQUIRED',
+        requestId
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No thumbnail uploaded',
+        code: 'NO_THUMBNAIL',
+        requestId
+      });
+    }
+
+    // Upload thumbnail to Cloudinary with optimized settings
+    const uploadedImage = await uploadGigThumbnail(req.file, id);
+    
+    if (!uploadedImage) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to upload thumbnail',
+        code: 'UPLOAD_FAILED',
+        requestId
+      });
+    }
+
+    // Delete old thumbnail from Cloudinary if exists
+    if (gig.thumbnail && gig.thumbnail.public_id) {
+      await deleteCloudinaryImages([{ public_id: gig.thumbnail.public_id }]);
+    }
+    
+    // Update gig
+    gig.thumbnail = {
+      url: uploadedImage.url,
+      public_id: uploadedImage.public_id,
+      width: uploadedImage.width,
+      height: uploadedImage.height,
+      size: uploadedImage.size,
+      format: uploadedImage.format,
+      uploadedAt: uploadedImage.uploadedAt
+    };
+    
+    // Add to images array if not already there
+    const isAlreadyInImages = gig.images.some(img => img.public_id === uploadedImage.public_id);
+    if (!isAlreadyInImages) {
+      gig.images.push({
+        url: uploadedImage.url,
+        public_id: uploadedImage.public_id,
+        width: uploadedImage.width,
+        height: uploadedImage.height,
+        size: uploadedImage.size,
+        format: uploadedImage.format,
+        uploadedAt: uploadedImage.uploadedAt
+      });
+    }
+    
+    gig.lastUpdatedBy = req.user._id;
+    gig.version += 1;
+    await gig.save();
+
+    logAudit('UPLOAD_THUMBNAIL', 'GIG', id, req.user._id, {
+      thumbnail: uploadedImage.url
+    });
+
+    res.json({
+      success: true,
+      message: 'Thumbnail uploaded successfully',
+      thumbnail: uploadedImage,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Upload thumbnail error:', error);
+    logAudit('ERROR', 'GIG', 'UPLOAD_THUMBNAIL', req.user._id, { 
       id: req.params.id, 
       error: error.message 
     });
@@ -1690,4 +2269,8 @@ module.exports = {
   restoreGig,
   getGigStats,
   exportGigs,
+  uploadImages,
+  removeImage,
+  setThumbnail,
+  uploadThumbnail
 };

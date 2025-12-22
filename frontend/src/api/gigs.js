@@ -239,52 +239,82 @@ export const gigsAPI = {
       throw error;
     }
   },
-  
-  create: async (gigData) => {
+  uploadImages: async (gigId, files) => {
     try {
-      let dataToSend = gigData;
-      const isFormData = gigData instanceof FormData;
+      const formData = new FormData();
       
-      if (!isFormData) {
-        const formData = new FormData();
-        
-        Object.keys(gigData).forEach(key => {
-          if (gigData[key] !== undefined && gigData[key] !== null && gigData[key] !== '') {
-            if (key === 'skillsRequired' && Array.isArray(gigData[key])) {
-              gigData[key].forEach((skill, index) => {
-                formData.append(`skillsRequired[${index}]`, skill);
-              });
-            } else if (key === 'deliverables' && Array.isArray(gigData[key])) {
-              gigData[key].forEach((deliverable, index) => {
-                formData.append(`deliverables[${index}]`, deliverable);
-              });
-            } else if (key === 'attachments' && Array.isArray(gigData[key])) {
-              gigData[key].forEach((file, index) => {
-                if (file instanceof File) {
-                  formData.append('attachments', file);
-                }
-              });
-            } else if (typeof gigData[key] === 'object') {
-              formData.append(key, JSON.stringify(gigData[key]));
-            } else {
-              formData.append(key, gigData[key]);
-            }
-          }
+      if (Array.isArray(files)) {
+        files.forEach(file => {
+          formData.append('images', file);
         });
-        
-        dataToSend = formData;
+      } else if (files) {
+        formData.append('images', files);
       }
       
+      const response = await axiosInstance.post(`/api/gigs/${gigId}/images/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response;
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to upload images');
+    }
+  },
+  
+  removeImage: async (gigId, publicId) => {
+    try {
+      const encodedId = encodeURIComponent(publicId);
+      const response = await axiosInstance.delete(`/api/gigs/${gigId}/images/${encodedId}`);
+      return response;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to remove image');
+    }
+  },
+  
+  setThumbnail: async (gigId, publicId) => {
+    try {
+      const encodedId = encodeURIComponent(publicId);
+      const response = await axiosInstance.put(`/api/gigs/${gigId}/thumbnail/${encodedId}`);
+      return response;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to set thumbnail');
+    }
+  },
+  
+  uploadThumbnail: async (gigId, file) => {
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+      
+      const response = await axiosInstance.post(`/api/gigs/${gigId}/thumbnail/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response;
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to upload thumbnail');
+    }
+  },
+
+  
+  create: async (formData) => {
+    try {
       const config = {
-        headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+        headers: {},
         timeout: 60000
       };
       
-      if (dataToSend instanceof FormData) {
+      if (formData instanceof FormData) {
         delete config.headers['Content-Type'];
       }
       
-      const response = await axiosInstance.post('/api/gigs', dataToSend, config);
+      const response = await axiosInstance.post('/api/gigs', formData, config);
       
       return {
         success: true,

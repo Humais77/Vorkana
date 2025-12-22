@@ -108,6 +108,52 @@ const gigSchema = new mongoose.Schema({
     enum: ['Email', 'Phone', 'Video Call', 'Any'],
     default: 'Email',
   },
+  
+  // Updated Images section similar to service model
+  images: [{
+    url: {
+      type: String,
+      required: true,
+      validate: {
+        validator: function(v) {
+          return /^https?:\/\//.test(v);
+        },
+        message: 'Image must be a valid URL'
+      }
+    },
+    public_id: {
+      type: String,
+      required: true
+    },
+    width: Number,
+    height: Number,
+    size: Number,
+    format: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  thumbnail: {
+    url: {
+      type: String,
+      validate: {
+        validator: function(v) {
+          if (!v) return true;
+          return /^https?:\/\//.test(v);
+        },
+        message: 'Thumbnail must be a valid URL'
+      }
+    },
+    public_id: String,
+    width: Number,
+    height: Number,
+    size: Number,
+    format: String,
+    uploadedAt: Date
+  },
+  
   attachments: [{
     type: String,
     trim: true,
@@ -410,6 +456,20 @@ gigSchema.pre('save', async function () {
     this.expiresAt = null;
   }
 
+  // Set thumbnail if not set but images exist
+  if (this.images && this.images.length > 0 && (!this.thumbnail || !this.thumbnail.url)) {
+    const firstImage = this.images[0];
+    this.thumbnail = {
+      url: firstImage.url,
+      public_id: firstImage.public_id,
+      width: firstImage.width,
+      height: firstImage.height,
+      size: firstImage.size,
+      format: firstImage.format,
+      uploadedAt: firstImage.uploadedAt || new Date()
+    };
+  }
+
   // Version increment
   if (!this.isNew && this.isModified()) {
     this.version += 1;
@@ -514,6 +574,23 @@ gigSchema.statics.closeExpired = async function() {
   }
   
   return results;
+};
+
+// Static methods for images
+gigSchema.statics.incrementLikes = async function(gigId) {
+  return this.findByIdAndUpdate(
+    gigId,
+    { $inc: { likes: 1 } },
+    { new: true }
+  );
+};
+
+gigSchema.statics.incrementViews = async function(gigId) {
+  return this.findByIdAndUpdate(
+    gigId,
+    { $inc: { views: 1 } },
+    { new: true }
+  );
 };
 
 const Gig = mongoose.model('Gig', gigSchema);

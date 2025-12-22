@@ -31,7 +31,10 @@ import {
   Languages,
   GraduationCap,
   Activity,
-  ExternalLink
+  ExternalLink,
+  Image as ImageIcon,
+  Grid3x3,
+  MessageCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -65,7 +68,7 @@ const GigDetails = () => {
   const [isLiked, setIsLiked] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [viewCount, setViewCount] = useState(0);
-
+const [imageViewMode, setImageViewMode] = useState('thumbnail');
   // Update gig details in store when data loads
   useEffect(() => {
     if (gig) {
@@ -130,6 +133,69 @@ const GigDetails = () => {
       </div>
     );
   };
+  const getThumbnailImage = () => {
+  if (gig?.thumbnail?.url) {
+    return {
+      url: gig.thumbnail.url,
+      public_id: gig.thumbnail.public_id,
+      type: 'thumbnail',
+      width: gig.thumbnail.width,
+      height: gig.thumbnail.height,
+      size: gig.thumbnail.size,
+      format: gig.thumbnail.format,
+      uploadedAt: gig.thumbnail.uploadedAt
+    };
+  }
+  
+  // If no thumbnail, use first image
+  if (gig?.images && gig.images.length > 0 && gig.images[0]?.url) {
+    return {
+      url: gig.images[0].url,
+      public_id: gig.images[0].public_id,
+      type: 'image',
+      width: gig.images[0].width,
+      height: gig.images[0].height,
+      size: gig.images[0].size,
+      format: gig.images[0].format,
+      uploadedAt: gig.images[0].uploadedAt
+    };
+  }
+  
+  // Fallback to default image
+  return {
+    url: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    type: 'default'
+  };
+};
+
+// Get gallery images (excluding thumbnail if it's the first image)
+const getGalleryImages = () => {
+  const images = [];
+  
+  if (gig?.images && gig.images.length > 0) {
+    gig.images.forEach((img, index) => {
+      if (img?.url) {
+        // Skip if this is the thumbnail
+        if (gig.thumbnail?.url && gig.thumbnail.url === img.url) {
+          return;
+        }
+        images.push({
+          url: img.url,
+          public_id: img.public_id,
+          type: 'image',
+          width: img.width,
+          height: img.height,
+          size: img.size,
+          format: img.format,
+          uploadedAt: img.uploadedAt
+        });
+      }
+    });
+  }
+  
+  return images;
+};
+
 
   const getUrgencyColor = (urgency) => {
     switch (urgency) {
@@ -250,6 +316,9 @@ const GigDetails = () => {
       </div>
     );
   }
+  const thumbnailImage = getThumbnailImage();
+const galleryImages = getGalleryImages();
+const allImages = [thumbnailImage, ...galleryImages];
 
   // Get attachments that are images
   const imageAttachments = gig.attachments?.filter(attachment => 
@@ -547,61 +616,196 @@ const GigDetails = () => {
               </div>
 
               {/* Image Gallery */}
-              {imageAttachments.length > 0 && (
-                <div className="mb-8">
-                  <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
-                    <img
-                      src={imageAttachments[activeImage]}
-                      alt={gig.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                      }}
-                    />
-                    {imageAttachments.length > 1 && (
-                      <>
-                        <button
-                          onClick={() => setActiveImage((prev) => (prev === 0 ? imageAttachments.length - 1 : prev - 1))}
-                          className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/90 p-3 rounded-full shadow-lg hover:bg-white transition-colors"
-                        >
-                          <ChevronLeft className="h-6 w-6 text-gray-700" />
-                        </button>
-                        <button
-                          onClick={() => setActiveImage((prev) => (prev === imageAttachments.length - 1 ? 0 : prev + 1))}
-                          className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/90 p-3 rounded-full shadow-lg hover:bg-white transition-colors"
-                        >
-                          <ChevronRight className="h-6 w-6 text-gray-700" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  {imageAttachments.length > 1 && (
-                    <div className="flex space-x-3 overflow-x-auto pb-3">
-                      {imageAttachments.map((image, index) => (
-                        <button
-                          key={index}
-                          onClick={() => setActiveImage(index)}
-                          className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
-                            activeImage === index
-                              ? 'border-emerald-500'
-                              : 'border-transparent'
-                          }`}
-                        >
-                          <img
-                            src={image}
-                            alt={`${gig.title} ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Image Gallery */}
+<div className="mb-8">
+  {/* View Mode Toggle */}
+  <div className="flex justify-between items-center mb-4">
+    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+      <ImageIcon className="h-6 w-6 text-emerald-600" />
+      Project Images
+    </h2>
+    {galleryImages.length > 0 && (
+      <div className="flex space-x-2">
+        <button
+          onClick={() => setImageViewMode('thumbnail')}
+          className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
+            imageViewMode === 'thumbnail'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          <ImageIcon className="h-4 w-4" />
+          Thumbnail
+        </button>
+        <button
+          onClick={() => setImageViewMode('gallery')}
+          className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
+            imageViewMode === 'gallery'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          <Grid3x3 className="h-4 w-4" />
+          Gallery ({galleryImages.length})
+        </button>
+      </div>
+    )}
+  </div>
 
+  {/* Thumbnail Section */}
+  {imageViewMode === 'thumbnail' && (
+    <div className="mb-8">
+      <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
+        <img
+          src={thumbnailImage.url}
+          alt={gig.title}
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+          }}
+        />
+        <div className="absolute top-4 left-4">
+          <span className="px-3 py-1 bg-emerald-600 text-white text-xs rounded-full">
+            <CheckCircle className="inline h-3 w-3 mr-1" />
+            Thumbnail
+          </span>
+        </div>
+        {thumbnailImage.width && thumbnailImage.height && (
+          <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+            {thumbnailImage.width} × {thumbnailImage.height}
+            {thumbnailImage.size && ` • ${Math.round(thumbnailImage.size / 1024)}KB`}
+            {thumbnailImage.format && ` • ${thumbnailImage.format.toUpperCase()}`}
+          </div>
+        )}
+      </div>
+      
+      {/* Thumbnail Info */}
+      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-semibold text-emerald-900">Featured Thumbnail</h4>
+            <p className="text-sm text-emerald-700">
+              This image is prominently displayed as the gig thumbnail
+            </p>
+          </div>
+          <div className="text-sm text-gray-600">
+            {thumbnailImage.uploadedAt && (
+              <span>Uploaded: {new Date(thumbnailImage.uploadedAt).toLocaleDateString()}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Gallery Images Section */}
+  {imageViewMode === 'gallery' && galleryImages.length > 0 && (
+    <div className="mb-8">
+      {/* Gallery Info */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-semibold text-gray-900">Project Gallery</h4>
+            <p className="text-sm text-gray-600">
+              {galleryImages.length} additional image{galleryImages.length !== 1 ? 's' : ''} showcasing this project
+            </p>
+          </div>
+          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+            <Grid3x3 className="inline h-4 w-4 mr-1" />
+            {galleryImages.length} images
+          </span>
+        </div>
+      </div>
+
+      {/* Gallery Navigation */}
+      {galleryImages.length > 1 && (
+        <div className="flex justify-between items-center mb-4">
+          <button
+            onClick={() => setActiveImage(prev => prev === 0 ? galleryImages.length - 1 : prev - 1)}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </button>
+          <span className="text-sm text-gray-600">
+            {activeImage + 1} of {galleryImages.length}
+          </span>
+          <button
+            onClick={() => setActiveImage(prev => prev === galleryImages.length - 1 ? 0 : prev + 1)}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Gallery Image Display */}
+      {galleryImages.length > 0 && (
+        <>
+          <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
+            <img
+              src={galleryImages[activeImage]?.url}
+              alt={`${gig.title} - Gallery Image ${activeImage + 1}`}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+              }}
+            />
+            {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
+              <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                {galleryImages[activeImage].width} × {galleryImages[activeImage].height}
+                {galleryImages[activeImage].size && ` • ${Math.round(galleryImages[activeImage].size / 1024)}KB`}
+                {galleryImages[activeImage].format && ` • ${galleryImages[activeImage].format.toUpperCase()}`}
+              </div>
+            )}
+          </div>
+
+          {/* Gallery Thumbnails */}
+          <div className="flex space-x-3 overflow-x-auto pb-3">
+            {galleryImages.map((image, index) => (
+              <button
+                key={index}
+                onClick={() => setActiveImage(index)}
+                className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
+                  activeImage === index
+                    ? 'border-emerald-500'
+                    : 'border-transparent hover:border-gray-300'
+                }`}
+              >
+                <img
+                  src={image.url}
+                  alt={`Gallery ${index + 1}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )}
+
+  {/* No Gallery Images Message */}
+  {imageViewMode === 'gallery' && galleryImages.length === 0 && (
+    <div className="text-center p-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+      <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+      <h3 className="text-lg font-semibold text-gray-700 mb-2">No Gallery Images</h3>
+      <p className="text-gray-600 mb-4">
+        This gig doesn't have additional gallery images yet.
+      </p>
+      <button
+        onClick={() => setImageViewMode('thumbnail')}
+        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+      >
+        View Thumbnail
+      </button>
+    </div>
+  )}
+</div>
               {/* Description */}
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">

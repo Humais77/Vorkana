@@ -126,7 +126,10 @@ const GigCreate = () => {
     confirmPassword: ""
   });
   const [authMode, setAuthMode] = useState("login");
-
+const [uploadedImages, setUploadedImages] = useState([]);
+const [thumbnailFile, setThumbnailFile] = useState(null);
+const [uploadingImages, setUploadingImages] = useState(false);
+const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   // Initialize form data with user info when authenticated
   useEffect(() => {
     if (currentUser) {
@@ -299,7 +302,94 @@ const GigCreate = () => {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
   }, [errors]);
+const handleImageUpload = async (files) => {
+  if (uploadingImages) return;
+  
+  const newFiles = Array.from(files);
+  
+  // Validate file count
+  if (uploadedImages.length + newFiles.length > 10) {
+    toast.error('Maximum 10 images allowed');
+    return;
+  }
+  
+  // Validate each file
+  for (const file of newFiles) {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(`${file.name} exceeds 5MB limit`);
+      return;
+    }
+    
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error(`${file.name} is not a valid image type`);
+      return;
+    }
+  }
+  
+  setUploadingImages(true);
+  
+  try {
+    // Create preview URLs for immediate display
+    const previewImages = newFiles.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }));
+    
+    setUploadedImages(prev => [...prev, ...previewImages]);
+    
+    toast.success(`${newFiles.length} image(s) added successfully`);
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    toast.error('Failed to add images');
+  } finally {
+    setUploadingImages(false);
+  }
+};
 
+const handleThumbnailUpload = (file) => {
+  if (uploadingThumbnail) return;
+  
+  // Validate file
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error('Thumbnail exceeds 5MB limit');
+    return;
+  }
+  
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) {
+    toast.error('Invalid image type for thumbnail');
+    return;
+  }
+  
+  setThumbnailFile({
+    file,
+    preview: URL.createObjectURL(file),
+    name: file.name,
+    size: file.size,
+    type: file.type
+  });
+  
+  toast.success('Thumbnail selected');
+};
+
+const removeImage = (index) => {
+  const image = uploadedImages[index];
+  URL.revokeObjectURL(image.preview); // Clean up memory
+  setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  toast.success('Image removed');
+};
+
+const removeThumbnail = () => {
+  if (thumbnailFile) {
+    URL.revokeObjectURL(thumbnailFile.preview);
+    setThumbnailFile(null);
+    toast.success('Thumbnail removed');
+  }
+};
   const validateField = (fieldName, value) => {
     switch (fieldName) {
       case 'fullName':
@@ -623,121 +713,125 @@ const GigCreate = () => {
     }
   }, [activeStep, validateStep]);
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+ // In GigCreate.jsx, update the handleSubmit function
+const handleSubmit = useCallback(async (e, status = 'draft') => {
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    if (!isAuthenticated) {
-      setErrors(prev => ({
-        ...prev,
-        form: "Please sign in to create a gig."
-      }));
-      setActiveStep(1);
-      toast.error("Please sign in first");
-      setIsSubmitting(false);
-      return;
+  if (!isAuthenticated) {
+    setErrors(prev => ({
+      ...prev,
+      form: "Please sign in to create a gig."
+    }));
+    setActiveStep(1);
+    toast.error("Please sign in first");
+    setIsSubmitting(false);
+    return;
+  }
+
+  // Validate all steps
+  let hasError = false;
+  for (let step = 1; step <= 4; step++) {
+    if (!validateStep(step)) {
+      setActiveStep(step);
+      hasError = true;
+      break;
     }
+  }
 
-    // Validate all steps
-    let hasError = false;
-    for (let step = 1; step <= 4; step++) {
-      if (!validateStep(step)) {
-        setActiveStep(step);
-        hasError = true;
-        break;
-      }
-    }
+  if (hasError) {
+    setIsSubmitting(false);
+    return;
+  }
 
-    if (hasError) {
-      setIsSubmitting(false);
-      return;
-    }
+  try {
+    const formDataObj = new FormData();
 
-    try {
-      const formDataObj = new FormData();
+    // Prepare data according to backend model
+    const gigData = {
+      title: formData.title.trim(),
+      fullName: formData.fullName.trim(),
+      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+      country: formData.country.trim(),
+      phone: formData.phone.trim(),
+      projectCategory: formData.projectCategory,
+      subcategory: formData.subcategory || undefined,
+      description: formData.description.trim(),
+      budget: parseFloat(formData.budget),
+      currency: formData.currency,
+      timeline: formData.timeline.trim(),
+      timelineUnit: formData.timelineUnit,
+      communication: formData.communication,
+      urgency: formData.urgency,
+      visibility: formData.visibility,
+      status: status
+    };
 
-      // Prepare data according to backend model
-      const gigData = {
-        title: formData.title.trim(),
-        fullName: formData.fullName.trim(),
-        oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-        country: formData.country.trim(),
-        phone: formData.phone.trim(),
-        projectCategory: formData.projectCategory,
-        subcategory: formData.subcategory || undefined, // Send undefined if empty
-        description: formData.description.trim(),
-        budget: parseFloat(formData.budget),
-        currency: formData.currency,
-        timeline: formData.timeline.trim(),
-        timelineUnit: formData.timelineUnit,
-        communication: formData.communication,
-        urgency: formData.urgency,
-        visibility: formData.visibility,
-      };
-
-      // Log gig data for debugging
-      console.log('=== GIG DATA TO BE SENT ===');
-      console.log('Category:', gigData.projectCategory);
-      console.log('Subcategory:', gigData.subcategory);
-      console.log('Has subcategory?', !!gigData.subcategory);
-
-      // Append all data to FormData
-      Object.keys(gigData).forEach(key => {
-        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-          if (typeof gigData[key] === 'object') {
-            formDataObj.append(key, JSON.stringify(gigData[key]));
-          } else {
-            formDataObj.append(key, gigData[key]);
-          }
+    // Append all data to FormData
+    Object.keys(gigData).forEach(key => {
+      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+        if (typeof gigData[key] === 'object') {
+          formDataObj.append(key, JSON.stringify(gigData[key]));
+        } else {
+          formDataObj.append(key, gigData[key]);
         }
-      });
-
-      // Append skills array properly
-      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-        formData.skillsRequired.forEach((skill, index) => {
-          formDataObj.append(`skillsRequired[${index}]`, skill);
-        });
       }
+    });
 
-      // Append deliverables array properly
-      if (formData.deliverables && formData.deliverables.length > 0) {
-        formData.deliverables.forEach((deliverable, index) => {
-          formDataObj.append(`deliverables[${index}]`, deliverable);
-        });
-      }
-
-      // Append attachments
-      attachments.forEach((file) => {
-        formDataObj.append("attachments", file);
+    // Append skills array properly
+    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+      formData.skillsRequired.forEach((skill, index) => {
+        formDataObj.append(`skillsRequired[${index}]`, skill);
       });
-
-      // Append other files
-      files.forEach((file) => {
-        formDataObj.append("files", file);
-      });
-
-      // Log FormData entries for debugging
-      console.log("=== FINAL FORM DATA BEING SENT ===");
-      for (let [key, value] of formDataObj.entries()) {
-        console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
-      }
-
-      setErrors({});
-
-      // Call create gig mutation
-      createGig(formDataObj);
-
-    } catch (error) {
-      console.error("Error in handleSubmit:", error);
-      toast.error("Failed to prepare gig data. Please try again.");
-      setErrors(prev => ({
-        ...prev,
-        form: error.message || "Something went wrong. Please try again."
-      }));
-    } finally {
-      setIsSubmitting(false);
     }
-  }, [formData, attachments, files, isAuthenticated, validateStep, createGig]);
+
+    // Append deliverables array properly
+    if (formData.deliverables && formData.deliverables.length > 0) {
+      formData.deliverables.forEach((deliverable, index) => {
+        formDataObj.append(`deliverables[${index}]`, deliverable);
+      });
+    }
+
+    // Append thumbnail if exists
+    // In handleSubmit, when creating formDataObj:
+if (thumbnailFile) {
+  formDataObj.append('thumbnail', thumbnailFile.file);
+}
+uploadedImages.forEach((image) => {
+  formDataObj.append('images', image.file);
+});
+
+    // Append attachments
+    attachments.forEach((file) => {
+      formDataObj.append('attachments', file);
+    });
+
+    // Append other files
+    files.forEach((file) => {
+      formDataObj.append('files', file);
+    });
+
+    console.log("=== FINAL FORM DATA BEING SENT ===");
+    for (let [key, value] of formDataObj.entries()) {
+      console.log(`${key}: ${value instanceof File ? `${value.name} (${value.type})` : value}`);
+    }
+
+    setErrors({});
+
+    // Call create gig mutation with formDataObj
+    createGig(formDataObj);
+
+  } catch (error) {
+    console.error("Error in handleSubmit:", error);
+    toast.error("Failed to prepare gig data. Please try again.");
+    setErrors(prev => ({
+      ...prev,
+      form: error.message || "Something went wrong. Please try again."
+    }));
+  } finally {
+    setIsSubmitting(false);
+  }
+}, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig]);
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
@@ -2093,6 +2187,166 @@ const GigCreate = () => {
                       )}
                     </div>
                   )}
+                  {/* Step 4.5: Image Upload Section */}
+{activeStep === 4 && isAuthenticated && (
+  <div className="space-y-6">
+    <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
+      <Upload className="mr-3 text-emerald-600" size={20} />
+      Project Images
+    </h2>
+
+    <div className="space-y-8">
+      {/* Image Upload */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Project Images</h3>
+        <div className="space-y-4">
+          {/* Upload Area */}
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors">
+            <input
+              type="file"
+              id="image-upload"
+              multiple
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              onChange={(e) => handleImageUpload(e.target.files)}
+              className="hidden"
+              disabled={uploadingImages || gigLoading}
+            />
+            <label htmlFor="image-upload" className="cursor-pointer">
+              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h4 className="text-lg font-medium text-gray-900 mb-2">
+                Upload Project Images
+              </h4>
+              <p className="text-gray-600 mb-4">
+                Drag & drop images or click to browse
+              </p>
+              <p className="text-sm text-gray-500">
+                Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
+              </p>
+            </label>
+          </div>
+
+          {/* Image Preview Grid */}
+          {uploadedImages.length > 0 && (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-gray-900">
+                  Selected Images ({uploadedImages.length}/10)
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                    setUploadedImages([]);
+                  }}
+                  className="text-sm text-red-600 hover:text-red-700"
+                  disabled={gigLoading}
+                >
+                  Remove All
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {uploadedImages.map((image, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={image.preview}
+                      alt={`Preview ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={gigLoading}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                      {image.name.substring(0, 20)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Thumbnail Upload */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+        <div className="space-y-4">
+          <p className="text-gray-600 text-sm">
+            The thumbnail is the main image displayed in gig listings. 
+            It should be eye-catching and representative of your project.
+          </p>
+
+          {thumbnailFile ? (
+            <div className="flex items-start gap-4">
+              <div className="relative">
+                <img
+                  src={thumbnailFile.preview}
+                  alt="Thumbnail preview"
+                  className="w-32 h-32 object-cover rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={removeThumbnail}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                  disabled={gigLoading}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                <p className="text-gray-500 text-sm">
+                  {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
+                </p>
+                <p className="text-gray-500 text-sm mt-2">
+                  This image will be used as the gig thumbnail.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors">
+              <input
+                type="file"
+                id="thumbnail-upload"
+                accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                className="hidden"
+                disabled={uploadingThumbnail || gigLoading}
+              />
+              <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                <h4 className="text-lg font-medium text-gray-900 mb-1">
+                  Upload Thumbnail
+                </h4>
+                <p className="text-gray-600 text-sm mb-2">
+                  Recommended: 800×600 pixels, max 5MB
+                </p>
+                <p className="text-gray-500 text-xs">
+                  Click to browse or drag & drop
+                </p>
+              </label>
+            </div>
+          )}
+
+          {/* Tip */}
+          {uploadedImages.length > 0 && !thumbnailFile && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-700">
+                <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
+                after creating the gig.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
                   {/* Navigation Buttons - Removed Back button, only Save & Continue */}
                   <div className="flex justify-end pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
