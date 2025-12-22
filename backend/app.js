@@ -39,7 +39,6 @@ const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
 const orderRoutes = require('./routes/order.route.js'); // Add this
 const adminRoutes = require('./routes/admin.route.js');
-const messagingRoutes = require('./routes/messaging.route.js');
 const testRoute = require("./routes/test.route.js")
 const searchRoute = require("./routes/search.routes.js")
 const passport = require("passport");
@@ -168,9 +167,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
-app.use('/api/orders', orderRoutes); // Add this
+app.use('/api/orders', orderRoutes); 
 app.use('/api/admin', adminRoutes);
-app.use('/api/messaging', messagingRoutes);
 app.use('/api/auth', testRoute);
 app.use('/api/search', searchRoute);
 

@@ -220,30 +220,6 @@ const gigSchema = new mongoose.Schema({
     default: 'none',
     index: true,
   },
-  communicationHistory: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    message: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: [2000, 'Message cannot exceed 2000 characters'],
-    },
-    attachment: {
-      type: String,
-      validate: {
-        validator: (v) => !v || (/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..')),
-        message: 'Invalid attachment filename or path traversal detected',
-      },
-    },
-    sentAt: {
-      type: Date,
-      default: Date.now,
-    },
-  }],
   files: [{
     type: String,
     validate: {

@@ -8,7 +8,6 @@ import {
   Shield, 
   ChevronRight,
   ChevronLeft,
-  MessageCircle,
   Package,
   FileText,
   User,
@@ -41,8 +40,6 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useGigStore } from '../../store/useGigStore';
 import { useGig } from '../../hooks/useGigs';
 
-// Add this import - make sure the path is correct
-import MessagingModal from '../../components/MessagingModal';
 
 const GigDetails = () => {
   const { id } = useParams();
@@ -52,8 +49,6 @@ const GigDetails = () => {
   const { user, isAuthenticated } = useAuthStore();
   const { setGigDetails, clearGigDetails } = useGigStore();
   
-  // Add this state for the modal
-  const [showMessaging, setShowMessaging] = useState(false);
   
   // TanStack Query hook for gig data
   const { 
@@ -88,23 +83,7 @@ const GigDetails = () => {
     };
   }, [clearGigDetails]);
 
-  // Update the contact function
-  const handleContactSeller = () => {
-    if (!isAuthenticated) {
-      toast.error('Please login to contact client');
-      navigate('/sign-in');
-      return;
-    }
-    
-    if (gig?.createdBy?._id === user?._id) {
-      toast.error('You cannot contact yourself');
-      return;
-    }
-    
-    // Open the messaging modal
-    setShowMessaging(true);
-  };
-
+ 
   const handleShare = async () => {
     const url = window.location.href;
     try {
@@ -292,14 +271,6 @@ const GigDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
-      {/* Messaging Modal - MOVE THIS TO ROOT LEVEL */}
-      <MessagingModal
-        isOpen={showMessaging}
-        onClose={() => setShowMessaging(false)}
-        receiver={gig.createdBy}
-        gig={gig}
-      />
-      
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -514,19 +485,7 @@ const GigDetails = () => {
                     </div>
                   </div>
                 </Link>
-                
-                {/* Message Button - Only show if not the current user's gig */}
-                {isAuthenticated && user?._id !== gigUser?._id && (
-                  <div className="sm:self-start">
-                    <button
-                      onClick={() => setShowMessaging(true)}
-                      className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
-                    >
-                      <MessageCircle className="h-5 w-5" />
-                      Message Client
-                    </button>
-                  </div>
-                )}
+
               </div>
 
               {/* Budget & Deadline Info */}
