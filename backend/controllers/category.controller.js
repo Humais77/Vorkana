@@ -5,8 +5,8 @@ const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 
 // Security: Request ID for tracking
-const { v4: uuidv4 } = require('uuid');
-const generateRequestId = () => uuidv4();
+const crypto = require('crypto');
+const generateRequestId = () => crypto.randomUUID();
 // Security: Input sanitization for categories
 const sanitizeCategoryInput = (data) => {
   const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];

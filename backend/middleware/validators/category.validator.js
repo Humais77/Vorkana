@@ -131,75 +131,47 @@ const descriptionValidation = Joi.string()
   .optional();
 const validateImagePath = (path) => {
   if (!path) return true;
-  
-  const invalidPatterns = [
-    /\.\.\//,  // Directory traversal
-    /\.\.\\/,  // Windows traversal
-    /\/\//,    // Double slash
-    /\\\./,    // Backslash dot
-    /^\/?\.\.?(\/|$)/,  // Current/parent directory
-    /^[a-zA-Z]:[\\\/]/, // Windows drive
-    /%2e%2e/i,  // URL encoded ..
-    /\.\.%2f/i,  // ../
-    /%2e\./i,    // ./
-    /\0/,        // Null byte
-    /\|/,        // Pipe
-    /\</,        // Less than
-    /\>/,        // Greater than
-    /\*/,        // Wildcard
-    /\?/,        // Wildcard
-    /\[/,        // Bracket
-    /\]/,        // Bracket
-    /\{/,        // Brace
-    /\}/         // Brace
+
+  // Allow uppercase hex and dashes, 20-64 chars before extension
+  const validPattern = /^\/uploads\/[a-fA-F0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
+  if (!validPattern.test(path)) return false;
+
+  // Block obvious traversal attempts (including encoded ones)
+  const dangerousPatterns = [
+    /\.\.\//g,     // ../
+    /\.\.\\/g,     // ..\
+    /\/\//g,       // //
+    /\\\\/g,       // \\
+    /^\/*\.\.\//g,  // leading ../
+    /^[a-zA-Z]:[\\\/]/i, // C:\
+    /%2e%2e/i,     // encoded ..
+    /%2e\./i,      // encoded ./
+    /\0/g,         // null byte
+    /[\|<>\*\?\[\]\{\}]/g
   ];
-  
-  // Decode URL encoding multiple times
+
   let decoded = path;
   for (let i = 0; i < 5; i++) {
-    try {
-      decoded = decodeURIComponent(decoded);
-    } catch (e) {
-      break;
-    }
+    const newDecoded = decodeURIComponent(decoded);
+    if (newDecoded === decoded) break;
+    decoded = newDecoded;
   }
-  
-  // Check both original and decoded
-  const pathsToCheck = [path, decoded];
-  return !pathsToCheck.some(p => 
-    invalidPatterns.some(pattern => pattern.test(p))
-  );
+
+  const toCheck = [path, decoded];
+  return !toCheck.some(p => dangerousPatterns.some(re => re.test(p)));
 };
 const imageValidation = Joi.string()
-  .pattern(/^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
+  .pattern(/^\/uploads\/[a-fA-F0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
   .custom((value, helpers) => {
-    // Comprehensive path traversal checks
-    const traversalPatterns = [
-      /\.\.\//,
-      /\.\.\\/,
-      /\/\//,
-      /\\\\./,
-      /^\.\//,
-      /^\.\\/,
-      /^[a-zA-Z]:[\\\/]/  // Windows drives
-    ];
-    
-    if (traversalPatterns.some(pattern => pattern.test(value))) {
+    if (!validateImagePath(value)) {
       return helpers.error('any.invalid');
     }
-    
-    // Also check URL encoding attempts
-    const decoded = decodeURIComponent(value);
-    if (traversalPatterns.some(pattern => pattern.test(decoded))) {
-      return helpers.error('any.invalid');
-    }
-    
     return value;
   })
   .optional()
   .messages({
     'string.pattern.base': 'Invalid image URL format',
-    'any.invalid': 'Invalid image path - path traversal detected'
+    'any.invalid': 'Invalid image path - security violation detected'
   });
 
 const metaKeywordsValidation = Joi.array()
