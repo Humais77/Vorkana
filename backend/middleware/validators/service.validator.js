@@ -228,12 +228,12 @@ const createSchema = Joi.object({
       'any.invalid': 'Invalid category ID',
     }),
   
-  subcategory: objectId
-    .optional()
-    .allow(null)
-    .messages({
-      'any.invalid': 'Invalid subcategory ID',
-    }),
+ subcategory: objectId
+  .required() // Changed from optional to required
+  .messages({
+    'any.required': 'Subcategory is required',
+    'any.invalid': 'Invalid subcategory ID',
+  }),
   
   price: Joi.number()
     .required()
@@ -392,14 +392,16 @@ const updateSchema = Joi.object({
       'string.max': 'Description cannot exceed 5000 characters',
     }),
   
-  shortDescription: Joi.string()
-    .max(250)
-    .custom((value) => sanitizeInput(value || ''), 'XSS prevention')
-    .allow('')
-    .optional()
-    .messages({
-      'string.max': 'Short description cannot exceed 250 characters',
-    }),
+shortDescription: Joi.string()
+  .required() // Changed from optional to required
+  .min(20) // Added minimum length
+  .max(250)
+  .custom((value) => sanitizeInput(value), 'XSS prevention')
+  .messages({
+    'string.empty': 'Short description is required',
+    'string.min': 'Short description must be at least 20 characters',
+    'string.max': 'Short description cannot exceed 250 characters',
+  }),
   
   category: objectId
     .optional()
@@ -408,11 +410,11 @@ const updateSchema = Joi.object({
     }),
   
   subcategory: objectId
-    .optional()
-    .allow(null)
-    .messages({
-      'any.invalid': 'Invalid subcategory ID',
-    }),
+  .required() // Changed from optional to required
+  .messages({
+    'any.required': 'Subcategory is required',
+    'any.invalid': 'Invalid subcategory ID',
+  }),
   
   price: Joi.number()
     .min(1)

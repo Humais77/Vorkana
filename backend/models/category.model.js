@@ -12,41 +12,17 @@ const categorySchema = new mongoose.Schema({
     trim: true,
     minlength: [2, 'Category name must be at least 2 characters'],
     maxlength: [50, 'Category name cannot exceed 50 characters'],
-    index: true, // Added for faster name lookups
+    index: true,
     validate: {
       validator: function(v) {
-const injectionPatterns = [
-  // SQL Injection
-  /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
-  /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
-  /(\%27)|(\')|(\-\-)|(\%3B)|(;)/i,
-  /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
-  
-  // NoSQL Injection
-  /\$where/i,
-  /\$eq.*\{\s*\$ne/i,
-  /\$ne.*null/i,
-  /\$nin.*\[\]/i,
-  /\$regex.*\$options/i,
-  /\$\$.*=.*\$\$/i,
-  
-  // Command Injection
-  /\|\s*\w+/i,
-  /\&\s*\w+/i,
-  /\;\s*\w+/i,
-  /\`.*\`/i,
-  
-  // XSS patterns
-  /<script[^>]*>.*?<\/script>/gi,
-  /javascript\s*:/gi,
-  /on\w+\s*=\s*["'][^"']*["']/gi,
-  /data\s*:/gi,
-  /vbscript\s*:/gi
-];
-// Remove SQL-specific patterns like: /select.*from/i, etc.
-        return !injectionPatterns.some(pattern => pattern.test(v));
+        const criticalPatterns = [
+          /<script/i,
+          /javascript:/i,
+          /on\w+\s*=/i
+        ];
+        return !criticalPatterns.some(pattern => pattern.test(v));
       },
-      message: 'Category name contains invalid characters'
+      message: 'Category name contains dangerous HTML/JavaScript code'
     }
   },
   description: {
@@ -256,48 +232,49 @@ categorySchema.pre('save', async function () {
   });
 
   if (this.isModified('name') || this.isNew) {
-    let baseSlug = slugify(this.name, { lower: true, strict: true, locale: 'en', trim: true });
+    let baseSlug = slugify(this.name, { 
+      lower: true, 
+      strict: true, 
+      locale: 'en', 
+      trim: true 
+    });
+    
     let slug = baseSlug;
     let counter = 1;
     let isUnique = false;
     
-    while (!isUnique && counter <= 1000) {
+    // Try up to 100 times to find a unique slug
+    while (!isUnique && counter <= 100) {
       try {
-        // Use findOneAndUpdate with upsert to atomically check and reserve
-        const existing = await this.constructor.findOneAndUpdate(
-          { slug, _id: { $ne: this._id } },
-          { $setOnInsert: { slugReserved: true } },
-          { 
-            upsert: true,
-            new: true,
-            setDefaultsOnInsert: true,
-            useFindAndModify: false 
-          }
-        );
-        
-        // If document was inserted (upserted), slug is available
+        // Check if slug exists (excluding current document)
+        const existing = await this.constructor.findOne({
+          slug: slug,
+          _id: { $ne: this._id }
+        });
+
         if (!existing) {
           isUnique = true;
         } else {
           slug = `${baseSlug}-${counter++}`;
         }
       } catch (error) {
-        if (error.code === 11000) { // Duplicate key error
-          slug = `${baseSlug}-${counter++}`;
-          continue;
-        }
-        throw error;
+        console.error('Error checking slug uniqueness:', error);
+        // Fallback: add timestamp to ensure uniqueness
+        slug = `${baseSlug}-${Date.now()}`;
+        break;
       }
     }
     
     if (!isUnique) {
-      throw new Error('Could not generate unique slug after 1000 attempts');
+      // Last resort: use UUID for uniqueness
+      const { v4: uuidv4 } = await import('uuid');
+      slug = `${baseSlug}-${uuidv4().slice(0, 8)}`;
     }
     
     this.slug = slug;
   }
-  
-  // Clean up temporary reservation
+
+  // Remove the temporary slugReserved cleanup since we're not using it anymore
   if (this.slugReserved) {
     delete this.slugReserved;
   }

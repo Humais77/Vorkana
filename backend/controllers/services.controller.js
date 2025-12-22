@@ -298,32 +298,77 @@ const createService = async (req, res, next) => {
 
     const sanitizedData = sanitizeServiceInput(req.body);
     
-    // Verify category
-    if (sanitizedData.category) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.category, 
-        isActive: true 
+    // Verify category is provided
+    if (!sanitizedData.category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category is required',
+        code: 'CATEGORY_REQUIRED',
+        requestId
       });
-      
-      if (!category) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category not found or inactive',
-          code: 'CATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
+    }
+
+    // Verify subcategory is provided
+    if (!sanitizedData.subcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory is required',
+        code: 'SUBCATEGORY_REQUIRED',
+        requestId
+      });
+    }
+
+    // Verify short description is provided
+    if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim().length < 20) {
+      return res.status(400).json({
+        success: false,
+        message: 'Short description is required and must be at least 20 characters',
+        code: 'SHORT_DESCRIPTION_REQUIRED',
+        requestId
+      });
+    }
+
+    // Verify category
+    const category = await Category.findOne({ 
+      _id: sanitizedData.category, 
+      isActive: true 
+    });
+    
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category not found or inactive',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Verify subcategory belongs to category
+    const subcategory = await Category.findOne({ 
+      _id: sanitizedData.subcategory, 
+      isActive: true,
+      parentCategory: sanitizedData.category 
+    });
+    
+    if (!subcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory not found or does not belong to the selected category',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
     }
 
     // Create service data
-    const serviceData = {
+  const serviceData = {
       ...sanitizedData,
       createdBy: req.user._id,
       version: 1,
       images: [],
-      thumbnail: null
+      thumbnail: null,
+      // Ensure short description is trimmed
+      shortDescription: sanitizedData.shortDescription.trim()
     };
-
     // Handle uploaded files
     const uploadedFiles = [];
     const uploadedThumbnail = [];

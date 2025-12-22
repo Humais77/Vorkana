@@ -43,7 +43,17 @@ import {
   X,
   Image as ImageIcon,
   Grid3x3,
-  MessageCircle
+  MessageCircle,
+  Info,
+  AlertTriangle,
+  BookOpen,
+  CalendarDays,
+  Hash,
+  Clock3,
+  DollarSign as DollarSignIcon,
+  Target as TargetIcon,
+  FileQuestion,
+  CheckSquare
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -71,7 +81,8 @@ const ServiceDetails = () => {
   const [activeImage, setActiveImage] = useState(0);
   const [viewCount, setViewCount] = useState(0);
   const [selectedPackage, setSelectedPackage] = useState(null);
-  const [imageViewMode, setImageViewMode] = useState('thumbnail'); // 'thumbnail' or 'gallery'
+  const [imageViewMode, setImageViewMode] = useState('thumbnail');
+  const [showMessaging, setShowMessaging] = useState(false); // Fixed: Added missing state
 
   // Update view count when service loads
   useEffect(() => {
@@ -85,8 +96,6 @@ const ServiceDetails = () => {
       }
     }
   }, [service]);
-
-
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -315,6 +324,63 @@ const ServiceDetails = () => {
     return null;
   };
 
+  // Helper function to check if field is required and has value
+  const isFieldComplete = (fieldName, value) => {
+    const requiredFields = {
+      'title': { minLength: 5, required: true },
+      'description': { minLength: 50, required: true },
+      'shortDescription': { minLength: 20, required: true },
+      'category': { required: true },
+      'subcategory': { required: true },
+      'price': { minValue: 1, required: true },
+      'deliveryTime': { minValue: 1, required: true },
+      'currency': { required: true },
+      'deliveryTimeUnit': { required: true },
+      'revisions': { required: true }
+    };
+
+    const fieldConfig = requiredFields[fieldName];
+    if (!fieldConfig) return { complete: true, message: '' };
+
+    if (!value && fieldConfig.required) {
+      return { complete: false, message: 'Required field is missing' };
+    }
+
+    if (fieldConfig.minLength && value && value.length < fieldConfig.minLength) {
+      return { 
+        complete: false, 
+        message: `Minimum ${fieldConfig.minLength} characters required` 
+      };
+    }
+
+    if (fieldConfig.minValue && value && parseFloat(value) < fieldConfig.minValue) {
+      return { 
+        complete: false, 
+        message: `Minimum value is ${fieldConfig.minValue}` 
+      };
+    }
+
+    return { complete: true, message: '' };
+  };
+
+  // Render required field indicator
+  const renderRequiredIndicator = (fieldName, value) => {
+    const { complete, message } = isFieldComplete(fieldName, value);
+    
+    return (
+      <div className="flex items-center gap-1 mt-1">
+        <span className={`text-xs ${complete ? 'text-green-600' : 'text-red-600'}`}>
+          {complete ? (
+            <CheckCircle className="inline h-3 w-3 mr-1" />
+          ) : (
+            <AlertTriangle className="inline h-3 w-3 mr-1" />
+          )}
+          {complete ? 'Complete' : message}
+        </span>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
@@ -440,6 +506,7 @@ const ServiceDetails = () => {
                 <div>
                   <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2">
                     {service.title}
+                    {renderRequiredIndicator('title', service.title)}
                   </h1>
                   <div className="flex flex-wrap items-center gap-3">
                     <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(service.status)}`}>
@@ -614,9 +681,77 @@ const ServiceDetails = () => {
                       </div>
                     </div>
                   </Link>
-                  
                 </div>
               )}
+
+              {/* Required Fields Summary Card */}
+              <div className="mb-8 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
+                <h2 className="text-xl font-bold text-amber-800 mb-4 flex items-center gap-2">
+                  <Info className="h-5 w-5" />
+                  Required Service Information
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('title', service.title).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('title', service.title).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Service Title</h4>
+                      <p className="text-xs text-gray-500">Minimum 5 characters</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('description', service.description).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('description', service.description).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Description</h4>
+                      <p className="text-xs text-gray-500">Minimum 50 characters</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('shortDescription', service.shortDescription).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('shortDescription', service.shortDescription).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Short Description</h4>
+                      <p className="text-xs text-gray-500">Minimum 20 characters</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('category', service.category).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('category', service.category).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Category</h4>
+                      <p className="text-xs text-gray-500">Main service category</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('subcategory', service.subcategory).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('subcategory', service.subcategory).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Subcategory</h4>
+                      <p className="text-xs text-gray-500">Required subcategory</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                    <div className={`p-2 rounded-full ${isFieldComplete('price', service.price).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {isFieldComplete('price', service.price).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Price</h4>
+                      <p className="text-xs text-gray-500">Minimum $1</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* Service Images Section */}
               <div className="mb-8">
@@ -809,6 +944,108 @@ const ServiceDetails = () => {
                 )}
               </div>
 
+              {/* Essential Service Information Card */}
+              <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                  <TargetIcon className="h-6 w-6 text-blue-600" />
+                  Essential Service Information
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Category & Subcategory */}
+                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Package className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Category</h3>
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <Info className="h-3 w-3" />
+                          Required field
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Main Category:</span>
+                        <span className="font-medium text-gray-900">{categoryName || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Subcategory:</span>
+                        <span className="font-medium text-gray-900">{subcategoryName || 'Not set'}</span>
+                      </div>
+                    </div>
+                    {renderRequiredIndicator('category', service.category)}
+                    {renderRequiredIndicator('subcategory', service.subcategory)}
+                  </div>
+
+                  {/* Pricing Information */}
+                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <DollarSignIcon className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Pricing</h3>
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <Info className="h-3 w-3" />
+                          Required fields
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Base Price:</span>
+                        <span className="font-medium text-emerald-600">
+                          {formatPrice(service.price, service.currency)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Currency:</span>
+                        <span className="font-medium text-gray-900">{service.currency || 'USD'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Revisions:</span>
+                        <span className="font-medium text-gray-900">{service.revisions || 0} included</span>
+                      </div>
+                    </div>
+                    {renderRequiredIndicator('price', service.price)}
+                    {renderRequiredIndicator('currency', service.currency)}
+                  </div>
+
+                  {/* Delivery Information */}
+                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-2 bg-amber-100 rounded-lg">
+                        <Clock3 className="h-5 w-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Delivery</h3>
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <Info className="h-3 w-3" />
+                          Required fields
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Delivery Time:</span>
+                        <span className="font-medium text-gray-900">
+                          {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Unit:</span>
+                        <span className="font-medium text-gray-900">{service.deliveryTimeUnit || 'days'}</span>
+                      </div>
+                    </div>
+                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
+                    {renderRequiredIndicator('deliveryTimeUnit', service.deliveryTimeUnit)}
+                  </div>
+                </div>
+              </div>
+
               {/* Price & Delivery Info */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
@@ -830,6 +1067,7 @@ const ServiceDetails = () => {
                     <p className="text-sm text-gray-500">
                       Base price for this service
                     </p>
+                    {renderRequiredIndicator('price', service.price)}
                     {service.packages && service.packages.length > 0 && (
                       <div className="mt-3 text-xs text-gray-600">
                         <span className="inline-block px-2 py-1 bg-white rounded border">
@@ -857,6 +1095,7 @@ const ServiceDetails = () => {
                     <p className="text-sm text-gray-500 mb-2">
                       Average delivery time
                     </p>
+                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
                     {service.revisions && (
                       <div className="text-xs text-gray-600">
                         {service.revisions} revision{service.revisions !== 1 ? 's' : ''} included
@@ -866,12 +1105,18 @@ const ServiceDetails = () => {
                 </div>
               </div>
 
-              {/* Description */}
+              {/* Description Section with Required Indicator */}
               <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                  <FileText className="h-6 w-6 text-emerald-600" />
-                  Service Description
-                </h2>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <FileText className="h-6 w-6 text-emerald-600" />
+                    Service Description
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {renderRequiredIndicator('description', service.description)}
+                    {renderRequiredIndicator('shortDescription', service.shortDescription)}
+                  </div>
+                </div>
                 <div className="prose max-w-none">
                   <div className="bg-gray-50 rounded-xl p-6">
                     <p className="text-gray-700 whitespace-pre-line leading-relaxed">
@@ -879,7 +1124,11 @@ const ServiceDetails = () => {
                     </p>
                     {service.shortDescription && (
                       <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-                        <p className="text-gray-600 italic">{service.shortDescription}</p>
+                        <div className="flex items-center gap-2 mb-2">
+                          <BookOpen className="h-4 w-4 text-gray-400" />
+                          <h3 className="font-medium text-gray-900">Short Description</h3>
+                        </div>
+                        <p className="text-gray-600">{service.shortDescription}</p>
                       </div>
                     )}
                   </div>
@@ -890,7 +1139,7 @@ const ServiceDetails = () => {
               {service.features && service.features.length > 0 && (
                 <div className="mb-8">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <Target className="h-6 w-6 text-emerald-600" />
+                    <CheckSquare className="h-6 w-6 text-emerald-600" />
                     What's Included
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -920,17 +1169,29 @@ const ServiceDetails = () => {
               {/* Requirements */}
               {service.requirements && service.requirements.length > 0 && (
                 <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <Settings className="h-6 w-6 text-emerald-600" />
-                    Service Requirements
-                  </h2>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                      <FileQuestion className="h-6 w-6 text-emerald-600" />
+                      Client Requirements
+                    </h2>
+                    <span className="text-sm text-gray-500">
+                      {service.requirements.filter(req => req.required).length} required field(s)
+                    </span>
+                  </div>
                   <div className="space-y-4">
                     {service.requirements.map((req, index) => (
                       <div key={index} className="p-4 bg-gray-50 rounded-xl">
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center">
                             <FileText className="h-5 w-5 text-gray-400 mr-3" />
-                            <h3 className="font-semibold text-gray-900">{req.question}</h3>
+                            <div>
+                              <h3 className="font-semibold text-gray-900">{req.question}</h3>
+                              {req.required && (
+                                <span className="text-xs text-red-600 font-medium mt-1">
+                                  Required field
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className={`px-2 py-1 text-xs rounded-full ${
@@ -1102,6 +1363,9 @@ const ServiceDetails = () => {
                     <div className="flex items-center justify-between text-sm text-gray-600">
                       <span>Currency: {service.currency}</span>
                     </div>
+                    <div className="mt-2">
+                      {renderRequiredIndicator('price', service.price)}
+                    </div>
                   </div>
                   
                   {service.packages && service.packages.length > 0 ? (
@@ -1127,10 +1391,15 @@ const ServiceDetails = () => {
                       <span className="text-gray-600">Delivery Time</span>
                       <span className="font-semibold">{service.deliveryTime} {service.deliveryTimeUnit}</span>
                     </div>
+                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
+                    
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-600">Revisions</span>
                       <span className="font-semibold">{service.revisions || 0} included</span>
                     </div>
+                    
+                    {renderRequiredIndicator('revisions', service.revisions)}
+                    
                     {service.deliveryTime && (
                       <div className="text-xs text-gray-500 mt-2">
                         Estimated completion time based on average delivery
@@ -1146,11 +1415,15 @@ const ServiceDetails = () => {
                 <div className="space-y-4">
                   {categoryName && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Main Category</h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-600">Main Category</h4>
+                        <span className="text-xs text-emerald-600 font-medium">Required</span>
+                      </div>
                       <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
                         <Package className="h-5 w-5 text-emerald-600 mr-3" />
                         <div>
                           <span className="font-semibold text-gray-900 block">{categoryName}</span>
+                          {renderRequiredIndicator('category', service.category)}
                           {service.categoryDetails?.description && (
                             <p className="text-xs text-gray-500 mt-1">{service.categoryDetails.description}</p>
                           )}
@@ -1161,10 +1434,16 @@ const ServiceDetails = () => {
 
                   {subcategoryName && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Subcategory</h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-600">Subcategory</h4>
+                        <span className="text-xs text-emerald-600 font-medium">Required</span>
+                      </div>
                       <div className="flex items-center p-3 bg-blue-50 rounded-lg">
                         <Layers className="h-5 w-5 text-blue-600 mr-3" />
-                        <span className="font-semibold text-gray-900">{subcategoryName}</span>
+                        <div>
+                          <span className="font-semibold text-gray-900">{subcategoryName}</span>
+                          {renderRequiredIndicator('subcategory', service.subcategory)}
+                        </div>
                       </div>
                     </div>
                   )}

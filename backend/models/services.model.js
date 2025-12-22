@@ -68,21 +68,23 @@ const serviceSchema = new mongoose.Schema({
       message: 'Invalid or inactive category'
     }
   },
-  subcategory: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    index: true,
-    validate: {
-      validator: async function(v) {
-        if (!v) return true;
-        const Category = mongoose.model('Category');
-        const subcategory = await Category.findById(v);
-        return subcategory && subcategory.isActive && subcategory.parentCategory && 
-               subcategory.parentCategory.equals(this.category);
-      },
-      message: 'Invalid subcategory or does not belong to the selected category'
-    }
-  },
+  // In service.model.js - Update the subcategory field
+subcategory: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Category',
+  required: [true, 'Subcategory is required'], // Changed from optional to required
+  index: true,
+  validate: {
+    validator: async function(v) {
+      if (!v) return false; // Ensure it's provided
+      const Category = mongoose.model('Category');
+      const subcategory = await Category.findById(v);
+      return subcategory && subcategory.isActive && subcategory.parentCategory && 
+             subcategory.parentCategory.equals(this.category);
+    },
+    message: 'Subcategory is required and must belong to the selected category'
+  }
+},
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
