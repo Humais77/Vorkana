@@ -43,9 +43,10 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   const filter = {};
 
   // Security: Only admin can see all categories
-  if (showAll && userRole === 'admin') {
-    if (isActive !== undefined) {
-      filter.isActive = isActive;
+ if (showAll && userRole === 'admin') {
+    // Handle isActive with empty string check
+    if (isActive !== undefined && isActive !== '') {
+      filter.isActive = isActive === 'true' || isActive === true;
     }
   } else {
     filter.isActive = true;
@@ -62,6 +63,27 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
       { metaKeywords: { $in: [new RegExp(sanitizedSearch, 'i')] } }
     ];
   }
+   // Safe boolean query param handling
+const parseBooleanParam = (param) => {
+  if (param === undefined || param === '' || param === null) return undefined;
+  if (typeof param === 'boolean') return param;
+  if (typeof param === 'string') {
+    const lower = param.toLowerCase().trim();
+    if (lower === 'true' || lower === '1') return true;
+    if (lower === 'false' || lower === '0') return false;
+  }
+  return undefined; // invalid → ignore
+};
+
+const parsedFeatured = parseBooleanParam(featured);
+if (parsedFeatured !== undefined) {
+  filter.featured = parsedFeatured;
+}
+
+const parsedPopular = parseBooleanParam(popular);
+if (parsedPopular !== undefined) {
+  filter.popular = parsedPopular;
+}
 // Add this helper function:
 const escapeRegex = (string) => {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -88,8 +110,7 @@ if (name) {
   }
 
   // Boolean filters
-  if (featured !== undefined) filter.featured = featured;
-  if (popular !== undefined) filter.popular = popular;
+ 
   if (level !== undefined) filter.level = parseInt(level) || 0;
   
   if (hasImage === 'true' || hasImage === true) {

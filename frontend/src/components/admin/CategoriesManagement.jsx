@@ -7,6 +7,7 @@ import {
   useDeleteCategory,
   useBulkCategoryOperations  // Make sure this is imported
 } from '../../hooks/useAdminDashboard';
+import { useAdminStore } from '../../store/useAdminStore';
 import { toast } from 'react-hot-toast';
 import {
   FiFolder,
@@ -41,6 +42,8 @@ import {
 import { format } from 'date-fns';
 
 const CategoriesManagement = () => {
+  const setCategories = useAdminStore((state) => state.setCategories);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     status: '',
@@ -61,7 +64,7 @@ const CategoriesManagement = () => {
   const [categoryForm, setCategoryForm] = useState({
     name: '',
     description: '',
-    icon: '📁',
+    icon: 'fa-folder',
     isActive: true,
     featured: false,
     popular: false,
@@ -87,11 +90,17 @@ const CategoriesManagement = () => {
 
   const limit = 20;
   const { data, isLoading, refetch, isRefetching } = useAdminCategories({
-    page,
-    limit,
-    search: searchTerm,
-    ...filters
-  });
+  page,
+  limit,
+  search: searchTerm,
+  ...filters
+}, {
+  onSuccess: (data) => {
+    if (data && data.data) {
+      setCategories(data);
+    }
+  }
+});
   
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
@@ -213,10 +222,10 @@ const CategoriesManagement = () => {
           toast.success('Archive feature coming soon');
           break;
         
-        case 'delete':
-          setCategoryToDelete({ type: 'bulk', ids: selectedCategories });
-          setShowDeleteModal(true);
-          return;
+         case 'delete':
+    setCategoryToDelete({ type: 'bulk', ids: selectedCategories });
+    setShowDeleteModal(true);
+    return;
       }
       
       setSelectedCategories([]);
@@ -227,33 +236,39 @@ const CategoriesManagement = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  try {
+    const categoryData = {
+      ...categoryForm,
+      slug: categoryForm.slug || generateSlug(categoryForm.name)
+    };
     
-    try {
-      if (editingCategory) {
-        await updateCategoryMutation.mutateAsync({
-          id: editingCategory._id,
-          data: categoryForm
-        });
-        toast.success('Category updated successfully');
-      } else {
-        await createCategoryMutation.mutateAsync(categoryForm);
-        toast.success('Category created successfully');
-      }
-      
-      handleCloseModal();
-      refetch();
-    } catch (error) {
-      toast.error('Failed to save category');
+    if (editingCategory) {
+      await updateCategoryMutation.mutateAsync({
+        id: editingCategory._id,
+        data: categoryData
+      });
+      toast.success('Category updated successfully');
+    } else {
+      await createCategoryMutation.mutateAsync(categoryData);
+      toast.success('Category created successfully');
     }
-  };
+    
+    handleCloseModal();
+    refetch();
+  } catch (error) {
+    toast.error(error.response?.data?.message || 'Failed to save category');
+  }
+};
+
 
   const handleEdit = (category) => {
     setEditingCategory(category);
     setCategoryForm({
       name: category.name,
       description: category.description || '',
-      icon: category.icon || '📁',
+      icon: category.icon || 'fa-folder',
       isActive: category.isActive,
       featured: category.featured || false,
       popular: category.popular || false,
@@ -296,25 +311,28 @@ const CategoriesManagement = () => {
   };
 
   const handleDeleteCategory = async () => {
-    try {
-      if (categoryToDelete.type === 'single') {
-        await deleteCategoryMutation.mutateAsync(categoryToDelete.id);
-        toast.success('Category deleted successfully');
-      } else if (categoryToDelete.type === 'bulk') {
-        await Promise.all(categoryToDelete.ids.map(id =>
-          deleteCategoryMutation.mutateAsync(id)
-        ));
-        toast.success(`${categoryToDelete.ids.length} categories deleted`);
-      }
-      setSelectedCategories([]);
-      refetch();
-    } catch (error) {
-      toast.error('Failed to delete categories');
-    } finally {
-      setShowDeleteModal(false);
-      setCategoryToDelete(null);
+  try {
+    if (categoryToDelete.type === 'single') {
+      await deleteCategoryMutation.mutateAsync(categoryToDelete.id);
+      toast.success('Category deleted successfully');
+    } else if (categoryToDelete.type === 'bulk') {
+      // Use bulk mutation instead of individual deletes
+      await bulkCategoryMutation.mutateAsync({
+        ids: categoryToDelete.ids,
+        operation: 'deactivate', // or 'delete' based on your controller
+        data: { isActive: false }
+      });
+      toast.success(`${categoryToDelete.ids.length} categories deactivated`);
     }
-  };
+    setSelectedCategories([]);
+    refetch();
+  } catch (error) {
+    toast.error(error.response?.data?.message || 'Failed to delete categories');
+  } finally {
+    setShowDeleteModal(false);
+    setCategoryToDelete(null);
+  }
+};
 
   const toggleSelectAll = (e) => {
     if (e.target.checked) {
@@ -371,12 +389,14 @@ const CategoriesManagement = () => {
     }
   };
 
-  const generateSlug = (name) => {
-    return name.toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-');
-  };
+ const generateSlug = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
+};
 
   const toggleExpandCategory = (categoryId) => {
     setExpandedCategories(prev =>
@@ -1292,42 +1312,21 @@ const CategoryModal = ({ isOpen, isEditing, formData, onClose, onSubmit, onChang
                   />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Icon
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.icon}
-                      onChange={(e) => onChange({...formData, icon: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                      placeholder="Emoji or short text"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Slug
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={formData.slug}
-                        onChange={(e) => onChange({...formData, slug: e.target.value})}
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                        placeholder="URL-friendly name"
-                      />
-                      <button
-                        type="button"
-                        onClick={onGenerateSlug}
-                        className="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-                      >
-                        Generate
-                      </button>
-                    </div>
-                  </div>
-                </div>
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Icon
+  </label>
+  <input
+    type="text"
+    value={formData.icon}
+    onChange={(e) => onChange({...formData, icon: e.target.value})}
+    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+    placeholder="folder, star, tag, etc."
+  />
+  <p className="text-xs text-gray-500 mt-1">
+    Use common icon names like: folder, star, tag, home, user, etc.
+  </p>
+</div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

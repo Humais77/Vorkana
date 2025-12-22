@@ -614,6 +614,7 @@ export const useUsersForDropdown = (role = '') => {
   });
 };
 // Add this to your useAdminDashboard.js file
+// In useAdminDashboard.js - Add the bulk category operations hook
 export const useBulkCategoryOperations = () => {
   const queryClient = useQueryClient();
 

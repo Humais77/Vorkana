@@ -63,31 +63,85 @@ router.delete('/users/:id',
   auditLog('DELETE_USER', 'users'),
   adminController.deleteUser
 );
-
-// Category Management
+router.post('/categories', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('CREATE_CATEGORY', 'categories'),
+  categoryController.createCategory
+);
+// In admin.route.js - Update the categories route middleware
 router.get('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_categories'),
   auditLog('VIEW_CATEGORIES', 'categories'),
   async (req, res, next) => {
-    // Fix boolean cast issues by parsing query parameters
-    if (req.query.featured === '') delete req.query.featured;
-    if (req.query.isActive === '') delete req.query.isActive;
-    
-    req.query.showAll = true;
-    req.query.isAdmin = true; // Add flag to distinguish admin requests
-    
-    // Parse numeric values
-    if (req.query.page) req.query.page = parseInt(req.query.page);
-    if (req.query.limit) req.query.limit = parseInt(req.query.limit);
-    if (req.query.sortOrder) req.query.sortOrder = parseInt(req.query.sortOrder);
-    
-    next();
+    try {
+      // Create a clean query object
+      const cleanQuery = {};
+      
+      // Copy only non-empty parameters
+      for (const [key, value] of Object.entries(req.query)) {
+        // Skip empty strings for boolean fields
+        if (value === '' && ['featured', 'popular', 'isActive'].includes(key)) {
+  // do NOT add to cleanQuery → effectively removes it
+  continue;
+}
+        
+        // Parse numeric values
+        if (['page', 'limit', 'sortOrder', 'order', 'level'].includes(key)) {
+          cleanQuery[key] = parseInt(value) || (key === 'page' ? 1 : key === 'limit' ? 20 : 0);
+        }
+        // Parse boolean values
+        else if (['featured', 'isActive', 'popular', 'showAll', 'isAdmin'].includes(key)) {
+          if (value === 'true' || value === true || value === '1') {
+            cleanQuery[key] = true;
+          } else if (value === 'false' || value === false || value === '0') {
+            cleanQuery[key] = false;
+          }
+          // If value is undefined or empty, skip it
+        }
+        // Keep other values as-is
+        else {
+          cleanQuery[key] = value;
+        }
+      }
+      
+      // Add admin defaults
+      cleanQuery.showAll = true;
+      cleanQuery.isAdmin = true;
+      
+      // Ensure pagination defaults
+      if (!cleanQuery.page) cleanQuery.page = 1;
+      if (!cleanQuery.limit) cleanQuery.limit = 20;
+      
+      // Replace the req.query with clean version
+      req.query = cleanQuery;
+      
+      console.log('[CATEGORIES QUERY] Cleaned query:', cleanQuery);
+      next();
+    } catch (error) {
+      console.error('[CATEGORIES MIDDLEWARE ERROR]', error);
+      next(error);
+    }
   },
-  adminController.getCategories
+  categoryController.getCategories
 );
-
+router.put('/categories/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('UPDATE_CATEGORY', 'categories'),
+  categoryController.updateCategory
+);
+router.delete('/categories/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('DELETE_CATEGORY', 'categories'),
+  categoryController.deleteCategory
+);
 // Admin-specific category endpoints
 router.post('/categories/bulk-action', 
   verifyAdmin, 

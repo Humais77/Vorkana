@@ -54,6 +54,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+// server.js - UPDATED CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);

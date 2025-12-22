@@ -128,26 +128,16 @@ export const adminAPI = {
       params: { format },
       responseType: 'blob'
     }),
-  
-  // Categories
-  getCategories: (params) => adminApi.get('/api/admin/categories', { params }),
+ getCategories: (params) => adminApi.get('/api/admin/categories', { params }),
   getCategoryById: (id) => adminApi.get(`/api/admin/categories/${id}`),
   createCategory: (data) => adminApi.post('/api/admin/categories', data),
   updateCategory: (id, data) => adminApi.put(`/api/admin/categories/${id}`, data),
   deleteCategory: (id) => adminApi.delete(`/api/admin/categories/${id}`),
-  // Add to your admin.js API file
-bulkUpdateCategories: async ({ ids, operation, data = {} }) => {
-  return axios.post('/api/admin/categories/bulk-update', {
-    ids,
-    operation,
-    data
-  });
-},
-  getCategoryStats: () => adminApi.get('/api/admin/categories/stats'),
   
- // In admin.js - Update these service endpoints:
-
-// Services - Fixed endpoints
+  // Fix bulk update categories endpoint
+  bulkUpdateCategories: ({ ids, operation, data = {} }) => 
+    adminApi.post('/api/admin/categories/bulk-action', { ids, operation, data }),
+    
 getServices: (params) => {
   // Always use admin-specific endpoint for admin panel
   return adminApi.get('/api/admin/services', { params });
