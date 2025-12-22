@@ -161,9 +161,10 @@ class EmailService {
   async sendPasswordChangedEmail(user, ipAddress = 'Unknown') {
     return this.sendEmail(
       user.email,
-      'Password Changed - Security Alert',
-      'password-changed',
+      'Security Alert: Your password has been changed',
+    'password-changed',
       {
+        from: `"Vorkana Security" <security@vorkana.com>`,
         name: user.name,
         timestamp: new Date().toLocaleString(),
         ipAddress,

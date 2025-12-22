@@ -334,39 +334,20 @@
     </style>
 </head>
 <body>
-    <div class="email-wrapper">
-        <div class="email-header">
-            <div class="header-overlay"></div>
-            <div class="logo-container">
-                <div class="logo">Vorkana</div>
-                <div class="tagline">Professional Network for Talent</div>
-            </div>
-        </div>
-        
-        <div class="email-body">
-            {{{body}}}
-        </div>
-        
-        <div class="email-footer">
-            <p class="footer-text mb-4">
-                © {{currentYear}} Vorkana, Inc. All rights reserved.<br>
-                123 Business Street, Suite 100, San Francisco, CA 94107
-            </p>
-            
-            <p class="footer-text text-muted mb-8">
-                This is an automated message from Vorkana. Please do not reply directly to this email.
-            </p>
-            
-            <div class="divider"></div>
-            
-            <div class="footer-links">
-                <a href="{{frontendUrl}}/help">Help Center</a>
-                <a href="{{frontendUrl}}/contact">Contact Support</a>
-                <a href="{{frontendUrl}}/privacy">Privacy Policy</a>
-                <a href="{{frontendUrl}}/terms">Terms of Service</a>
-                <a href="{{frontendUrl}}/unsubscribe">Unsubscribe</a>
-            </div>
-        </div>
-    </div>
+    <span style="display:none; color:transparent; font-size:1px; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
+        Important security update regarding your Vorkana account.
+    </span>
+
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#f9fafb">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
+                    <tr>
+                        <td>{{{body}}}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
