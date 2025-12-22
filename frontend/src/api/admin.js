@@ -145,28 +145,25 @@ bulkUpdateCategories: async ({ ids, operation, data = {} }) => {
 },
   getCategoryStats: () => adminApi.get('/api/admin/categories/stats'),
   
-  // Services & Gigs
-  // Add to your existing adminAPI object in admin.js
+ // In admin.js - Update these service endpoints:
 
-// Services
+// Services - Fixed endpoints
 getServices: (params) => {
-  // For admin, use the admin-specific endpoint
-  if (params.isAdmin) {
-    return adminApi.get('/api/services/admin/services', { params });
-  }
+  // Always use admin-specific endpoint for admin panel
   return adminApi.get('/api/admin/services', { params });
 },
-getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`),
-createService: (data) => adminApi.post('/api/admin/services', data),
-updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
-deleteService: (id) => adminApi.delete(`/api/admin/services/${id}`),
-bulkUpdateServices: (data) => adminApi.post('/api/admin/services/bulk', data),
+getServiceById: (id) => adminApi.get(`/api/services/${id}`),
+createService: (data) => adminApi.post('/api/services', data),
+updateService: (id, data) => adminApi.put(`/api/services/${id}`, data),
+deleteService: (id) => adminApi.delete(`/api/services/${id}`),
+bulkUpdateServices: ({ ids, operation, data = {} }) => 
+  adminApi.post('/api/services/admin/bulk', { ids, operation, data }),
 exportServices: (format = 'csv') => 
-  adminApi.get('/api/admin/services/export', { 
+  adminApi.get('/api/services/admin/export', { 
     params: { format },
     responseType: 'blob'
   }),
-getServiceStats: () => adminApi.get('/api/admin/services/stats'),
+getServiceStats: () => adminApi.get('/api/services/admin/stats'),
   // Security
   getSecurityLogs: (params) => adminApi.get('/api/admin/security/logs', { params }),
   getSecurityStats: () => adminApi.get('/api/admin/security/stats'),

@@ -298,7 +298,22 @@ router.post('/:id/thumbnail',
 // ============================================
 // ADMIN ROUTES
 // ============================================
-
+router.post('/admin/create', 
+  protect, 
+  adminOnly, 
+  serviceLimiter, 
+  uploadWithThumbnail,
+  handleMulterError, 
+  validateCreate, 
+  controller.createService
+);
+router.get('/admin/services', 
+  protect, 
+  adminOnly, 
+  serviceLimiter, 
+  validateQuery, 
+  controller.getAdminServices
+);
 // Update any service (admin)
 router.put('/admin/:id', 
   protect, 
@@ -323,7 +338,6 @@ router.get('/admin/stats',
   protect, 
   adminOnly, 
   serviceLimiter, 
-  validateQuery, 
   controller.getServiceStats
 );
 

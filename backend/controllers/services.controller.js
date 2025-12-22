@@ -2522,6 +2522,8 @@ const getMyServices = async (req, res, next) => {
   }
 };
 // Add to service.controller.js
+// In service.controller.js - Fix the getAdminServices function:
+
 const getAdminServices = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -2549,7 +2551,7 @@ const getAdminServices = async (req, res, next) => {
       category,
       rating,
       createdBy,
-      isActive
+      isActive = ''
     } = req.query;
 
     // Build filter for admin - can see all services
@@ -2574,6 +2576,9 @@ const getAdminServices = async (req, res, next) => {
 
     if (isActive && isActive !== '') {
       filter.isActive = isActive === 'true';
+    } else {
+      // If not specified, only show active services by default
+      filter.isActive = true;
     }
 
     if (category && mongoose.Types.ObjectId.isValid(category)) {
@@ -2630,17 +2635,45 @@ const getAdminServices = async (req, res, next) => {
         text: service.status ? service.status.charAt(0).toUpperCase() + service.status.slice(1) : 'Unknown',
         color: service.status === 'active' ? 'success' : 
                service.status === 'draft' ? 'warning' : 
-               service.status === 'pending' ? 'info' : 'secondary'
+               service.status === 'pending' ? 'info' : 
+               service.status === 'paused' ? 'secondary' : 
+               service.status === 'suspended' ? 'danger' : 'secondary'
       },
       createdBy: service.createdBy ? {
         _id: service.createdBy._id,
         name: service.createdBy.name,
         email: service.createdBy.email,
-        picture: service.createdBy.picture
+        picture: service.createdBy.picture,
+        role: service.createdBy.role
+      } : null,
+      category: service.category ? {
+        _id: service.category._id,
+        name: service.category.name,
+        slug: service.category.slug,
+        icon: service.category.icon
       } : null
     }));
 
     const totalPages = Math.ceil(total / limitNum);
+
+    // Get statistics
+    const stats = await Service.aggregate([
+      { $match: {} },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          active: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'active'] }, { $eq: ['$isActive', true] }] }, 1, 0] } },
+          draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+          pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+          paused: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
+          suspended: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
+          featured: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
+          avgPrice: { $avg: '$price' },
+          avgRating: { $avg: '$rating' }
+        }
+      }
+    ]);
 
     res.json({
       success: true,
@@ -2653,6 +2686,17 @@ const getAdminServices = async (req, res, next) => {
         hasNext: pageNum < totalPages,
         hasPrev: pageNum > 1
       },
+      stats: stats[0] || {
+        total: 0,
+        active: 0,
+        draft: 0,
+        pending: 0,
+        paused: 0,
+        suspended: 0,
+        featured: 0,
+        avgPrice: 0,
+        avgRating: 0
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
@@ -2663,7 +2707,8 @@ const getAdminServices = async (req, res, next) => {
       success: false,
       message: 'Failed to fetch services',
       code: 'SERVICES_FETCH_ERROR',
-      requestId
+      requestId,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

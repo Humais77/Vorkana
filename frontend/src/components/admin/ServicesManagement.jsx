@@ -1,6 +1,15 @@
 // components/admin/ServicesManagement.jsx
-import { useState, useMemo } from 'react';
-import { useAdminServices, useUpdateService, useDeleteService, useBulkServiceOperations } from '../../hooks/useAdminDashboard';
+// components/admin/ServicesManagement.jsx
+import { useState, useMemo, useEffect } from 'react';
+import { 
+  useAdminServices, 
+  useUpdateService, 
+  useDeleteService, 
+  useBulkServiceOperations,
+  useCreateService,
+  useCategoriesForDropdown,
+  useUsersForDropdown
+} from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiPackage,
@@ -12,7 +21,9 @@ import {
   FiPlus,
   FiCheckCircle,
   FiXCircle,
-  FiTrendingUp,
+  FiX,
+  FiSave,
+  FiUpload,
   FiImage,
   FiTag,
   FiChevronLeft,
@@ -27,19 +38,13 @@ import {
   FiClock,
   FiUsers,
   FiActivity,
-  FiZap,
-  FiArchive,
   FiCopy,
-  FiSettings,
-  FiAlertCircle,
   FiThumbsUp,
-  FiEyeOff,
   FiPlay,
   FiPause,
   FiFileText
 } from 'react-icons/fi';
 import { format } from 'date-fns';
-
 const ServicesManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
@@ -50,13 +55,15 @@ const ServicesManagement = () => {
     minPrice: '',
     maxPrice: '',
     category: '',
-    rating: ''
+    rating: '',
+    isActive: ''
   });
   const [page, setPage] = useState(1);
   const [selectedServices, setSelectedServices] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showServiceDetails, setShowServiceDetails] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [editingService, setEditingService] = useState(null);
@@ -72,33 +79,50 @@ const ServicesManagement = () => {
   });
 
   const limit = 12;
+  
+  // Fetch data with proper parameters
   const { data, isLoading, refetch, isRefetching } = useAdminServices({
     page,
     limit,
     search: searchTerm,
-    ...filters
+    status: filters.status || undefined,
+    featured: filters.featured || undefined,
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder,
+    minPrice: filters.minPrice || undefined,
+    maxPrice: filters.maxPrice || undefined,
+    category: filters.category || undefined,
+    rating: filters.rating || undefined,
+    isActive: filters.isActive || undefined
   });
+  
+  // Fetch categories and users for dropdowns
+  const { data: categoriesData } = useCategoriesForDropdown();
+  const { data: usersData } = useUsersForDropdown();
   
   const updateServiceMutation = useUpdateService();
   const deleteServiceMutation = useDeleteService();
+  const createServiceMutation = useCreateService();
   const bulkServiceMutation = useBulkServiceOperations();
   
   const services = data?.data || [];
+  const categories = categoriesData?.data || [];
+  const users = usersData?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
+  const stats = data?.stats || {};
 
-  // Calculate service stats
-  useMemo(() => {
-    if (services.length > 0) {
-      const stats = {
-        total: services.length,
-        active: services.filter(s => s.status === 'active').length,
-        featured: services.filter(s => s.isFeatured).length,
-        orders: services.reduce((sum, s) => sum + (s.ordersCount || 0), 0),
-        revenue: services.reduce((sum, s) => sum + (s.price * (s.ordersCount || 0)), 0)
-      };
-      setServiceStats(stats);
+  // Calculate service stats from API response
+  useEffect(() => {
+    if (stats) {
+      setServiceStats({
+        total: stats.total || 0,
+        active: stats.active || 0,
+        featured: stats.featured || 0,
+        orders: 0, // You'll need to add this to your API response
+        revenue: 0  // You'll need to add this to your API response
+      });
     }
-  }, [services]);
+  }, [stats]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -118,85 +142,67 @@ const ServicesManagement = () => {
     }
 
     try {
-      switch (action) {
-        case 'activate':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'activate',
-            data: { status: 'active' }
-          });
-          toast.success(`${selectedServices.length} services activated`);
-          break;
-        
-        case 'pause':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'pause',
-            data: { status: 'paused' }
-          });
-          toast.success(`${selectedServices.length} services paused`);
-          break;
-        
-        case 'feature':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'feature'
-          });
-          toast.success(`${selectedServices.length} services featured`);
-          break;
-        
-        case 'unfeature':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'unfeature'
-          });
-          toast.success(`${selectedServices.length} services unfeatured`);
-          break;
-        
-        case 'recommend':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'recommend'
-          });
-          toast.success(`${selectedServices.length} services recommended`);
-          break;
-        
-        case 'unrecommend':
-          await bulkServiceMutation.mutateAsync({
-            ids: selectedServices,
-            operation: 'unrecommend'
-          });
-          toast.success(`${selectedServices.length} services unrecommended`);
-          break;
-        
-        case 'delete':
-          setServiceToDelete({ type: 'bulk', ids: selectedServices });
-          setShowDeleteModal(true);
-          return;
-      }
+      const operationMap = {
+        'activate': 'activate',
+        'pause': 'pause',
+        'feature': 'feature',
+        'unfeature': 'unfeature',
+        'recommend': 'recommend',
+        'unrecommend': 'unrecommend',
+        'delete': 'delete'
+      };
+
+      const operation = operationMap[action];
       
-      setSelectedServices([]);
-      refetch();
+      if (action === 'delete') {
+        setServiceToDelete({ type: 'bulk', ids: selectedServices });
+        setShowDeleteModal(true);
+        return;
+      }
+
+      const response = await bulkServiceMutation.mutateAsync({
+        ids: selectedServices,
+        operation,
+        data: action === 'activate' ? { status: 'active' } : 
+              action === 'pause' ? { status: 'paused' } : {}
+      });
+
+      if (response.data?.success) {
+        toast.success(`${selectedServices.length} services ${action}d`);
+        setSelectedServices([]);
+        refetch();
+      } else {
+        toast.error(response.data?.message || 'Action failed');
+      }
     } catch (error) {
-      toast.error('Failed to perform bulk action');
+      toast.error('Failed to perform bulk action: ' + (error.response?.data?.message || error.message || error.toString()));
     }
   };
 
   const handleDeleteService = async () => {
     try {
       if (serviceToDelete.type === 'single') {
-        await deleteServiceMutation.mutateAsync(serviceToDelete.id);
-        toast.success('Service deleted successfully');
+        const response = await deleteServiceMutation.mutateAsync(serviceToDelete.id);
+        if (response.data?.success) {
+          toast.success('Service deleted successfully');
+        } else {
+          toast.error(response.data?.message || 'Delete failed');
+        }
       } else if (serviceToDelete.type === 'bulk') {
-        await Promise.all(serviceToDelete.ids.map(id =>
-          deleteServiceMutation.mutateAsync(id)
-        ));
-        toast.success(`${serviceToDelete.ids.length} services deleted`);
+        const response = await bulkServiceMutation.mutateAsync({
+          ids: serviceToDelete.ids,
+          operation: 'delete'
+        });
+        if (response.data?.success) {
+          toast.success(`${serviceToDelete.ids.length} services deleted`);
+        } else {
+          toast.error(response.data?.message || 'Delete failed');
+        }
       }
       setSelectedServices([]);
       refetch();
     } catch (error) {
-      toast.error('Failed to delete services');
+      toast.error('Failed to delete services: ' + (error.response?.data?.message || error.message || error.toString()));
     } finally {
       setShowDeleteModal(false);
       setServiceToDelete(null);
@@ -213,15 +219,44 @@ const ServicesManagement = () => {
     setShowEditModal(true);
   };
 
+  const handleCreateService = () => {
+    setEditingService(null);
+    setShowCreateModal(true);
+  };
+
   const handleUpdateService = async (data) => {
     try {
-      await updateServiceMutation.mutateAsync({ id: editingService._id, data });
-      toast.success('Service updated successfully');
-      setShowEditModal(false);
-      setEditingService(null);
-      refetch();
+      if (editingService?._id) {
+        const response = await updateServiceMutation.mutateAsync({ 
+          id: editingService._id, 
+          data 
+        });
+        if (response.data?.success) {
+          toast.success('Service updated successfully');
+          setShowEditModal(false);
+          setEditingService(null);
+          refetch();
+        } else {
+          toast.error(response.data?.message || 'Update failed');
+        }
+      }
     } catch (error) {
-      toast.error('Failed to update service');
+      toast.error('Failed to save service: ' + (error.response?.data?.message || error.message || error.toString()));
+    }
+  };
+
+  const handleSaveNewService = async (formData) => {
+    try {
+      const response = await createServiceMutation.mutateAsync(formData);
+      if (response.data?.success) {
+        toast.success('Service created successfully');
+        setShowCreateModal(false);
+        refetch();
+      } else {
+        toast.error(response.data?.message || 'Creation failed');
+      }
+    } catch (error) {
+      toast.error('Failed to create service: ' + (error.response?.data?.message || error.message || error.toString()));
     }
   };
 
@@ -264,22 +299,28 @@ const ServicesManagement = () => {
 
   const duplicateService = async (service) => {
     try {
-      const newService = {
+      // Create duplicate service data
+      const duplicateData = {
         title: `${service.title} (Copy)`,
         description: service.description,
-        category: service.category,
+        category: service.category?._id || service.category,
         price: service.price,
-        currency: service.currency,
+        currency: service.currency || 'USD',
         deliveryTime: service.deliveryTime,
-        deliveryTimeUnit: service.deliveryTimeUnit,
-        revisions: service.revisions,
+        deliveryTimeUnit: service.deliveryTimeUnit || 'days',
+        revisions: service.revisions || 1,
         status: 'draft'
       };
-      
-      // You'll need to create a separate API call for this
-      toast.success('Duplicate feature coming soon');
+
+      const response = await createServiceMutation.mutateAsync(duplicateData);
+      if (response.data?.success) {
+        toast.success('Service duplicated successfully');
+        refetch();
+      } else {
+        toast.error(response.data?.message || 'Duplication failed');
+      }
     } catch (error) {
-      toast.error('Failed to duplicate service');
+      toast.error('Failed to duplicate service: ' + (error.response?.data?.message || error.message || error.toString()));
     }
   };
 
@@ -290,6 +331,32 @@ const ServicesManagement = () => {
     }).format(price);
   };
 
+  // Add "Apply Filters" button functionality
+  const applyFilters = () => {
+    setPage(1);
+    refetch();
+    toast.success('Filters applied');
+  };
+
+  // Add "Clear Filters" button functionality
+  const clearFilters = () => {
+    setFilters({
+      status: '',
+      featured: '',
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      minPrice: '',
+      maxPrice: '',
+      category: '',
+      rating: '',
+      isActive: ''
+    });
+    setSearchTerm('');
+    setPage(1);
+    refetch();
+    toast.success('Filters cleared');
+  };
+
   if (isLoading && !services.length) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -297,6 +364,7 @@ const ServicesManagement = () => {
       </div>
     );
   }
+
 
   return (
     <div className="space-y-6">
@@ -306,23 +374,23 @@ const ServicesManagement = () => {
           <h1 className="text-2xl font-bold text-gray-900">Service Management</h1>
           <p className="text-gray-600">Manage and monitor all platform services</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={refreshData}
-            disabled={isRefetching}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
-          >
-            <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-          <a
-            href="/services/create"
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
-          >
-            <FiPlus className="h-4 w-4" />
-            <span>Add Service</span>
-          </a>
-        </div>
+<div className="flex flex-wrap gap-3">
+  <button
+    onClick={refreshData}
+    disabled={isRefetching}
+    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
+  >
+    <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+    <span>Refresh</span>
+  </button>
+  <button
+    onClick={handleCreateService}
+    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+  >
+    <FiPlus className="h-4 w-4" />
+    <span>Add Service</span>
+  </button>
+</div>
       </div>
 
       {/* Quick Stats */}
@@ -498,62 +566,94 @@ const ServicesManagement = () => {
         </div>
 
         {/* Advanced Filters */}
-        {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="draft">Draft</option>
-                <option value="pending">Pending</option>
-                <option value="paused">Paused</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Featured</label>
-              <select
-                value={filters.featured}
-                onChange={(e) => handleFilterChange('featured', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="">All</option>
-                <option value="true">Featured</option>
-                <option value="false">Not Featured</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Min Price</label>
-              <input
-                type="number"
-                value={filters.minPrice}
-                onChange={(e) => handleFilterChange('minPrice', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                placeholder="0"
-                min="0"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Max Price</label>
-              <input
-                type="number"
-                value={filters.maxPrice}
-                onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                placeholder="100000"
-                min="0"
-              />
-            </div>
-          </div>
-        )}
+        {/* Advanced Filters */}
+{showFilters && (
+  <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+      <select
+        value={filters.status}
+        onChange={(e) => handleFilterChange('status', e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All Status</option>
+        <option value="active">Active</option>
+        <option value="draft">Draft</option>
+        <option value="pending">Pending</option>
+        <option value="paused">Paused</option>
+        <option value="suspended">Suspended</option>
+      </select>
+    </div>
+    
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Featured</label>
+      <select
+        value={filters.featured}
+        onChange={(e) => handleFilterChange('featured', e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All</option>
+        <option value="true">Featured</option>
+        <option value="false">Not Featured</option>
+      </select>
+    </div>
+    
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+      <select
+        value={filters.category}
+        onChange={(e) => handleFilterChange('category', e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All Categories</option>
+        {categories.map(category => (
+          <option key={category._id} value={category._id}>
+            {category.name}
+          </option>
+        ))}
+      </select>
+    </div>
+    
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Min Price</label>
+      <input
+        type="number"
+        value={filters.minPrice}
+        onChange={(e) => handleFilterChange('minPrice', e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        placeholder="0"
+        min="0"
+      />
+    </div>
+    
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Max Price</label>
+      <input
+        type="number"
+        value={filters.maxPrice}
+        onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        placeholder="100000"
+        min="0"
+      />
+    </div>
+    
+    <div className="col-span-1 md:col-span-3 lg:col-span-5 flex justify-end space-x-2 mt-2">
+      <button
+        onClick={clearFilters}
+        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+      >
+        Clear Filters
+      </button>
+      <button
+        onClick={applyFilters}
+        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+      >
+        Apply Filters
+      </button>
+    </div>
+  </div>
+)}
       </div>
 
       {/* Services Grid/List View */}
@@ -837,6 +937,562 @@ const ServicesManagement = () => {
           onConfirm={handleDeleteService}
         />
       )}
+      // Add this before the closing tag of the main return:
+{/* Create Service Modal */}
+{showCreateModal && (
+  <CreateServiceModal
+    onClose={() => setShowCreateModal(false)}
+    onSuccess={() => {
+      setShowCreateModal(false);
+      refetch();
+    }}
+    categories={categories}
+    users={users}
+    onCreate={handleSaveNewService}
+  />
+)}
+
+{/* Edit Service Modal */}
+{showEditModal && editingService && (
+  <EditServiceModal
+    service={editingService}
+    categories={categories}
+    users={users}
+    onClose={() => {
+      setShowEditModal(false);
+      setEditingService(null);
+    }}
+    onSave={handleUpdateService}
+  />
+)}
+
+{/* Service Details Modal */}
+{showServiceDetails && viewingService && (
+  <ServiceDetailsModal
+    service={viewingService}
+    onClose={() => {
+      setShowServiceDetails(false);
+      setViewingService(null);
+    }}
+    formatPrice={formatPrice}
+  />
+)}
+
+{/* Delete Confirmation Modal */}
+{showDeleteModal && (
+  <DeleteConfirmationModal
+    type="service"
+    itemToDelete={serviceToDelete}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setServiceToDelete(null);
+    }}
+    onConfirm={handleDeleteService}
+  />
+)}
+    </div>
+  );
+};
+
+
+const CreateServiceModal = ({ onClose, onSuccess, categories = [], users = [], onCreate }) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    category: '',
+    subcategory: '',
+    createdBy: '',
+    price: '',
+    currency: 'USD',
+    deliveryTime: '',
+    deliveryTimeUnit: 'days',
+    revisions: 1,
+    status: 'draft',
+    isFeatured: false,
+    isRecommended: false,
+    isPopular: false,
+    tags: [],
+    features: [{ title: '', description: '' }],
+    faqs: [{ question: '', answer: '' }],
+    packages: [{
+      name: 'Basic',
+      description: 'Basic package',
+      price: '',
+      deliveryTime: '',
+      features: []
+    }]
+  });
+
+  const [newTag, setNewTag] = useState('');
+  const [imageFiles, setImageFiles] = useState([]);
+  const [thumbnailFile, setThumbnailFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  const createServiceMutation = useCreateService();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await onCreate(formData);
+      toast.success('Service created successfully');
+      onSuccess();
+      onClose();
+    } catch (error) {
+      toast.error('Failed to create service: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const files = Array.from(e.target.files);
+    const validFiles = files.filter(file => 
+      file.type.startsWith('image/') && file.size <= 5 * 1024 * 1024
+    );
+    
+    if (validFiles.length !== files.length) {
+      toast.error('Some files were invalid (max 5MB, images only)');
+    }
+    
+    setImageFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const handleThumbnailUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/') && file.size <= 2 * 1024 * 1024) {
+      setThumbnailFile(file);
+    } else {
+      toast.error('Thumbnail must be an image (max 2MB)');
+    }
+  };
+
+  const addTag = () => {
+    if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }));
+      setNewTag('');
+    }
+  };
+
+  const removeTag = (tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  const addFeature = () => {
+    setFormData(prev => ({
+      ...prev,
+      features: [...prev.features, { title: '', description: '' }]
+    }));
+  };
+
+  const updateFeature = (index, field, value) => {
+    const newFeatures = [...formData.features];
+    newFeatures[index][field] = value;
+    setFormData(prev => ({ ...prev, features: newFeatures }));
+  };
+
+  const removeFeature = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      features: prev.features.filter((_, i) => i !== index)
+    }));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 className="text-lg font-semibold text-gray-900">Create New Service</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+            <FiX className="h-6 w-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Basic Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Service title"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Category *
+              </label>
+              <select
+                required
+                value={formData.category}
+                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Category</option>
+                {categories.map(cat => (
+                  <option key={cat._id} value={cat._id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Created By (Optional)
+              </label>
+              <select
+                value={formData.createdBy}
+                onChange={(e) => setFormData({...formData, createdBy: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select User</option>
+                {users.map(user => (
+                  <option key={user._id} value={user._id}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({...formData, status: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Price and Delivery */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Price *
+              </label>
+              <div className="flex">
+                <select
+                  value={formData.currency}
+                  onChange={(e) => setFormData({...formData, currency: e.target.value})}
+                  className="px-3 py-2 border border-gray-300 rounded-l-lg bg-gray-50"
+                >
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="0.01"
+                  value={formData.price}
+                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Delivery Time *
+              </label>
+              <div className="flex">
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={formData.deliveryTime}
+                  onChange={(e) => setFormData({...formData, deliveryTime: e.target.value})}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="7"
+                />
+                <select
+                  value={formData.deliveryTimeUnit}
+                  onChange={(e) => setFormData({...formData, deliveryTimeUnit: e.target.value})}
+                  className="px-3 py-2 border border-gray-300 rounded-r-lg bg-gray-50"
+                >
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Revisions
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="99"
+                value={formData.revisions}
+                onChange={(e) => setFormData({...formData, revisions: parseInt(e.target.value) || 0})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description *
+            </label>
+            <textarea
+              required
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              rows="6"
+              placeholder="Detailed service description..."
+            />
+          </div>
+
+          {/* Images Upload */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Thumbnail (Optional)
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <input
+                  type="file"
+                  id="thumbnail"
+                  onChange={handleThumbnailUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <label htmlFor="thumbnail" className="cursor-pointer">
+                  {thumbnailFile ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <FiImage className="h-5 w-5 text-green-500" />
+                      <span>{thumbnailFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setThumbnailFile(null)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <FiX className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">
+                      <FiUpload className="h-8 w-8 mx-auto mb-2" />
+                      <p>Click to upload thumbnail (max 2MB)</p>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Images (Optional, max 10)
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <input
+                  type="file"
+                  id="images"
+                  multiple
+                  onChange={handleImageUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <label htmlFor="images" className="cursor-pointer">
+                  <div className="text-gray-500">
+                    <FiUpload className="h-8 w-8 mx-auto mb-2" />
+                    <p>Click to upload images (max 10, 5MB each)</p>
+                  </div>
+                </label>
+              </div>
+              {imageFiles.length > 0 && (
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {imageFiles.map((file, index) => (
+                    <div key={index} className="relative">
+                      <div className="bg-gray-100 p-2 rounded">
+                        <FiImage className="h-8 w-8 text-gray-400 mx-auto" />
+                        <p className="text-xs truncate mt-1">{file.name}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setImageFiles(prev => prev.filter((_, i) => i !== index))}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                      >
+                        <FiX className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tags
+            </label>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="Add tag"
+              />
+              <button
+                type="button"
+                onClick={addTag}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Add
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {formData.tags.map((tag, index) => (
+                <div key={index} className="flex items-center bg-gray-100 px-3 py-1 rounded-full">
+                  <span className="text-sm">{tag}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="ml-2 text-gray-500 hover:text-gray-700"
+                  >
+                    <FiX className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Features */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Features
+              </label>
+              <button
+                type="button"
+                onClick={addFeature}
+                className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-sm hover:bg-gray-200"
+              >
+                + Add Feature
+              </button>
+            </div>
+            <div className="space-y-3">
+              {formData.features.map((feature, index) => (
+                <div key={index} className="flex gap-3">
+                  <input
+                    type="text"
+                    value={feature.title}
+                    onChange={(e) => updateFeature(index, 'title', e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                    placeholder="Feature title"
+                  />
+                  <input
+                    type="text"
+                    value={feature.description}
+                    onChange={(e) => updateFeature(index, 'description', e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                    placeholder="Feature description"
+                  />
+                  {formData.features.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeFeature(index)}
+                      className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
+                    >
+                      <FiX className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Options */}
+          <div className="grid grid-cols-3 gap-4">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.isFeatured}
+                onChange={(e) => setFormData({...formData, isFeatured: e.target.checked})}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Featured</span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.isRecommended}
+                onChange={(e) => setFormData({...formData, isRecommended: e.target.checked})}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Recommended</span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.isPopular}
+                onChange={(e) => setFormData({...formData, isPopular: e.target.checked})}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Popular</span>
+            </label>
+          </div>
+
+          {/* Form Actions */}
+          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <FiSave className="h-4 w-4 mr-2" />
+                  Create Service
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
@@ -916,15 +1572,15 @@ const ServiceCard = ({ service, isSelected, onSelect, onView, onEdit, onDelete, 
                     Edit
                   </button>
                   <button
-                    onClick={() => {
-                      onDuplicate();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiCopy className="h-4 w-4 mr-2" />
-                    Duplicate
-                  </button>
+  onClick={() => {
+    onDuplicate();
+    setActionMenu(null);
+  }}
+  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+>
+  <FiCopy className="h-4 w-4 mr-2" />
+  Duplicate
+</button>
                   {service.status === 'active' && (
                     <button
                       onClick={() => {
@@ -1222,7 +1878,9 @@ const EditServiceModal = ({ service, onClose, onSave }) => {
     status: service.status || 'draft',
     isFeatured: service.isFeatured || false,
     isRecommended: service.isRecommended || false,
-    isPopular: service.isPopular || false
+    isPopular: service.isPopular || false,
+    category: service.category?._id || service.category || '',
+    createdBy: service.createdBy?._id || service.createdBy || ''
   });
 
   const handleSubmit = (e) => {
@@ -1232,7 +1890,7 @@ const EditServiceModal = ({ service, onClose, onSave }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">Edit Service</h3>
         </div>
@@ -1250,6 +1908,58 @@ const EditServiceModal = ({ service, onClose, onSave }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               placeholder="Service title"
             />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description *
+            </label>
+            <textarea
+              required
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              rows="4"
+              placeholder="Service description"
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Category
+              </label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Select Category</option>
+                {categories.map(cat => (
+                  <option key={cat._id} value={cat._id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Created By
+              </label>
+              <select
+                value={formData.createdBy}
+                onChange={(e) => setFormData({...formData, createdBy: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Select User</option>
+                {users.map(user => (
+                  <option key={user._id} value={user._id}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           
           <div>

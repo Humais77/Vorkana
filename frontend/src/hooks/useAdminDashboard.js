@@ -665,3 +665,45 @@ export const useBulkCategoryOperations = () => {
     }
   });
 };
+// In useAdminDashboard.js - Add these hooks:
+
+export const useCreateService = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (formData) => adminApi.post('/api/services/admin/create', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    }),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Service created successfully');
+        queryClient.invalidateQueries(['admin', 'services']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Creation failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Creation failed');
+    }
+  });
+};
+
+export const useServiceStats = () => {
+  return useQuery({
+    queryKey: ['admin', 'services', 'stats'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getServiceStats();
+        return response.data;
+      } catch (error) {
+        console.error('Service stats error:', error);
+        throw error;
+      }
+    },
+    staleTime: 30000,
+    retry: 2
+  });
+};
