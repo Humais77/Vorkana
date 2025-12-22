@@ -57,6 +57,7 @@ import FaqPage from './layouts/pages/footer/FaqPage';
 import SearchResults from './layouts/pages/SearchResults';
 import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
+import PublicProfile from './layouts/pages/PublicProfile';
 
 const App = () => {
   useAuthSync();
@@ -121,6 +122,7 @@ const App = () => {
             <Route path="/categories/:categoryId" element={<CategoryPage />} />
             <Route path="/gigs" element={<GigListingsPage />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:userId" element={<PublicProfile/>} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/services/create" element={<CreateService />} />
             <Route path="/services/:id" element={<ServiceDetails />} />

@@ -1,3 +1,4 @@
+// src/components/categories/CategoryGrid.jsx
 import React from "react";
 import { Link } from "react-router-dom";
 import {
@@ -7,30 +8,55 @@ import {
 } from "lucide-react";
 
 const categories = [
-  { id: 1, name: "Programming & Tech", icon: <Code2 className="w-5 h-5" /> },
-  { id: 2, name: "Graphic & Design", icon: <Palette className="w-5 h-5" /> },
-  { id: 3, name: "Digital Marketing", icon: <TrendingUp className="w-5 h-5" /> },
-  { id: 4, name: "Writing & Translation", icon: <FileText className="w-5 h-5" /> },
-  { id: 5, name: "Video & Animation", icon: <Film className="w-5 h-5" /> },
-  { id: 6, name: "AI Services", icon: <Cpu className="w-5 h-5" /> },
-  { id: 7, name: "Music & Audio", icon: <Music className="w-5 h-5" /> },
-  { id: 8, name: "Business Services", icon: <Briefcase className="w-5 h-5" /> },
-  { id: 9, name: "IT & Consulting", icon: <Users className="w-5 h-5" /> },
-  { id: 10, name: "Photography", icon: <Camera className="w-5 h-5" /> },
+  { 
+    id: '1', 
+    name: "Programming & Tech", 
+    icon: <Code2 className="w-5 h-5" />,
+    slug: 'programming-tech'
+  },
+  { 
+    id: '2', 
+    name: "Graphic & Design", 
+    icon: <Palette className="w-5 h-5" />,
+    slug: 'graphic-design'
+  },
+  { 
+    id: '6949ab9060c4c28c74664ebc', 
+    name: "Logo & Brand Identity", 
+    icon: <Palette className="w-5 h-5" />,
+    slug: 'logo-and-brand-identity'
+  },
+  { 
+    id: '6949ac31c99d0a8db104e806', 
+    name: "Web & App Design", 
+    icon: <Code2 className="w-5 h-5" />,
+    slug: 'web-and-app-design'
+  },
+  { 
+    id: '6949ac3ac99d0a8db104e81d', 
+    name: "Art & Illustration", 
+    icon: <Palette className="w-5 h-5" />,
+    slug: 'art-and-illustration'
+  },
+  { id: '3', name: "Digital Marketing", icon: <TrendingUp className="w-5 h-5" /> },
+  { id: '6', name: "AI Services", icon: <Cpu className="w-5 h-5" /> },
+  { id: '8', name: "Business Services", icon: <Briefcase className="w-5 h-5" /> },
+  { id: '9', name: "IT & Consulting", icon: <Users className="w-5 h-5" /> },
+  { id: '10', name: "Photography", icon: <Camera className="w-5 h-5" /> },
 ];
 
 const CategoryGrid = () => {
   return (
-    <section className="py-6 px-4 bg-white">
+    <section className="py-6 px-4 bg-white mt-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-6">
-          {/* <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-            Browse <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">Categories</span>
-          </h2> */}
-          {/* <p className="text-gray-600 text-sm md:text-base">
+        <div className="text-left mb-6">
+          <h2 className="text-4xl  font-bold text-gray-900 mb-2">
+            Browse Categories
+          </h2>
+          <p className="text-gray-600 text-sm md:text-base">
             Explore services across different professional domains
-          </p> */}
+          </p>
         </div>
 
         {/* Category Grid */}
@@ -38,7 +64,7 @@ const CategoryGrid = () => {
           {categories.map((cat) => (
             <Link
               key={cat.id}
-              to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.name.toLowerCase().replace(/\s+/g, '-')}`}
+              to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug || cat.name.toLowerCase().replace(/\s+/g, '-')}`}
               className="flex flex-col items-center justify-center
         w-24 h-20              
         sm:w-28 sm:h-24      
