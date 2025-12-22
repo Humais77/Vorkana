@@ -71,7 +71,12 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     setPasswordStrength('');
     setShowAdvancedFields(false);
   }, [activeTab, clearError]);
-
+useEffect(() => {
+  document.body.style.overflow = 'hidden';
+  return () => {
+    document.body.style.overflow = 'unset';
+  };
+}, []);
   // Check password strength on change
   useEffect(() => {
     if (signupData.password) {
@@ -280,16 +285,16 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
   // Render social buttons view
   const renderSocialButtons = () => (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <button
         onClick={handleGoogleAuth}
         disabled={loading || isSubmitting}
-        className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-base"
       >
         <img
           src="https://www.google.com/favicon.ico"
           alt="Google"
-          className="w-4 h-4 mr-2"
+          className="w-5 h-5 mr-3"
         />
         Continue with Google
       </button>
@@ -297,30 +302,30 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       <button
         onClick={() => setShowEmailForm(true)}
         disabled={loading || isSubmitting}
-        className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-base"
       >
-        <Mail className="w-4 h-4 mr-2" />
+        <Mail className="w-5 h-5 mr-3" />
         Continue with {activeTab === 'signin' ? 'email' : 'email'}
       </button>
 
       {/* Divider */}
-      <div className="relative my-3">
+      <div className="relative my-4">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-300"></div>
         </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-3 bg-white text-gray-500 text-xs">Or</span>
+        <div className="relative flex justify-center text-base">
+          <span className="px-4 bg-white text-gray-500 text-sm">Or</span>
         </div>
       </div>
 
       {/* Apple & Facebook Buttons */}
-      <div className="flex gap-2">
+      <div className="flex gap-3">
         <button
           onClick={() => { }}
           disabled={loading || isSubmitting}
-          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
             <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85 4.41 4.41 0 0 1-2.68-4.04z" />
           </svg>
           Apple
@@ -329,9 +334,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         <button
           onClick={() => { }}
           disabled={loading || isSubmitting}
-          className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <svg className="w-4 h-4 mr-1 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
             <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
           </svg>
           Facebook
@@ -346,30 +351,30 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       {/* Back Button */}
       <button
         onClick={() => setShowEmailForm(false)}
-        className="flex items-center text-gray-600 hover:text-gray-900 mb-3 transition-colors text-sm"
+        className="flex items-center text-gray-600 hover:text-gray-900 mb-4 transition-colors text-base"
         disabled={isSubmitting}
       >
-        <ArrowLeft className="w-3 h-3 mr-1" />
+        <ArrowLeft className="w-4 h-4 mr-2" />
         Back
       </button>
 
-      <div className="text-center mb-4">
-        <h3 className="text-lg font-bold text-gray-900 mb-1">
+      <div className="text-center mb-6">
+        <h3 className="text-xl font-bold text-gray-900 mb-2">
           Continue with your email {activeTab === 'signup' ? '' : 'or username'}
         </h3>
       </div>
 
       {error && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-600 font-medium text-xs">{error}</p>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-600 font-medium text-sm">{error}</p>
         </div>
       )}
 
       {activeTab === 'signin' ? (
         /* SIGN IN EMAIL FORM */
-        <form onSubmit={handleSigninSubmit} className="space-y-3">
+        <form onSubmit={handleSigninSubmit} className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">
+            <label className="text-sm font-semibold text-gray-700 mb-2 block">
               Email Address
             </label>
             <input
@@ -377,24 +382,24 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="email"
               value={signinData.email}
               onChange={handleSigninChange}
-              className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
+              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="you@example.com"
               disabled={loading || loginMutation.isPending || isSubmitting}
               autoFocus
             />
             {errors.email && (
-              <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+              <p className="mt-2 text-sm text-red-600">{errors.email}</p>
             )}
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-semibold text-gray-700">
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-sm font-semibold text-gray-700">
                 Password
               </label>
               <button
                 type="button"
-                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
                 onClick={() => {
                   onClose();
                   navigate('/forgot-password');
@@ -410,21 +415,21 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 name="password"
                 value={signinData.password}
                 onChange={handleSigninChange}
-                className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm pr-10"
+                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
                 placeholder="••••••••"
                 disabled={loading || loginMutation.isPending || isSubmitting}
               />
               <button
                 type="button"
                 onClick={togglePasswordVisibility}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                 disabled={isSubmitting}
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
             {errors.password && (
-              <p className="mt-1 text-xs text-red-600">{errors.password}</p>
+              <p className="mt-2 text-sm text-red-600">{errors.password}</p>
             )}
           </div>
 
@@ -432,9 +437,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             <input
               type="checkbox"
               id="rememberMe"
-              className="w-3 h-3 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
             />
-            <label htmlFor="rememberMe" className="ml-2 text-xs text-gray-600">
+            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600">
               Remember me on this device
             </label>
           </div>
@@ -442,16 +447,16 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           <button
             type="submit"
             disabled={loading || loginMutation.isPending || isSubmitting}
-            className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base"
           >
             {loginMutation.isPending || isSubmitting ? (
               <>
-                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                 Signing In...
               </>
             ) : (
               <>
-                <LogIn className="mr-2" size={16} />
+                <LogIn className="mr-2" size={20} />
                 Sign In
               </>
             )}
@@ -459,9 +464,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         </form>
       ) : (
         /* SIGN UP EMAIL FORM */
-        <form onSubmit={handleSignupSubmit} className="space-y-3">
+        <form onSubmit={handleSignupSubmit} className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">
+            <label className="text-sm font-semibold text-gray-700 mb-2 block">
               Full Name *
             </label>
             <input
@@ -469,19 +474,19 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="name"
               value={signupData.name}
               onChange={handleSignupChange}
-              className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
+              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="John Doe"
               disabled={loading || registerMutation.isPending || isSubmitting}
               autoFocus
               required
             />
             {errors.name && (
-              <p className="mt-1 text-xs text-red-600">{errors.name}</p>
+              <p className="mt-2 text-sm text-red-600">{errors.name}</p>
             )}
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">
+            <label className="text-sm font-semibold text-gray-700 mb-2 block">
               Email Address *
             </label>
             <input
@@ -489,18 +494,18 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="email"
               value={signupData.email}
               onChange={handleSignupChange}
-              className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm"
+              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="you@example.com"
               disabled={loading || registerMutation.isPending || isSubmitting}
               required
             />
             {errors.email && (
-              <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+              <p className="mt-2 text-sm text-red-600">{errors.email}</p>
             )}
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">
+            <label className="text-sm font-semibold text-gray-700 mb-2 block">
               Password *
             </label>
             <div className="relative">
@@ -509,7 +514,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 name="password"
                 value={signupData.password}
                 onChange={handleSignupChange}
-                className="w-full p-2.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm pr-10"
+                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
                 placeholder="••••••••"
                 disabled={loading || registerMutation.isPending || isSubmitting}
                 required
@@ -517,35 +522,35 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               <button
                 type="button"
                 onClick={togglePasswordVisibility}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                 disabled={isSubmitting}
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
 
             {/* Password strength indicator */}
             {signupData.password && (
-              <div className={`mt-1.5 p-1.5 rounded text-xs ${getPasswordStrengthColor() === 'green'
+              <div className={`mt-3 p-3 rounded text-sm ${getPasswordStrengthColor() === 'green'
                   ? 'bg-green-50 text-green-700 border border-green-200'
                   : 'bg-red-50 text-red-700 border border-red-200'
                 }`}>
                 <div className="flex items-center">
-                  <AlertCircle className="w-3 h-3 mr-1" />
+                  <AlertCircle className="w-4 h-4 mr-2" />
                   {passwordStrength}
                 </div>
               </div>
             )}
 
             {errors.password && (
-              <p className="mt-1 text-xs text-red-600">{errors.password}</p>
+              <p className="mt-2 text-sm text-red-600">{errors.password}</p>
             )}
 
             {/* Password requirements checklist */}
-            <div className="mt-2 space-y-1">
+            <div className="mt-4 space-y-2">
               {passwordRequirements.map((req, index) => (
-                <div key={index} className="flex items-center text-xs">
-                  <div className={`w-2.5 h-2.5 rounded-full mr-1.5 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <div key={index} className="flex items-center text-sm">
+                  <div className={`w-3.5 h-3.5 rounded-full mr-2.5 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
                   <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
                     {req.text}
                   </span>
@@ -554,14 +559,14 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             </div>
           </div>
           {/* Terms Agreement */}
-          <div className="flex items-start mt-4">
+          <div className="flex items-start mt-6">
             <input
               type="checkbox"
               id="terms"
-              className="w-3 h-3 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 mt-0.5"
+              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 mt-1"
               required
             />
-            <label htmlFor="terms" className="ml-2 text-xs text-gray-600">
+            <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
               I agree to the Vorkana Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
             </label>
           </div>
@@ -569,22 +574,22 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
           <button
             type="submit"
             disabled={loading || registerMutation.isPending || isSubmitting}
-            className="w-full py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm mt-2"
+            className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base mt-4"
           >
             {registerMutation.isPending || isSubmitting ? (
               <>
-                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                 Creating Account...
               </>
             ) : (
               <>
-                <UserPlus className="mr-2" size={16} />
+                <UserPlus className="mr-2" size={20} />
                 Create Account
               </>
             )}
           </button>
 
-          <p className="text-xs text-gray-500 text-center mt-2">
+          <p className="text-sm text-gray-500 text-center mt-4">
             Already have an account?{' '}
             <button
               type="button"
@@ -656,15 +661,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             </div>
 
             {/* Right Side - Auth Content */}
-            <div className="flex-1 flex justify-center items-center p-6">
-              <div className="max-w-xs mx-auto h-full flex flex-col">
+            <div className="flex-1 flex justify-center items-center p-8">
+              <div className="max-w-sm mx-auto h-full flex flex-col">
                 {/* Header with tab switch - Only show in social view */}
                 {!showEmailForm && (
-                  <div className="text-center mb-4">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-1">
+                  <div className="text-center mb-8">
+                    <h2 className="text-3xl font-bold text-gray-900 mb-3">
                       {activeTab === 'signin' ? 'Sign in to your account' : 'Create a new account'}
                     </h2>
-                    <p className="text-gray-600 text-xs">
+                    <p className="text-gray-600 text-base">
                       {activeTab === 'signin' ? (
                         <>
                           Don't have an account?{" "}
@@ -698,11 +703,11 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 </div>
 
                 {/* Footer Terms */}
-                <div className="pt-3 border-t border-gray-200 mt-3">
-                  <p className="text-center text-gray-600 text-xs">
+                <div className="pt-6 border-t border-gray-200 mt-6">
+                  <p className="text-center text-gray-600 text-sm">
                     By joining, you agree to the Vorkana Terms of Service and Privacy Policy.
                   </p>
-                  <p className="text-center text-gray-500 text-xs mt-1">
+                  <p className="text-center text-gray-500 text-sm mt-2">
                     © {new Date().getFullYear()} Vorkana. All rights reserved.
                   </p>
                 </div>
