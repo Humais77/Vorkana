@@ -55,6 +55,8 @@ import DisputesPage from './layouts/pages/footer/DisputesPage';
 import PaymentProtectionPage from './layouts/pages/footer/PaymentProtectionPage';
 import FaqPage from './layouts/pages/footer/FaqPage';
 import SearchResults from './layouts/pages/SearchResults';
+import Signin from './layouts/pages/Signin';
+import Signup from './layouts/pages/Signup';
 
 const App = () => {
   useAuthSync();
@@ -111,6 +113,9 @@ const App = () => {
           >
             <Route path="/" element={<Home onSigninClick={openSigninModal} onSignupClick={openSignupModal} />} />
             <Route path="/about-us" element={<AboutUsPage />} />
+            <Route path="/sign-in" element={<Signin />} />
+            <Route path="/sign-up" element={<Signup />} />
+            
             <Route path="/create-gig" element={<GigCreate />} />
             <Route path="/gig/:id" element={<GigDetails />} />
             <Route path="/categories/:categoryId" element={<CategoryPage />} />
