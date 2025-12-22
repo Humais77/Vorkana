@@ -199,12 +199,33 @@ export const authAPI = {
     return response.data;
   },
   
-  updateProfile: async (userData) => {
-    const response = await axiosInstance.put('/api/auth/profile', userData);
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+   updateProfile: async (userData) => {
+    try {
+      // Get token from localStorage directly as fallback
+      const token = localStorage.getItem('userToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      console.log('Update profile request with token:', token.substring(0, 20) + '...');
+      
+      const response = await axiosInstance.put('/api/auth/profile', userData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Update profile response:', response.data);
+      
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Update profile API error:', error.response || error.message);
+      throw error;
     }
-    return response.data;
   },
   
   changePassword: async (currentPassword, newPassword) => {

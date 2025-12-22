@@ -6,7 +6,7 @@ import axios from 'axios';
 
 export const useProfilePicture = () => {
   const [isUploading, setIsUploading] = useState(false);
-  const { user, updateUser } = useAuthStore();
+  const { setUser } = useAuthStore();
 
   const uploadProfilePicture = async (file) => {
     if (!file) {
@@ -14,13 +14,12 @@ export const useProfilePicture = () => {
       return null;
     }
 
-    // Validate file size (max 2MB)
+    // Validate file
     if (file.size > 2 * 1024 * 1024) {
       toast.error('File size must be less than 2MB');
       return null;
     }
 
-    // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
       toast.error('Only image files (JPEG, JPG, PNG, WebP) are allowed');
@@ -36,75 +35,84 @@ export const useProfilePicture = () => {
       const token = localStorage.getItem('userToken');
       const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
       
-      console.log('Uploading profile picture to:', `${API_URL}/api/users/upload-profile-picture`);
-      console.log('File details:', {
-        name: file.name,
-        type: file.type,
-        size: file.size
-      });
+      console.log('🚀 Uploading profile picture to:', `${API_URL}/api/users/upload-profile-picture`);
       
-      // FIX: DO NOT set Content-Type header - axios will set it automatically with boundary
       const response = await axios.post(
         `${API_URL}/api/users/upload-profile-picture`, 
         formData, 
         {
           headers: {
             'Authorization': `Bearer ${token}`,
-            // REMOVED: 'Content-Type': 'multipart/form-data' - Let axios handle it!
+            // DO NOT set Content-Type header here - let axios handle it
           },
           withCredentials: true,
-          timeout: 30000 // 30 second timeout
+          timeout: 30000
         }
       );
       
-      console.log('Upload response:', response.data);
+      console.log('✅ Upload response:', {
+        success: response.data.success,
+        hasPicture: !!response.data.picture,
+        pictureUrl: response.data.picture,
+        pictureType: typeof response.data.picture,
+        pictureFirst100: response.data.picture?.substring(0, 100)
+      });
       
-      if (response.data.success) {
-        // Update local user state IMMEDIATELY
-        if (updateUser && response.data.user) {
-          // Ensure we're updating with complete user object
-          updateUser({
-            ...user,
+      if (response.data.success && response.data.picture) {
+        const pictureUrl = response.data.picture;
+        
+        // Check if it's a proper URL or base64
+        if (pictureUrl.startsWith('data:')) {
+          console.error('❌ Received base64 instead of URL:', pictureUrl.substring(0, 100) + '...');
+          throw new Error('Server returned base64 data instead of URL');
+        }
+        
+        if (!pictureUrl.startsWith('http')) {
+          console.error('❌ Invalid URL format:', pictureUrl);
+          throw new Error('Invalid URL format received from server');
+        }
+        
+        // Add cache busting parameter
+        const cacheBustedUrl = `${pictureUrl}?t=${Date.now()}`;
+        
+        // Update Zustand store with the complete user object from response
+        if (response.data.user) {
+          // Ensure we have the cache-busted URL in user object
+          const updatedUser = {
             ...response.data.user,
-            picture: response.data.picture || response.data.user?.picture
-          });
+            picture: cacheBustedUrl
+          };
+          
+          setUser(updatedUser);
+          console.log('✅ Updated Zustand store with user:', updatedUser);
+          
+          // Update localStorage
+          localStorage.setItem('userInfo', JSON.stringify(updatedUser));
+          console.log('✅ Updated localStorage');
+        } else {
+          console.warn('⚠️ No user object in response');
         }
         
         toast.success('Profile picture updated successfully!');
-        return response.data.picture || response.data.user?.picture;
+        return cacheBustedUrl;
+        
       } else {
+        console.error('❌ Upload failed:', response.data.message);
         throw new Error(response.data.message || 'Upload failed');
       }
     } catch (error) {
-      console.error('Profile picture upload error:', error);
+      console.error('❌ Profile picture upload error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       
       let errorMessage = 'Failed to upload profile picture';
       
-      if (error.response) {
-        // Server responded with error
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-        console.error('Response headers:', error.response.headers);
-        
-        errorMessage = error.response.data?.message || errorMessage;
-        
-        if (error.response.status === 413) {
-          errorMessage = 'File too large. Maximum size is 2MB.';
-        } else if (error.response.status === 415) {
-          errorMessage = 'Invalid Content-Type. Please try again.';
-        } else if (error.response.status === 404) {
-          errorMessage = 'Upload endpoint not found. Please check the server.';
-        } else if (error.response.status === 400) {
-          errorMessage = `Upload failed: ${error.response.data.message || 'Bad request'}`;
-        }
-      } else if (error.request) {
-        // Request made but no response
-        console.error('No response received:', error.request);
-        errorMessage = 'No response from server. Please check your connection.';
-      } else {
-        // Other errors
-        console.error('Error setting up request:', error.message);
-        errorMessage = error.message || errorMessage;
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       toast.error(errorMessage);

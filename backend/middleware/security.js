@@ -16,57 +16,58 @@ module.exports = function (app) {
   app.use(cookieParser());
 
   // Enhanced helmet configuration
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: [
-            "'self'",
-            "'unsafe-inline'",
-            "'unsafe-eval'",
-            'http://localhost:*',
-            'ws://localhost:*'
-          ],
-          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          connectSrc: ["'self'", 'http://localhost:*', 'ws://localhost:*'],
-          frameSrc: ["'none'"],
-          frameAncestors: ["'none'"],
-          formAction: ["'self'"],
-          upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
-        }
-      },
-      crossOriginResourcePolicy: false,        // <<< ADD THIS
-    crossOriginEmbedderPolicy: false,        // <<< ADD THIS (already disabled in main, but safe)
-    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
-      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-      strictTransportSecurity: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true
-      },
-      permissionsPolicy: {
-        accelerometer: [],
-        ambientLightSensor: [],
-        autoplay: [],
-        camera: [],
-        encryptedMedia: [],
-        fullscreen: [],
-        geolocation: [],
-        gyroscope: [],
-        magnetometer: [],
-        microphone: [],
-        midi: [],
-        payment: [],
-        pictureInPicture: [],
-        speaker: [],
-        usb: [],
-        vr: []
+  // security.js - Update helmet configuration
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          'http://localhost:*',
+          'ws://localhost:*'
+        ],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", 'http://localhost:*', 'ws://localhost:*'],
+        frameSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
       }
-    })
-  );
+    },
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Change this line
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    strictTransportSecurity: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true
+    },
+    permissionsPolicy: {
+      accelerometer: [],
+      ambientLightSensor: [],
+      autoplay: [],
+      camera: [],
+      encryptedMedia: [],
+      fullscreen: [],
+      geolocation: [],
+      gyroscope: [],
+      magnetometer: [],
+      microphone: [],
+      midi: [],
+      payment: [],
+      pictureInPicture: [],
+      speaker: [],
+      usb: [],
+      vr: []
+    }
+  })
+);
 
   // Request sanitization
   app.use((req, res, next) => {

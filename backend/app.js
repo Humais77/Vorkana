@@ -85,10 +85,12 @@ const corsOptions = {
     'X-CSRF-Token',
     'X-Admin-Access'  
   ],
+  credentials: true, // Add this line
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
+app.use(cors(corsOptions));
 app.use(cors(corsOptions));
 
 security(app);

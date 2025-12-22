@@ -32,7 +32,9 @@ import { format, parseISO } from 'date-fns';
 import { useProfilePicture } from '../../hooks/useProfilePicture';
 // Import API hooks
 import { useUpdateProfile, useGetProfile } from '../../hooks/useAuth';
-import { createImagePreview } from '../../utils/imageUtils';
+import { createImagePreview, updateImageWithCacheBusting } from '../../utils/imageUtils';
+// Profile.jsx - Add import
+import { formatDateForAPI, formatDateForInput } from '../../utils/dateUtils';
 const Profile = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, setUser } = useAuthStore();
@@ -191,27 +193,27 @@ const calculateProfileCompletion = (currentUser = user, currentFormData = formDa
   // Initialize form data and calculate completion
   useEffect(() => {
     if (user) {
-      setFormData({
-        bio: user.bio || '',
-        phoneNumber: user.phoneNumber || '',
-        country: user.country || '',
-        city: user.city || '',
-        languages: user.languages || [],
-        occupation: user.occupation || '',
-        education: user.education || '',
-        gender: user.gender || '',
-        dateOfBirth: user.dateOfBirth ? format(parseISO(user.dateOfBirth), 'yyyy-MM-dd') : '',
-        github: user.github || '',
-        linkedin: user.linkedin || '',
-        website: user.website || '',
-        privacySettings: user.privacySettings || {
-          profileVisibility: 'public',
-          showEmail: false,
-          showPhone: false,
-          showLocation: true,
-          showLastSeen: true
-        }
-      });
+    setFormData({
+      bio: user.bio || '',
+      phoneNumber: user.phoneNumber || '',
+      country: user.country || '',
+      city: user.city || '',
+      languages: user.languages || [],
+      occupation: user.occupation || '',
+      education: user.education || '',
+      gender: user.gender || '',
+      dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '', // FIXED
+      github: user.github || '',
+      linkedin: user.linkedin || '',
+      website: user.website || '',
+      privacySettings: user.privacySettings || {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      }
+    });
 
       const completion = calculateProfileCompletion();
       setProfileCompletion(completion);
@@ -281,72 +283,127 @@ useEffect(() => {
   syncFormDataWithUser();
 }, [user, editingField]);
 
- const handleFileChange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('File size must be less than 2MB');
-      return;
-    }
+// Profile.jsx - Update handleFileChange function
+const handleFileChange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Validate file
+  if (file.size > 2 * 1024 * 1024) {
+    toast.error('File size must be less than 2MB');
+    return;
+  }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Only image files (JPEG, JPG, PNG, WebP) are allowed');
-      return;
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    toast.error('Only image files (JPEG, JPG, PNG, WebP) are allowed');
+    return;
+  }
+  
+  try {
+    setIsUploadingPicture(true);
+    
+    // Create a preview URL for immediate feedback
+    const previewUrl = URL.createObjectURL(file);
+    setTempPicture(previewUrl);
+    
+    console.log('📸 Created preview URL:', previewUrl.substring(0, 50) + '...');
+    
+    // Show preview immediately
+    if (profileImageRef.current) {
+      profileImageRef.current.src = previewUrl;
+      profileImageRef.current.style.opacity = '0.8';
+      console.log('🖼️ Set preview image');
     }
     
-    try {
-      setIsUploadingPicture(true);
-      
-      // Create immediate preview
-      const previewUrl = await createImagePreview(file);
-      setTempPicture(previewUrl);
-      
-      // Upload the file
-      const pictureUrl = await uploadProfilePicture(file);
-      
-      if (pictureUrl) {
-        // Update form data
-       // Optimistically update local store
-setUser({
-  ...user,
-  picture: pictureUrl,
-  updatedAt: Date.now(),
-});
+    // Upload the file
+    console.log('⬆️ Starting upload...');
+    const pictureUrl = await uploadProfilePicture(file);
+    
+    if (pictureUrl) {
+      console.log('✅ Upload successful, got URL:', pictureUrl);
+      const newImage = new Image();
+      // Clean up the preview URL
+      newImage.onload = () => {
+  console.log('✅ New image loaded successfully');
+  img.src = pictureUrl;
+  img.style.opacity = '1';
 
-// Optional: refetch profile to confirm
-refetchProfile();
-        // Clear temp picture after successful upload
-        setTempPicture(null);
+  // Only now revoke the old blob URL safely
+  if (tempPicture) {
+    URL.revokeObjectURL(tempPicture);
+    setTempPicture(null);
+  }
+
+  toast.success('Profile picture updated!');
+};
+      
+      // Update the image element with the new URL
+      if (profileImageRef.current) {
+        const img = profileImageRef.current;
         
-        // Update the image element immediately with cache busting
-        if (profileImageRef.current) {
-          const img = profileImageRef.current;
-          img.src = `${pictureUrl}?t=${Date.now()}`;
-          img.style.opacity = '0.9';
-          setTimeout(() => {
-            img.style.opacity = '1';
-          }, 100);
-        }
+        console.log('🔄 Updating image element with new URL');
         
-        toast.success('Profile picture updated successfully!');
+        // Create a new image to preload
+        const newImage = new Image();
+        newImage.onload = () => {
+          console.log('✅ New image loaded successfully');
+          img.src = pictureUrl;
+          img.style.opacity = '1';
+          img.classList.add('loaded');
+          
+          // Force a reflow to ensure the image updates
+          void img.offsetWidth;
+          
+          toast.success('Profile picture updated!');
+        };
+        
+        newImage.onerror = (error) => {
+          console.error('❌ Failed to load new image:', error);
+          toast.error('Failed to load new profile picture');
+          
+          // Fallback to user's picture if available
+          if (user?.picture) {
+            img.src = `${user.picture}?t=${Date.now()}`;
+          }
+        };
+        
+        newImage.src = pictureUrl;
       }
-    } catch (error) {
-      console.error('Error uploading profile picture:', error);
-      // Revert to original picture
-      setTempPicture(null);
-    } finally {
-      setIsUploadingPicture(false);
-      // Reset file input
-      event.target.value = '';
+      
+      // Force refetch user data to ensure consistency
+      console.log('🔄 Refetching user profile data...');
+      const result = await refetchProfile();
+      console.log('✅ Profile refetch result:', result.data?.success ? 'success' : 'failed');
+      
+    } else {
+      console.error('❌ Upload returned no URL');
+      // Revert to original picture on error
+      if (profileImageRef.current && user?.picture) {
+        profileImageRef.current.src = `${user.picture}?t=${Date.now()}`;
+        profileImageRef.current.style.opacity = '1';
+      }
+      toast.error('Failed to upload profile picture');
     }
-  };
-  // Save handler - NOW UPDATES DATABASE
-  const handleSave = async (field) => {
-  if (isSaving) return;
+  } catch (error) {
+    console.error('❌ Error in handleFileChange:', error);
+    toast.error('An error occurred during upload');
+    
+    // Revert to original picture
+    setTempPicture(null);
+    if (profileImageRef.current && user?.picture) {
+      profileImageRef.current.src = `${user.picture}?t=${Date.now()}`;
+      profileImageRef.current.style.opacity = '1';
+    }
+  } finally {
+    setIsUploadingPicture(false);
+    // Reset file input
+    event.target.value = '';
+    console.log('🧹 Cleaned up file input');
+  }
+};
+const handleSave = async (field) => {
+   if (isSaving || updateProfileMutation.isPending) return;
   
   setIsSaving(true);
   try {
@@ -356,8 +413,10 @@ refetchProfile();
     if (field === 'all') {
       // Update all form fields
       Object.keys(formData).forEach(key => {
-        // Skip privacySettings if not changed
-        if (key !== 'privacySettings' || 
+        if (key === 'dateOfBirth' && formData.dateOfBirth) {
+          // Format date for API
+          updateData[key] = formatDateForAPI(formData.dateOfBirth);
+        } else if (key !== 'privacySettings' || 
             JSON.stringify(formData.privacySettings) !== JSON.stringify(user?.privacySettings || {})) {
           updateData[key] = formData[key];
         }
@@ -371,7 +430,7 @@ refetchProfile();
       updateData.education = formData.education;
     } else if (field === 'personal') {
       updateData.gender = formData.gender;
-      updateData.dateOfBirth = formData.dateOfBirth || null;
+      updateData.dateOfBirth = formData.dateOfBirth ? formatDateForAPI(formData.dateOfBirth) : null; // FIXED
     } else if (field === 'languages') {
       updateData.languages = formData.languages;
     } else if (field === 'location') {
@@ -385,8 +444,14 @@ refetchProfile();
       updateData.privacySettings = formData.privacySettings;
     } else {
       // Generic field update
-      updateData[field] = formData[field];
+      if (field === 'dateOfBirth' && formData.dateOfBirth) {
+        updateData[field] = formatDateForAPI(formData.dateOfBirth);
+      } else {
+        updateData[field] = formData[field];
+      }
     }
+
+    console.log('Updating profile with formatted data:', updateData);
 
     // Call the API mutation
     const result = await updateProfileMutation.mutateAsync(updateData);
@@ -394,9 +459,7 @@ refetchProfile();
     if (result.success) {
       // Update local store with the response data
       if (result.user) {
-        await updateProfileMutation.mutateAsync(updateData);
-toast.success('Profile updated successfully!');
-await refetchProfile(); // Syncs store automatically
+        setUser(result.user);
         
         // Update formData with the latest user data to keep in sync
         setFormData(prev => ({
@@ -423,9 +486,6 @@ await refetchProfile(); // Syncs store automatically
         }));
       }
       
-      // Refetch profile to ensure consistency
-      await refetchProfile();
-      
       toast.success(
         field === 'all' 
           ? 'Profile updated successfully!' 
@@ -434,9 +494,11 @@ await refetchProfile(); // Syncs store automatically
       setEditingField(null);
       
       // Hide setup prompt if profile is sufficiently complete
-      const newCompletion = calculateProfileCompletion(result.user || user, formData);
-      if (newCompletion >= 70) {
-        setShowSetupPrompt(false);
+      if (result.user) {
+        const newCompletion = calculateProfileCompletion(result.user, formData);
+        if (newCompletion >= 70) {
+          setShowSetupPrompt(false);
+        }
       }
     } else {
       throw new Error(result.message || 'Update failed');
@@ -446,39 +508,76 @@ await refetchProfile(); // Syncs store automatically
     console.error('Error updating profile:', error);
     toast.error(error.message || 'Failed to update profile. Please try again.');
     
-    // Re-fetch the latest user data on error
-    await refetchProfile();
   } finally {
     setIsSaving(false);
   }
 };
-
-  const handleCancel = () => {
-    if (user) {
-      setFormData({
-        bio: user.bio || '',
-        phoneNumber: user.phoneNumber || '',
-        country: user.country || '',
-        city: user.city || '',
-        languages: user.languages || [],
-        occupation: user.occupation || '',
-        education: user.education || '',
-        gender: user.gender || '',
-        dateOfBirth: user.dateOfBirth ? format(parseISO(user.dateOfBirth), 'yyyy-MM-dd') : '',
-        github: user.github || '',
-        linkedin: user.linkedin || '',
-        website: user.website || '',
-        privacySettings: user.privacySettings || {
-          profileVisibility: 'public',
-          showEmail: false,
-          showPhone: false,
-          showLocation: true,
-          showLastSeen: true
-        }
-      });
+// Profile.jsx - Add this function and useEffect
+const refreshUserData = async () => {
+  try {
+    const result = await refetchProfile();
+    if (result.data?.user) {
+      // Force image reload after data refresh
+      if (profileImageRef.current && result.data.user.picture) {
+        const newPictureUrl = `${result.data.user.picture}?t=${Date.now()}`;
+        profileImageRef.current.src = newPictureUrl;
+      }
     }
-    setEditingField(null);
-  };
+  } catch (error) {
+    console.error('Error refreshing user data:', error);
+  }
+};
+
+// Add this useEffect to periodically check for updates
+useEffect(() => {
+  if (!isUploadingPicture && user?.picture) {
+    // Refresh image every 5 seconds for 30 seconds after upload
+    const refreshInterval = setInterval(() => {
+      if (profileImageRef.current) {
+        const currentSrc = profileImageRef.current.src;
+        const cleanUrl = currentSrc.split('?')[0];
+        profileImageRef.current.src = `${cleanUrl}?t=${Date.now()}`;
+      }
+    }, 5000);
+    
+    // Clear interval after 30 seconds
+    const timeout = setTimeout(() => {
+      clearInterval(refreshInterval);
+    }, 30000);
+    
+    return () => {
+      clearInterval(refreshInterval);
+      clearTimeout(timeout);
+    };
+  }
+}, [isUploadingPicture, user?.picture]);
+  // Profile.jsx - Update handleCancel function
+const handleCancel = () => {
+  if (user) {
+    setFormData({
+      bio: user.bio || '',
+      phoneNumber: user.phoneNumber || '',
+      country: user.country || '',
+      city: user.city || '',
+      languages: user.languages || [],
+      occupation: user.occupation || '',
+      education: user.education || '',
+      gender: user.gender || '',
+      dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '', // FIXED
+      github: user.github || '',
+      linkedin: user.linkedin || '',
+      website: user.website || '',
+      privacySettings: user.privacySettings || {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      }
+    });
+  }
+  setEditingField(null);
+};
 
   const addLanguage = () => {
     if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
@@ -701,12 +800,12 @@ await refetchProfile(); // Syncs store automatically
                 Complete Now
               </button>
               <button
-                onClick={() => handleSave('all')}
-                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
-                disabled={isSaving}
-              >
-                {isSaving ? 'Saving...' : 'Save & Continue'}
-              </button>
+  onClick={() => handleSave('all')}
+  disabled={isSaving || updateProfileMutation.isPending}
+  className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+>
+  {isSaving || updateProfileMutation.isPending ? 'Saving...' : 'Save All'}
+</button>
             </div>
           </div>
         )}
@@ -714,46 +813,55 @@ await refetchProfile(); // Syncs store automatically
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
           <div className="flex items-center gap-4">
-            <div className="relative group">
-              <div className="relative">
-                <img
-                  ref={profileImageRef}
-                  src={(user?.picture
-      ? `${user.picture}?v=${user.updatedAt || Date.now()}`
-      : default_pp)}
-                  alt={user?.name}
-                  className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow transition-all duration-300"
-                  style={{
-                    opacity: isUploadingPicture ? 0.7 : 1,
-                    filter: isUploadingPicture ? 'blur(1px)' : 'none'
-                  }}
-                />
-                <div 
-                  className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
-                  onClick={handleProfilePictureClick}
-                >
-                  {isUploadingPicture ? (
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                  ) : (
-                    <Edit2 className="w-6 h-6 text-white" />
-                  )}
-                </div>
-                {isUploadingPicture && (
-                  <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-                    <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 animate-pulse"></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                className="hidden"
-              />
-            </div>
+<div className="relative group">
+  <div className="relative">
+    <img
+      ref={profileImageRef}
+      src={tempPicture || (user?.picture 
+        ? `${user.picture.split('?')[0]}?t=${user.updatedAt || Date.now()}`
+        : default_pp)}
+      alt={user?.name}
+      className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow transition-all duration-300 cursor-pointer"
+      style={{
+        opacity: isUploadingPicture ? 0.7 : 1,
+      }}
+      onClick={handleProfilePictureClick}
+      onLoad={() => {
+        // Force image to not cache
+        if (profileImageRef.current && user?.picture) {
+          const currentSrc = profileImageRef.current.src;
+          if (!currentSrc.includes('?t=')) {
+            profileImageRef.current.src = `${currentSrc.split('?')[0]}?t=${Date.now()}`;
+          }
+        }
+      }}
+    />
+    <div 
+      className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
+      onClick={handleProfilePictureClick}
+    >
+      {isUploadingPicture ? (
+        <Loader2 className="w-6 h-6 text-white animate-spin" />
+      ) : (
+        <Edit2 className="w-6 h-6 text-white" />
+      )}
+    </div>
+    {isUploadingPicture && (
+      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+        <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-green-500 animate-pulse"></div>
+        </div>
+      </div>
+    )}
+  </div>
+  <input
+    type="file"
+    ref={fileInputRef}
+    onChange={handleFileChange}
+    accept="image/jpeg,image/jpg,image/png,image/webp"
+    className="hidden"
+  />
+</div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{user?.name}</h1>
               <p className="text-gray-600 mt-1">{user?.email}</p>
@@ -825,12 +933,12 @@ await refetchProfile(); // Syncs store automatically
                       <span className="text-sm text-gray-500">{formData.bio.length}/500 characters</span>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => handleSave('bio')}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </button>
+  onClick={() => handleSave('bio')}
+  disabled={isSaving || updateProfileMutation.isPending}
+  className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+>
+  {isSaving || updateProfileMutation.isPending ? 'Saving...' : 'Save'}
+</button>
                         <button
                           onClick={handleCancel}
                           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -975,43 +1083,45 @@ await refetchProfile(); // Syncs store automatically
                   
                   {editingField === 'personal' ? (
                     <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Gender (5%)</label>
-                        <select
-                          value={formData.gender}
-                          onChange={(e) => setFormData({...formData, gender: e.target.value})}
-                          className="w-full p-2 border border-gray-300 rounded-lg mb-3"
-                        >
-                          <option value="">Select gender</option>
-                          <option value="male">Male</option>
-                          <option value="female">Female</option>
-                          <option value="other">Other</option>
-                          <option value="prefer-not-to-say">Prefer not to say</option>
-                        </select>
-                        <label className="block text-sm text-gray-600 mb-1">Date of Birth (5%)</label>
-                        <input
-                          type="date"
-                          value={formData.dateOfBirth}
-                          onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})}
-                          className="w-full p-2 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleSave('all')}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
+    <div>
+      <label className="block text-sm text-gray-600 mb-1">Gender (5%)</label>
+      <select
+        value={formData.gender}
+        onChange={(e) => setFormData({...formData, gender: e.target.value})}
+        className="w-full p-2 border border-gray-300 rounded-lg mb-3"
+      >
+        <option value="">Select gender</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="other">Other</option>
+        <option value="prefer-not-to-say">Prefer not to say</option>
+      </select>
+      <label className="block text-sm text-gray-600 mb-1">Date of Birth (5%)</label>
+      <input
+        type="date"
+        value={formData.dateOfBirth}
+        onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})}
+        className="w-full p-2 border border-gray-300 rounded-lg"
+        max={new Date().toISOString().split('T')[0]} // Prevent future dates
+      />
+    </div>
+    <div className="flex gap-2">
+      <button
+        onClick={() => handleSave('personal')}
+        disabled={isSaving || updateProfileMutation.isPending}
+        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+      >
+        {isSaving || updateProfileMutation.isPending ? 'Saving...' : 'Save'}
+      </button>
+      <button
+        onClick={handleCancel}
+        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+
                   ) : (
                     <div className="space-y-3">
                       <div>

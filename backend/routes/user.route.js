@@ -18,11 +18,13 @@ router.use((req, res, next) => {
 
 router.patch('/switch-role', protect, switchRole);
 
+// routes/user.route.js - Add more detailed logging
 router.post('/upload-profile-picture', 
   protect,
   (req, res, next) => {
     console.log('=== UPLOAD REQUEST START ===');
     console.log('Headers:', req.headers);
+    console.log('User ID:', req.user._id);
     
     profilePicUpload(req, res, (err) => {
       if (err) {
@@ -33,7 +35,11 @@ router.post('/upload-profile-picture',
           code: 'UPLOAD_ERROR'
         });
       }
-      console.log('Multer processing complete');
+      console.log('Multer processing complete. File exists:', !!req.file);
+      if (req.file) {
+        console.log('File buffer length:', req.file.buffer?.length);
+        console.log('File path:', req.file.path);
+      }
       next();
     });
   },
@@ -50,18 +56,39 @@ router.post('/upload-profile-picture',
         });
       }
 
-      console.log('File received:', {
+      console.log('File details:', {
         filename: req.file.originalname,
         mimetype: req.file.mimetype,
-        size: req.file.size
+        size: req.file.size,
+        bufferType: typeof req.file.buffer,
+        bufferLength: req.file.buffer?.length,
+        hasPath: !!req.file.path,
+        path: req.file.path
       });
 
       // Process upload to Cloudinary
-      console.log('Uploading to Cloudinary...');
+      console.log('Calling processProfilePictureUpload...');
       const uploadResult = await processProfilePictureUpload(req.file, req.user._id);
-      console.log('Cloudinary upload successful:', uploadResult.url);
+      
+      console.log('Cloudinary upload result:', {
+        hasUrl: !!uploadResult.url,
+        urlType: typeof uploadResult.url,
+        urlFirst100: uploadResult.url?.substring(0, 100),
+        hasPublicId: !!uploadResult.public_id,
+        success: uploadResult.success
+      });
+      
+      if (!uploadResult.url) {
+        throw new Error('No URL returned from Cloudinary upload');
+      }
+      
+      if (uploadResult.url.startsWith('data:')) {
+        console.error('ERROR: Cloudinary returned base64 instead of URL!');
+        throw new Error('Invalid response from Cloudinary - got base64 data');
+      }
       
       // Update user's picture in database
+      console.log('Updating user in database...');
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,
         { 
@@ -77,52 +104,56 @@ router.post('/upload-profile-picture',
         { new: true, runValidators: true }
       ).select('-password -passwordHistory -resetPasswordToken -resetPasswordExpires -failedLoginAttempts -lockUntil -twoFactorSecret -emailVerificationToken -deviceTokens -loginHistory -suspiciousActivityDetected');
       
-      console.log('Database updated successfully');
+      console.log('Database update successful. Updated user picture:', updatedUser.picture);
       
-      // Return a CLEAN response with all needed data
-      const userResponse = updatedUser.toObject();
-      
-      res.json({
+      // Return response
+      const responseData = {
         success: true,
         message: 'Profile picture uploaded successfully',
         picture: uploadResult.url,
         user: {
-          _id: userResponse._id,
-          name: userResponse.name,
-          email: userResponse.email,
-          picture: uploadResult.url, // Use the new URL
-          role: userResponse.role,
-          emailVerified: userResponse.emailVerified,
-          phoneNumber: userResponse.phoneNumber,
-          country: userResponse.country,
-          city: userResponse.city,
-          bio: userResponse.bio,
-          gender: userResponse.gender,
-          dateOfBirth: userResponse.dateOfBirth,
-          languages: userResponse.languages,
-          occupation: userResponse.occupation,
-          education: userResponse.education,
-          privacySettings: userResponse.privacySettings,
-          rating: userResponse.rating,
-          completedOrders: userResponse.completedOrders,
-          isOnline: userResponse.isOnline,
-          lastSeenAt: userResponse.lastSeenAt,
-          createdAt: userResponse.createdAt,
-          updatedAt: userResponse.updatedAt
+          _id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          picture: uploadResult.url,
+          role: updatedUser.role,
+          emailVerified: updatedUser.emailVerified,
+          phoneNumber: updatedUser.phoneNumber,
+          country: updatedUser.country,
+          city: updatedUser.city,
+          bio: updatedUser.bio,
+          gender: updatedUser.gender,
+          dateOfBirth: updatedUser.dateOfBirth,
+          languages: updatedUser.languages,
+          occupation: updatedUser.occupation,
+          education: updatedUser.education,
+          privacySettings: updatedUser.privacySettings,
+          rating: updatedUser.rating,
+          completedOrders: updatedUser.completedOrders,
+          isOnline: updatedUser.isOnline,
+          lastSeenAt: updatedUser.lastSeenAt,
+          createdAt: updatedUser.createdAt,
+          updatedAt: updatedUser.updatedAt
         }
-      });
+      };
+      
+      console.log('Sending response. Picture URL in response:', responseData.picture);
+      console.log('Response data structure:', JSON.stringify(responseData).substring(0, 200) + '...');
+      
+      res.json(responseData);
       
     } catch (error) {
       console.error('Profile picture upload error:', error);
+      console.error('Error stack:', error.stack);
       
       res.status(500).json({
         success: false,
-        message: 'Failed to upload profile picture',
+        message: 'Failed to upload profile picture: ' + error.message,
         error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         code: 'SERVER_ERROR'
       });
     } finally {
-      console.log('=== UPLOAD REQUEST END ===');
+      console.log('=== UPLOAD REQUEST END ===\n');
     }
   }
 );

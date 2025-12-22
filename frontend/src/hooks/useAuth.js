@@ -209,29 +209,41 @@ export const useGetProfile = () => {
   
   return useQuery({
     queryKey: ['userProfile'],
-    queryFn: authAPI.getProfile,
+    queryFn: async () => {
+      const response = await authAPI.getProfile();
+      if (response.success && response.user) {
+        // Add cache busting to picture URL
+        if (response.user.picture) {
+          response.user.picture = `${response.user.picture.split('?')[0]}?t=${Date.now()}`;
+        }
+        setUser(response.user);
+      }
+      return response;
+    },
     enabled: !!useAuthStore.getState().token,
     retry: 1,
-    onSuccess: (data) => {
-      if (data.success && data.user) {
-        setUser(data.user);
-      }
-    },
     onError: (error) => {
       if (error.response?.status === 401) {
-        // Token expired, clear auth
         useAuthStore.getState().logout();
       }
     },
+    // Add staleTime and cacheTime configuration
+    staleTime: 1000 * 30, // 30 seconds
+    cacheTime: 1000 * 60 * 5, // 5 minutes
   });
 };
 
+// useAuth.js - FIXED useUpdateProfile hook
 export const useUpdateProfile = () => {
   const setUser = useAuthStore((state) => state.setUser);
   const queryClient = useQueryClient();
+  const token = useAuthStore((state) => state.token);
   
   return useMutation({
-    mutationFn: authAPI.updateProfile,
+    mutationFn: async (userData) => {
+      console.log('Updating profile with token:', token ? 'Token exists' : 'No token');
+      return authAPI.updateProfile(userData);
+    },
     onSuccess: (data) => {
       if (data.success && data.user) {
         setUser(data.user);
@@ -249,7 +261,18 @@ export const useUpdateProfile = () => {
     onError: (error) => {
       const errorMessage = error.response?.data?.message || 'Failed to update profile';
       
-      if (error.response?.status === 409) {
+      // Log detailed error for debugging
+      console.error('Update profile error:', {
+        message: errorMessage,
+        status: error.response?.status,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+      
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please login again.');
+        useAuthStore.getState().logout();
+      } else if (error.response?.status === 409) {
         toast.error('Email already taken');
       } else if (error.response?.status === 400 && error.response.data.errors) {
         error.response.data.errors.forEach(err => {
