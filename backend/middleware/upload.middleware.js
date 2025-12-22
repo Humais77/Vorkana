@@ -264,7 +264,43 @@ const handleMulterError = (err, req, res, next) => {
   
   next(err);
 };
+const videoFilter = (req, file, cb) => {
+  const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+  const maxSize = 100 * 1024 * 1024; // 100MB for videos
+  
+  if (allowedTypes.includes(file.mimetype)) {
+    if (file.size > maxSize) {
+      return cb(new Error(`Video size exceeds ${maxSize / (1024 * 1024)}MB limit`), false);
+    }
+    return cb(null, true);
+  }
+  
+  cb(new Error('Invalid video type. Only MP4, WebM, and MOV files are allowed.'), false);
+};
 
+// Video upload instance
+const videoUpload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, path.join(tempDir, 'videos'));
+    },
+    filename: function (req, file, cb) {
+      const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+      const sanitizedName = file.originalname
+        .replace(path.extname(file.originalname), '')
+        .replace(/[^a-zA-Z0-9-_]/g, '_')
+        .substring(0, 50);
+      const ext = path.extname(file.originalname).toLowerCase();
+      
+      cb(null, `${sanitizedName}-${uniqueSuffix}${ext}`);
+    }
+  }),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB
+    files: 1
+  },
+  fileFilter: videoFilter
+}).single('video');
 module.exports = {
   upload,
   thumbnailUpload,
@@ -272,5 +308,7 @@ module.exports = {
   processUploadToCloudinary,
   processProfilePictureUpload,
   handleMulterError,
-  cleanupLocalFiles
+  cleanupLocalFiles,
+   videoUpload,
+  videoFilter
 };

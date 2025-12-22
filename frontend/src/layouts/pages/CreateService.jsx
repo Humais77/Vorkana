@@ -30,12 +30,13 @@ import {
   Type,
   Layers,
   Sparkles,
- 
+  Image as ImageIcon
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
 import { toast } from 'react-hot-toast';
-
+import { useAuthStore } from '../../store/useAuthStore';
+import { isProfileCompleteEnough } from '../../utils/profileUtils'
 const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
@@ -47,7 +48,7 @@ const CreateService = () => {
     error: categoryError,
     refetch: refetchCategories 
   } = useCategories();
-
+const { user:currentUser } = useAuthStore();
   // Form state with all fields from service model
   const [formData, setFormData] = useState({
     // Basic Information
@@ -122,7 +123,12 @@ const CreateService = () => {
 const [uploadingImages, setUploadingImages] = useState(false);
 const [thumbnailFile, setThumbnailFile] = useState(null);
 const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-
+useEffect(() => {
+    if (!isProfileCompleteEnough(currentUser, 70)) {
+      toast.error('Please complete your profile before creating a service');
+      navigate('/dashboard');
+    }
+  }, [currentUser, navigate]);
   // Update subcategories when category changes
   useEffect(() => {
     if (formData.category && categoriesData && Array.isArray(categoriesData)) {
@@ -2016,110 +2022,7 @@ uploadedImages.forEach((img) => {
             </div>
           </div>
 
-          {/* Section 8: SEO & Metadata */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <Eye className="w-6 h-6 mr-2 text-teal-600" />
-              SEO & Metadata
-            </h2>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meta Title
-                </label>
-                <input
-                  type="text"
-                  name="metaTitle"
-                  value={formData.metaTitle}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="SEO title for search engines"
-                  maxLength="60"
-                  disabled={createServiceMutation.isPending}
-                />
-                <div className="flex justify-between mt-2">
-                  <p className="text-xs text-gray-500">
-                    Recommended: 50-60 characters
-                  </p>
-                  <span className="text-xs text-gray-500">
-                    {formData.metaTitle.length}/60
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meta Description
-                </label>
-                <textarea
-                  name="metaDescription"
-                  value={formData.metaDescription}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows="3"
-                  placeholder="SEO description for search engines"
-                  maxLength="160"
-                  disabled={createServiceMutation.isPending}
-                />
-                <div className="flex justify-between mt-2">
-                  <p className="text-xs text-gray-500">
-                    Recommended: 150-160 characters
-                  </p>
-                  <span className="text-xs text-gray-500">
-                    {formData.metaDescription.length}/160
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="flex items-center p-3 bg-gray-50 rounded-lg border">
-                  <input
-                    type="checkbox"
-                    id="isFeatured"
-                    name="isFeatured"
-                    checked={formData.isFeatured}
-                    onChange={handleInputChange}
-                    className="h-4 w-4 text-blue-600 rounded"
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <label htmlFor="isFeatured" className="ml-2 text-sm text-gray-700">
-                    Featured Service
-                  </label>
-                </div>
-
-                <div className="flex items-center p-3 bg-gray-50 rounded-lg border">
-                  <input
-                    type="checkbox"
-                    id="isRecommended"
-                    name="isRecommended"
-                    checked={formData.isRecommended}
-                    onChange={handleInputChange}
-                    className="h-4 w-4 text-blue-600 rounded"
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <label htmlFor="isRecommended" className="ml-2 text-sm text-gray-700">
-                    Recommended Service
-                  </label>
-                </div>
-
-                <div className="flex items-center p-3 bg-gray-50 rounded-lg border">
-                  <input
-                    type="checkbox"
-                    id="isPopular"
-                    name="isPopular"
-                    checked={formData.isPopular}
-                    onChange={handleInputChange}
-                    className="h-4 w-4 text-blue-600 rounded"
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <label htmlFor="isPopular" className="ml-2 text-sm text-gray-700">
-                    Popular Service
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
+         
 
           {/* Validation Summary */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">

@@ -14,7 +14,8 @@ import {
   Sparkles,
   Heart,
   AlertCircle,
-  Loader2
+  Loader2,
+  Image as ImageIcon
 } from "lucide-react";
 import { useServices, useSearchServices, useCategories } from "../../hooks/useServices";
 import { useToggleLike } from "../../hooks/useServices";
@@ -214,19 +215,66 @@ const ServiceListingPage = () => {
     { value: 'newest', label: 'Newest First' }
   ];
 
+  // Get service thumbnail - prioritizing database thumbnail
+  const getServiceThumbnail = (service) => {
+    // First priority: Service thumbnail from database
+    if (service.thumbnail?.url) {
+      return service.thumbnail.url;
+    }
+    
+    // Second priority: First image from images array
+    if (service.images && service.images.length > 0 && service.images[0]?.url) {
+      return service.images[0].url;
+    }
+    
+    // Third priority: Category-specific default images
+    const categoryName = service.categoryDetails?.name?.toLowerCase() || '';
+    if (categoryName.includes('design') || categoryName.includes('art')) {
+      return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else if (categoryName.includes('development') || categoryName.includes('programming')) {
+      return 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else if (categoryName.includes('writing') || categoryName.includes('content')) {
+      return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else if (categoryName.includes('marketing') || categoryName.includes('business')) {
+      return 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else if (categoryName.includes('video') || categoryName.includes('animation')) {
+      return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else if (categoryName.includes('music') || categoryName.includes('audio')) {
+      return 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    } else {
+      // Default generic service image
+      return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    }
+  };
+
   // Get seller information from service
   const getUserInfo = (service) => {
-  if (service.user && typeof service.user === 'object') {
-    return service.user;
-  }
-  // Fallback if service.user doesn't exist yet
-  return {
-    username: service.createdBy?.username || 'Service Provider',
-    avatar: service.createdBy?.avatar || 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
-    verified: service.createdBy?.verified || false,
-    level: service.createdBy?.level || 'Beginner'
+    if (service.createdBy && typeof service.createdBy === 'object') {
+      return {
+        username: service.createdBy.name || 'Service Provider',
+        avatar: service.createdBy.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+        verified: service.createdBy.emailVerified || false,
+        level: service.createdBy.accountType || 'Basic'
+      };
+    }
+    
+    if (service.creatorDetails && typeof service.creatorDetails === 'object') {
+      return {
+        username: service.creatorDetails.name || 'Service Provider',
+        avatar: service.creatorDetails.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+        verified: service.creatorDetails.emailVerified || false,
+        level: service.creatorDetails.accountType || 'Basic'
+      };
+    }
+    
+    // Fallback
+    return {
+      username: 'Service Provider',
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+      verified: false,
+      level: 'Basic'
+    };
   };
-};
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -435,6 +483,8 @@ const ServiceListingPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
               {services.map(service => {
                 const userInfo = getUserInfo(service);
+                const thumbnailUrl = getServiceThumbnail(service);
+                
                 return (
                   <div
                     key={service._id}
@@ -444,11 +494,12 @@ const ServiceListingPage = () => {
                     {/* Service Image */}
                     <div className="relative h-48 overflow-hidden">
                       <img
-                        src={service.thumbnail || service.images?.[0] || 'https://images.pexels.com/photos/1181673/pexels-photo-1181673.jpeg'}
+                        src={thumbnailUrl}
                         alt={service.title}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         onError={(e) => {
-                          e.target.src = 'https://images.pexels.com/photos/1181673/pexels-photo-1181673.jpeg';
+                          // Fallback to a different image if the thumbnail fails to load
+                          e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
                         }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
@@ -474,31 +525,39 @@ const ServiceListingPage = () => {
                           FEATURED
                         </div>
                       )}
+                      
+                      {/* No Image Indicator */}
+                      {!service.thumbnail?.url && !service.images?.[0]?.url && (
+                        <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
+                          <div className="text-center">
+                            <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                            <span className="text-gray-500 text-sm">No Image</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Service Content */}
                     <div className="p-5">
                       {/* Seller Info */}
                       <div className="flex items-center gap-3 mb-4">
-  <img
-    src={getUserInfo(service).avatar}
-    alt={getUserInfo(service).username}
-    className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
-  />
-  <div>
-    <div className="flex items-center gap-2">
-      <h4 className="font-semibold text-gray-900 text-sm">
-        {getUserInfo(service).username}
-      </h4>
-      {getUserInfo(service).verified && (
-        <CheckCircle className="w-4 h-4 text-blue-500" />
-      )}
-    </div>
-    {getUserInfo(service).level && (
-      <span className="text-xs text-gray-500">{getUserInfo(service).level}</span>
-    )}
-  </div>
-</div>
+                        <img
+                          src={userInfo.avatar}
+                          alt={userInfo.username}
+                          className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold text-gray-900 text-sm">
+                              {userInfo.username}
+                            </h4>
+                            {userInfo.verified && (
+                              <CheckCircle className="w-4 h-4 text-blue-500" />
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 capitalize">{userInfo.level}</span>
+                        </div>
+                      </div>
 
                       {/* Service Title & Description */}
                       <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-1">
@@ -522,23 +581,6 @@ const ServiceListingPage = () => {
                         </div>
                       )}
 
-                      {/* Stats */}
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                          <span className="font-bold text-gray-900">{service.rating?.toFixed(1) || '0.0'}</span>
-                          <span className="text-gray-500 text-sm">
-                            ({service.reviewsCount || 0})
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-sm">
-                            {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
-                          </span>
-                        </div>
-                      </div>
-
                       {/* Price & CTA */}
                       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                         <div>
@@ -552,7 +594,7 @@ const ServiceListingPage = () => {
                             e.stopPropagation();
                             handleViewDetails(service._id, service.slug);
                           }}
-                          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all hover:shadow-lg text-sm"
+                          className="px-4 py-2 bg-gradient-to-r bg-blue-600  text-white font-medium rounded-lg hover:bg-blue-700 transition-all hover:shadow-lg text-sm"
                         >
                           View Details
                         </button>

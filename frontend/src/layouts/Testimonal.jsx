@@ -201,25 +201,6 @@ const Testimonials = () => {
           </div>
         </div>
 
-        {/* Stats Section */}
-        <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-          <div className="p-6 bg-white rounded-xl shadow-sm">
-            <div className="text-3xl md:text-4xl font-bold text-blue-600 mb-2">10K+</div>
-            <div className="text-gray-600">Happy Clients</div>
-          </div>
-          <div className="p-6 bg-white rounded-xl shadow-sm">
-            <div className="text-3xl md:text-4xl font-bold text-blue-600 mb-2">4.9/5</div>
-            <div className="text-gray-600">Average Rating</div>
-          </div>
-          <div className="p-6 bg-white rounded-xl shadow-sm">
-            <div className="text-3xl md:text-5xl font-bold text-blue-600 mb-2">95%</div>
-            <div className="text-gray-600">Satisfaction Rate</div>
-          </div>
-          <div className="p-6 bg-white rounded-xl shadow-sm">
-            <div className="text-3xl md:text-4xl font-bold text-blue-600 mb-2">24h</div>
-            <div className="text-gray-600">Avg. Response Time</div>
-          </div>
-        </div>
       </div>
     </section>
   );

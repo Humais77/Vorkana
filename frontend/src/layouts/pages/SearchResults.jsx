@@ -147,23 +147,19 @@ const SearchResults = () => {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Search Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="py-4">
+      {/* REMOVED: Search Header section entirely */}
+      
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Results Header - Now includes a search bar instead of the navbar one */}
+        <div className="mb-6">
+          <div className="mb-4">
             <SearchComponent 
               initialQuery={query}
               variant="full"
               className="w-full"
             />
           </div>
-        </div>
-      </div>
-      
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Results Header */}
-        <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
             Results for "{query}"
           </h1>
@@ -178,143 +174,65 @@ const SearchResults = () => {
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm"
               >
                 <option value="relevance">Most Relevant</option>
-                <option value="best_selling">Best Selling</option>
                 <option value="newest">Newest Arrivals</option>
                 <option value="price_low">Price: Low to High</option>
                 <option value="price_high">Price: High to Low</option>
-                <option value="rating">Highest Rated</option>
               </select>
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Filters Sidebar */}
-          <div className="lg:w-64 flex-shrink-0">
-            <div className="bg-white rounded-lg border border-gray-200 p-6 sticky top-24">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-bold text-gray-900">Filters</h3>
-                <button
-                  onClick={clearAllFilters}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Clear all
-                </button>
-              </div>
-              
-              {/* Category Filter */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">Category</h4>
-                <div className="space-y-2">
-                  {results?.relatedCategories?.slice(0, 5).map(category => (
-                    <label key={category._id} className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="category"
-                        checked={selectedFilters.category === category._id}
-                        onChange={() => handleFilterChange('category', category._id)}
-                        className="w-4 h-4 text-green-600"
-                      />
-                      <span className="text-gray-700">{category.name}</span>
-                      <span className="text-xs text-gray-500 ml-auto">
-                        {formatNumber(category.servicesCount || 0)}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Service Options Filter */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">Service options</h4>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Online services</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Custom offers</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Pro services</span>
-                  </label>
-                </div>
-              </div>
-              
-              {/* Seller Details Filter */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">Seller details</h4>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Top rated sellers</span>
-                    <BadgeCheck className="w-4 h-4 text-green-600 ml-auto" />
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Level 1</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 text-green-600" />
-                    <span className="text-gray-700">Level 2</span>
-                  </label>
-                </div>
-              </div>
-              
-              {/* Budget Filter */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">Budget</h4>
-                <div className="space-y-2">
-                  {[
-                    { label: 'Under $50', value: '0-50' },
-                    { label: '$50 - $100', value: '50-100' },
-                    { label: '$100 - $200', value: '100-200' },
-                    { label: '$200 - $500', value: '200-500' },
-                    { label: '$500+', value: '500-10000' }
-                  ].map(budget => (
-                    <label key={budget.value} className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="budget"
-                        checked={selectedFilters.budget === budget.value}
-                        onChange={() => handleFilterChange('budget', budget.value)}
-                        className="w-4 h-4 text-green-600"
-                      />
-                      <span className="text-gray-700">{budget.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Delivery Time Filter */}
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">Delivery time</h4>
-                <div className="space-y-2">
-                  {[
-                    { label: '24 Hours', value: '1' },
-                    { label: '3 Days', value: '3' },
-                    { label: '7 Days', value: '7' },
-                    { label: '14 Days', value: '14' },
-                    { label: '30 Days', value: '30' }
-                  ].map(time => (
-                    <label key={time.value} className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="delivery_time"
-                        checked={selectedFilters.delivery_time === time.value}
-                        onChange={() => handleFilterChange('delivery_time', time.value)}
-                        className="w-4 h-4 text-green-600"
-                      />
-                      <span className="text-gray-700">{time.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Top Filters Bar */}
+        <div className="bg-white border rounded-lg mb-6">
+          <div className="flex flex-wrap items-center gap-3 p-4">
+
+            {/* Category */}
+            <select
+              onChange={(e) => handleFilterChange('category', e.target.value)}
+              className="px-4 py-2 border rounded-full text-sm bg-white"
+            >
+              <option value="">Category</option>
+              {results?.relatedCategories?.map(cat => (
+                <option key={cat._id} value={cat._id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+
+
           
+
+            {/* Budget */}
+            <select
+              onChange={(e) => handleFilterChange('budget', e.target.value)}
+              className="px-4 py-2 border rounded-full text-sm bg-white"
+            >
+              <option value="">Budget</option>
+              <option value="0-50">Under $50</option>
+              <option value="50-100">$50 - $100</option>
+              <option value="100-200">$100 - $200</option>
+              <option value="200-500">$200 - $500</option>
+              <option value="500-10000">$500+</option>
+            </select>
+
+            {/* Delivery Time */}
+            <select
+              onChange={(e) => handleFilterChange('delivery_time', e.target.value)}
+              className="px-4 py-2 border rounded-full text-sm bg-white"
+            >
+              <option value="">Delivery time</option>
+              <option value="1">24 Hours</option>
+              <option value="3">3 Days</option>
+              <option value="7">7 Days</option>
+              <option value="14">14 Days</option>
+              <option value="30">30 Days</option>
+            </select>
+
+
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-8">
+
           {/* Results Grid */}
           <div className="flex-1">
             {/* Top Freelancers Section */}

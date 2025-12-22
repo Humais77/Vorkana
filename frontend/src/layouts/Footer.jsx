@@ -4,17 +4,7 @@ import TrackedLink from '../components/TrackedLink';
 
 const Footer = () => {
   const footerLinks = {
-    discover: {
-      title: "Discover",
-      links: [
-        { label: "Browse Projects", path: "/projects", source: "footer", section: "discover" },
-        { label: "Find Freelancers", path: "/talent", source: "footer", section: "discover" },
-        { label: "Popular Skills", path: "/skills", source: "footer", section: "discover" },
-        { label: "Top Rated", path: "/top-rated", source: "footer", section: "discover" },
-        { label: "Trending Services", path: "/trending", source: "footer", section: "discover" },
-        { label: "Local Freelancers", path: "/local", source: "footer", section: "discover" },
-      ]
-    },
+   
     company: {
       title: "Company",
       links: [
@@ -42,35 +32,6 @@ const Footer = () => {
   return (
     <footer className="bg-gradient-to-b from-slate-50 to-gray-100 text-gray-800 pt-16 pb-10 border-t border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Main Footer Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-8 mb-10">
-          {Object.values(footerLinks).map((section, index) => (
-            <div key={index} className="space-y-4">
-              <h3 className="font-bold text-lg text-gray-900 mb-6 border-l-4 border-blue-500 pl-3">
-                {section.title}
-              </h3>
-              <ul className="space-y-3">
-                {section.links.map((link, linkIndex) => (
-                  <li key={linkIndex}>
-                    <TrackedLink 
-                      to={link.path}
-                      source={link.source}
-                      medium="website"
-                      campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
-                      className="text-gray-600 hover:text-blue-600 transition-colors duration-200 text-sm block py-1"
-                    >
-                      {link.label}
-                    </TrackedLink>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-gray-300 my-10"></div>
-
         {/* Newsletter & Contact */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-10">
           {/* Newsletter */}

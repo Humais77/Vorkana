@@ -150,13 +150,13 @@ export const useLogout = () => {
     onSuccess: () => {
       logout();
       toast.success('Logged out successfully');
-      navigate('/signin');
+      navigate('/');
     },
     onError: (error) => {
       // Still logout even if API call fails
       logout();
       toast.error('Logged out locally');
-      navigate('/signin');
+      navigate('/');
     },
   });
 };

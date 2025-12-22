@@ -42,7 +42,7 @@ import { useCategoryStore } from "../../store/useCategoryStore";
 import { useCreateGig } from "../../hooks/useGigs";
 import { useParentCategories } from '../../hooks/useCategories';
 import { SeoWrapper } from "../../components/SeoWrapper";
-
+import { isProfileCompleteEnough } from '../../utils/profileUtils';
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 // Structured Data for Gig Creation
@@ -264,7 +264,12 @@ const GigCreate = () => {
       }));
     }
   }, [formData.projectCategory, categoriesData, storedCategories]);
-
+useEffect(() => {
+    if (!isProfileCompleteEnough(currentUser, 70)) {
+      toast.error('Please complete your profile before creating a service');
+      navigate('/dashboard');
+    }
+  }, [currentUser, navigate]);
   // Cleanup when component unmounts
   useEffect(() => {
     return () => {

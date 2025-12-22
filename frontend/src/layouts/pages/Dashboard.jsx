@@ -1,3 +1,4 @@
+// Dashboard.js - Updated version
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -26,7 +27,9 @@ import {
   Calendar,
   CreditCard,
   MessageSquare,
-  Users
+  Users,
+  AlertCircle,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -38,6 +41,7 @@ import {
 } from '../../hooks/useGigs';
 import { useMyServices, useDeleteService } from '../../hooks/useServices';
 import { toast } from 'react-hot-toast';
+import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../utils/profileUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -52,7 +56,13 @@ const Dashboard = () => {
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('services');
   const [viewMode, setViewMode] = useState('grid');
+  const [showProfileWarning, setShowProfileWarning] = useState(false);
   
+  // Calculate profile completion
+  const profileCompletion = useMemo(() => calculateProfileCompletion(user), [user]);
+  const canCreateContent = useMemo(() => isProfileCompleteEnough(user, 70), [user]);
+  const profileSuggestions = useMemo(() => getProfileSuggestions(user), [user]);
+
   // Use services hook
   const { 
     data: servicesResponse, 
@@ -126,11 +136,25 @@ const Dashboard = () => {
   }, [gigs, services, resetSelection]);
 
   const handleCreateService = () => {
+    if (!canCreateContent) {
+      setShowProfileWarning(true);
+      toast.error('Complete your profile to create services');
+      return;
+    }
     navigate('/services/create');
   };
 
   const handleCreateGig = () => {
+    if (!canCreateContent) {
+      setShowProfileWarning(true);
+      toast.error('Complete your profile to create gigs');
+      return;
+    }
     navigate('/create-gig');
+  };
+
+  const handleCompleteProfile = () => {
+    navigate('/profile');
   };
 
   const handleServiceClick = (serviceId) => {
@@ -333,7 +357,107 @@ const Dashboard = () => {
           </div>
         </div>
 
-        
+        {/* Profile Completion Warning */}
+        {!canCreateContent && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl border border-yellow-200 shadow-lg p-6"
+          >
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="bg-yellow-100 p-3 rounded-full">
+                  <Shield className="w-8 h-8 text-yellow-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-yellow-900 mb-1">
+                    Complete Your Profile to Start Creating
+                  </h3>
+                  <p className="text-yellow-800">
+                    Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs and services.
+                  </p>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-sm text-yellow-800 mb-1">
+                      <span>Profile Progress</span>
+                      <span className="font-bold">{profileCompletion}%</span>
+                    </div>
+                    <div className="w-full bg-yellow-200 rounded-full h-2.5">
+                      <div 
+                        className="bg-yellow-600 h-2.5 rounded-full transition-all duration-500"
+                        style={{ width: `${profileCompletion}%` }}
+                      />
+                    </div>
+                  </div>
+                  {profileSuggestions.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm text-yellow-800 font-medium mb-1">Suggested improvements:</p>
+                      <ul className="text-sm text-yellow-700">
+                        {profileSuggestions.map((suggestion, index) => (
+                          <li key={index} className="flex items-center">
+                            <ArrowRight className="w-3 h-3 mr-2" />
+                            {suggestion}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={handleCompleteProfile}
+                className="px-6 py-3 bg-gradient-to-r from-yellow-600 to-orange-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity whitespace-nowrap"
+              >
+                Complete Profile Now
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Profile Completion Info Bar */}
+        <div className="mb-6 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <User className="w-5 h-5 text-gray-600" />
+                <span className="text-sm font-medium text-gray-900">Profile Status:</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-48">
+                  <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                    <span>Completion</span>
+                    <span className="font-bold">{profileCompletion}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        profileCompletion >= 80 ? 'bg-green-600' :
+                        profileCompletion >= 70 ? 'bg-blue-600' : 'bg-yellow-500'
+                      }`}
+                      style={{ width: `${profileCompletion}%` }}
+                    />
+                  </div>
+                </div>
+                {canCreateContent ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Ready to Create Content
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Complete Profile Required
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleCompleteProfile}
+              className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+            >
+              Improve Profile
+            </button>
+          </div>
+        </div>
 
         {/* Quick Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -385,16 +509,26 @@ const Dashboard = () => {
             <div className="flex gap-3">
               <button
                 onClick={handleCreateGig}
-                disabled={isLoading}
-                className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!canCreateContent || isLoading}
+                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  canCreateContent 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={!canCreateContent ? "Complete your profile to create gigs" : ""}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Create Gig
               </button>
               <button
                 onClick={handleCreateService}
-                disabled={isLoading}
-                className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!canCreateContent || isLoading}
+                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  canCreateContent 
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={!canCreateContent ? "Complete your profile to create services" : ""}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Create Service
@@ -402,6 +536,20 @@ const Dashboard = () => {
             </div>
           </div>
 
+          {/* Info message for users who can't create content */}
+          {!canCreateContent && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <Info className="w-5 h-5 text-blue-600" />
+                <p className="text-blue-800 text-sm">
+                  Complete your profile to unlock the ability to create gigs and services. 
+                  A complete profile helps build trust with clients and increases your chances of success.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Rest of your existing Dashboard code remains the same... */}
           {/* Tab Navigation */}
           <div className="bg-gray-50 rounded-xl p-2 mb-6">
             <div className="flex items-center space-x-4">
@@ -654,7 +802,13 @@ const Dashboard = () => {
   );
 };
 
-// ServicesGridView component
+// Add Info icon import if not already present
+const Info = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
 const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
   if (isLoading) {
     return (

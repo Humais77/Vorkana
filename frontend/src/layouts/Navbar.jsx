@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, AlertCircle, Check, ArrowRight, Shield } from "lucide-react";
+import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase } from "lucide-react";
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
@@ -71,16 +71,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isHomePage, menuOpen, exploreOpen]);
 
-  useEffect(() => {
-    if (!isHomePage) {
-      setShowSearch(true);
-      setScrolled(true);
-    } else {
-      setShowSearch(false);
-      setScrolled(false);
-    }
-  }, [isHomePage]);
-
   const handleLogout = async () => {
     try {
       await logoutMutation.mutateAsync();
@@ -119,6 +109,30 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     exit: { opacity: 0, y: -10, transition: { duration: 0.15, ease: "easeIn" } }
   };
 
+  // Search field animation
+  const searchAnimation = {
+    hidden: { opacity: 0, x: -20, scale: 0.95 },
+    visible: { 
+      opacity: 1, 
+      x: 0, 
+      scale: 1,
+      transition: { 
+        duration: 0.3, 
+        ease: "easeOut",
+        when: "beforeChildren"
+      }
+    },
+    exit: { 
+      opacity: 0, 
+      x: -20, 
+      scale: 0.95,
+      transition: { 
+        duration: 0.2, 
+        ease: "easeIn" 
+      }
+    }
+  };
+
   if (loading) {
     return (
       <nav className="w-full bg-white border-b shadow-sm sticky top-0 z-50">
@@ -133,8 +147,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     <>
       <nav className="w-full bg-white border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 flex-1">
+          <div className="flex items-center justify-between h-10 lg:h-12">
+            <div className="flex items-center space-x-4 flex-1 h-full">
               <button
                 onClick={handleMobileMenuClick}
                 className="lg:hidden p-2 text-gray-600 hover:text-black transition-colors duration-200"
@@ -163,30 +177,27 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 </span>
               </Link>
 
-              {isHomePage ? (
-  showSearch && (
-    <div className="hidden lg:block flex-1 max-w-2xl">
-      <SearchComponent 
-        placeholder="Search for services, freelancers, or categories..."
-        variant="navbar"
-        onSearchSelect={(query) => {
-      // Optional: Handle search selection
-      console.log('Search selected:', query);
-    }}
-      />
-    </div>
-  )
-) : (
-  <div className="hidden lg:block flex-1 max-w-2xl">
-    <SearchComponent 
-      placeholder="Search for services, freelancers, or categories..."
-      variant="navbar"
-    />
-  </div>
-)}
+              {/* Search bar with Framer Motion animation */}
+              <AnimatePresence mode="wait">
+                {showSearch && (
+                  <motion.div
+                    key="search-field"
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    variants={searchAnimation}
+                    className="flex-1 max-w-2xl ml-6"
+                  >
+                    <SearchComponent 
+                      placeholder="Search for services, freelancers, or categories..."
+                      variant="navbar"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            <div className="hidden lg:block mx-6">
+            <div className="hidden lg:block">
               <div className="relative">
                 <button
                   onClick={() => setExploreOpen(!exploreOpen)}
@@ -251,37 +262,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             <div className="flex items-center space-x-4">
-             {isHomePage ? (
-  showSearch && (
-    <div className="hidden lg:block flex-1 max-w-2xl">
-      <SearchComponent 
-        placeholder="Search for services, freelancers, or categories..."
-        variant="navbar"
-        onSearchSelect={() => {
-          // Handle search selection if needed
-        }}
-      />
-    </div>
-  )
-) : (
-  <div className="hidden lg:block flex-1 max-w-2xl">
-    <SearchComponent 
-      placeholder="Search for services, freelancers, or categories..."
-      variant="navbar"
-    />
-  </div>
-)}
-
-
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">
                   {/* ADMIN BUTTON - Only shown if user is admin */}
                   {isAdminUser && (
                     <Link
                       to="/admin"
-                      className="md:inline bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-3 py-1 rounded-full  hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
+                      className="md:inline bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-3 py-1 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
                     >
-
                       <span>Admin</span>
                     </Link>
                   )}
@@ -317,7 +305,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <div className="text-sm text-gray-500">{user?.email}</div>
                             <div className="mt-1">
                               <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium${isAdminUser
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${isAdminUser
                                     ? 'bg-red-100 text-red-700'
                                     : 'bg-green-100 text-green-700'
                                   }`}
@@ -346,7 +334,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                               <span>Dashboard</span>
                             </Link>
 
-
                             <button
                               onClick={handleLogout}
                               className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
@@ -361,15 +348,17 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   </div>
                 </div>
               ) : (
-                <div className="hidden lg:flex items-center space-x-3">
+                <div className="flex items-center space-x-3">
+                  {/* Sign In button - hidden on md and below, shown on lg and above */}
                   <button
                     onClick={() => {
                       if (onSigninClick) onSigninClick();
                     }}
-                    className="text-gray-700 hover:text-black font-medium px-3 py-2 transition-colors duration-200"
+                    className="hidden lg:block text-gray-700 hover:text-black font-medium px-3 py-2 transition-colors duration-200"
                   >
                     Sign In
                   </button>
+                  {/* Join button - always visible */}
                   <button
                     onClick={() => {
                       if (onSignupClick) onSignupClick();
@@ -409,12 +398,27 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       </button>
                     </div>
 
+                    {/* Search in mobile menu */}
+                    <div className="mb-6">
+                      <SearchComponent 
+                        placeholder="Search services..."
+                        variant="full"
+                        className="w-full"
+                      />
+                    </div>
+
                     {isAuthenticated && (
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-800 text-white font-bold text-lg">
-                            {user?.name?.charAt(0) || 'U'}
-                          </div>
+                          <img
+                            src={user?.picture || default_pp}
+                            alt={user?.name}
+                            className="w-10 h-10 rounded-full object-cover border border-gray-300"
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = default_pp;
+                            }}
+                          />
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold text-gray-800 truncate">{user?.name}</div>
                             <div className="text-sm text-gray-500 truncate">{user?.email}</div>

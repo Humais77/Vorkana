@@ -360,11 +360,11 @@ router.get('/search', async (req, res) => {
           thumbnail = defaultImages.default;
         }
       }
-      
+      const cleanTitle = item.title.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\d+\s*$/, '').trim();
       return {
         _id: item._id,
         type: type,
-        title: item.title,
+        title: cleanTitle,
         slug: item.slug || item._id.toString(),
         description: item.shortDescription || (item.description ? (item.description.substring(0, 150) + '...') : 'No description available'),
         price: item.price || item.budget || 0,
@@ -483,7 +483,7 @@ router.get('/suggestions', async (req, res) => {
     
     suggestions.push(...serviceSuggestions.map(item => ({
       type: 'service',
-      title: item.title,
+      title: item.title.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\d+\s*$/, '').trim(),
       slug: item.slug,
       price: item.price,
       rating: item.rating,

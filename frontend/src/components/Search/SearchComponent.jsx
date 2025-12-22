@@ -1,3 +1,4 @@
+// SearchComponent.jsx - Updated
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, X, Clock, ChevronRight, Loader2, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -57,7 +58,6 @@ const SearchComponent = ({
         const response = await axios.get(`${API_URL}/api/search/suggestions`, {
           params: {
             query,
-            search_autocomplete_type: 'recent-gigs-suggest',
             limit: 8
           }
         });
@@ -100,7 +100,7 @@ const SearchComponent = ({
     if (!searchQuery.trim()) return;
     
     saveRecentSearch(searchQuery);
-    navigate(`/search?query=${encodeURIComponent(searchQuery.trim())}&source=top-bar&search_in=everywhere`);
+    navigate(`/search?query=${encodeURIComponent(searchQuery.trim())}`);
     setShowDropdown(false);
   }, [navigate, saveRecentSearch]);
   
@@ -119,6 +119,25 @@ const SearchComponent = ({
     handleSearch(searchTerm);
   };
   
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Format suggestion title - remove any trailing numbers/0
+  const formatSuggestionTitle = (title) => {
+    if (!title) return '';
+    // Remove any trailing numbers, parentheses, or counts
+    return title.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\d+\s*$/, '').trim();
+  };
+
   return (
     <div ref={searchRef} className={`relative ${className}`}>
       <form onSubmit={handleSubmit} className="relative">
@@ -137,7 +156,7 @@ const SearchComponent = ({
           className={`
             w-full px-4 py-3 pl-12 text-sm border border-gray-300 
             focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent 
-            transition-all duration-200
+            transition-all duration-200 bg-white
             ${variant === 'navbar' ? 'rounded-full' : 'rounded-lg'}
           `}
         />
@@ -147,7 +166,7 @@ const SearchComponent = ({
           <button
             type="button"
             onClick={clearSearch}
-            className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full"
+            className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full transition-colors"
           >
             <X className="w-4 h-4 text-gray-400" />
           </button>
@@ -168,92 +187,112 @@ const SearchComponent = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-full mt-1 w-full bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50 max-h-[500px] overflow-y-auto"
+            className="absolute top-full mt-2 w-full bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50"
           >
-            {/* Suggestions */}
+            {/* Suggestions Section */}
             {query.length >= 2 && suggestions.length > 0 && (
-              <div className="p-4">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                  Suggestions
+              <div className="py-2">
+                <div className="px-4 pt-3 pb-2">
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    Suggestions
+                  </div>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-0.5">
                   {suggestions.map((suggestion, index) => (
                     <button
                       key={`${suggestion.type || 'item'}-${index}`}
                       onClick={() => handleSuggestionClick(suggestion)}
-                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 text-left group"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left group transition-colors duration-150"
                     >
-                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                         <Search className="w-4 h-4 text-gray-400" />
                       </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 group-hover:text-green-600">
-                          {suggestion.title || suggestion.text}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 group-hover:text-green-600 truncate">
+                          {formatSuggestionTitle(suggestion.title || suggestion.text)}
                         </div>
-                        {suggestion.rating && (
+                        {suggestion.rating > 0 && (
                           <div className="flex items-center gap-1 mt-1">
                             <Star className="w-3 h-3 text-yellow-400 fill-current" />
                             <span className="text-xs text-gray-500">
-                              {suggestion.rating} ({suggestion.reviewsCount || 0})
+                              {suggestion.rating.toFixed(1)} ({suggestion.reviewsCount || 0} reviews)
                             </span>
                           </div>
                         )}
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-300" />
+                      <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
                     </button>
                   ))}
                 </div>
               </div>
             )}
             
-            {/* Recent Searches */}
-            {query.length < 2 && recentSearches.length > 0 && (
-              <div className="p-4 border-t border-gray-200">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                  Recent Searches
-                </div>
-                <div className="space-y-2">
-                  {recentSearches.map((search, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleSearch(search.query)}
-                      className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 text-left"
-                    >
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-700">{search.query}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Trending Searches */}
+            {/* Empty Query State */}
             {query.length < 2 && (
-              <div className="p-4 border-t border-gray-200">
-                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                  <TrendingUp className="w-4 h-4" />
-                  Trending Searches
+              <>
+                {/* Recent Searches */}
+                {recentSearches.length > 0 && (
+                  <div className="py-2 border-t border-gray-100">
+                    <div className="px-4 pt-3 pb-2">
+                      <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Clock className="w-4 h-4" />
+                        Recent Searches
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      {recentSearches.map((search, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleSearch(search.query)}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left transition-colors duration-150"
+                        >
+                          <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <span className="text-gray-700 truncate">{search.query}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Trending Searches */}
+                <div className="py-2 border-t border-gray-100">
+                  <div className="px-4 pt-3 pb-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <TrendingUp className="w-4 h-4" />
+                      Trending Searches
+                    </div>
+                  </div>
+                  <div className="px-4 pb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {trendingSearches.map((term, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleSearch(term)}
+                          className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-150"
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {trendingSearches.map((term, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleSearch(term)}
-                      className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
-                    >
-                      {term}
-                    </button>
-                  ))}
-                </div>
+              </>
+            )}
+            
+            {/* No Results */}
+            {query.length >= 2 && suggestions.length === 0 && !isLoading && (
+              <div className="py-6 px-4 text-center">
+                <Search className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No results found for "{query}"</p>
               </div>
             )}
             
-            {/* Search Button */}
+            {/* Search Action Button */}
             {query.length >= 2 && (
-              <div className="border-t border-gray-200">
+              <div className="border-t border-gray-100">
                 <button
                   onClick={() => handleSearch(query)}
-                  className="w-full flex items-center justify-center gap-2 p-4 text-green-600 font-medium hover:bg-gray-50"
+                  className="w-full flex items-center justify-center gap-2 p-3 text-green-600 font-medium hover:bg-gray-50 transition-colors duration-150"
                 >
                   <Search className="w-4 h-4" />
                   Search for "{query}"
