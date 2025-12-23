@@ -1,4 +1,6 @@
+// components/home/MakeItHappen.jsx
 import { Grid, RefreshCw, Zap, Smile } from "lucide-react";
+import { useAuthStore } from "../store/useAuthStore";
 
 const items = [
   {
@@ -19,7 +21,9 @@ const items = [
   },
 ];
 
-const MakeItHappen = () => {
+const MakeItHappen = ({ onSignupClick }) => {
+  const { isAuthenticated } = useAuthStore();
+  
   return (
     <section className="bg-white py-20">
       <div className="max-w-7xl mx-auto px-6">
@@ -33,7 +37,6 @@ const MakeItHappen = () => {
               className="flex flex-row sm:flex-row md:flex-col lg:flex-col items-start md:items-center gap-4 md:text-center text-left"
             >
               <item.icon className="w-12 h-12 text-gray-800 flex-shrink-0 md:mb-2" />
-
               <p className="text-gray-600 text-lg leading-relaxed max-w-[260px] md:max-w-[220px]">
                 {item.text}
               </p>
@@ -41,9 +44,21 @@ const MakeItHappen = () => {
           ))}
         </div>
         <div className="text-center">
-          <button className="bg-black text-white px-8 py-3 rounded-md text-sm font-medium hover:bg-gray-800 transition">
-            Join now
-          </button>
+          {isAuthenticated ? (
+            <a
+              href="/services"
+              className="inline-block bg-black text-white px-8 py-3 rounded-md text-sm font-medium hover:bg-gray-800 transition"
+            >
+              Explore Services
+            </a>
+          ) : (
+            <button
+              onClick={onSignupClick}
+              className="bg-black text-white px-8 py-3 rounded-md text-sm font-medium hover:bg-gray-800 transition"
+            >
+              Join Now
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -51,4 +66,3 @@ const MakeItHappen = () => {
 };
 
 export default MakeItHappen;
-

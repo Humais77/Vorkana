@@ -9,6 +9,7 @@ import CallToAction from './CallToAction'
 import MakeItHappen from './MakeItHappen'
 import AuthModal from '../components/AuthModal';
 import HowItWorks from '../components/HowItWorks'
+import LogoMakerBanner from './LogoMakerBanner'
 const Home = ({ onSignupClick, onSigninClick }) => {
   return (
     <div>
@@ -19,6 +20,7 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       <Testimonials />
       {/* <Stats /> */}
       <MakeItHappen onSignupClick={onSignupClick} />
+      <LogoMakerBanner/>
       <CallToAction onSignupClick={onSignupClick} />
       <FAQSection />
     </div>
