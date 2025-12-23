@@ -38,6 +38,7 @@ const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
 const adminRoutes = require('./routes/admin.route.js');
 const searchRoute = require("./routes/search.routes.js")
+const popularServicesRoute = require('./routes/popularService.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
@@ -142,7 +143,7 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/search', searchRoute);
-
+app.use('/api/popular-services', popularServicesRoute);
 
 app.get('/health', (req, res) => {
   res.json({ 
