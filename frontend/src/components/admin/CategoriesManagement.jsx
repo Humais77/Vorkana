@@ -7,7 +7,6 @@ import {
   useDeleteCategory,
   useBulkCategoryOperations
 } from '../../hooks/useAdminDashboard';
-import { useAdminStore } from '../../store/useAdminStore';
 import { toast } from 'react-hot-toast';
 import {
   FiFolder,
@@ -29,15 +28,18 @@ import {
   FiChevronUp,
   FiTrendingUp,
   FiFolderPlus,
-  FiArchive,
   FiX,
   FiList,
   FiGrid,
   FiClock
 } from 'react-icons/fi';
 import { format } from 'date-fns';
+import CategoryCreateModal from './CategoryCreateModal';
+import CategoryEditModal from './CategoryEditModal';
+import CategoryDeleteModal from './CategoryDeleteModal';
+import CategoryDetailsModal from './CategoryDetailsModal';
 
-// Memoized Category Row Component
+// Memoized table row component
 const CategoryTableRow = memo(({ 
   category, 
   isExpanded, 
@@ -48,15 +50,19 @@ const CategoryTableRow = memo(({
   onEdit, 
   onDelete,
   onDuplicate,
-  onToggleActionMenu,
+  onOpenActionMenu,
   actionMenuId
 }) => {
-  const getStatusColor = (status) => {
-    return status ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200';
+  const getStatusColor = (isActive) => {
+    return isActive 
+      ? 'bg-green-100 text-green-800 border border-green-200' 
+      : 'bg-red-100 text-red-800 border border-red-200';
   };
 
   const getFeaturedColor = (featured) => {
-    return featured ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-gray-100 text-gray-800 border border-gray-200';
+    return featured 
+      ? 'bg-purple-100 text-purple-800 border border-purple-200' 
+      : 'bg-gray-100 text-gray-800 border border-gray-200';
   };
 
   return (
@@ -74,7 +80,7 @@ const CategoryTableRow = memo(({
           <div className="flex items-center space-x-3">
             <button
               onClick={() => onToggleExpand(category._id)}
-              className="mr-2 p-1 hover:bg-gray-100 rounded"
+              className="p-1 hover:bg-gray-100 rounded"
             >
               {isExpanded ? (
                 <FiChevronUp className="h-4 w-4 text-gray-500" />
@@ -84,7 +90,9 @@ const CategoryTableRow = memo(({
             </button>
             <div>
               <div className="text-sm font-medium text-gray-900">{category.name}</div>
-              <div className="text-xs text-gray-500 mt-1">Slug: {category.slug || 'N/A'}</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Slug: {category.slug || 'N/A'}
+              </div>
             </div>
           </div>
         </td>
@@ -126,7 +134,7 @@ const CategoryTableRow = memo(({
             </button>
             <div className="relative">
               <button
-                onClick={() => onToggleActionMenu(actionMenuId === category._id ? null : category._id)}
+                onClick={() => onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
                 className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
               >
                 <FiMoreVertical className="h-4 w-4" />
@@ -136,14 +144,14 @@ const CategoryTableRow = memo(({
                 <>
                   <div 
                     className="fixed inset-0 z-10"
-                    onClick={() => onToggleActionMenu(null)}
+                    onClick={() => onOpenActionMenu(null)}
                   />
                   <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
                     <div className="py-1">
                       <button
                         onClick={() => {
                           onDuplicate(category);
-                          onToggleActionMenu(null);
+                          onOpenActionMenu(null);
                         }}
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       >
@@ -153,7 +161,7 @@ const CategoryTableRow = memo(({
                       <button
                         onClick={() => {
                           onDelete(category);
-                          onToggleActionMenu(null);
+                          onOpenActionMenu(null);
                         }}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                       >
@@ -171,7 +179,7 @@ const CategoryTableRow = memo(({
       
       {isExpanded && (
         <tr>
-          <td colSpan="8" className="px-4 py-4 bg-gray-50">
+          <td colSpan="5" className="px-4 py-4 bg-gray-50">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
@@ -209,134 +217,8 @@ const CategoryTableRow = memo(({
 
 CategoryTableRow.displayName = 'CategoryTableRow';
 
-// Memoized Category Card Component
-const CategoryCard = memo(({ 
-  category, 
-  isSelected, 
-  onSelect, 
-  onView, 
-  onEdit, 
-  onDelete,
-  onToggleActionMenu,
-  actionMenuId
-}) => {
-  return (
-    <div className={`bg-white rounded-lg border ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500 ring-opacity-20' : 'border-gray-200'} p-6 hover:shadow-lg transition-shadow`}>
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onSelect}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <div className="h-16 w-16 bg-indigo-100 rounded-lg flex items-center justify-center">
-            <span className="text-2xl">{category.icon || '📁'}</span>
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{category.name}</h3>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${category.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                {category.isActive ? 'Active' : 'Inactive'}
-              </span>
-              {category.featured && (
-                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                  Featured
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="relative">
-          <button
-            onClick={() => onToggleActionMenu(actionMenuId === category._id ? null : category._id)}
-            className="p-1 text-gray-400 hover:text-gray-600"
-          >
-            <FiMoreVertical className="h-5 w-5" />
-          </button>
-          
-          {actionMenuId === category._id && (
-            <>
-              <div 
-                className="fixed inset-0 z-10"
-                onClick={() => onToggleActionMenu(null)}
-              />
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                <div className="py-1">
-                  <button
-                    onClick={() => {
-                      onView();
-                      onToggleActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEye className="h-4 w-4 mr-2" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => {
-                      onEdit();
-                      onToggleActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEdit2 className="h-4 w-4 mr-2" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => {
-                      onDelete();
-                      onToggleActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    <FiTrash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      
-      {category.description && (
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 line-clamp-2">{category.description}</p>
-        </div>
-      )}
-      
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{category.servicesCount || 0}</div>
-          <div className="text-xs text-gray-500">Services</div>
-        </div>
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{category.gigsCount || 0}</div>
-          <div className="text-xs text-gray-500">Gigs</div>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="text-sm text-gray-500">
-          <div>Order: {category.order || 0}</div>
-        </div>
-        <div className="text-sm text-gray-500 flex items-center">
-          <FiClock className="h-3 w-3 mr-1" />
-          {format(new Date(category.createdAt), 'MMM d')}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-CategoryCard.displayName = 'CategoryCard';
-
 // Main Component
 const CategoriesManagement = () => {
-  const setCategories = useAdminStore((state) => state.setCategories);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     status: '',
@@ -348,83 +230,36 @@ const CategoriesManagement = () => {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCategoryDetails, setShowCategoryDetails] = useState(false);
-  const [categoryToDelete, setCategoryToDelete] = useState(null);
-  const [editingCategory, setEditingCategory] = useState(null);
-  const [viewingCategory, setViewingCategory] = useState(null);
-  const [categoryForm, setCategoryForm] = useState({
-    name: '',
-    description: '',
-    icon: '📁',
-    isActive: true,
-    featured: false,
-    popular: false,
-    parentId: '',
-    order: 0,
-    metaTitle: '',
-    metaDescription: '',
-    slug: ''
-  });
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [viewMode, setViewMode] = useState('table');
 
   const limit = 20;
-  const { data, isLoading, refetch, isRefetching } = useAdminCategories({
+  
+  // React Query hooks
+  const { 
+    data, 
+    isLoading, 
+    refetch, 
+    isRefetching 
+  } = useAdminCategories({
     page,
     limit,
     search: searchTerm,
     ...filters
-  }, {
-    onSuccess: (data) => {
-      if (data && data.data) {
-        setCategories(data);
-      }
-    }
   });
   
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
   const deleteCategoryMutation = useDeleteCategory();
-  const bulkCategoryMutation = useBulkCategoryOperations();
+  const bulkOperationsMutation = useBulkCategoryOperations();
   
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
-
-  // Memoized stats calculation
-  const categoryStats = useMemo(() => {
-    if (categories.length === 0) {
-      return { 
-        total: 0, 
-        active: 0, 
-        featured: 0, 
-        popular: 0,
-        totalServices: 0,
-        totalGigs: 0,
-        totalSubcategories: 0
-      };
-    }
-    
-    let totalSubcategories = 0;
-    
-    categories.forEach(category => {
-      if (category.parentCategory) {
-        totalSubcategories++;
-      }
-    });
-    
-    return {
-      total: categories.length,
-      active: categories.filter(c => c.isActive).length,
-      featured: categories.filter(c => c.featured).length,
-      popular: categories.filter(c => c.popular).length,
-      totalServices: categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0),
-      totalGigs: categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0),
-      totalSubcategories
-    };
-  }, [categories]);
 
   // Memoized handlers
   const handleSearch = useCallback((e) => {
@@ -447,149 +282,83 @@ const CategoriesManagement = () => {
     try {
       const bulkData = {
         ids: selectedCategories,
-        operation: action,
-        data: {}
+        operation: action
       };
 
-      switch (action) {
-        case 'activate':
-          bulkData.data = { isActive: true };
-          break;
-        case 'deactivate':
-          bulkData.data = { isActive: false };
-          break;
-        case 'feature':
-          bulkData.data = { featured: true };
-          break;
-        case 'unfeature':
-          bulkData.data = { featured: false };
-          break;
-        case 'popular':
-          bulkData.data = { popular: true };
-          break;
-        case 'unpopular':
-          bulkData.data = { popular: false };
-          break;
-        case 'delete':
-          setCategoryToDelete({ type: 'bulk', ids: selectedCategories });
-          setShowDeleteModal(true);
-          return;
-        default:
-          break;
-      }
-
-      if (bulkData.data && Object.keys(bulkData.data).length > 0) {
-        await bulkCategoryMutation.mutateAsync(bulkData);
-        toast.success(`${selectedCategories.length} categories updated`);
-        setSelectedCategories([]);
-        refetch();
-      }
+      await bulkOperationsMutation.mutateAsync(bulkData);
+      setSelectedCategories([]);
+      refetch();
+      toast.success(`${selectedCategories.length} categories ${action}ed successfully`);
     } catch (error) {
       toast.error('Failed to perform bulk action');
     }
-  }, [selectedCategories, bulkCategoryMutation, refetch]);
+  }, [selectedCategories, bulkOperationsMutation, refetch]);
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    
+  const handleCreateCategory = useCallback(async (categoryData) => {
     try {
-      const categoryData = {
-        ...categoryForm,
-        slug: categoryForm.slug || categoryForm.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-      };
-      
-      if (editingCategory) {
-        await updateCategoryMutation.mutateAsync({
-          id: editingCategory._id,
-          data: categoryData
-        });
-        toast.success('Category updated successfully');
-      } else {
-        await createCategoryMutation.mutateAsync(categoryData);
-        toast.success('Category created successfully');
-      }
-      
+      await createCategoryMutation.mutateAsync(categoryData);
+      toast.success('Category created successfully');
       setShowCreateModal(false);
-      setShowEditModal(false);
-      setEditingCategory(null);
       refetch();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to save category');
+      throw error;
     }
-  }, [editingCategory, categoryForm, updateCategoryMutation, createCategoryMutation, refetch]);
+  }, [createCategoryMutation, refetch]);
 
-  const handleEdit = useCallback((category) => {
-    setEditingCategory(category);
-    setCategoryForm({
-      name: category.name,
-      description: category.description || '',
-      icon: category.icon || '📁',
-      isActive: category.isActive,
-      featured: category.featured || false,
-      popular: category.popular || false,
-      parentId: category.parentCategory || '',
-      order: category.order || 0,
-      metaTitle: category.metaTitle || '',
-      metaDescription: category.metaDescription || '',
-      slug: category.slug || ''
-    });
-    setShowEditModal(true);
-  }, []);
+  const handleUpdateCategory = useCallback(async (categoryData) => {
+    if (!selectedCategory) return;
+    
+    try {
+      await updateCategoryMutation.mutateAsync({
+        id: selectedCategory._id,
+        data: categoryData
+      });
+      toast.success('Category updated successfully');
+      setShowEditModal(false);
+      setSelectedCategory(null);
+      refetch();
+    } catch (error) {
+      throw error;
+    }
+  }, [selectedCategory, updateCategoryMutation, refetch]);
 
-  const handleView = useCallback((category) => {
-    setViewingCategory(category);
-    setShowCategoryDetails(true);
-  }, []);
-
-  const handleDelete = useCallback((category) => {
-    setCategoryToDelete({ type: 'single', id: category._id });
-    setShowDeleteModal(true);
-  }, []);
+  const handleDeleteCategory = useCallback(async (deleteOptions) => {
+    try {
+      await deleteCategoryMutation.mutateAsync({
+        id: deleteOptions.id,
+        options: {
+          permanent: deleteOptions.permanent || false,
+          force: deleteOptions.force || false
+        }
+      });
+    } catch (error) {
+      throw error;
+    }
+  }, [deleteCategoryMutation]);
 
   const handleDuplicate = useCallback(async (category) => {
     try {
-      const newCategory = {
+      const duplicateData = {
         name: `${category.name} (Copy)`,
         description: category.description,
         icon: category.icon,
-        isActive: category.isActive,
+        parentCategory: category.parentCategory?._id || category.parentCategory || '',
         featured: category.featured,
         popular: category.popular,
-        parentCategory: category.parentCategory,
+        isActive: category.isActive,
         order: category.order + 1,
-        slug: `${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}-copy`
+        metaTitle: category.metaTitle,
+        metaDescription: category.metaDescription,
+        slug: `${category.slug}-copy`
       };
       
-      await createCategoryMutation.mutateAsync(newCategory);
+      await createCategoryMutation.mutateAsync(duplicateData);
       toast.success('Category duplicated successfully');
       refetch();
     } catch (error) {
       toast.error('Failed to duplicate category');
     }
   }, [createCategoryMutation, refetch]);
-
-  const handleDeleteCategory = useCallback(async () => {
-    try {
-      if (categoryToDelete?.type === 'single' && categoryToDelete?.id) {
-        await deleteCategoryMutation.mutateAsync(categoryToDelete.id);
-        toast.success('Category deleted successfully');
-      } else if (categoryToDelete?.type === 'bulk' && categoryToDelete?.ids) {
-        await bulkCategoryMutation.mutateAsync({
-          ids: categoryToDelete.ids,
-          operation: 'delete',
-          data: {}
-        });
-        toast.success(`${categoryToDelete.ids.length} categories deleted`);
-      }
-      
-      setSelectedCategories([]);
-      setShowDeleteModal(false);
-      setCategoryToDelete(null);
-      refetch();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete categories');
-    }
-  }, [categoryToDelete, deleteCategoryMutation, bulkCategoryMutation, refetch]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -607,10 +376,6 @@ const CategoriesManagement = () => {
     );
   }, []);
 
-  const toggleActionMenu = useCallback((categoryId) => {
-    setActionMenu(actionMenu === categoryId ? null : categoryId);
-  }, [actionMenu]);
-
   const toggleExpandCategory = useCallback((categoryId) => {
     setExpandedCategories(prev =>
       prev.includes(categoryId)
@@ -619,11 +384,47 @@ const CategoriesManagement = () => {
     );
   }, []);
 
+  const handleEdit = useCallback((category) => {
+    setSelectedCategory(category);
+    setShowEditModal(true);
+  }, []);
+
+  const handleView = useCallback((category) => {
+    setSelectedCategory(category);
+    setShowCategoryDetails(true);
+  }, []);
+
+  const handleDelete = useCallback((category) => {
+    setSelectedCategory(category);
+    setShowDeleteModal(true);
+  }, []);
+
   const refreshData = useCallback(() => {
     refetch();
     setSelectedCategories([]);
+    setExpandedCategories([]);
     toast.success('Data refreshed');
   }, [refetch]);
+
+  // Memoized stats calculation
+  const stats = useMemo(() => {
+    const active = categories.filter(c => c.isActive).length;
+    const featured = categories.filter(c => c.featured).length;
+    const popular = categories.filter(c => c.popular).length;
+    const totalSubcategories = categories.filter(c => c.parentCategory).length;
+    const totalServices = categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0);
+    const totalGigs = categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0);
+
+    return {
+      total: pagination.total || categories.length,
+      active,
+      featured,
+      popular,
+      totalSubcategories,
+      totalServices,
+      totalGigs
+    };
+  }, [categories, pagination.total]);
 
   if (isLoading && !categories.length) {
     return (
@@ -660,15 +461,15 @@ const CategoriesManagement = () => {
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Total Categories</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.total}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
             </div>
-            <FiFolder className="h-8 w-8 text-blue-500" />
+            <FiFolder className="h-8 w-8 text-blue-600" />
           </div>
         </div>
         
@@ -676,9 +477,9 @@ const CategoriesManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Active</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.active}</p>
+              <p className="text-2xl font-bold text-green-600">{stats.active}</p>
             </div>
-            <FiCheckCircle className="h-8 w-8 text-green-500" />
+            <FiCheckCircle className="h-8 w-8 text-green-600" />
           </div>
         </div>
         
@@ -686,9 +487,9 @@ const CategoriesManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Featured</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.featured}</p>
+              <p className="text-2xl font-bold text-purple-600">{stats.featured}</p>
             </div>
-            <FiStar className="h-8 w-8 text-purple-500" />
+            <FiStar className="h-8 w-8 text-purple-600" />
           </div>
         </div>
         
@@ -696,9 +497,9 @@ const CategoriesManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Services</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.totalServices}</p>
+              <p className="text-2xl font-bold text-orange-600">{stats.totalServices}</p>
             </div>
-            <FiPackage className="h-8 w-8 text-orange-500" />
+            <FiPackage className="h-8 w-8 text-orange-600" />
           </div>
         </div>
         
@@ -706,9 +507,9 @@ const CategoriesManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Subcategories</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.totalSubcategories}</p>
+              <p className="text-2xl font-bold text-teal-600">{stats.totalSubcategories}</p>
             </div>
-            <FiFolderPlus className="h-8 w-8 text-teal-500" />
+            <FiFolderPlus className="h-8 w-8 text-teal-600" />
           </div>
         </div>
         
@@ -716,9 +517,9 @@ const CategoriesManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Popular</p>
-              <p className="text-2xl font-bold mt-1">{categoryStats.popular}</p>
+              <p className="text-2xl font-bold text-yellow-600">{stats.popular}</p>
             </div>
-            <FiTrendingUp className="h-8 w-8 text-yellow-500" />
+            <FiTrendingUp className="h-8 w-8 text-yellow-600" />
           </div>
         </div>
       </div>
@@ -771,10 +572,10 @@ const CategoriesManagement = () => {
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
-                placeholder="Search categories..."
+                placeholder="Search categories by name, slug, or description..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
               {searchTerm && (
                 <button
@@ -798,9 +599,9 @@ const CategoriesManagement = () => {
                 <FiList className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setViewMode('card')}
-                className={`px-3 py-2 ${viewMode === 'card' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
-                title="Card View"
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
+                title="Grid View"
               >
                 <FiGrid className="h-4 w-4" />
               </button>
@@ -855,6 +656,7 @@ const CategoriesManagement = () => {
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
                 <option value="order">Sort Order</option>
+                <option value="updatedAt">Last Updated</option>
               </select>
             </div>
             
@@ -873,7 +675,7 @@ const CategoriesManagement = () => {
         )}
       </div>
 
-      {/* View Content */}
+      {/* Categories Table/Grid */}
       {viewMode === 'table' ? (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
@@ -915,107 +717,195 @@ const CategoriesManagement = () => {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onDuplicate={handleDuplicate}
-                    onToggleActionMenu={toggleActionMenu}
+                    onOpenActionMenu={setActionMenu}
                     actionMenuId={actionMenu}
                   />
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* Empty State */}
+          {categories.length === 0 && !isLoading && (
+            <div className="text-center py-12">
+              <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
+              <h3 className="mt-4 text-lg font-medium text-gray-900">No categories found</h3>
+              <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="px-4 py-4 border-t border-gray-200">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
+                  <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
+                  <span className="font-medium">{pagination.total}</span> categories
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <FiChevronLeft className="h-4 w-4" />
+                  </button>
+                  
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (page <= 3) {
+                        pageNum = i + 1;
+                      } else if (page >= pagination.totalPages - 2) {
+                        pageNum = pagination.totalPages - 4 + i;
+                      } else {
+                        pageNum = page - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setPage(pageNum)}
+                          className={`px-3 py-1.5 rounded-md text-sm ${
+                            page === pageNum
+                              ? 'bg-indigo-600 text-white'
+                              : 'border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                    
+                    {pagination.totalPages > 5 && page < pagination.totalPages - 2 && (
+                      <>
+                        <span className="px-2 text-gray-400">...</span>
+                        <button
+                          onClick={() => setPage(pagination.totalPages)}
+                          className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
+                        >
+                          {pagination.totalPages}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                    disabled={page === pagination.totalPages}
+                    className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <FiChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
+        // Grid View (simplified - you can enhance this further)
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {categories.map((category) => (
-            <CategoryCard
-              key={category._id}
-              category={category}
-              isSelected={selectedCategories.includes(category._id)}
-              onSelect={() => toggleSelectCategory(category._id)}
-              onView={() => handleView(category)}
-              onEdit={() => handleEdit(category)}
-              onDelete={() => handleDelete(category)}
-              onToggleActionMenu={toggleActionMenu}
-              actionMenuId={actionMenu}
-            />
+            <div key={category._id} className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedCategories.includes(category._id)}
+                    onChange={() => toggleSelectCategory(category._id)}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{category.name}</h3>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${category.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {category.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 line-clamp-2">{category.description || 'No description'}</p>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-500">
+                  <div>Services: {category.servicesCount || 0}</div>
+                  <div>Gigs: {category.gigsCount || 0}</div>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleView(category)}
+                    className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+                  >
+                    <FiEye className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleEdit(category)}
+                    className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+                  >
+                    <FiEdit2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       )}
 
-      {/* Empty State */}
-      {categories.length === 0 && !isLoading && (
-        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-          <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No categories found</h3>
-          <p className="mt-2 text-gray-500">Try adjusting your search or filter criteria.</p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 inline-flex items-center"
-          >
-            <FiPlus className="h-4 w-4 mr-2" />
-            Add Category
-          </button>
-        </div>
+      {/* Modals */}
+      {showCreateModal && (
+        <CategoryCreateModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateCategory}
+          loading={createCategoryMutation.isLoading}
+        />
       )}
-
-      {/* Pagination */}
-      {pagination.totalPages > 1 && (
-        <div className="flex flex-col md:flex-row md:items-center justify-between bg-white rounded-lg border border-gray-200 p-4">
-          <div className="text-sm text-gray-700">
-            Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
-            <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
-            <span className="font-medium">{pagination.total}</span> categories
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
-            >
-              <FiChevronLeft className="h-4 w-4" />
-            </button>
-            {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
-              const pageNum = i + 1;
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setPage(pageNum)}
-                  className={`px-3 py-1 rounded-md ${
-                    page === pageNum
-                      ? 'bg-indigo-600 text-white'
-                      : 'border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
-            {pagination.totalPages > 5 && (
-              <>
-                <span className="px-2">...</span>
-                <button
-                  onClick={() => setPage(pagination.totalPages)}
-                  className={`px-3 py-1 rounded-md ${
-                    page === pagination.totalPages
-                      ? 'bg-indigo-600 text-white'
-                      : 'border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {pagination.totalPages}
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-              disabled={page === pagination.totalPages}
-              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
-            >
-              <FiChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+      
+      {showEditModal && selectedCategory && (
+        <CategoryEditModal
+          category={selectedCategory}
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedCategory(null);
+          }}
+          onSubmit={handleUpdateCategory}
+          loading={updateCategoryMutation.isLoading}
+        />
       )}
-
-     
+      
+      {showCategoryDetails && selectedCategory && (
+        <CategoryDetailsModal
+          category={selectedCategory}
+          isOpen={showCategoryDetails}
+          onClose={() => {
+            setShowCategoryDetails(false);
+            setSelectedCategory(null);
+          }}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onDuplicate={handleDuplicate}
+        />
+      )}
+      
+      {showDeleteModal && selectedCategory && (
+        <CategoryDeleteModal
+          category={selectedCategory}
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedCategory(null);
+          }}
+          onDelete={handleDeleteCategory}
+        />
+      )}
     </div>
   );
 };

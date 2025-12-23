@@ -280,7 +280,10 @@ export const useUpdateCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateCategory(id, data),
+    mutationFn: async ({ id, data }) => {
+      const response = await adminAPI.updateCategory(id, data);
+      return response;
+    },
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries(['admin', 'categories']);
       
@@ -291,7 +294,9 @@ export const useUpdateCategory = () => {
         return {
           ...old,
           data: old.data.map(category => 
-            category._id === id ? { ...category, ...data } : category
+            category._id === id 
+              ? { ...category, ...data, updatedAt: new Date().toISOString() }
+              : category
           )
         };
       });
@@ -299,20 +304,16 @@ export const useUpdateCategory = () => {
       return { previousCategories };
     },
     onSuccess: (response) => {
-      if (response.data.success) {
-        toast.success('Category updated successfully');
-        queryClient.invalidateQueries(['admin', 'categories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
-      } else {
-        toast.error(response.data.message || 'Update failed');
-      }
+      toast.success('Category updated successfully');
     },
     onError: (error, variables, context) => {
       if (context?.previousCategories) {
         queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
       }
-      toast.error(error.response?.data?.message || 'Update failed');
-    }
+      toast.error(error.response?.data?.message || 'Failed to update category');
+    },
+    retry: 1,
+    retryDelay: 1000
   });
 };
 
@@ -320,19 +321,54 @@ export const useCreateCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data) => adminAPI.createCategory(data),
-    onSuccess: (response) => {
-      if (response.data.success) {
-        toast.success('Category created successfully');
-        queryClient.invalidateQueries(['admin', 'categories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
-      } else {
-        toast.error(response.data.message || 'Creation failed');
+    mutationFn: (categoryData) => adminAPI.createCategory(categoryData),
+    onMutate: async (categoryData) => {
+      await queryClient.cancelQueries(['admin', 'categories']);
+      
+      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      
+      // Generate a temporary ID for optimistic update
+      const tempId = `temp-${Date.now()}`;
+      const tempCategory = {
+        _id: tempId,
+        ...categoryData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        __isOptimistic: true
+      };
+      
+      queryClient.setQueryData(['admin', 'categories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: [tempCategory, ...old.data]
+        };
+      });
+      
+      return { previousCategories, tempId };
+    },
+    onSuccess: (response, variables, context) => {
+      if (context?.tempId) {
+        // Remove the optimistic entry and add the real one
+        queryClient.setQueryData(['admin', 'categories'], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            data: old.data
+              .filter(cat => cat._id !== context.tempId)
+              .concat(response.data?.data || response.data)
+          };
+        });
       }
     },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Creation failed');
-    }
+    onError: (error, variables, context) => {
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
+      }
+      toast.error(error.response?.data?.message || 'Failed to create category');
+    },
+    retry: 2,
+    retryDelay: 1000
   });
 };
 

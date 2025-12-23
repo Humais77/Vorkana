@@ -233,55 +233,35 @@ export const useGetProfile = () => {
   });
 };
 
-// useAuth.js - FIXED useUpdateProfile hook
+// In useAuth.js - improve the useUpdateProfile hook
 export const useUpdateProfile = () => {
   const setUser = useAuthStore((state) => state.setUser);
   const queryClient = useQueryClient();
-  const token = useAuthStore((state) => state.token);
   
   return useMutation({
     mutationFn: async (userData) => {
-      console.log('Updating profile with token:', token ? 'Token exists' : 'No token');
-      return authAPI.updateProfile(userData);
+      console.log('Sending update data:', userData);
+      
+      // Make sure we're sending proper JSON
+      const response = await authAPI.updateProfile(userData);
+      console.log('Update response:', response);
+      return response;
     },
     onSuccess: (data) => {
+      console.log('Update success:', data);
       if (data.success && data.user) {
         setUser(data.user);
         queryClient.invalidateQueries(['userProfile']);
-        
-        if (data.message.includes('verify your new email')) {
-          toast.success(data.message, { duration: 5000 });
-        } else {
-          toast.success(data.message || 'Profile updated successfully');
-        }
-      } else {
-        toast.error(data.message || 'Failed to update profile');
+        queryClient.invalidateQueries(['userProfile', data.user._id]);
       }
     },
     onError: (error) => {
-      const errorMessage = error.response?.data?.message || 'Failed to update profile';
-      
-      // Log detailed error for debugging
-      console.error('Update profile error:', {
-        message: errorMessage,
+      console.error('Update mutation error:', {
         status: error.response?.status,
         data: error.response?.data,
-        headers: error.response?.headers
+        message: error.message
       });
-      
-      if (error.response?.status === 401) {
-        toast.error('Session expired. Please login again.');
-        useAuthStore.getState().logout();
-      } else if (error.response?.status === 409) {
-        toast.error('Email already taken');
-      } else if (error.response?.status === 400 && error.response.data.errors) {
-        error.response.data.errors.forEach(err => {
-          toast.error(err);
-        });
-      } else {
-        toast.error(errorMessage);
-      }
-    },
+    }
   });
 };
 
