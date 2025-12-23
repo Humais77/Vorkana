@@ -1,7 +1,7 @@
-// UserManagement.jsx - UPDATED VERSION
-import { useState, useMemo, useEffect } from 'react';
+// UserManagement.jsx - OPTIMIZED VERSION
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAdminUsers, useUpdateUser, useDeleteUser, useCreateUser } from '../../hooks/useAdminDashboard';
+import { useAdminUsers, useUpdateUser, useDeleteUser } from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiUsers,
@@ -10,7 +10,6 @@ import {
   FiEdit2,
   FiTrash2,
   FiEye,
-  FiMail,
   FiCheckCircle,
   FiXCircle,
   FiDownload,
@@ -21,20 +20,11 @@ import {
   FiUserX,
   FiShield,
   FiLock,
-  FiUnlock,
-  FiUser,
-  FiCalendar,
-  FiClock,
   FiMoreVertical,
   FiRefreshCw,
-  FiFileText,
-  FiCreditCard,
-  FiActivity,
-  FiMapPin,
-  FiGlobe,
-  FiBriefcase,
-  FiHash,
-  FiX
+  FiX,
+  FiClock,
+  FiHash
 } from 'react-icons/fi';
 import { format, differenceInDays } from 'date-fns';
 import CreateUserModal from './CreateUserModal';
@@ -42,6 +32,230 @@ import EditUserModal from './EditUserModal';
 import UserDetailsModal from './UserDetailsModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
+// Memoized User Row Component
+const UserTableRow = memo(({
+  user,
+  isSelected,
+  onToggleSelect,
+  onView,
+  onEdit,
+  onDelete,
+  onToggleActionMenu,
+  actionMenuId,
+  onUpdateUser
+}) => {
+  const getRoleColor = (role) => {
+    const colors = {
+      admin: 'bg-purple-100 text-purple-800 border border-purple-200',
+      user: 'bg-gray-100 text-gray-800 border border-gray-200'
+    };
+    return colors[role] || colors.user;
+  };
+
+  const getStatusIcon = (status) => {
+    return status ? (
+      <FiCheckCircle className="h-4 w-4 text-green-500" />
+    ) : (
+      <FiXCircle className="h-4 w-4 text-red-500" />
+    );
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'Never';
+    return format(new Date(date), 'MMM d, yyyy HH:mm');
+  };
+
+  const getMemberDuration = (createdAt) => {
+    if (!createdAt) return '';
+    const days = differenceInDays(new Date(), new Date(createdAt));
+    if (days < 1) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return `${days} days`;
+    if (days < 365) return `${Math.floor(days / 30)} months`;
+    return `${Math.floor(days / 365)} years`;
+  };
+
+  return (
+    <tr className={`hover:bg-gray-50 ${!user.isActive ? 'bg-red-50' : ''}`}>
+      <td className="px-4 py-4">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(user._id)}
+          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+        />
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center space-x-3">
+          <div className="h-10 w-10 flex-shrink-0">
+            <img
+              className="h-10 w-10 rounded-full object-cover"
+              src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
+              alt={user.name}
+              onError={(e) => {
+                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
+              }}
+            />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-900 truncate">
+              {user.name}
+              {user.role === 'admin' && (
+                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  Admin
+                </span>
+              )}
+            </div>
+            <div className="text-sm text-gray-500 truncate">{user.email}</div>
+            <div className="text-xs text-gray-400 mt-1">
+              <div className="flex items-center">
+                <FiHash className="h-3 w-3 mr-1" />
+                {user._id.substring(0, 8)}...
+              </div>
+              <div className="mt-1">
+                Member for {getMemberDuration(user.createdAt)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex flex-col space-y-1">
+          <span className={`px-2 py-1 inline-flex text-xs leading-4 font-semibold rounded-full ${getRoleColor(user.role)}`}>
+            {user.role}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center space-x-2">
+          {getStatusIcon(user.isActive)}
+          <span className={`text-sm ${user.isActive ? 'text-green-700' : 'text-red-700'}`}>
+            {user.isActive ? 'Active' : 'Inactive'}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center space-x-2">
+          {user.emailVerified ? (
+            <>
+              <FiCheckCircle className="h-4 w-4 text-green-500" />
+              <span className="text-sm text-green-700">Verified</span>
+            </>
+          ) : (
+            <>
+              <FiXCircle className="h-4 w-4 text-yellow-500" />
+              <span className="text-sm text-yellow-700">Pending</span>
+            </>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-4 text-sm text-gray-500">
+        <div className="flex flex-col">
+          <div className="flex items-center space-x-1">
+            <FiClock className="h-3 w-3" />
+            <span>{formatDate(user.lastLoginAt)}</span>
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            Joined: {format(new Date(user.createdAt), 'MMM d, yyyy')}
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => onView(user)}
+            className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+            title="View Details"
+          >
+            <FiEye className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onEdit(user)}
+            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            title="Edit User"
+          >
+            <FiEdit2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onDelete(user)}
+            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Delete User"
+          >
+            <FiTrash2 className="h-4 w-4" />
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => onToggleActionMenu(actionMenuId === user._id ? null : user._id)}
+              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+            >
+              <FiMoreVertical className="h-4 w-4" />
+            </button>
+            
+            {actionMenuId === user._id && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10"
+                  onClick={() => onToggleActionMenu(null)}
+                />
+                <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        onUpdateUser(user._id, { isActive: !user.isActive });
+                        onToggleActionMenu(null);
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      {user.isActive ? (
+                        <>
+                          <FiUserX className="h-4 w-4 mr-2" />
+                          Deactivate
+                        </>
+                      ) : (
+                        <>
+                          <FiUserCheck className="h-4 w-4 mr-2" />
+                          Activate
+                        </>
+                      )}
+                    </button>
+                    {!user.emailVerified && (
+                      <button
+                        onClick={() => {
+                          onUpdateUser(user._id, { emailVerified: true });
+                          onToggleActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <FiShield className="h-4 w-4 mr-2" />
+                        Verify Email
+                      </button>
+                    )}
+                    {user.role !== 'admin' && (
+                      <button
+                        onClick={() => {
+                          onUpdateUser(user._id, { role: 'admin' });
+                          onToggleActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <FiShield className="h-4 w-4 mr-2" />
+                        Make Admin
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+UserTableRow.displayName = 'UserTableRow';
+
+// Main Component
 const UsersManagement = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,11 +276,17 @@ const UsersManagement = () => {
   const [userToDelete, setUserToDelete] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [viewingUser, setViewingUser] = useState(null);
-  const [userStats, setUserStats] = useState({ total: 0, active: 0,admins: 0 });
   const [actionMenu, setActionMenu] = useState(null);
 
   const limit = 10;
-  const { data, isLoading, refetch, isRefetching } = useAdminUsers({
+  
+  // React Query hooks with caching
+  const { 
+    data, 
+    isLoading, 
+    refetch, 
+    isRefetching 
+  } = useAdminUsers({
     page,
     limit,
     search: searchTerm,
@@ -79,30 +299,32 @@ const UsersManagement = () => {
   const users = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
-  // Calculate user stats
-  useMemo(() => {
-    if (users.length > 0) {
-      const stats = {
-        total: pagination.total,
-        active: users.filter(u => u.isActive).length,
-        admins: users.filter(u => u.role === 'admin').length
-      };
-      setUserStats(stats);
+  // Memoized stats calculation
+  const userStats = useMemo(() => {
+    if (users.length === 0) {
+      return { total: 0, active: 0, admins: 0 };
     }
+    
+    return {
+      total: pagination.total,
+      active: users.filter(u => u.isActive).length,
+      admins: users.filter(u => u.role === 'admin').length
+    };
   }, [users, pagination.total]);
 
-  const handleSearch = (e) => {
+  // Memoized handlers
+  const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
     refetch();
-  };
+  }, [refetch]);
 
-  const handleFilterChange = (key, value) => {
+  const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
-  };
+  }, []);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
     setSearchTerm('');
     setFilters({
       role: '',
@@ -112,175 +334,153 @@ const UsersManagement = () => {
       sortOrder: 'desc'
     });
     setPage(1);
+    setSelectedUsers([]);
     refetch();
-  };
+  }, [refetch]);
 
-  const handleBulkAction = async (action) => {
+  const handleBulkAction = useCallback(async (action) => {
     if (selectedUsers.length === 0) {
       toast.error('Please select users first');
       return;
     }
 
     try {
-      switch (action) {
-        case 'activate':
-          await Promise.all(selectedUsers.map(userId =>
-            updateUserMutation.mutateAsync({ id: userId, data: { isActive: true } })
-          ));
-          toast.success(`${selectedUsers.length} users activated`);
-          break;
-        
-        case 'deactivate':
-          await Promise.all(selectedUsers.map(userId =>
-            updateUserMutation.mutateAsync({ id: userId, data: { isActive: false } })
-          ));
-          toast.success(`${selectedUsers.length} users deactivated`);
-          break;
-        
-        case 'verify':
-          await Promise.all(selectedUsers.map(userId =>
-            updateUserMutation.mutateAsync({ id: userId, data: { emailVerified: true } })
-          ));
-          toast.success(`${selectedUsers.length} users verified`);
-          break;
-        
-        case 'make_admin':
-          await Promise.all(selectedUsers.map(userId =>
-            updateUserMutation.mutateAsync({ id: userId, data: { role: 'admin' } })
-          ));
-          toast.success(`${selectedUsers.length} users updated to admins`);
-          break;
-        
-        case 'delete':
-          setUserToDelete({ type: 'bulk', ids: selectedUsers });
-          setShowDeleteModal(true);
-          return;
-        
-        case 'reset_password':
-          // This would require a separate API endpoint
-          toast.success(`Reset password emails sent to ${selectedUsers.length} users`);
-          break;
-      }
-      
+      const updatePromises = selectedUsers.map(userId => {
+        switch (action) {
+          case 'activate':
+            return updateUserMutation.mutateAsync({ id: userId, data: { isActive: true } });
+          case 'deactivate':
+            return updateUserMutation.mutateAsync({ id: userId, data: { isActive: false } });
+          case 'verify':
+            return updateUserMutation.mutateAsync({ id: userId, data: { emailVerified: true } });
+          case 'make_admin':
+            return updateUserMutation.mutateAsync({ id: userId, data: { role: 'admin' } });
+          default:
+            return Promise.resolve();
+        }
+      });
+
+      await Promise.all(updatePromises);
+      toast.success(`${selectedUsers.length} users updated successfully`);
       setSelectedUsers([]);
-      refetch();
+      
+      // Invalidate cache
+      queryClient.invalidateQueries(['admin', 'users']);
+      
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to perform bulk action');
     }
-  };
+  }, [selectedUsers, updateUserMutation, queryClient]);
 
-  const handleDeleteUser = async () => {
+  const handleDeleteUser = useCallback(async () => {
     try {
-      if (userToDelete.type === 'single') {
+      if (userToDelete?.type === 'single' && userToDelete?.id) {
         await deleteUserMutation.mutateAsync(userToDelete.id);
         toast.success('User deleted successfully');
-      } else if (userToDelete.type === 'bulk') {
-        await Promise.all(userToDelete.ids.map(id =>
-          deleteUserMutation.mutateAsync(id)
-        ));
+      } else if (userToDelete?.type === 'bulk' && userToDelete?.ids) {
+        await Promise.all(
+          userToDelete.ids.map(id => deleteUserMutation.mutateAsync(id))
+        );
         toast.success(`${userToDelete.ids.length} users deleted`);
       }
+      
       setSelectedUsers([]);
-      refetch();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete users');
-    } finally {
       setShowDeleteModal(false);
       setUserToDelete(null);
+      
+      // Invalidate cache
+      queryClient.invalidateQueries(['admin', 'users']);
+      
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete users');
     }
-  };
+  }, [userToDelete, deleteUserMutation, queryClient]);
 
-  const handleViewUser = (user) => {
+  const handleViewUser = useCallback((user) => {
     setViewingUser(user);
     setShowUserDetails(true);
-  };
+  }, []);
 
-  const handleEditUser = (user) => {
+  const handleEditUser = useCallback((user) => {
     setEditingUser(user);
     setShowEditModal(true);
-  };
+  }, []);
 
-  const handleUpdateUser = async (data) => {
+  const handleUpdateUser = useCallback(async (data) => {
+    if (!editingUser?._id) return;
+    
     try {
       await updateUserMutation.mutateAsync({ id: editingUser._id, data });
       toast.success('User updated successfully');
       setShowEditModal(false);
       setEditingUser(null);
-      refetch();
+      
+      // Invalidate cache
+      queryClient.invalidateQueries(['admin', 'users']);
+      
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update user');
     }
-  };
+  }, [editingUser, updateUserMutation, queryClient]);
 
-  const handleCreateUser = () => {
-    setShowCreateModal(true);
-  };
+  const handleSingleUpdateUser = useCallback(async (userId, data) => {
+    try {
+      await updateUserMutation.mutateAsync({ id: userId, data });
+      
+      // Invalidate cache
+      queryClient.invalidateQueries(['admin', 'users']);
+      
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update user');
+    }
+  }, [updateUserMutation, queryClient]);
 
-  const handleUserCreated = () => {
+  const handleUserCreated = useCallback(() => {
     toast.success('User created successfully!');
-    refetch();
-  };
+    setShowCreateModal(false);
+    
+    // Invalidate cache
+    queryClient.invalidateQueries(['admin', 'users']);
+  }, [queryClient]);
 
-  const toggleSelectAll = (e) => {
+  const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
       setSelectedUsers(users.map(user => user._id));
     } else {
       setSelectedUsers([]);
     }
-  };
+  }, [users]);
 
-  const toggleSelectUser = (userId) => {
+  const toggleSelectUser = useCallback((userId) => {
     setSelectedUsers(prev =>
       prev.includes(userId)
         ? prev.filter(id => id !== userId)
         : [...prev, userId]
     );
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
-    return status ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-  };
+  const toggleActionMenu = useCallback((userId) => {
+    setActionMenu(actionMenu === userId ? null : userId);
+  }, [actionMenu]);
 
-  const getRoleColor = (role) => {
-    const colors = {
-      admin: 'bg-purple-100 text-purple-800 border border-purple-200',
-      user: 'bg-gray-100 text-gray-800 border border-gray-200'
-    };
-    return colors[role] || colors.user;
-  };
+  const handleDelete = useCallback((user) => {
+    setUserToDelete({ type: 'single', id: user._id });
+    setShowDeleteModal(true);
+  }, []);
 
-  const getStatusIcon = (status) => {
-    return status ? (
-      <FiCheckCircle className="h-4 w-4 text-green-500" />
-    ) : (
-      <FiXCircle className="h-4 w-4 text-red-500" />
-    );
-  };
-
-  const exportUsers = () => {
-    // Implementation for exporting users
-    toast.success('Export feature coming soon');
-  };
-
-  const refreshData = () => {
+  const refreshData = useCallback(() => {
     refetch();
+    setSelectedUsers([]);
     toast.success('Data refreshed');
-  };
+  }, [refetch]);
 
-  const formatDate = (date) => {
-    if (!date) return 'Never';
-    return format(new Date(date), 'MMM d, yyyy HH:mm');
-  };
+  const exportUsers = useCallback(() => {
+    toast.success('Export feature coming soon');
+  }, []);
 
-  const getMemberDuration = (createdAt) => {
-    if (!createdAt) return '';
-    const days = differenceInDays(new Date(), new Date(createdAt));
-    if (days < 1) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 30) return `${days} days`;
-    if (days < 365) return `${Math.floor(days / 30)} months`;
-    return `${Math.floor(days / 365)} years`;
-  };
+  const handleCreateUser = useCallback(() => {
+    setShowCreateModal(true);
+  }, []);
 
   if (isLoading && !users.length) {
     return (
@@ -325,7 +525,7 @@ const UsersManagement = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -384,22 +584,17 @@ const UsersManagement = () => {
                 <span>Deactivate</span>
               </button>
               <button
-                onClick={() => handleBulkAction('verify')}
-                className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200 flex items-center space-x-1"
-              >
-                <FiShield className="h-4 w-4" />
-                <span>Verify Email</span>
-              </button>
-            
-              <button
                 onClick={() => handleBulkAction('make_admin')}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
               >
                 <FiShield className="h-4 w-4" />
                 <span>Make Admin</span>
               </button>
               <button
-                onClick={() => handleBulkAction('delete')}
+                onClick={() => {
+                  setUserToDelete({ type: 'bulk', ids: selectedUsers });
+                  setShowDeleteModal(true);
+                }}
                 className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
               >
                 <FiTrash2 className="h-4 w-4" />
@@ -476,7 +671,7 @@ const UsersManagement = () => {
               <select
                 value={filters.role}
                 onChange={(e) => handleFilterChange('role', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">All Roles</option>
                 <option value="admin">Admin</option>
@@ -489,7 +684,7 @@ const UsersManagement = () => {
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">All Status</option>
                 <option value="true">Active</option>
@@ -502,7 +697,7 @@ const UsersManagement = () => {
               <select
                 value={filters.verified}
                 onChange={(e) => handleFilterChange('verified', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">All</option>
                 <option value="true">Verified</option>
@@ -515,12 +710,11 @@ const UsersManagement = () => {
               <select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
                 <option value="lastLoginAt">Last Login</option>
-                <option value="updatedAt">Last Updated</option>
               </select>
             </div>
           </div>
@@ -563,219 +757,25 @@ const UsersManagement = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {users.map((user) => (
-                <tr 
-                  key={user._id} 
-                  className={`hover:bg-gray-50 ${!user.isActive ? 'bg-red-50' : ''}`}
-                >
-                  <td className="px-4 py-4">
-                    <input
-                      type="checkbox"
-                      checked={selectedUsers.includes(user._id)}
-                      onChange={() => toggleSelectUser(user._id)}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="h-10 w-10 flex-shrink-0">
-                        <img
-                          className="h-10 w-10 rounded-full object-cover"
-                          src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
-                          alt={user.name}
-                          onError={(e) => {
-                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
-                          }}
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate">
-                          {user.name}
-                          {user.role === 'admin' && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              Admin
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-500 truncate">{user.email}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          <div className="flex items-center">
-                            <FiHash className="h-3 w-3 mr-1" />
-                            {user._id.substring(0, 8)}...
-                          </div>
-                          <div className="mt-1">
-                            Member for {getMemberDuration(user.createdAt)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex flex-col space-y-1">
-                      <span className={`px-2 py-1 inline-flex text-xs leading-4 font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                        {user.role}
-                      </span>
-                      {user.accountType && user.accountType !== 'basic' && (
-                        <span className="text-xs text-amber-600 font-medium">
-                          {user.accountType}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center space-x-2">
-                      {getStatusIcon(user.isActive)}
-                      <span className={`text-sm ${user.isActive ? 'text-green-700' : 'text-red-700'}`}>
-                        {user.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center space-x-2">
-                      {user.emailVerified ? (
-                        <>
-                          <FiCheckCircle className="h-4 w-4 text-green-500" />
-                          <span className="text-sm text-green-700">Verified</span>
-                        </>
-                      ) : (
-                        <>
-                          <FiXCircle className="h-4 w-4 text-yellow-500" />
-                          <span className="text-sm text-yellow-700">Pending</span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-500">
-                    <div className="flex flex-col">
-                      <div className="flex items-center space-x-1">
-                        <FiClock className="h-3 w-3" />
-                        <span>{formatDate(user.lastLoginAt)}</span>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        Joined: {format(new Date(user.createdAt), 'MMM d, yyyy')}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleViewUser(user)}
-                        className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                        title="View Details"
-                      >
-                        <FiEye className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleEditUser(user)}
-                        className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                        title="Edit User"
-                      >
-                        <FiEdit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setUserToDelete({ type: 'single', id: user._id });
-                          setShowDeleteModal(true);
-                        }}
-                        className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        title="Delete User"
-                      >
-                        <FiTrash2 className="h-4 w-4" />
-                      </button>
-                      <div className="relative">
-                        <button
-                          onClick={() => setActionMenu(actionMenu === user._id ? null : user._id)}
-                          className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-                        >
-                          <FiMoreVertical className="h-4 w-4" />
-                        </button>
-                        
-                        {actionMenu === user._id && (
-                          <>
-                            <div 
-                              className="fixed inset-0 z-10"
-                              onClick={() => setActionMenu(null)}
-                            />
-                            <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                              <div className="py-1">
-                                <button
-                                  onClick={() => {
-                                    updateUserMutation.mutate({
-                                      id: user._id,
-                                      data: { isActive: !user.isActive }
-                                    });
-                                    setActionMenu(null);
-                                  }}
-                                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  {user.isActive ? (
-                                    <>
-                                      <FiUserX className="h-4 w-4 mr-2" />
-                                      Deactivate
-                                    </>
-                                  ) : (
-                                    <>
-                                      <FiUserCheck className="h-4 w-4 mr-2" />
-                                      Activate
-                                    </>
-                                  )}
-                                </button>
-                                {!user.emailVerified && (
-                                  <button
-                                    onClick={() => {
-                                      updateUserMutation.mutate({
-                                        id: user._id,
-                                        data: { emailVerified: true }
-                                      });
-                                      setActionMenu(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <FiShield className="h-4 w-4 mr-2" />
-                                    Verify Email
-                                  </button>
-                                )}
-                                {user.role !== 'admin' && (
-                                  <button
-                                    onClick={() => {
-                                      updateUserMutation.mutate({
-                                        id: user._id,
-                                        data: { role: 'admin' }
-                                      });
-                                      setActionMenu(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <FiShield className="h-4 w-4 mr-2" />
-                                    Make Admin
-                                  </button>
-                                )}
-                                
-                                <button
-                                  onClick={() => {
-                                    // Send reset password email
-                                    toast.success('Reset password email sent');
-                                    setActionMenu(null);
-                                  }}
-                                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  <FiLock className="h-4 w-4 mr-2" />
-                                  Reset Password
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
+                <UserTableRow
+                  key={user._id}
+                  user={user}
+                  isSelected={selectedUsers.includes(user._id)}
+                  onToggleSelect={toggleSelectUser}
+                  onView={handleViewUser}
+                  onEdit={handleEditUser}
+                  onDelete={handleDelete}
+                  onToggleActionMenu={toggleActionMenu}
+                  actionMenuId={actionMenu}
+                  onUpdateUser={handleSingleUpdateUser}
+                />
               ))}
             </tbody>
           </table>
         </div>
 
         {/* Empty State */}
-        {users.length === 0 && (
+        {users.length === 0 && !isLoading && (
           <div className="text-center py-12">
             <FiUsers className="h-12 w-12 text-gray-300 mx-auto" />
             <h3 className="mt-4 text-lg font-medium text-gray-900">No users found</h3>
@@ -802,7 +802,7 @@ const UsersManagement = () => {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
                 >
                   <FiChevronLeft className="h-4 w-4" />
                 </button>
@@ -824,7 +824,7 @@ const UsersManagement = () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
-                        className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                        className={`px-3 py-1.5 rounded-md text-sm ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
                             : 'border border-gray-300 hover:bg-gray-50'
@@ -840,7 +840,7 @@ const UsersManagement = () => {
                       <span className="px-2 text-gray-400">...</span>
                       <button
                         onClick={() => setPage(pagination.totalPages)}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 transition-colors`}
+                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
                       >
                         {pagination.totalPages}
                       </button>
@@ -851,7 +851,7 @@ const UsersManagement = () => {
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
                   disabled={page === pagination.totalPages}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
                 >
                   <FiChevronRight className="h-4 w-4" />
                 </button>
@@ -861,15 +861,14 @@ const UsersManagement = () => {
         )}
       </div>
 
-      {/* Create User Modal */}
+      {/* Modals */}
       {showCreateModal && (
         <CreateUserModal
           onClose={() => setShowCreateModal(false)}
           onSuccess={handleUserCreated}
         />
       )}
-
-      {/* User Details Modal */}
+      
       {showUserDetails && viewingUser && (
         <UserDetailsModal
           user={viewingUser}
@@ -879,8 +878,7 @@ const UsersManagement = () => {
           }}
         />
       )}
-
-      {/* Edit User Modal */}
+      
       {showEditModal && editingUser && (
         <EditUserModal
           user={editingUser}
@@ -891,9 +889,8 @@ const UsersManagement = () => {
           onSave={handleUpdateUser}
         />
       )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
+      
+      {showDeleteModal && userToDelete && (
         <DeleteConfirmationModal
           userToDelete={userToDelete}
           onClose={() => {

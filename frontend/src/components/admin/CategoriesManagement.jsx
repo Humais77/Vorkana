@@ -1,11 +1,11 @@
-import React from 'react';
-import { useState, useMemo } from 'react';
+// CategoriesManagement.jsx - OPTIMIZED VERSION
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
   useCreateCategory, 
   useDeleteCategory,
-  useBulkCategoryOperations  // Make sure this is imported
+  useBulkCategoryOperations
 } from '../../hooks/useAdminDashboard';
 import { useAdminStore } from '../../store/useAdminStore';
 import { toast } from 'react-hot-toast';
@@ -25,22 +25,315 @@ import {
   FiStar,
   FiPackage,
   FiMoreVertical,
-  FiCopy,
   FiChevronDown,
   FiChevronUp,
   FiTrendingUp,
-  FiActivity,
-  FiUsers,
-  FiDollarSign,
-  FiLayers,
-  FiGrid,
-  FiList,
   FiFolderPlus,
   FiArchive,
-  FiZap
+  FiX,
+  FiList,
+  FiGrid,
+  FiClock
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 
+// Memoized Category Row Component
+const CategoryTableRow = memo(({ 
+  category, 
+  isExpanded, 
+  isSelected, 
+  onToggleExpand, 
+  onToggleSelect, 
+  onView, 
+  onEdit, 
+  onDelete,
+  onDuplicate,
+  onToggleActionMenu,
+  actionMenuId
+}) => {
+  const getStatusColor = (status) => {
+    return status ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200';
+  };
+
+  const getFeaturedColor = (featured) => {
+    return featured ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-gray-100 text-gray-800 border border-gray-200';
+  };
+
+  return (
+    <React.Fragment>
+      <tr className="hover:bg-gray-50">
+        <td className="px-4 py-4">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(category._id)}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+        </td>
+        <td className="px-4 py-4">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => onToggleExpand(category._id)}
+              className="mr-2 p-1 hover:bg-gray-100 rounded"
+            >
+              {isExpanded ? (
+                <FiChevronUp className="h-4 w-4 text-gray-500" />
+              ) : (
+                <FiChevronDown className="h-4 w-4 text-gray-500" />
+              )}
+            </button>
+            <div>
+              <div className="text-sm font-medium text-gray-900">{category.name}</div>
+              <div className="text-xs text-gray-500 mt-1">Slug: {category.slug || 'N/A'}</div>
+            </div>
+          </div>
+        </td>
+        <td className="px-4 py-4">
+          <div className="flex flex-col gap-1">
+            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(category.isActive)}`}>
+              {category.isActive ? 'Active' : 'Inactive'}
+            </span>
+            {category.featured && (
+              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getFeaturedColor(category.featured)}`}>
+                Featured
+              </span>
+            )}
+            {category.popular && (
+              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 border border-orange-200">
+                Popular
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-4 text-sm text-gray-500">
+          {format(new Date(category.createdAt), 'MMM d, yyyy')}
+        </td>
+        <td className="px-4 py-4">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onView(category)}
+              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+              title="View Details"
+            >
+              <FiEye className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => onEdit(category)}
+              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+              title="Edit Category"
+            >
+              <FiEdit2 className="h-4 w-4" />
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => onToggleActionMenu(actionMenuId === category._id ? null : category._id)}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+              >
+                <FiMoreVertical className="h-4 w-4" />
+              </button>
+              
+              {actionMenuId === category._id && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10"
+                    onClick={() => onToggleActionMenu(null)}
+                  />
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          onDuplicate(category);
+                          onToggleActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <span className="mr-2">📋</span>
+                        Duplicate
+                      </button>
+                      <button
+                        onClick={() => {
+                          onDelete(category);
+                          onToggleActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <FiTrash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </td>
+      </tr>
+      
+      {isExpanded && (
+        <tr>
+          <td colSpan="8" className="px-4 py-4 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
+                <div className="text-sm text-gray-700">
+                  {category.description || 'No description provided'}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Stats</div>
+                <div className="text-sm">
+                  <div><span className="text-gray-500">Services:</span> {category.servicesCount || 0}</div>
+                  <div><span className="text-gray-500">Gigs:</span> {category.gigsCount || 0}</div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Settings</div>
+                <div className="text-sm">
+                  <div><span className="text-gray-500">Order:</span> {category.order || 0}</div>
+                  <div><span className="text-gray-500">Level:</span> {category.level || 0}</div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Last Updated</div>
+                <div className="text-sm text-gray-700">
+                  {format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm')}
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  );
+});
+
+CategoryTableRow.displayName = 'CategoryTableRow';
+
+// Memoized Category Card Component
+const CategoryCard = memo(({ 
+  category, 
+  isSelected, 
+  onSelect, 
+  onView, 
+  onEdit, 
+  onDelete,
+  onToggleActionMenu,
+  actionMenuId
+}) => {
+  return (
+    <div className={`bg-white rounded-lg border ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500 ring-opacity-20' : 'border-gray-200'} p-6 hover:shadow-lg transition-shadow`}>
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onSelect}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <div className="h-16 w-16 bg-indigo-100 rounded-lg flex items-center justify-center">
+            <span className="text-2xl">{category.icon || '📁'}</span>
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900">{category.name}</h3>
+            <div className="flex items-center space-x-2 mt-1">
+              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${category.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {category.isActive ? 'Active' : 'Inactive'}
+              </span>
+              {category.featured && (
+                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                  Featured
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="relative">
+          <button
+            onClick={() => onToggleActionMenu(actionMenuId === category._id ? null : category._id)}
+            className="p-1 text-gray-400 hover:text-gray-600"
+          >
+            <FiMoreVertical className="h-5 w-5" />
+          </button>
+          
+          {actionMenuId === category._id && (
+            <>
+              <div 
+                className="fixed inset-0 z-10"
+                onClick={() => onToggleActionMenu(null)}
+              />
+              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                <div className="py-1">
+                  <button
+                    onClick={() => {
+                      onView();
+                      onToggleActionMenu(null);
+                    }}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <FiEye className="h-4 w-4 mr-2" />
+                    View Details
+                  </button>
+                  <button
+                    onClick={() => {
+                      onEdit();
+                      onToggleActionMenu(null);
+                    }}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <FiEdit2 className="h-4 w-4 mr-2" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      onDelete();
+                      onToggleActionMenu(null);
+                    }}
+                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <FiTrash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      
+      {category.description && (
+        <div className="mb-4">
+          <p className="text-sm text-gray-600 line-clamp-2">{category.description}</p>
+        </div>
+      )}
+      
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="text-center p-3 bg-gray-50 rounded-lg">
+          <div className="text-lg font-bold text-gray-900">{category.servicesCount || 0}</div>
+          <div className="text-xs text-gray-500">Services</div>
+        </div>
+        <div className="text-center p-3 bg-gray-50 rounded-lg">
+          <div className="text-lg font-bold text-gray-900">{category.gigsCount || 0}</div>
+          <div className="text-xs text-gray-500">Gigs</div>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+        <div className="text-sm text-gray-500">
+          <div>Order: {category.order || 0}</div>
+        </div>
+        <div className="text-sm text-gray-500 flex items-center">
+          <FiClock className="h-3 w-3 mr-1" />
+          {format(new Date(category.createdAt), 'MMM d')}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+CategoryCard.displayName = 'CategoryCard';
+
+// Main Component
 const CategoriesManagement = () => {
   const setCategories = useAdminStore((state) => state.setCategories);
 
@@ -64,7 +357,7 @@ const CategoriesManagement = () => {
   const [categoryForm, setCategoryForm] = useState({
     name: '',
     description: '',
-    icon: 'fa-folder',
+    icon: '📁',
     isActive: true,
     featured: false,
     popular: false,
@@ -76,31 +369,21 @@ const CategoriesManagement = () => {
   });
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedCategories, setExpandedCategories] = useState([]);
-  const [viewMode, setViewMode] = useState('table'); // table or card
-  const [categoryStats, setCategoryStats] = useState({ 
-    total: 0, 
-    active: 0, 
-    featured: 0, 
-    popular: 0,
-    totalServices: 0,
-    totalGigs: 0,
-    totalSubcategories: 0,
-    topCategory: null
-  });
+  const [viewMode, setViewMode] = useState('table');
 
   const limit = 20;
   const { data, isLoading, refetch, isRefetching } = useAdminCategories({
-  page,
-  limit,
-  search: searchTerm,
-  ...filters
-}, {
-  onSuccess: (data) => {
-    if (data && data.data) {
-      setCategories(data);
+    page,
+    limit,
+    search: searchTerm,
+    ...filters
+  }, {
+    onSuccess: (data) => {
+      if (data && data.data) {
+        setCategories(data);
+      }
     }
-  }
-});
+  });
   
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
@@ -110,165 +393,137 @@ const CategoriesManagement = () => {
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
-  // Calculate category stats
-  useMemo(() => {
-    if (categories.length > 0) {
-      let topCategory = null;
-      let maxServices = 0;
-      let totalSubcategories = 0;
-      
-      categories.forEach(category => {
-        // Count subcategories
-        if (category.parentCategory) {
-          totalSubcategories++;
-        }
-        
-        // Find top category by services count
-        if ((category.servicesCount || 0) > maxServices) {
-          maxServices = category.servicesCount;
-          topCategory = category;
-        }
-      });
-      
-      const stats = {
-        total: categories.length,
-        active: categories.filter(c => c.isActive).length,
-        featured: categories.filter(c => c.featured).length,
-        popular: categories.filter(c => c.popular).length,
-        totalServices: categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0),
-        totalGigs: categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0),
-        totalSubcategories,
-        topCategory
+  // Memoized stats calculation
+  const categoryStats = useMemo(() => {
+    if (categories.length === 0) {
+      return { 
+        total: 0, 
+        active: 0, 
+        featured: 0, 
+        popular: 0,
+        totalServices: 0,
+        totalGigs: 0,
+        totalSubcategories: 0
       };
-      setCategoryStats(stats);
     }
+    
+    let totalSubcategories = 0;
+    
+    categories.forEach(category => {
+      if (category.parentCategory) {
+        totalSubcategories++;
+      }
+    });
+    
+    return {
+      total: categories.length,
+      active: categories.filter(c => c.isActive).length,
+      featured: categories.filter(c => c.featured).length,
+      popular: categories.filter(c => c.popular).length,
+      totalServices: categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0),
+      totalGigs: categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0),
+      totalSubcategories
+    };
   }, [categories]);
 
-  const handleSearch = (e) => {
+  // Memoized handlers
+  const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
     refetch();
-  };
+  }, [refetch]);
 
-  const handleFilterChange = (key, value) => {
+  const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
-  };
+  }, []);
 
-  const handleBulkAction = async (action) => {
+  const handleBulkAction = useCallback(async (action) => {
     if (selectedCategories.length === 0) {
       toast.error('Please select categories first');
       return;
     }
 
     try {
+      const bulkData = {
+        ids: selectedCategories,
+        operation: action,
+        data: {}
+      };
+
       switch (action) {
         case 'activate':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'activate',
-            data: { isActive: true }
-          });
-          toast.success(`${selectedCategories.length} categories activated`);
+          bulkData.data = { isActive: true };
           break;
-        
         case 'deactivate':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'deactivate',
-            data: { isActive: false }
-          });
-          toast.success(`${selectedCategories.length} categories deactivated`);
+          bulkData.data = { isActive: false };
           break;
-        
         case 'feature':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'feature',
-            data: { featured: true }
-          });
-          toast.success(`${selectedCategories.length} categories featured`);
+          bulkData.data = { featured: true };
           break;
-        
         case 'unfeature':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'unfeature',
-            data: { featured: false }
-          });
-          toast.success(`${selectedCategories.length} categories unfeatured`);
+          bulkData.data = { featured: false };
           break;
-        
         case 'popular':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'popular',
-            data: { popular: true }
-          });
-          toast.success(`${selectedCategories.length} categories marked as popular`);
+          bulkData.data = { popular: true };
           break;
-        
         case 'unpopular':
-          await bulkCategoryMutation.mutateAsync({
-            ids: selectedCategories,
-            operation: 'unpopular',
-            data: { popular: false }
-          });
-          toast.success(`${selectedCategories.length} categories unmarked as popular`);
+          bulkData.data = { popular: false };
           break;
-        
-        case 'archive':
-          // You'd need to implement an archive functionality
-          toast.success('Archive feature coming soon');
+        case 'delete':
+          setCategoryToDelete({ type: 'bulk', ids: selectedCategories });
+          setShowDeleteModal(true);
+          return;
+        default:
           break;
-        
-         case 'delete':
-    setCategoryToDelete({ type: 'bulk', ids: selectedCategories });
-    setShowDeleteModal(true);
-    return;
       }
-      
-      setSelectedCategories([]);
-      refetch();
+
+      if (bulkData.data && Object.keys(bulkData.data).length > 0) {
+        await bulkCategoryMutation.mutateAsync(bulkData);
+        toast.success(`${selectedCategories.length} categories updated`);
+        setSelectedCategories([]);
+        refetch();
+      }
     } catch (error) {
       toast.error('Failed to perform bulk action');
     }
-  };
+  }, [selectedCategories, bulkCategoryMutation, refetch]);
 
-  const handleSubmit = async (e) => {
-  e.preventDefault();
-  
-  try {
-    const categoryData = {
-      ...categoryForm,
-      slug: categoryForm.slug || generateSlug(categoryForm.name)
-    };
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
     
-    if (editingCategory) {
-      await updateCategoryMutation.mutateAsync({
-        id: editingCategory._id,
-        data: categoryData
-      });
-      toast.success('Category updated successfully');
-    } else {
-      await createCategoryMutation.mutateAsync(categoryData);
-      toast.success('Category created successfully');
+    try {
+      const categoryData = {
+        ...categoryForm,
+        slug: categoryForm.slug || categoryForm.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+      };
+      
+      if (editingCategory) {
+        await updateCategoryMutation.mutateAsync({
+          id: editingCategory._id,
+          data: categoryData
+        });
+        toast.success('Category updated successfully');
+      } else {
+        await createCategoryMutation.mutateAsync(categoryData);
+        toast.success('Category created successfully');
+      }
+      
+      setShowCreateModal(false);
+      setShowEditModal(false);
+      setEditingCategory(null);
+      refetch();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to save category');
     }
-    
-    handleCloseModal();
-    refetch();
-  } catch (error) {
-    toast.error(error.response?.data?.message || 'Failed to save category');
-  }
-};
+  }, [editingCategory, categoryForm, updateCategoryMutation, createCategoryMutation, refetch]);
 
-
-  const handleEdit = (category) => {
+  const handleEdit = useCallback((category) => {
     setEditingCategory(category);
     setCategoryForm({
       name: category.name,
       description: category.description || '',
-      icon: category.icon || 'fa-folder',
+      icon: category.icon || '📁',
       isActive: category.isActive,
       featured: category.featured || false,
       popular: category.popular || false,
@@ -279,95 +534,19 @@ const CategoriesManagement = () => {
       slug: category.slug || ''
     });
     setShowEditModal(true);
-  };
+  }, []);
 
-  const handleView = (category) => {
+  const handleView = useCallback((category) => {
     setViewingCategory(category);
     setShowCategoryDetails(true);
-  };
+  }, []);
 
-  const handleDelete = (category) => {
+  const handleDelete = useCallback((category) => {
     setCategoryToDelete({ type: 'single', id: category._id });
     setShowDeleteModal(true);
-  };
+  }, []);
 
-  const handleCloseModal = () => {
-    setShowCreateModal(false);
-    setShowEditModal(false);
-    setEditingCategory(null);
-    setCategoryForm({
-      name: '',
-      description: '',
-      icon: '📁',
-      isActive: true,
-      featured: false,
-      popular: false,
-      parentId: '',
-      order: 0,
-      metaTitle: '',
-      metaDescription: '',
-      slug: ''
-    });
-  };
-
-  const handleDeleteCategory = async () => {
-  try {
-    if (categoryToDelete.type === 'single') {
-      await deleteCategoryMutation.mutateAsync(categoryToDelete.id);
-      toast.success('Category deleted successfully');
-    } else if (categoryToDelete.type === 'bulk') {
-      // Use bulk mutation instead of individual deletes
-      await bulkCategoryMutation.mutateAsync({
-        ids: categoryToDelete.ids,
-        operation: 'deactivate', // or 'delete' based on your controller
-        data: { isActive: false }
-      });
-      toast.success(`${categoryToDelete.ids.length} categories deactivated`);
-    }
-    setSelectedCategories([]);
-    refetch();
-  } catch (error) {
-    toast.error(error.response?.data?.message || 'Failed to delete categories');
-  } finally {
-    setShowDeleteModal(false);
-    setCategoryToDelete(null);
-  }
-};
-
-  const toggleSelectAll = (e) => {
-    if (e.target.checked) {
-      setSelectedCategories(categories.map(cat => cat._id));
-    } else {
-      setSelectedCategories([]);
-    }
-  };
-
-  const toggleSelectCategory = (categoryId) => {
-    setSelectedCategories(prev =>
-      prev.includes(categoryId)
-        ? prev.filter(id => id !== categoryId)
-        : [...prev, categoryId]
-    );
-  };
-
-  const getStatusColor = (status) => {
-    return status ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200';
-  };
-
-  const getFeaturedColor = (featured) => {
-    return featured ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-gray-100 text-gray-800 border border-gray-200';
-  };
-
-  const getPopularColor = (popular) => {
-    return popular ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-gray-100 text-gray-800 border border-gray-200';
-  };
-
-  const refreshData = () => {
-    refetch();
-    toast.success('Data refreshed');
-  };
-
-  const duplicateCategory = async (category) => {
+  const handleDuplicate = useCallback(async (category) => {
     try {
       const newCategory = {
         name: `${category.name} (Copy)`,
@@ -378,7 +557,7 @@ const CategoriesManagement = () => {
         popular: category.popular,
         parentCategory: category.parentCategory,
         order: category.order + 1,
-        slug: `${category.slug}-copy`
+        slug: `${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}-copy`
       };
       
       await createCategoryMutation.mutateAsync(newCategory);
@@ -387,24 +566,64 @@ const CategoriesManagement = () => {
     } catch (error) {
       toast.error('Failed to duplicate category');
     }
-  };
+  }, [createCategoryMutation, refetch]);
 
- const generateSlug = (name) => {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim();
-};
+  const handleDeleteCategory = useCallback(async () => {
+    try {
+      if (categoryToDelete?.type === 'single' && categoryToDelete?.id) {
+        await deleteCategoryMutation.mutateAsync(categoryToDelete.id);
+        toast.success('Category deleted successfully');
+      } else if (categoryToDelete?.type === 'bulk' && categoryToDelete?.ids) {
+        await bulkCategoryMutation.mutateAsync({
+          ids: categoryToDelete.ids,
+          operation: 'delete',
+          data: {}
+        });
+        toast.success(`${categoryToDelete.ids.length} categories deleted`);
+      }
+      
+      setSelectedCategories([]);
+      setShowDeleteModal(false);
+      setCategoryToDelete(null);
+      refetch();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete categories');
+    }
+  }, [categoryToDelete, deleteCategoryMutation, bulkCategoryMutation, refetch]);
 
-  const toggleExpandCategory = (categoryId) => {
+  const toggleSelectAll = useCallback((e) => {
+    if (e.target.checked) {
+      setSelectedCategories(categories.map(cat => cat._id));
+    } else {
+      setSelectedCategories([]);
+    }
+  }, [categories]);
+
+  const toggleSelectCategory = useCallback((categoryId) => {
+    setSelectedCategories(prev =>
+      prev.includes(categoryId)
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
+  }, []);
+
+  const toggleActionMenu = useCallback((categoryId) => {
+    setActionMenu(actionMenu === categoryId ? null : categoryId);
+  }, [actionMenu]);
+
+  const toggleExpandCategory = useCallback((categoryId) => {
     setExpandedCategories(prev =>
       prev.includes(categoryId)
         ? prev.filter(id => id !== categoryId)
         : [...prev, categoryId]
     );
-  };
+  }, []);
+
+  const refreshData = useCallback(() => {
+    refetch();
+    setSelectedCategories([]);
+    toast.success('Data refreshed');
+  }, [refetch]);
 
   if (isLoading && !categories.length) {
     return (
@@ -442,7 +661,7 @@ const CategoriesManagement = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -476,7 +695,7 @@ const CategoriesManagement = () => {
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Services</p>
+              <p className="text-sm text-gray-600">Services</p>
               <p className="text-2xl font-bold mt-1">{categoryStats.totalServices}</p>
             </div>
             <FiPackage className="h-8 w-8 text-orange-500" />
@@ -533,27 +752,6 @@ const CategoriesManagement = () => {
                 <span>Deactivate</span>
               </button>
               <button
-                onClick={() => handleBulkAction('feature')}
-                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
-              >
-                <FiStar className="h-4 w-4" />
-                <span>Feature</span>
-              </button>
-              <button
-                onClick={() => handleBulkAction('popular')}
-                className="px-3 py-2 bg-orange-100 text-orange-700 rounded-md text-sm hover:bg-orange-200 flex items-center space-x-1"
-              >
-                <FiTrendingUp className="h-4 w-4" />
-                <span>Popular</span>
-              </button>
-              <button
-                onClick={() => handleBulkAction('archive')}
-                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md text-sm hover:bg-gray-200 flex items-center space-x-1"
-              >
-                <FiArchive className="h-4 w-4" />
-                <span>Archive</span>
-              </button>
-              <button
                 onClick={() => handleBulkAction('delete')}
                 className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
               >
@@ -573,37 +771,24 @@ const CategoriesManagement = () => {
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
-                placeholder="Search categories by name, description, or slug..."
+                placeholder="Search categories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </form>
           
           <div className="flex items-center space-x-3">
-            <div className="hidden md:flex space-x-2">
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="">All Status</option>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-              
-              <select
-                value={filters.featured}
-                onChange={(e) => handleFilterChange('featured', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="">Featured Status</option>
-                <option value="true">Featured</option>
-                <option value="false">Not Featured</option>
-              </select>
-            </div>
-            
             <div className="flex border border-gray-300 rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('table')}
@@ -670,9 +855,6 @@ const CategoriesManagement = () => {
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
                 <option value="order">Sort Order</option>
-                <option value="updatedAt">Last Updated</option>
-                <option value="servicesCount">Services Count</option>
-                <option value="gigsCount">Gigs Count</option>
               </select>
             </div>
             
@@ -693,42 +875,74 @@ const CategoriesManagement = () => {
 
       {/* View Content */}
       {viewMode === 'table' ? (
-        <CategoriesTableView 
-          categories={categories}
-          selectedCategories={selectedCategories}
-          toggleSelectAll={toggleSelectAll}
-          toggleSelectCategory={toggleSelectCategory}
-          handleView={handleView}
-          handleEdit={handleEdit}
-          handleDelete={handleDelete}
-          duplicateCategory={duplicateCategory}
-          actionMenu={actionMenu}
-          setActionMenu={setActionMenu}
-          expandedCategories={expandedCategories}
-          toggleExpandCategory={toggleExpandCategory}
-          getStatusColor={getStatusColor}
-          getFeaturedColor={getFeaturedColor}
-          getPopularColor={getPopularColor}
-        />
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-12 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.length === categories.length && categories.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Category Details
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status & Tags
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {categories.map((category) => (
+                  <CategoryTableRow
+                    key={category._id}
+                    category={category}
+                    isExpanded={expandedCategories.includes(category._id)}
+                    isSelected={selectedCategories.includes(category._id)}
+                    onToggleExpand={toggleExpandCategory}
+                    onToggleSelect={toggleSelectCategory}
+                    onView={handleView}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    onToggleActionMenu={toggleActionMenu}
+                    actionMenuId={actionMenu}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
-        <CategoriesCardView 
-          categories={categories}
-          selectedCategories={selectedCategories}
-          toggleSelectCategory={toggleSelectCategory}
-          handleView={handleView}
-          handleEdit={handleEdit}
-          handleDelete={handleDelete}
-          duplicateCategory={duplicateCategory}
-          actionMenu={actionMenu}
-          setActionMenu={setActionMenu}
-          getStatusColor={getStatusColor}
-          getFeaturedColor={getFeaturedColor}
-          getPopularColor={getPopularColor}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {categories.map((category) => (
+            <CategoryCard
+              key={category._id}
+              category={category}
+              isSelected={selectedCategories.includes(category._id)}
+              onSelect={() => toggleSelectCategory(category._id)}
+              onView={() => handleView(category)}
+              onEdit={() => handleEdit(category)}
+              onDelete={() => handleDelete(category)}
+              onToggleActionMenu={toggleActionMenu}
+              actionMenuId={actionMenu}
+            />
+          ))}
+        </div>
       )}
 
       {/* Empty State */}
-      {categories.length === 0 && (
+      {categories.length === 0 && !isLoading && (
         <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
           <h3 className="mt-4 text-lg font-medium text-gray-900">No categories found</h3>
@@ -755,7 +969,7 @@ const CategoriesManagement = () => {
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
             >
               <FiChevronLeft className="h-4 w-4" />
             </button>
@@ -768,7 +982,7 @@ const CategoriesManagement = () => {
                   className={`px-3 py-1 rounded-md ${
                     page === pageNum
                       ? 'bg-indigo-600 text-white'
-                      : 'border border-gray-300'
+                      : 'border border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   {pageNum}
@@ -783,7 +997,7 @@ const CategoriesManagement = () => {
                   className={`px-3 py-1 rounded-md ${
                     page === pagination.totalPages
                       ? 'bg-indigo-600 text-white'
-                      : 'border border-gray-300'
+                      : 'border border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   {pagination.totalPages}
@@ -793,7 +1007,7 @@ const CategoriesManagement = () => {
             <button
               onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
               disabled={page === pagination.totalPages}
-              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
             >
               <FiChevronRight className="h-4 w-4" />
             </button>
@@ -801,836 +1015,7 @@ const CategoriesManagement = () => {
         </div>
       )}
 
-      {/* Create/Edit Modal */}
-      {(showCreateModal || showEditModal) && (
-        <CategoryModal
-          isOpen={showCreateModal || showEditModal}
-          isEditing={!!editingCategory}
-          formData={categoryForm}
-          onClose={handleCloseModal}
-          onSubmit={handleSubmit}
-          onChange={setCategoryForm}
-          onGenerateSlug={() => {
-            if (categoryForm.name) {
-              setCategoryForm({...categoryForm, slug: generateSlug(categoryForm.name)});
-            }
-          }}
-        />
-      )}
-
-      {/* Category Details Modal */}
-      {showCategoryDetails && viewingCategory && (
-        <CategoryDetailsModal
-          category={viewingCategory}
-          onClose={() => {
-            setShowCategoryDetails(false);
-            setViewingCategory(null);
-          }}
-        />
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <DeleteConfirmationModal
-          type="category"
-          itemToDelete={categoryToDelete}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setCategoryToDelete(null);
-          }}
-          onConfirm={handleDeleteCategory}
-        />
-      )}
-    </div>
-  );
-};
-
-// Categories Table View Component
-const CategoriesTableView = ({ 
-  categories, 
-  selectedCategories, 
-  toggleSelectAll, 
-  toggleSelectCategory, 
-  handleView, 
-  handleEdit, 
-  handleDelete, 
-  duplicateCategory, 
-  actionMenu, 
-  setActionMenu, 
-  expandedCategories, 
-  toggleExpandCategory,
-  getStatusColor,
-  getFeaturedColor,
-  getPopularColor
-}) => {
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="w-12 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={selectedCategories.length === categories.length && categories.length > 0}
-                  onChange={toggleSelectAll}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category Details
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status & Tags
-              </th>
-             
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Created
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {categories.map((category) => {
-              const isExpanded = expandedCategories.includes(category._id);
-              
-              return (
-                <React.Fragment key={category._id}>
-                  {/* Main Row */}
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedCategories.includes(category._id)}
-                        onChange={() => toggleSelectCategory(category._id)}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => toggleExpandCategory(category._id)}
-                              className="mr-2 p-1 hover:bg-gray-100 rounded"
-                            >
-                              {isExpanded ? (
-                                <FiChevronUp className="h-4 w-4 text-gray-500" />
-                              ) : (
-                                <FiChevronDown className="h-4 w-4 text-gray-500" />
-                              )}
-                            </button>
-                            <div>
-                              <div className="flex items-center space-x-2">
-                                <div className="text-sm font-medium text-gray-900">{category.name}</div>
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">Slug: {category.slug || 'N/A'}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-col gap-1">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(category.isActive)}`}>
-                          {category.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                        {category.featured && (
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getFeaturedColor(category.featured)}`}>
-                            Featured
-                          </span>
-                        )}
-                        {category.popular && (
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getPopularColor(category.popular)}`}>
-                            Popular
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-500">
-                      {format(new Date(category.createdAt), 'MMM d, yyyy')}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleView(category)}
-                          className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
-                          title="View Details"
-                        >
-                          <FiEye className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(category)}
-                          className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
-                          title="Edit Category"
-                        >
-                          <FiEdit2 className="h-4 w-4" />
-                        </button>
-                        <div className="relative">
-                          <button
-                            onClick={() => setActionMenu(actionMenu === category._id ? null : category._id)}
-                            className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
-                          >
-                            <FiMoreVertical className="h-4 w-4" />
-                          </button>
-                          
-                          {actionMenu === category._id && (
-                            <>
-                              <div 
-                                className="fixed inset-0 z-10"
-                                onClick={() => setActionMenu(null)}
-                              />
-                              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                                <div className="py-1">
-                                  <button
-                                    onClick={() => {
-                                      duplicateCategory(category);
-                                      setActionMenu(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <FiCopy className="h-4 w-4 mr-2" />
-                                    Duplicate
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleDelete(category);
-                                      setActionMenu(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                  >
-                                    <FiTrash2 className="h-4 w-4 mr-2" />
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  
-                  {/* Expanded Details Row */}
-                  {isExpanded && (
-                    <tr key={`${category._id}-expanded`}>
-                      <td colSpan="8" className="px-4 py-4 bg-gray-50">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
-                            <div className="text-sm text-gray-700">
-                              {category.description || 'No description provided'}
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-gray-500 uppercase">Meta Information</div>
-                            <div className="text-sm">
-                              <div className="truncate"><span className="text-gray-500">Title:</span> {category.metaTitle || 'N/A'}</div>
-                              <div className="truncate"><span className="text-gray-500">Keywords:</span> {category.metaKeywords?.join(', ') || 'N/A'}</div>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-gray-500 uppercase">Statistics</div>
-                            <div className="text-sm">
-                              <div><span className="text-gray-500">Level:</span> {category.level || 0}</div>
-                              <div><span className="text-gray-500">Subcategories:</span> {category.subcategoriesCount || 0}</div>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-gray-500 uppercase">Last Updated</div>
-                            <div className="text-sm text-gray-700">
-                              {format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm')}
-                            </div>
-                            <div className="pt-2">
-                              <button
-                                onClick={() => handleView(category)}
-                                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                              >
-                                View Full Details →
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// Categories Card View Component
-const CategoriesCardView = ({ 
-  categories, 
-  selectedCategories, 
-  toggleSelectCategory, 
-  handleView, 
-  handleEdit, 
-  handleDelete, 
-  duplicateCategory, 
-  actionMenu, 
-  setActionMenu,
-  getStatusColor,
-  getFeaturedColor,
-  getPopularColor
-}) => {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {categories.map((category) => (
-        <CategoryCard
-          key={category._id}
-          category={category}
-          isSelected={selectedCategories.includes(category._id)}
-          onSelect={() => toggleSelectCategory(category._id)}
-          onView={() => handleView(category)}
-          onEdit={() => handleEdit(category)}
-          onDelete={() => handleDelete(category)}
-          onDuplicate={() => duplicateCategory(category)}
-          actionMenu={actionMenu}
-          setActionMenu={setActionMenu}
-          getStatusColor={getStatusColor}
-          getFeaturedColor={getFeaturedColor}
-          getPopularColor={getPopularColor}
-        />
-      ))}
-    </div>
-  );
-};
-
-// Category Card Component
-const CategoryCard = ({ 
-  category, 
-  isSelected, 
-  onSelect, 
-  onView, 
-  onEdit, 
-  onDelete, 
-  onDuplicate, 
-  actionMenu, 
-  setActionMenu,
-  getStatusColor,
-  getFeaturedColor,
-  getPopularColor
-}) => {
-  return (
-    <div className={`bg-white rounded-lg border ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500 ring-opacity-20' : 'border-gray-200'} p-6 hover:shadow-lg transition-shadow`}>
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onSelect}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <div className="h-16 w-16 bg-indigo-100 rounded-lg flex items-center justify-center">
-            <span className="text-2xl">{category.icon || '📁'}</span>
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{category.name}</h3>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(category.isActive)}`}>
-                {category.isActive ? 'Active' : 'Inactive'}
-              </span>
-              {category.featured && (
-                <span className={`px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200`}>
-                  Featured
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="relative">
-          <button
-            onClick={() => setActionMenu(actionMenu === category._id ? null : category._id)}
-            className="p-1 text-gray-400 hover:text-gray-600"
-          >
-            <FiMoreVertical className="h-5 w-5" />
-          </button>
-          
-          {actionMenu === category._id && (
-            <>
-              <div 
-                className="fixed inset-0 z-10"
-                onClick={() => setActionMenu(null)}
-              />
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                <div className="py-1">
-                  <button
-                    onClick={() => {
-                      onView();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEye className="h-4 w-4 mr-2" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => {
-                      onEdit();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEdit2 className="h-4 w-4 mr-2" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => {
-                      onDuplicate();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiCopy className="h-4 w-4 mr-2" />
-                    Duplicate
-                  </button>
-                  <button
-                    onClick={() => {
-                      onDelete();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    <FiTrash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      
-      {category.description && (
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 line-clamp-2">{category.description}</p>
-        </div>
-      )}
-      
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{category.servicesCount || 0}</div>
-          <div className="text-xs text-gray-500">Services</div>
-        </div>
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{category.gigsCount || 0}</div>
-          <div className="text-xs text-gray-500">Gigs</div>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="text-sm text-gray-500">
-          <div>Order: {category.order || 0}</div>
-          <div className="mt-1">Level: {category.level || 0}</div>
-        </div>
-        <div className="text-sm text-gray-500">
-          <FiFolder className="h-4 w-4 inline mr-1" />
-          {format(new Date(category.createdAt), 'MMM d')}
-        </div>
-      </div>
-      
-      <div className="mt-4 flex space-x-2">
-        <button
-          onClick={onView}
-          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          View
-        </button>
-        <button
-          onClick={onEdit}
-          className="flex-1 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
-          Edit
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// Category Modal Component - Larger Size
-const CategoryModal = ({ isOpen, isEditing, formData, onClose, onSubmit, onChange, onGenerateSlug }) => {
-  if (!isOpen) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSubmit(e);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {isEditing ? 'Edit Category' : 'Create New Category'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-500"
-          >
-            <FiXCircle className="h-6 w-6" />
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto">
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Column */}
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => onChange({...formData, name: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                    placeholder="Enter category name"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => onChange({...formData, description: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                    rows="4"
-                    placeholder="Enter category description"
-                  />
-                </div>
-                
-<div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
-    Icon
-  </label>
-  <input
-    type="text"
-    value={formData.icon}
-    onChange={(e) => onChange({...formData, icon: e.target.value})}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-    placeholder="folder, star, tag, etc."
-  />
-  <p className="text-xs text-gray-500 mt-1">
-    Use common icon names like: folder, star, tag, home, user, etc.
-  </p>
-</div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Sort Order
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.order}
-                    onChange={(e) => onChange({...formData, order: parseInt(e.target.value) || 0})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                    min="0"
-                  />
-                </div>
-              </div>
-              
-              {/* Right Column */}
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Settings</label>
-                  <div className="space-y-4">
-                    <label className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={formData.isActive}
-                        onChange={(e) => onChange({...formData, isActive: e.target.checked})}
-                        className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="text-base text-gray-900 font-medium">Active</span>
-                        <p className="text-sm text-gray-500">Category will be visible to users</p>
-                      </div>
-                    </label>
-                    
-                    <label className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={formData.featured}
-                        onChange={(e) => onChange({...formData, featured: e.target.checked})}
-                        className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="text-base text-gray-900 font-medium">Featured</span>
-                        <p className="text-sm text-gray-500">Category will be highlighted as featured</p>
-                      </div>
-                    </label>
-                    
-                    <label className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={formData.popular}
-                        onChange={(e) => onChange({...formData, popular: e.target.checked})}
-                        className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="text-base text-gray-900 font-medium">Popular</span>
-                        <p className="text-sm text-gray-500">Category will be marked as popular</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Meta Title
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.metaTitle}
-                      onChange={(e) => onChange({...formData, metaTitle: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                      placeholder="SEO title"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Recommended: 50-60 characters</p>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Meta Description
-                    </label>
-                    <textarea
-                      value={formData.metaDescription}
-                      onChange={(e) => onChange({...formData, metaDescription: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                      rows="3"
-                      placeholder="SEO description"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Recommended: 150-160 characters</p>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Parent Category
-                  </label>
-                  <select
-                    value={formData.parentId}
-                    onChange={(e) => onChange({...formData, parentId: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
-                  >
-                    <option value="">No parent category</option>
-                    {/* You would map through existing categories here */}
-                  </select>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end space-x-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
-              >
-                {isEditing ? 'Update Category' : 'Create Category'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Category Details Modal Component
-const CategoryDetailsModal = ({ category, onClose }) => {
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">Category Details</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-500"
-          >
-            <FiXCircle className="h-6 w-6" />
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
-            {/* Basic Info */}
-            <div className="flex items-center space-x-4">
-              <div className="h-16 w-16 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <span className="text-2xl">{category.icon || '📁'}</span>
-              </div>
-              <div>
-                <h4 className="text-xl font-bold text-gray-900">{category.name}</h4>
-                <div className="flex items-center space-x-2 mt-2">
-                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${category.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {category.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                  {category.featured && (
-                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                      Featured
-                    </span>
-                  )}
-                  {category.popular && (
-                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
-                      Popular
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {/* Description */}
-            {category.description && (
-              <div>
-                <h5 className="font-semibold text-gray-900 mb-2">Description</h5>
-                <p className="text-gray-600">{category.description}</p>
-              </div>
-            )}
-            
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Services</p>
-                <p className="font-medium">{category.servicesCount || 0}</p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Gigs</p>
-                <p className="font-medium">{category.gigsCount || 0}</p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Order</p>
-                <p className="font-medium">{category.order || 0}</p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Level</p>
-                <p className="font-medium">{category.level || 0}</p>
-              </div>
-            </div>
-            
-            {/* SEO Info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h5 className="font-semibold text-gray-900 mb-2">SEO Information</h5>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600">Slug</p>
-                    <p className="font-mono text-sm bg-gray-50 p-2 rounded">{category.slug || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Meta Title</p>
-                    <p className="text-sm">{category.metaTitle || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Meta Description</p>
-                    <p className="text-sm">{category.metaDescription || 'N/A'}</p>
-                  </div>
-                  {category.metaKeywords && category.metaKeywords.length > 0 && (
-                    <div>
-                      <p className="text-sm text-gray-600">Meta Keywords</p>
-                      <div className="flex flex-wrap gap-1">
-                        {category.metaKeywords.map((keyword, index) => (
-                          <span key={index} className="px-2 py-1 text-xs bg-gray-100 rounded">
-                            {keyword}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div>
-                <h5 className="font-semibold text-gray-900 mb-2">Technical Information</h5>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600">Category ID</p>
-                    <p className="font-mono text-sm bg-gray-50 p-2 rounded">{category._id}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Created</p>
-                    <p className="text-sm">{format(new Date(category.createdAt), 'MMM d, yyyy HH:mm')}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Last Updated</p>
-                    <p className="text-sm">{format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm')}</p>
-                  </div>
-                  {category.createdBy && (
-                    <div>
-                      <p className="text-sm text-gray-600">Created By</p>
-                      <p className="text-sm">{category.createdBy.name || 'System'}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Delete Confirmation Modal Component
-const DeleteConfirmationModal = ({ type, itemToDelete, onClose, onConfirm }) => {
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-        <div className="p-6">
-          <div className="flex items-center mb-4">
-            <FiTrash2 className="h-6 w-6 text-red-600 mr-3" />
-            <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
-          </div>
-          
-          <p className="text-gray-600 mb-6">
-            {itemToDelete.type === 'single'
-              ? `Are you sure you want to delete this ${type}? This action cannot be undone.`
-              : `Are you sure you want to delete ${itemToDelete.ids.length} ${type}${itemToDelete.ids.length > 1 ? 's' : ''}? This action cannot be undone.`}
-          </p>
-          
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
+     
     </div>
   );
 };
