@@ -4,6 +4,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import CategoryHero from '../../components/categories/CategoryHero';
 import PopularSlider from '../../components/categories/PopularSlider';
 import CategoryFAQs from '../../components/categories/CategoryFAQs';
+import { SeoWrapper } from '../../components/SeoWrapper';
 
 const CategoryPage = () => {
   const { categoryId } = useParams();
@@ -39,6 +40,68 @@ const CategoryPage = () => {
     navigate(`/gigs?service=${encodeURIComponent(serviceName)}&category=${encodeURIComponent(categoryName)}&slug=${serviceSlug}`);
   };
 
+  // Generate structured data for category page
+  const generateCategoryStructuredData = () => {
+    if (!category) return null;
+
+    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const currentUrl = `${websiteUrl}/categories/${category.slug || categoryId}`;
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "CollectionPage",
+      "name": `${category.name} Services - Professional Freelancers | Vorkana`,
+      "description": category.description,
+      "url": currentUrl,
+      "about": {
+        "@type": "Thing",
+        "name": category.name,
+        "description": category.description,
+        "category": category.name
+      },
+      "hasPart": category.services?.map(service => ({
+        "@type": "Service",
+        "name": service.title,
+        "description": `Professional ${service.title.toLowerCase()} services`,
+        "serviceType": category.name,
+        "provider": {
+          "@type": "Organization",
+          "name": "Vorkana",
+          "url": websiteUrl
+        }
+      })),
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": websiteUrl
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Categories",
+            "item": `${websiteUrl}/categories`
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": category.name,
+            "item": currentUrl
+          }
+        ]
+      },
+      "mainEntity": {
+        "@type": "WebPage",
+        "@id": currentUrl,
+        "name": category.name,
+        "description": category.description
+      }
+    };
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -49,81 +112,113 @@ const CategoryPage = () => {
 
   if (!category) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800">Category not found</h2>
-          <p className="text-gray-600 mt-2">The category you're looking for doesn't exist.</p>
+      <SeoWrapper
+        title="Category Not Found | Vorkana"
+        description="The requested category could not be found on Vorkana marketplace."
+        canonical="/categories"
+        robots="noindex, follow"
+      >
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-800">Category not found</h2>
+            <p className="text-gray-600 mt-2">The category you're looking for doesn't exist.</p>
+          </div>
         </div>
-      </div>
+      </SeoWrapper>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <CategoryHero
-        category={category.name} 
-        description={category.description}
-        icon={category.icon}
-      />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <PopularSlider 
-          category={category.name}
-          services={category.popularServices}
+    <SeoWrapper
+      title={`${category.name} Services - Professional Freelancers | Vorkana`}
+      description={`${category.description} Browse ${category.totalServices}+ professional ${category.name.toLowerCase()} services with ${category.totalProviders}+ verified providers. Get quality work delivered fast.`}
+      keywords={`${category.name.toLowerCase()} services, hire ${category.name.toLowerCase()} freelancers, ${category.name.toLowerCase()} experts, professional ${category.name.toLowerCase()}, online ${category.name.toLowerCase()}`}
+      canonical={`/categories/${category.slug || categoryId}`}
+      ogTitle={`${category.name} Services - Vorkana`}
+      ogDescription={category.description}
+      ogImage={category.services?.[0]?.image || 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80'}
+      ogType="website"
+      twitterCard="summary_large_image"
+      twitterSite="@vorkana"
+      robots="index, follow"
+      lang="en"
+      breadcrumb={[
+        { name: "Home", url: "/" },
+        { name: "Categories", url: "/categories" },
+        { name: category.name, url: `/categories/${category.slug || categoryId}` }
+      ]}
+      structuredData={generateCategoryStructuredData()}
+    >
+      <div className="min-h-screen bg-white">
+        <CategoryHero
+          category={category.name} 
+          description={category.description}
+          icon={category.icon}
         />
         
-        {/* Explore Section */}
-        <div className="mb-16">
-          <div className="flex justify-start mb-8">
-            <h2 className="text-3xl font-bold text-black">
-              Explore {category.name}
-            </h2>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <PopularSlider 
+            category={category.name}
+            services={category.popularServices}
+          />
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {category.services.map((service, index) => (
-              <div key={service.id} className="space-y-6">
-                {/* Image at top (no card) */}
-                <div className="rounded-lg overflow-hidden h-48">
-                  <img
-                    src={service.image}
-                    alt={service.title}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-                
-                {/* Card with heading and services */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                  <h3 className="text-xl font-bold text-gray-900 mb-4">
-                    {service.title}
-                  </h3>
+          {/* Explore Section */}
+          <div className="mb-16">
+            <div className="flex justify-start mb-8">
+              <h2 className="text-3xl font-bold text-black">
+                Explore {category.name}
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {category.services.map((service, index) => (
+                <div key={service.id} className="space-y-6">
+                  {/* Image at top (no card) */}
+                  <div className="rounded-lg overflow-hidden h-48">
+                    <img
+                      src={service.image}
+                      alt={service.title}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80';
+                      }}
+                    />
+                  </div>
                   
-                  <div className="space-y-3">
-                    {service.services.map((item, itemIndex) => (
-                      <div 
-                        key={itemIndex} 
-                        className="flex items-center cursor-pointer"
-                        onClick={() => handleServiceClick(item, category.name)}
-                      >
-                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 mr-3"></div>
-                        <span className="text-gray-700 hover:text-green-600 transition-colors">
-                          {item}
-                        </span>
-                      </div>
-                    ))}
+                  {/* Card with heading and services */}
+                  <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">
+                      {service.title}
+                    </h3>
+                    
+                    <div className="space-y-3">
+                      {service.services.map((item, itemIndex) => (
+                        <div 
+                          key={itemIndex} 
+                          className="flex items-center cursor-pointer"
+                          onClick={() => handleServiceClick(item, category.name)}
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 mr-3"></div>
+                          <span className="text-gray-700 hover:text-green-600 transition-colors">
+                            {item}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+          
+          <CategoryFAQs
+            category={category.name}
+            faqs={category.faqs}
+          />
         </div>
-        
-        <CategoryFAQs
-          category={category.name}
-          faqs={category.faqs}
-        />
       </div>
-    </div>
+    </SeoWrapper>
   );
 };
 
