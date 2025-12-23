@@ -70,21 +70,15 @@ const serviceSchema = new mongoose.Schema({
   },
   // In service.model.js - Update the subcategory field
 subcategory: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Category',
-  required: [true, 'Subcategory is required'], // Changed from optional to required
-  index: true,
-  validate: {
-    validator: async function(v) {
-      if (!v) return false; // Ensure it's provided
-      const Category = mongoose.model('Category');
-      const subcategory = await Category.findById(v);
-      return subcategory && subcategory.isActive && subcategory.parentCategory && 
-             subcategory.parentCategory.equals(this.category);
-    },
-    message: 'Subcategory is required and must belong to the selected category'
-  }
-},
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    index: true,
+    // REMOVE required: true OR make it conditional
+    required: function() {
+      // Only require subcategory for active services, not for deletion
+      return this.status !== 'suspended' && this.status !== 'deleted';
+    }
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

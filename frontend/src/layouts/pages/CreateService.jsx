@@ -36,7 +36,8 @@ import { useCategories } from '../../hooks/useCategories';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isProfileCompleteEnough } from '../../utils/profileUtils'
-
+import { SeoWrapper } from '../../components/SeoWrapper';
+import { generateCreateServiceStructuredData, generateServiceCreationStructuredData } from '../../utils/seoStructuredData';
 const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
@@ -786,1045 +787,724 @@ const CreateService = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8">
-      <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <button
-                onClick={() => navigate('/profile')}
-                className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
-              >
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                Back to Profile
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">Create New Service</h1>
-              <p className="text-gray-600 mt-2">Fill in the details to create your service listing</p>
+    <SeoWrapper
+    title="Create Service - List Your Freelance Skills | Vorkana"
+      description="Easily create and publish your freelance service on Vorkana. Complete step-by-step form with categories, pricing, packages, and SEO optimization. Start earning today!"
+      keywords="create freelance service, list services, sell skills online, freelance marketplace, service creation, gig setup, service listing"
+      canonical="/create-service"
+      ogTitle="Create Your Service on Vorkana Marketplace"
+      ogDescription="Turn your skills into income. Create a professional service listing and reach clients worldwide."
+      structuredData={generateCreateServiceStructuredData(categoriesData || [])}
+      breadcrumb={[
+        { name: "Home", url: "/" },
+        { name: "Dashboard", url: "/dashboard" },
+        { name: "Create Service", url: "/create-service" }
+      ]}
+    >
+
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8">
+        <div className="max-w-6xl mx-auto px-4">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
+                >
+                  <ArrowLeft className="w-5 h-5 mr-2" />
+                  Back to Profile
+                </button>
+                <h1 className="text-3xl font-bold text-gray-900">Create New Service</h1>
+                <p className="text-gray-600 mt-2">Fill in the details to create your service listing</p>
+              </div>
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  type="button"
+                  onClick={fillTestData}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                >
+                  Fill Test Data
+                </button>
+              )}
             </div>
-            {process.env.NODE_ENV === 'development' && (
-              <button
-                type="button"
-                onClick={fillTestData}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-              >
-                Fill Test Data
-              </button>
-            )}
-          </div>
 
-          {/* Quick Stats */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-8 border border-blue-100">
-            <div className="flex flex-wrap gap-6">
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                  <Target className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Required Fields</p>
-                  <p className="font-semibold text-gray-900">5</p>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Completion</p>
-                  <p className="font-semibold text-gray-900">
-                    {(() => {
-                      const fields = ['title', 'description', 'category', 'price', 'deliveryTime'];
-                      const completed = fields.filter(f => {
-                        if (f === 'price' || f === 'deliveryTime') {
-                          return formData[f] && !isNaN(parseFloat(formData[f])) && parseFloat(formData[f]) > 0;
-                        }
-                        return formData[f] && formData[f].toString().trim().length > 0;
-                      }).length;
-                      return `${Math.round((completed / fields.length) * 100)}%`;
-                    })()}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
-                  <Shield className="w-4 h-4 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Security</p>
-                  <p className="font-semibold text-gray-900">Verified</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={(e) => handleSubmit(e, 'draft')} className="space-y-8">
-          {/* Section 1: Basic Information */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <Briefcase className="w-6 h-6 mr-2 text-blue-600" />
-              Basic Information
-            </h2>
-            
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <Upload className="w-6 h-6 mr-2 text-blue-600" />
-                Service Images
-              </h2>
-
-              <div className="space-y-8">
-                {/* Image Upload */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
-                  <div className="space-y-4">
-                    {/* Upload Area */}
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
-                      <input
-                        type="file"
-                        id="image-upload"
-                        multiple
-                        accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                        onChange={(e) => handleImageUpload(e.target.files)}
-                        className="hidden"
-                        disabled={uploadingImages || createServiceMutation.isPending}
-                      />
-                      <label htmlFor="image-upload" className="cursor-pointer">
-                        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <h4 className="text-lg font-medium text-gray-900 mb-2">
-                          Upload Service Images
-                        </h4>
-                        <p className="text-gray-600 mb-4">
-                          Drag & drop images or click to browse
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
-                        </p>
-                      </label>
-                    </div>
-
-                    {/* Image Preview Grid */}
-                    {uploadedImages.length > 0 && (
-                      <div>
-                        <div className="flex justify-between items-center mb-4">
-                          <h4 className="font-medium text-gray-900">
-                            Selected Images ({uploadedImages.length}/10)
-                          </h4>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-                              setUploadedImages([]);
-                            }}
-                            className="text-sm text-red-600 hover:text-red-700"
-                            disabled={createServiceMutation.isPending}
-                          >
-                            Remove All
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                          {uploadedImages.map((image, index) => (
-                            <div key={index} className="relative group">
-                              <img
-                                src={image.preview}
-                                alt={`Preview ${index + 1}`}
-                                className="w-full h-32 object-cover rounded-lg"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeImage(index)}
-                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                disabled={createServiceMutation.isPending}
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
-                                {image.name.substring(0, 20)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+            {/* Quick Stats */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-8 border border-blue-100">
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                    <Target className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Required Fields</p>
+                    <p className="font-semibold text-gray-900">5</p>
                   </div>
                 </div>
-
-                {/* Thumbnail Upload */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
-                  <div className="space-y-4">
-                    <p className="text-gray-600 text-sm">
-                      The thumbnail is the main image displayed in service listings. 
-                      It should be eye-catching and representative of your service.
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Completion</p>
+                    <p className="font-semibold text-gray-900">
+                      {(() => {
+                        const fields = ['title', 'description', 'category', 'price', 'deliveryTime'];
+                        const completed = fields.filter(f => {
+                          if (f === 'price' || f === 'deliveryTime') {
+                            return formData[f] && !isNaN(parseFloat(formData[f])) && parseFloat(formData[f]) > 0;
+                          }
+                          return formData[f] && formData[f].toString().trim().length > 0;
+                        }).length;
+                        return `${Math.round((completed / fields.length) * 100)}%`;
+                      })()}
                     </p>
+                  </div>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
+                    <Shield className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Security</p>
+                    <p className="font-semibold text-gray-900">Verified</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-                    {thumbnailFile ? (
-                      <div className="flex items-start gap-4">
-                        <div className="relative">
-                          <img
-                            src={thumbnailFile.preview}
-                            alt="Thumbnail preview"
-                            className="w-32 h-32 object-cover rounded-lg"
-                          />
-                          <button
-                            type="button"
-                            onClick={removeThumbnail}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                            disabled={createServiceMutation.isPending}
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div>
-                          <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
-                          <p className="text-gray-500 text-sm">
-                            {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
-                          </p>
-                          <p className="text-gray-500 text-sm mt-2">
-                            This image will be used as the service thumbnail.
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+          <form onSubmit={(e) => handleSubmit(e, 'draft')} className="space-y-8">
+            {/* Section 1: Basic Information */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <Briefcase className="w-6 h-6 mr-2 text-blue-600" />
+                Basic Information
+              </h2>
+              
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                  <Upload className="w-6 h-6 mr-2 text-blue-600" />
+                  Service Images
+                </h2>
+
+                <div className="space-y-8">
+                  {/* Image Upload */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
+                    <div className="space-y-4">
+                      {/* Upload Area */}
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
                         <input
                           type="file"
-                          id="thumbnail-upload"
-                          accept="image/jpeg,image/jpg,image/png,image/webp"
-                          onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                          id="image-upload"
+                          multiple
+                          accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                          onChange={(e) => handleImageUpload(e.target.files)}
                           className="hidden"
-                          disabled={uploadingThumbnail || createServiceMutation.isPending}
+                          disabled={uploadingImages || createServiceMutation.isPending}
                         />
-                        <label htmlFor="thumbnail-upload" className="cursor-pointer">
-                          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                          <h4 className="text-lg font-medium text-gray-900 mb-1">
-                            Upload Thumbnail
+                        <label htmlFor="image-upload" className="cursor-pointer">
+                          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <h4 className="text-lg font-medium text-gray-900 mb-2">
+                            Upload Service Images
                           </h4>
-                          <p className="text-gray-600 text-sm mb-2">
-                            Recommended: 800×600 pixels, max 2MB
+                          <p className="text-gray-600 mb-4">
+                            Drag & drop images or click to browse
                           </p>
-                          <p className="text-gray-500 text-xs">
-                            Click to browse or drag & drop
+                          <p className="text-sm text-gray-500">
+                            Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
                           </p>
                         </label>
                       </div>
-                    )}
 
-                    {/* Tip */}
-                    {uploadedImages.length > 0 && !thumbnailFile && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="text-sm text-blue-700">
-                          <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
-                          after creating the service.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Service Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="e.g., Professional Web Development"
-                  required
-                />
-                <div className="flex justify-between mt-2">
-                  <p className="text-xs text-gray-500">
-                    Minimum 5 characters required
-                  </p>
-                  <span className={`text-xs ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formData.title.length}/200
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Category <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      name="category"
-                      value={formData.category}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
-                      required
-                      disabled={categoryLoading || createServiceMutation.isPending}
-                    >
-                      <option value="">Select a category</option>
-                      {categoryLoading ? (
-                        <option value="" disabled>Loading categories...</option>
-                      ) : categoryError ? (
-                        <option value="" disabled>Failed to load categories</option>
-                      ) : categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0 ? (
-                        categoriesData.map(category => (
-                          <option key={category._id} value={category._id}>
-                            {category.name}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>No categories available</option>
-                      )}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                      <ChevronDown className="h-4 w-4" />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subcategory <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      name="subcategory"
-                      value={formData.subcategory}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
-                      required
-                      disabled={!formData.category || subcategories.length === 0 || createServiceMutation.isPending}
-                    >
-                      <option value="">Select a subcategory</option>
-                      {!formData.category ? (
-                        <option value="" disabled>Select a category first</option>
-                      ) : subcategories.length === 0 ? (
-                        <option value="" disabled>No subcategories available for this category</option>
-                      ) : (
-                        subcategories.map(subcategory => (
-                          <option key={subcategory._id} value={subcategory._id}>
-                            {subcategory.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                      <ChevronDown className="h-4 w-4" />
-                    </div>
-                  </div>
-                  {!formData.category && (
-                    <p className="text-xs text-amber-600 mt-2">
-                      Please select a category first
-                    </p>
-                  )}
-                  {formData.category && subcategories.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-2">
-                      No subcategories available for this category
-                    </p>
-                  )}
-                  {formData.subcategory && (
-                    <p className="text-xs text-green-600 mt-2">
-                      Selected: <span className="font-medium">{getSubcategoryName()}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Gig Type
-                  </label>
-                  <select
-                    name="gigType"
-                    value={formData.gigType}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={createServiceMutation.isPending}
-                  >
-                    <option value="basic">Basic</option>
-                    <option value="standard">Standard</option>
-                    <option value="premium">Premium</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Experience Level
-                  </label>
-                  <select
-                    name="userLevel"
-                    value={formData.userLevel || 'new'}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={createServiceMutation.isPending}
-                  >
-                    <option value="new">Beginner</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="expert">Expert</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Short Description <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  name="shortDescription"
-                  value={formData.shortDescription}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows="3"
-                  placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
-                  maxLength="250"
-                  required
-                  disabled={createServiceMutation.isPending}
-                />
-                <div className="flex justify-between mt-2">
-                  <p className="text-xs text-gray-500">
-                    Required - Minimum 20 characters
-                  </p>
-                  <span className={`text-xs font-medium ${formData.shortDescription.length < 20 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formData.shortDescription.length}/250
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Description <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows="6"
-                  placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
-                  required
-                  disabled={createServiceMutation.isPending}
-                />
-                <div className="flex justify-between mt-2">
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      Minimum 50 characters required
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Maximum 5000 characters allowed
-                    </p>
-                  </div>
-                  <span className={`text-xs font-medium ${formData.description.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formData.description.length}/5000
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Pricing & Delivery */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <DollarSign className="w-6 h-6 mr-2 text-green-600" />
-              Pricing & Delivery
-            </h2>
-
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Price <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <DollarSign className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <input
-                      type="number"
-                      name="price"
-                      value={formData.price}
-                      onChange={handleInputChange}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="0.00"
-                      required
-                      min="1"
-                      max="100000"
-                      step="0.01"
-                      disabled={createServiceMutation.isPending}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-2">
-                    <p className="text-xs text-gray-500">Minimum $1, maximum $100,000</p>
-                    {formData.price && (
-                      <span className="text-xs text-green-600">
-                        ${parseFloat(formData.price).toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Currency
-                  </label>
-                  <select
-                    name="currency"
-                    value={formData.currency}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={createServiceMutation.isPending}
-                  >
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                    <option value="CAD">CAD (C$)</option>
-                    <option value="AUD">AUD (A$)</option>
-                    <option value="INR">INR (₹)</option>
-                    <option value="PKR">PKR (₨)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Delivery Time <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex gap-3">
-                    <input
-                      type="number"
-                      name="deliveryTime"
-                      value={formData.deliveryTime}
-                      onChange={handleInputChange}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., 7"
-                      required
-                      min="1"
-                      max="365"
-                      disabled={createServiceMutation.isPending}
-                    />
-                    <select
-                      name="deliveryTimeUnit"
-                      value={formData.deliveryTimeUnit}
-                      onChange={handleInputChange}
-                      className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      disabled={createServiceMutation.isPending}
-                    >
-                      <option value="days">Days</option>
-                      <option value="hours">Hours</option>
-                      <option value="weeks">Weeks</option>
-                    </select>
-                  </div>
-                  <div className="flex justify-between mt-2">
-                    <p className="text-xs text-gray-500">Minimum 1 day, maximum 365 days</p>
-                    {formData.deliveryTime && (
-                      <span className="text-xs text-green-600">
-                        {formData.deliveryTime} {formData.deliveryTimeUnit}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Revisions Included
-                  </label>
-                  <input
-                    type="number"
-                    name="revisions"
-                    value={formData.revisions}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Number of revisions"
-                    min="0"
-                    max="99"
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <p className="text-xs text-gray-500 mt-2">0-99 revisions included</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Tags & Keywords */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <Tag className="w-6 h-6 mr-2 text-purple-600" />
-              Tags & Keywords
-            </h2>
-
-            <div className="space-y-8">
-              {/* Tags */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                  <Tag className="w-5 h-5 mr-2" />
-                  Service Tags
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={newTag}
-                      onChange={(e) => setNewTag(e.target.value)}
-                      onKeyPress={(e) => handleKeyPress(e, 'tag')}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Add a tag (e.g., web development, design)"
-                      maxLength="30"
-                      disabled={createServiceMutation.isPending}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddTag}
-                      disabled={createServiceMutation.isPending}
-                      className="px-6 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Tags help customers find your service. Maximum 20 tags.
-                  </p>
-
-                  {formData.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {formData.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-3 py-1.5 rounded-full bg-purple-100 text-purple-800 text-sm"
-                        >
-                          {tag}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTag(tag)}
-                            disabled={createServiceMutation.isPending}
-                            className="ml-2 text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Search Keywords */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                  <Eye className="w-5 h-5 mr-2" />
-                  Search Keywords
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={newKeyword}
-                      onChange={(e) => setNewKeyword(e.target.value)}
-                      onKeyPress={(e) => handleKeyPress(e, 'keyword')}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Add search keyword (e.g., web design, logo design)"
-                      maxLength="30"
-                      disabled={createServiceMutation.isPending}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddKeyword}
-                      disabled={createServiceMutation.isPending}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Keywords improve search visibility. Maximum 20 keywords.
-                  </p>
-
-                  {formData.searchKeywords.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {formData.searchKeywords.map((keyword, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-sm"
-                        >
-                          {keyword}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveKeyword(keyword)}
-                            disabled={createServiceMutation.isPending}
-                            className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Features */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <CheckSquare className="w-6 h-6 mr-2 text-green-600" />
-              Service Features
-            </h2>
-
-            <div className="space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Feature Title
-                    </label>
-                    <input
-                      type="text"
-                      value={newFeature.title}
-                      onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
-                      onKeyPress={(e) => handleKeyPress(e, 'feature')}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder="e.g., Responsive Design"
-                      maxLength="100"
-                      disabled={createServiceMutation.isPending}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
-                    </label>
-                    <input
-                      type="text"
-                      value={newFeature.description}
-                      onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Brief description"
-                      maxLength="200"
-                      disabled={createServiceMutation.isPending}
-                    />
-                  </div>
-
-                  <div className="flex items-end">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={newFeature.included}
-                        onChange={(e) => setNewFeature(prev => ({ ...prev, included: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 rounded"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <span className="ml-2 text-sm text-gray-700">Included in service</span>
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleAddFeature}
-                  disabled={createServiceMutation.isPending}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add Feature
-                </button>
-              </div>
-
-              {formData.features.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold text-gray-800">Added Features</h3>
-                  {formData.features.map((feature, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
-                      <div className="flex items-center">
-                        <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-green-500' : 'text-gray-400'}`} />
+                      {/* Image Preview Grid */}
+                      {uploadedImages.length > 0 && (
                         <div>
-                          <h4 className="font-medium text-gray-900">{feature.title}</h4>
-                          {feature.description && (
-                            <p className="text-sm text-gray-600">{feature.description}</p>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFeature(index)}
-                        disabled={createServiceMutation.isPending}
-                        className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Section 5: Requirements */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <FileText className="w-6 h-6 mr-2 text-orange-600" />
-              Client Requirements
-            </h2>
-
-            <div className="space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Question *
-                    </label>
-                    <input
-                      type="text"
-                      value={newRequirement.question}
-                      onChange={(e) => setNewRequirement(prev => ({ ...prev, question: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder="What information do you need from the client?"
-                      maxLength="200"
-                      disabled={createServiceMutation.isPending}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Input Type
-                      </label>
-                      <select
-                        value={newRequirement.type}
-                        onChange={(e) => setNewRequirement(prev => ({ ...prev, type: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        disabled={createServiceMutation.isPending}
-                      >
-                        <option value="text">Text</option>
-                        <option value="file">File Upload</option>
-                        <option value="choice">Single Choice</option>
-                        <option value="multiple">Multiple Choice</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-end">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={newRequirement.required}
-                          onChange={(e) => setNewRequirement(prev => ({ ...prev, required: e.target.checked }))}
-                          className="h-4 w-4 text-blue-600 rounded"
-                          disabled={createServiceMutation.isPending}
-                        />
-                        <span className="ml-2 text-sm text-gray-700">Required field</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {(newRequirement.type === 'choice' || newRequirement.type === 'multiple') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Options
-                      </label>
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={newRequirementOption}
-                          onChange={(e) => setNewRequirementOption(e.target.value)}
-                          onKeyPress={(e) => handleKeyPress(e, 'requirementOption')}
-                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Add an option"
-                          disabled={createServiceMutation.isPending}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddRequirementOption}
-                          disabled={createServiceMutation.isPending}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Add
-                        </button>
-                      </div>
-
-                      {newRequirement.options.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {newRequirement.options.map((option, index) => (
-                            <span
-                              key={index}
-                              className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-medium text-gray-900">
+                              Selected Images ({uploadedImages.length}/10)
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                                setUploadedImages([]);
+                              }}
+                              className="text-sm text-red-600 hover:text-red-700"
+                              disabled={createServiceMutation.isPending}
                             >
-                              {option}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveRequirementOption(option)}
-                                disabled={createServiceMutation.isPending}
-                                className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleAddRequirement}
-                    disabled={createServiceMutation.isPending}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add Requirement
-                  </button>
-                </div>
-              </div>
-
-              {formData.requirements.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold text-gray-800">Added Requirements</h3>
-                  {formData.requirements.map((req, index) => (
-                    <div key={index} className="p-3 bg-gray-50 rounded-lg border">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h4 className="font-medium text-gray-900">{req.question}</h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs px-2 py-1 bg-gray-200 rounded">
-                              {req.type}
-                            </span>
-                            {req.required && (
-                              <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">
-                                Required
-                              </span>
-                            )}
+                              Remove All
+                            </button>
                           </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRequirement(index)}
-                          disabled={createServiceMutation.isPending}
-                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
 
-                      {req.options.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-sm text-gray-600 mb-1">Options:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {req.options.map((option, optIndex) => (
-                              <span
-                                key={optIndex}
-                                className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded"
-                              >
-                                {option}
-                              </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {uploadedImages.map((image, index) => (
+                              <div key={index} className="relative group">
+                                <img
+                                  src={image.preview}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-full h-32 object-cover rounded-lg"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeImage(index)}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  disabled={createServiceMutation.isPending}
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                                  {image.name.substring(0, 20)}
+                                </div>
+                              </div>
                             ))}
                           </div>
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Section 6: FAQs */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <HelpCircle className="w-6 h-6 mr-2 text-indigo-600" />
-              Frequently Asked Questions
-            </h2>
-
-            <div className="space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Question *
-                    </label>
-                    <input
-                      type="text"
-                      value={newFAQ.question}
-                      onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Common question from clients"
-                      maxLength="200"
-                      disabled={createServiceMutation.isPending}
-                    />
                   </div>
 
+                  {/* Thumbnail Upload */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Answer *
-                    </label>
-                    <textarea
-                      value={newFAQ.answer}
-                      onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                      rows="3"
-                      placeholder="Your answer to the question"
-                      maxLength="500"
-                      disabled={createServiceMutation.isPending}
-                    />
-                  </div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+                    <div className="space-y-4">
+                      <p className="text-gray-600 text-sm">
+                        The thumbnail is the main image displayed in service listings. 
+                        It should be eye-catching and representative of your service.
+                      </p>
 
-                  <button
-                    type="button"
-                    onClick={handleAddFAQ}
-                    disabled={createServiceMutation.isPending}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add FAQ
-                  </button>
+                      {thumbnailFile ? (
+                        <div className="flex items-start gap-4">
+                          <div className="relative">
+                            <img
+                              src={thumbnailFile.preview}
+                              alt="Thumbnail preview"
+                              className="w-32 h-32 object-cover rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={removeThumbnail}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                              disabled={createServiceMutation.isPending}
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                            <p className="text-gray-500 text-sm">
+                              {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
+                            </p>
+                            <p className="text-gray-500 text-sm mt-2">
+                              This image will be used as the service thumbnail.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                          <input
+                            type="file"
+                            id="thumbnail-upload"
+                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                            onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                            className="hidden"
+                            disabled={uploadingThumbnail || createServiceMutation.isPending}
+                          />
+                          <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                            <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                            <h4 className="text-lg font-medium text-gray-900 mb-1">
+                              Upload Thumbnail
+                            </h4>
+                            <p className="text-gray-600 text-sm mb-2">
+                              Recommended: 800×600 pixels, max 2MB
+                            </p>
+                            <p className="text-gray-500 text-xs">
+                              Click to browse or drag & drop
+                            </p>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* Tip */}
+                      {uploadedImages.length > 0 && !thumbnailFile && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <p className="text-sm text-blue-700">
+                            <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
+                            after creating the service.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {formData.faqs.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold text-gray-800">Added FAQs</h3>
-                  {formData.faqs.map((faq, index) => (
-                    <div key={index} className="p-4 bg-gray-50 rounded-lg border">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-medium text-gray-900">{faq.question}</h4>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFAQ(index)}
-                          disabled={createServiceMutation.isPending}
-                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <p className="text-gray-600">{faq.answer}</p>
-                    </div>
-                  ))}
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Service Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="e.g., Professional Web Development"
+                    required
+                  />
+                  <div className="flex justify-between mt-2">
+                    <p className="text-xs text-gray-500">
+                      Minimum 5 characters required
+                    </p>
+                    <span className={`text-xs ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formData.title.length}/200
+                    </span>
+                  </div>
                 </div>
-              )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        name="category"
+                        value={formData.category}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
+                        required
+                        disabled={categoryLoading || createServiceMutation.isPending}
+                      >
+                        <option value="">Select a category</option>
+                        {categoryLoading ? (
+                          <option value="" disabled>Loading categories...</option>
+                        ) : categoryError ? (
+                          <option value="" disabled>Failed to load categories</option>
+                        ) : categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0 ? (
+                          categoriesData.map(category => (
+                            <option key={category._id} value={category._id}>
+                              {category.name}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No categories available</option>
+                        )}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Subcategory <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        name="subcategory"
+                        value={formData.subcategory}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
+                        required
+                        disabled={!formData.category || subcategories.length === 0 || createServiceMutation.isPending}
+                      >
+                        <option value="">Select a subcategory</option>
+                        {!formData.category ? (
+                          <option value="" disabled>Select a category first</option>
+                        ) : subcategories.length === 0 ? (
+                          <option value="" disabled>No subcategories available for this category</option>
+                        ) : (
+                          subcategories.map(subcategory => (
+                            <option key={subcategory._id} value={subcategory._id}>
+                              {subcategory.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
+                    {!formData.category && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        Please select a category first
+                      </p>
+                    )}
+                    {formData.category && subcategories.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        No subcategories available for this category
+                      </p>
+                    )}
+                    {formData.subcategory && (
+                      <p className="text-xs text-green-600 mt-2">
+                        Selected: <span className="font-medium">{getSubcategoryName()}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Gig Type
+                    </label>
+                    <select
+                      name="gigType"
+                      value={formData.gigType}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      disabled={createServiceMutation.isPending}
+                    >
+                      <option value="basic">Basic</option>
+                      <option value="standard">Standard</option>
+                      <option value="premium">Premium</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Experience Level
+                    </label>
+                    <select
+                      name="userLevel"
+                      value={formData.userLevel || 'new'}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      disabled={createServiceMutation.isPending}
+                    >
+                      <option value="new">Beginner</option>
+                      <option value="intermediate">Intermediate</option>
+                      <option value="expert">Expert</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Short Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    name="shortDescription"
+                    value={formData.shortDescription}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows="3"
+                    placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
+                    maxLength="250"
+                    required
+                    disabled={createServiceMutation.isPending}
+                  />
+                  <div className="flex justify-between mt-2">
+                    <p className="text-xs text-gray-500">
+                      Required - Minimum 20 characters
+                    </p>
+                    <span className={`text-xs font-medium ${formData.shortDescription.length < 20 ? 'text-red-600' : 'text-green-600'}`}>
+                      {formData.shortDescription.length}/250
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Full Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows="6"
+                    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
+                    required
+                    disabled={createServiceMutation.isPending}
+                  />
+                  <div className="flex justify-between mt-2">
+                    <div>
+                      <p className="text-xs text-gray-500">
+                        Minimum 50 characters required
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Maximum 5000 characters allowed
+                      </p>
+                    </div>
+                    <span className={`text-xs font-medium ${formData.description.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
+                      {formData.description.length}/5000
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
 
-          {/* Section 7: Packages */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-              <Package className="w-6 h-6 mr-2 text-amber-600" />
-              Service Packages
-            </h2>
+            {/* Section 2: Pricing & Delivery */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <DollarSign className="w-6 h-6 mr-2 text-green-600" />
+                Pricing & Delivery
+              </h2>
 
-            <div className="space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Price <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <DollarSign className="h-5 w-5 text-gray-400" />
+                      </div>
+                      <input
+                        type="number"
+                        name="price"
+                        value={formData.price}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="0.00"
+                        required
+                        min="1"
+                        max="100000"
+                        step="0.01"
+                        disabled={createServiceMutation.isPending}
+                      />
+                    </div>
+                    <div className="flex justify-between mt-2">
+                      <p className="text-xs text-gray-500">Minimum $1, maximum $100,000</p>
+                      {formData.price && (
+                        <span className="text-xs text-green-600">
+                          ${parseFloat(formData.price).toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Currency
+                    </label>
+                    <select
+                      name="currency"
+                      value={formData.currency}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      disabled={createServiceMutation.isPending}
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="CAD">CAD (C$)</option>
+                      <option value="AUD">AUD (A$)</option>
+                      <option value="INR">INR (₹)</option>
+                      <option value="PKR">PKR (₨)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Delivery Time <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-3">
+                      <input
+                        type="number"
+                        name="deliveryTime"
+                        value={formData.deliveryTime}
+                        onChange={handleInputChange}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., 7"
+                        required
+                        min="1"
+                        max="365"
+                        disabled={createServiceMutation.isPending}
+                      />
+                      <select
+                        name="deliveryTimeUnit"
+                        value={formData.deliveryTimeUnit}
+                        onChange={handleInputChange}
+                        className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        disabled={createServiceMutation.isPending}
+                      >
+                        <option value="days">Days</option>
+                        <option value="hours">Hours</option>
+                        <option value="weeks">Weeks</option>
+                      </select>
+                    </div>
+                    <div className="flex justify-between mt-2">
+                      <p className="text-xs text-gray-500">Minimum 1 day, maximum 365 days</p>
+                      {formData.deliveryTime && (
+                        <span className="text-xs text-green-600">
+                          {formData.deliveryTime} {formData.deliveryTimeUnit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Revisions Included
+                    </label>
+                    <input
+                      type="number"
+                      name="revisions"
+                      value={formData.revisions}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Number of revisions"
+                      min="0"
+                      max="99"
+                      disabled={createServiceMutation.isPending}
+                    />
+                    <p className="text-xs text-gray-500 mt-2">0-99 revisions included</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Tags & Keywords */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <Tag className="w-6 h-6 mr-2 text-purple-600" />
+                Tags & Keywords
+              </h2>
+
+              <div className="space-y-8">
+                {/* Tags */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <Tag className="w-5 h-5 mr-2" />
+                    Service Tags
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={newTag}
+                        onChange={(e) => setNewTag(e.target.value)}
+                        onKeyPress={(e) => handleKeyPress(e, 'tag')}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Add a tag (e.g., web development, design)"
+                        maxLength="30"
+                        disabled={createServiceMutation.isPending}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddTag}
+                        disabled={createServiceMutation.isPending}
+                        className="px-6 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Tags help customers find your service. Maximum 20 tags.
+                    </p>
+
+                    {formData.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {formData.tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-3 py-1.5 rounded-full bg-purple-100 text-purple-800 text-sm"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTag(tag)}
+                              disabled={createServiceMutation.isPending}
+                              className="ml-2 text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Search Keywords */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <Eye className="w-5 h-5 mr-2" />
+                    Search Keywords
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={newKeyword}
+                        onChange={(e) => setNewKeyword(e.target.value)}
+                        onKeyPress={(e) => handleKeyPress(e, 'keyword')}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Add search keyword (e.g., web design, logo design)"
+                        maxLength="30"
+                        disabled={createServiceMutation.isPending}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddKeyword}
+                        disabled={createServiceMutation.isPending}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Keywords improve search visibility. Maximum 20 keywords.
+                    </p>
+
+                    {formData.searchKeywords.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {formData.searchKeywords.map((keyword, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-sm"
+                          >
+                            {keyword}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveKeyword(keyword)}
+                              disabled={createServiceMutation.isPending}
+                              className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Features */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <CheckSquare className="w-6 h-6 mr-2 text-green-600" />
+                Service Features
+              </h2>
+
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Package Name *
+                        Feature Title
                       </label>
                       <input
                         type="text"
-                        value={newPackage.name}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, name: e.target.value }))}
+                        value={newFeature.title}
+                        onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
+                        onKeyPress={(e) => handleKeyPress(e, 'feature')}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="e.g., Basic, Standard, Premium"
-                        maxLength="50"
+                        placeholder="e.g., Responsive Design"
+                        maxLength="100"
                         disabled={createServiceMutation.isPending}
                       />
                     </div>
@@ -1835,153 +1515,206 @@ const CreateService = () => {
                       </label>
                       <input
                         type="text"
-                        value={newPackage.description}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, description: e.target.value }))}
+                        value={newFeature.description}
+                        onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Brief package description"
-                        maxLength="500"
+                        placeholder="Brief description"
+                        maxLength="200"
                         disabled={createServiceMutation.isPending}
                       />
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Price *
+                    <div className="flex items-end">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={newFeature.included}
+                          onChange={(e) => setNewFeature(prev => ({ ...prev, included: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 rounded"
+                          disabled={createServiceMutation.isPending}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Included in service</span>
                       </label>
-                      <input
-                        type="number"
-                        value={newPackage.price}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, price: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="0.00"
-                        min="1"
-                        step="0.01"
-                        disabled={createServiceMutation.isPending}
-                      />
                     </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Delivery Time *
-                      </label>
-                      <input
-                        type="number"
-                        value={newPackage.deliveryTime}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, deliveryTime: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Days"
-                        min="1"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Revisions
-                      </label>
-                      <input
-                        type="number"
-                        value={newPackage.revisions}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, revisions: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="0"
-                        min="0"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Package Features
-                    </label>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={newPackageFeature}
-                        onChange={(e) => setNewPackageFeature(e.target.value)}
-                        onKeyPress={(e) => handleKeyPress(e, 'packageFeature')}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Add a feature"
-                        maxLength="100"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddPackageFeature}
-                        disabled={createServiceMutation.isPending}
-                        className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Add
-                      </button>
-                    </div>
-
-                    {newPackage.features.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {newPackage.features.map((feature, index) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm"
-                          >
-                            {feature}
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePackageFeature(feature)}
-                              disabled={createServiceMutation.isPending}
-                              className="ml-2 text-amber-600 hover:text-amber-800 disabled:opacity-50"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={newPackage.popular}
-                        onChange={(e) => setNewPackage(prev => ({ ...prev, popular: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 rounded"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <span className="ml-2 text-sm text-gray-700">Mark as Popular Package</span>
-                    </label>
                   </div>
 
                   <button
                     type="button"
-                    onClick={handleAddPackage}
+                    onClick={handleAddFeature}
                     disabled={createServiceMutation.isPending}
-                    className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Add Package
+                    Add Feature
                   </button>
                 </div>
-              </div>
 
-              {formData.packages.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-800">Added Packages</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {formData.packages.map((pkg, index) => (
-                      <div key={index} className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-start mb-3">
+                {formData.features.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-800">Added Features</h3>
+                    {formData.features.map((feature, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center">
+                          <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-green-500' : 'text-gray-400'}`} />
                           <div>
-                            <h4 className="font-bold text-lg text-gray-900">{pkg.name}</h4>
-                            {pkg.popular && (
-                              <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded mt-1">
-                                Most Popular
-                              </span>
+                            <h4 className="font-medium text-gray-900">{feature.title}</h4>
+                            {feature.description && (
+                              <p className="text-sm text-gray-600">{feature.description}</p>
                             )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFeature(index)}
+                          disabled={createServiceMutation.isPending}
+                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 5: Requirements */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <FileText className="w-6 h-6 mr-2 text-orange-600" />
+                Client Requirements
+              </h2>
+
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Question *
+                      </label>
+                      <input
+                        type="text"
+                        value={newRequirement.question}
+                        onChange={(e) => setNewRequirement(prev => ({ ...prev, question: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                        placeholder="What information do you need from the client?"
+                        maxLength="200"
+                        disabled={createServiceMutation.isPending}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Input Type
+                        </label>
+                        <select
+                          value={newRequirement.type}
+                          onChange={(e) => setNewRequirement(prev => ({ ...prev, type: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          disabled={createServiceMutation.isPending}
+                        >
+                          <option value="text">Text</option>
+                          <option value="file">File Upload</option>
+                          <option value="choice">Single Choice</option>
+                          <option value="multiple">Multiple Choice</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-end">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={newRequirement.required}
+                            onChange={(e) => setNewRequirement(prev => ({ ...prev, required: e.target.checked }))}
+                            className="h-4 w-4 text-blue-600 rounded"
+                            disabled={createServiceMutation.isPending}
+                          />
+                          <span className="ml-2 text-sm text-gray-700">Required field</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {(newRequirement.type === 'choice' || newRequirement.type === 'multiple') && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Options
+                        </label>
+                        <div className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={newRequirementOption}
+                            onChange={(e) => setNewRequirementOption(e.target.value)}
+                            onKeyPress={(e) => handleKeyPress(e, 'requirementOption')}
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                            placeholder="Add an option"
+                            disabled={createServiceMutation.isPending}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddRequirementOption}
+                            disabled={createServiceMutation.isPending}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Add
+                          </button>
+                        </div>
+
+                        {newRequirement.options.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {newRequirement.options.map((option, index) => (
+                              <span
+                                key={index}
+                                className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
+                              >
+                                {option}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveRequirementOption(option)}
+                                  disabled={createServiceMutation.isPending}
+                                  className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleAddRequirement}
+                      disabled={createServiceMutation.isPending}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add Requirement
+                    </button>
+                  </div>
+                </div>
+
+                {formData.requirements.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-800">Added Requirements</h3>
+                    {formData.requirements.map((req, index) => (
+                      <div key={index} className="p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{req.question}</h4>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs px-2 py-1 bg-gray-200 rounded">
+                                {req.type}
+                              </span>
+                              {req.required && (
+                                <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">
+                                  Required
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <button
                             type="button"
-                            onClick={() => handleRemovePackage(index)}
+                            onClick={() => handleRemoveRequirement(index)}
                             disabled={createServiceMutation.isPending}
                             className="text-red-500 hover:text-red-700 disabled:opacity-50"
                           >
@@ -1989,192 +1722,477 @@ const CreateService = () => {
                           </button>
                         </div>
 
-                        {pkg.description && (
-                          <p className="text-gray-600 text-sm mb-3">{pkg.description}</p>
-                        )}
-
-                        <div className="space-y-2 mb-3">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Price:</span>
-                            <span className="font-semibold">${pkg.price}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Delivery:</span>
-                            <span>{pkg.deliveryTime} days</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Revisions:</span>
-                            <span>{pkg.revisions}</span>
-                          </div>
-                        </div>
-
-                        {pkg.features && pkg.features.length > 0 && (
-                          <div>
-                            <h5 className="text-sm font-medium text-gray-700 mb-1">Features:</h5>
-                            <ul className="space-y-1">
-                              {pkg.features.slice(0, 3).map((feature, featIndex) => (
-                                <li key={featIndex} className="text-xs text-gray-600 flex items-center">
-                                  <CheckCircle className="w-3 h-3 text-green-500 mr-1" />
-                                  {feature}
-                                </li>
+                        {req.options.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-sm text-gray-600 mb-1">Options:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {req.options.map((option, optIndex) => (
+                                <span
+                                  key={optIndex}
+                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded"
+                                >
+                                  {option}
+                                </span>
                               ))}
-                              {pkg.features.length > 3 && (
-                                <li className="text-xs text-gray-500">
-                                  +{pkg.features.length - 3} more features
-                                </li>
-                              )}
-                            </ul>
+                            </div>
                           </div>
                         )}
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 6: FAQs */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <HelpCircle className="w-6 h-6 mr-2 text-indigo-600" />
+                Frequently Asked Questions
+              </h2>
+
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Question *
+                      </label>
+                      <input
+                        type="text"
+                        value={newFAQ.question}
+                        onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                        placeholder="Common question from clients"
+                        maxLength="200"
+                        disabled={createServiceMutation.isPending}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Answer *
+                      </label>
+                      <textarea
+                        value={newFAQ.answer}
+                        onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                        rows="3"
+                        placeholder="Your answer to the question"
+                        maxLength="500"
+                        disabled={createServiceMutation.isPending}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddFAQ}
+                      disabled={createServiceMutation.isPending}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add FAQ
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
 
-         
-
-{/* Validation Summary */}
-<div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-  <h3 className="text-lg font-semibold text-yellow-800 mb-4 flex items-center">
-    <AlertCircle className="w-5 h-5 mr-2" />
-    Before You Submit
-  </h3>
-  
-  <div className="space-y-2">
-    <div className="flex items-center">
-      {formData.title.length >= 5 ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-        Title: {formData.title.length >= 5 ? '✓ Valid' : `Needs ${5 - formData.title.length} more characters`}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.description.length >= 50 ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.description.length >= 50 ? 'text-green-600' : 'text-red-600'}`}>
-        Description: {formData.description.length >= 50 ? '✓ Valid' : `Needs ${50 - formData.description.length} more characters`}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.shortDescription && formData.shortDescription.length >= 20 ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.shortDescription && formData.shortDescription.length >= 20 ? 'text-green-600' : 'text-red-600'}`}>
-        Short Description: {formData.shortDescription && formData.shortDescription.length >= 20 ? '✓ Valid' : `Needs ${20 - (formData.shortDescription?.length || 0)} more characters`}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.category ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.category ? 'text-green-600' : 'text-red-600'}`}>
-        Category: {formData.category ? '✓ Selected' : 'Required'}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.subcategory ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.subcategory ? 'text-green-600' : 'text-red-600'}`}>
-        Subcategory: {formData.subcategory ? '✓ Selected' : 'Required'}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.price && parseFloat(formData.price) >= 1 ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.price && parseFloat(formData.price) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-        Price: {formData.price && parseFloat(formData.price) >= 1 ? '✓ Valid' : 'Required ($1 minimum)'}
-      </span>
-    </div>
-    
-    <div className="flex items-center">
-      {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? (
-        <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-      ) : (
-        <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-      )}
-      <span className={`text-sm ${formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-        Delivery Time: {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? '✓ Valid' : 'Required (1 day minimum)'}
-      </span>
-    </div>
-  </div>
-</div>
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 pt-8">
-            <button
-              type="button"
-              onClick={() => navigate('/profile')}
-              disabled={createServiceMutation.isPending}
-              className="px-8 py-4 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-
-            <div className="flex flex-col sm:flex-row gap-4 flex-1">
-              <button
-                type="submit"
-                disabled={createServiceMutation.isPending || categoryLoading}
-                className="flex-1 px-8 py-4 bg-gray-600 text-white font-medium rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {createServiceMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-5 h-5 mr-2" />
-                    Save as Draft
-                  </>
+                {formData.faqs.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-800">Added FAQs</h3>
+                    {formData.faqs.map((faq, index) => (
+                      <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-medium text-gray-900">{faq.question}</h4>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFAQ(index)}
+                            disabled={createServiceMutation.isPending}
+                            className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <p className="text-gray-600">{faq.answer}</p>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => handleSubmit(e, 'active')}
-                disabled={createServiceMutation.isPending || categoryLoading}
-                className="flex-1 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {createServiceMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Publishing...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-5 h-5 mr-2" />
-                    Publish Service
-                  </>
-                )}
-              </button>
+              </div>
             </div>
-          </div>
-        </form>
+
+            {/* Section 7: Packages */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <Package className="w-6 h-6 mr-2 text-amber-600" />
+                Service Packages
+              </h2>
+
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Package Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={newPackage.name}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, name: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="e.g., Basic, Standard, Premium"
+                          maxLength="50"
+                          disabled={createServiceMutation.isPending}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={newPackage.description}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, description: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="Brief package description"
+                          maxLength="500"
+                          disabled={createServiceMutation.isPending}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Price *
+                        </label>
+                        <input
+                          type="number"
+                          value={newPackage.price}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, price: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="0.00"
+                          min="1"
+                          step="0.01"
+                          disabled={createServiceMutation.isPending}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Delivery Time *
+                        </label>
+                        <input
+                          type="number"
+                          value={newPackage.deliveryTime}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, deliveryTime: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="Days"
+                          min="1"
+                          disabled={createServiceMutation.isPending}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Revisions
+                        </label>
+                        <input
+                          type="number"
+                          value={newPackage.revisions}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, revisions: parseInt(e.target.value) || 0 }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="0"
+                          min="0"
+                          disabled={createServiceMutation.isPending}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Package Features
+                      </label>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={newPackageFeature}
+                          onChange={(e) => setNewPackageFeature(e.target.value)}
+                          onKeyPress={(e) => handleKeyPress(e, 'packageFeature')}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                          placeholder="Add a feature"
+                          maxLength="100"
+                          disabled={createServiceMutation.isPending}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddPackageFeature}
+                          disabled={createServiceMutation.isPending}
+                          className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {newPackage.features.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {newPackage.features.map((feature, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm"
+                            >
+                              {feature}
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePackageFeature(feature)}
+                                disabled={createServiceMutation.isPending}
+                                className="ml-2 text-amber-600 hover:text-amber-800 disabled:opacity-50"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={newPackage.popular}
+                          onChange={(e) => setNewPackage(prev => ({ ...prev, popular: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 rounded"
+                          disabled={createServiceMutation.isPending}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Mark as Popular Package</span>
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddPackage}
+                      disabled={createServiceMutation.isPending}
+                      className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add Package
+                    </button>
+                  </div>
+                </div>
+
+                {formData.packages.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Added Packages</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {formData.packages.map((pkg, index) => (
+                        <div key={index} className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h4 className="font-bold text-lg text-gray-900">{pkg.name}</h4>
+                              {pkg.popular && (
+                                <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded mt-1">
+                                  Most Popular
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePackage(index)}
+                              disabled={createServiceMutation.isPending}
+                              className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {pkg.description && (
+                            <p className="text-gray-600 text-sm mb-3">{pkg.description}</p>
+                          )}
+
+                          <div className="space-y-2 mb-3">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Price:</span>
+                              <span className="font-semibold">${pkg.price}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Delivery:</span>
+                              <span>{pkg.deliveryTime} days</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Revisions:</span>
+                              <span>{pkg.revisions}</span>
+                            </div>
+                          </div>
+
+                          {pkg.features && pkg.features.length > 0 && (
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-700 mb-1">Features:</h5>
+                              <ul className="space-y-1">
+                                {pkg.features.slice(0, 3).map((feature, featIndex) => (
+                                  <li key={featIndex} className="text-xs text-gray-600 flex items-center">
+                                    <CheckCircle className="w-3 h-3 text-green-500 mr-1" />
+                                    {feature}
+                                  </li>
+                                ))}
+                                {pkg.features.length > 3 && (
+                                  <li className="text-xs text-gray-500">
+                                    +{pkg.features.length - 3} more features
+                                  </li>
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          
+
+  {/* Validation Summary */}
+  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+    <h3 className="text-lg font-semibold text-yellow-800 mb-4 flex items-center">
+      <AlertCircle className="w-5 h-5 mr-2" />
+      Before You Submit
+    </h3>
+    
+    <div className="space-y-2">
+      <div className="flex items-center">
+        {formData.title.length >= 5 ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
+          Title: {formData.title.length >= 5 ? '✓ Valid' : `Needs ${5 - formData.title.length} more characters`}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.description.length >= 50 ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.description.length >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+          Description: {formData.description.length >= 50 ? '✓ Valid' : `Needs ${50 - formData.description.length} more characters`}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.shortDescription && formData.shortDescription.length >= 20 ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.shortDescription && formData.shortDescription.length >= 20 ? 'text-green-600' : 'text-red-600'}`}>
+          Short Description: {formData.shortDescription && formData.shortDescription.length >= 20 ? '✓ Valid' : `Needs ${20 - (formData.shortDescription?.length || 0)} more characters`}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.category ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.category ? 'text-green-600' : 'text-red-600'}`}>
+          Category: {formData.category ? '✓ Selected' : 'Required'}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.subcategory ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.subcategory ? 'text-green-600' : 'text-red-600'}`}>
+          Subcategory: {formData.subcategory ? '✓ Selected' : 'Required'}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.price && parseFloat(formData.price) >= 1 ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.price && parseFloat(formData.price) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+          Price: {formData.price && parseFloat(formData.price) >= 1 ? '✓ Valid' : 'Required ($1 minimum)'}
+        </span>
+      </div>
+      
+      <div className="flex items-center">
+        {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? (
+          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+        ) : (
+          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+        )}
+        <span className={`text-sm ${formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+          Delivery Time: {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? '✓ Valid' : 'Required (1 day minimum)'}
+        </span>
       </div>
     </div>
+  </div>
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 pt-8">
+              <button
+                type="button"
+                onClick={() => navigate('/profile')}
+                disabled={createServiceMutation.isPending}
+                className="px-8 py-4 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+
+              <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                <button
+                  type="submit"
+                  disabled={createServiceMutation.isPending || categoryLoading}
+                  className="flex-1 px-8 py-4 bg-gray-600 text-white font-medium rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {createServiceMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5 mr-2" />
+                      Save as Draft
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, 'active')}
+                  disabled={createServiceMutation.isPending || categoryLoading}
+                  className="flex-1 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {createServiceMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-5 h-5 mr-2" />
+                      Publish Service
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </SeoWrapper>
+
   );
 };
 

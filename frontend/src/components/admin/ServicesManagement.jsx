@@ -42,10 +42,14 @@ import {
   FiThumbsUp,
   FiPlay,
   FiPause,
-  FiFileText
+  FiFileText,
+  FiAlertTriangle
 } from 'react-icons/fi';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import { adminAPI } from '../../api/admin';
 const ServicesManagement = () => {
+  const navigate= useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     status: '',
@@ -111,19 +115,20 @@ const ServicesManagement = () => {
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
   const stats = data?.stats || {};
 
-  // Calculate service stats from API response
-  useEffect(() => {
-    if (stats) {
-      setServiceStats({
-        total: stats.total || 0,
-        active: stats.active || 0,
-        featured: stats.featured || 0,
-        orders: 0, // You'll need to add this to your API response
-        revenue: 0  // You'll need to add this to your API response
-      });
-    }
-  }, [stats]);
+  // Alternative: Compare specific values instead of the whole object
+const statsString = JSON.stringify(stats || {});
 
+useEffect(() => {
+  if (stats) {
+    setServiceStats({
+      total: stats.total || 0,
+      active: stats.active || 0,
+      featured: stats.featured || 0,
+      orders: stats.orders || 0,
+      revenue: stats.revenue || 0
+    });
+  }
+}, [stats?.total, stats?.active, stats?.featured, stats?.orders, stats?.revenue]);
   const handleSearch = (e) => {
     e.preventDefault();
     setPage(1);
@@ -179,49 +184,97 @@ const ServicesManagement = () => {
     }
   };
 
-  const handleDeleteService = async () => {
-    try {
-      if (serviceToDelete.type === 'single') {
-        const response = await deleteServiceMutation.mutateAsync(serviceToDelete.id);
-        if (response.data?.success) {
-          toast.success('Service deleted successfully');
-        } else {
-          toast.error(response.data?.message || 'Delete failed');
-        }
-      } else if (serviceToDelete.type === 'bulk') {
-        const response = await bulkServiceMutation.mutateAsync({
-          ids: serviceToDelete.ids,
-          operation: 'delete'
-        });
-        if (response.data?.success) {
-          toast.success(`${serviceToDelete.ids.length} services deleted`);
-        } else {
-          toast.error(response.data?.message || 'Delete failed');
-        }
+ // In ServicesManagement.jsx - Update handleDeleteService
+const handleDeleteService = async () => {
+  try {
+    console.log('Deleting service:', serviceToDelete);
+    
+    let response;
+    
+    if (serviceToDelete.type === 'single') {
+      // Use the new admin delete endpoint
+      response = await adminAPI.deleteService(serviceToDelete.id, false); // false for soft delete
+    } else if (serviceToDelete.type === 'bulk') {
+      // For bulk delete, we need to handle differently
+      const deletePromises = serviceToDelete.ids.map(id => 
+        adminAPI.deleteService(id, false)
+      );
+      
+      const results = await Promise.allSettled(deletePromises);
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value.data?.success);
+      const failed = results.filter(r => r.status === 'rejected' || !r.value?.data?.success);
+      
+      if (failed.length > 0) {
+        toast.error(`${failed.length} services failed to delete`);
       }
+      if (successful.length > 0) {
+        toast.success(`${successful.length} services deleted successfully`);
+      }
+      
       setSelectedServices([]);
       refetch();
-    } catch (error) {
-      toast.error('Failed to delete services: ' + (error.response?.data?.message || error.message || error.toString()));
-    } finally {
       setShowDeleteModal(false);
       setServiceToDelete(null);
+      return;
     }
-  };
 
-  const handleViewService = (service) => {
-    setViewingService(service);
-    setShowServiceDetails(true);
-  };
+    if (response.data?.success) {
+      toast.success('Service deleted successfully');
+      setSelectedServices([]);
+      refetch();
+    } else {
+      toast.error(response.data?.message || 'Delete failed');
+    }
+  } catch (error) {
+    console.error('Delete service error:', error);
+    
+    // Detailed error handling
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      switch (status) {
+        case 400:
+          toast.error(data.message || 'Invalid request');
+          break;
+        case 401:
+          toast.error('Authentication required');
+          break;
+        case 403:
+          toast.error('You do not have permission to delete this service');
+          break;
+        case 404:
+          toast.error('Service not found');
+          break;
+        case 500:
+          toast.error('Server error: ' + (data.message || 'Please try again later'));
+          break;
+        default:
+          toast.error(`Delete failed: ${data.message || 'Unknown error'}`);
+      }
+    } else if (error.request) {
+      toast.error('Network error. Please check your connection.');
+    } else {
+      toast.error(`Delete failed: ${error.message}`);
+    }
+  } finally {
+    setShowDeleteModal(false);
+    setServiceToDelete(null);
+  }
+};
 
-  const handleEditService = (service) => {
-    setEditingService(service);
-    setShowEditModal(true);
-  };
+ const handleViewService = (service) => {
+  // Should navigate to ADMIN route, not user route
+  navigate(`/admin/services/${service._id}`);
+};
+
+ const handleEditService = (service) => {
+  // Should navigate to ADMIN route, not user route
+  navigate(`/admin/services/${service._id}/edit`);
+};
+
 
   const handleCreateService = () => {
-    setEditingService(null);
-    setShowCreateModal(true);
+   navigate('/services/create');
   };
 
   const handleUpdateService = async (data) => {
@@ -1150,6 +1203,30 @@ const CreateServiceModal = ({ onClose, onSuccess, categories = [], users = [], o
                 ))}
               </select>
             </div>
+            <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Subcategory *
+  </label>
+  <select
+    required
+    value={formData.subcategory}
+    onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+    disabled={!formData.category}
+  >
+    <option value="">Select Subcategory</option>
+    {categories
+      .filter(cat => cat.parentCategory === formData.category || cat._id === formData.category)
+      .map(subcat => (
+        <option key={subcat._id} value={subcat._id}>
+          {subcat.name}
+        </option>
+      ))}
+  </select>
+  {!formData.category && (
+    <p className="text-xs text-gray-500 mt-1">Select a category first</p>
+  )}
+</div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1551,26 +1628,20 @@ const ServiceCard = ({ service, isSelected, onSelect, onView, onEdit, onDelete, 
               />
               <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
                 <div className="py-1">
-                  <button
-                    onClick={() => {
-                      onView();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEye className="h-4 w-4 mr-2" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => {
-                      onEdit();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEdit2 className="h-4 w-4 mr-2" />
-                    Edit
-                  </button>
+                   <button
+          onClick={() => navigate(`/admin/services/${service._id}`)}
+          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 flex items-center justify-center"
+        >
+          <FiEye className="h-4 w-4 mr-1" />
+          View
+        </button>
+                 <button
+          onClick={() => navigate(`/admin/services/${service._id}/edit`)}
+          className="flex-1 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 flex items-center justify-center"
+        >
+          <FiEdit2 className="h-4 w-4 mr-1" />
+          Edit
+        </button>
                   <button
   onClick={() => {
     onDuplicate();
@@ -2134,34 +2205,64 @@ const EditServiceModal = ({ service, onClose, onSave }) => {
   );
 };
 
-// Delete Confirmation Modal Component (Reuse from Categories)
+// Enhanced DeleteConfirmationModal component
 const DeleteConfirmationModal = ({ type, itemToDelete, onClose, onConfirm }) => {
+  const isBulk = itemToDelete?.type === 'bulk';
+  
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         <div className="p-6">
           <div className="flex items-center mb-4">
             <FiTrash2 className="h-6 w-6 text-red-600 mr-3" />
-            <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
+              {isBulk && (
+                <p className="text-sm text-gray-500 mt-1">
+                  {itemToDelete.ids.length} service{itemToDelete.ids.length > 1 ? 's' : ''} selected
+                </p>
+              )}
+            </div>
           </div>
           
-          <p className="text-gray-600 mb-6">
-            {itemToDelete.type === 'single'
-              ? `Are you sure you want to delete this ${type}? This action cannot be undone.`
-              : `Are you sure you want to delete ${itemToDelete.ids.length} ${type}${itemToDelete.ids.length > 1 ? 's' : ''}? This action cannot be undone.`}
-          </p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <div className="flex">
+              <FiAlertTriangle className="h-5 w-5 text-yellow-600 mr-3 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-yellow-800">Warning</p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  {isBulk
+                    ? `This will permanently delete ${itemToDelete.ids.length} ${type}${itemToDelete.ids.length > 1 ? 's' : ''}. This action cannot be undone.`
+                    : `This will permanently delete the ${type}. This action cannot be undone.`}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {isBulk && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Affected Services:</p>
+              <div className="max-h-40 overflow-y-auto">
+                {/* You could list service titles here if you have them */}
+                <p className="text-sm text-gray-600">
+                  {itemToDelete.ids.length} service{itemToDelete.ids.length > 1 ? 's' : ''} will be deleted
+                </p>
+              </div>
+            </div>
+          )}
           
           <div className="flex justify-end space-x-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center"
             >
+              <FiTrash2 className="h-4 w-4 mr-2" />
               Delete
             </button>
           </div>

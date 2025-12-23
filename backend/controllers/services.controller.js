@@ -759,13 +759,17 @@ const getServices = async (req, res, next) => {
 };
 
 // Get Service by ID or Slug
+// Get Service by ID or Slug - FIXED VERSION
 const getServiceById = async (req, res, next) => {
   const requestId = generateRequestId();
+  
   try {
     const { id } = req.params;
     const { fields, populate = true, incrementView = 'true' } = req.query;
 
-    if (!id) {
+    console.log(`[DEBUG] getServiceById called with id: ${id}, type: ${typeof id}, isObjectId: ${mongoose.Types.ObjectId.isValid(id)}`);
+    
+    if (!id || id.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'Service identifier is required',
@@ -778,27 +782,39 @@ const getServiceById = async (req, res, next) => {
     const isObjectId = mongoose.Types.ObjectId.isValid(id);
 
     if (isObjectId) {
+      // Handle ObjectId lookup
       query = { _id: id };
+      console.log(`[DEBUG] Looking up by ObjectId: ${id}`);
     } else {
-      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] });
+      // Handle slug lookup
+      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] }).trim();
       query = { slug: sanitizedSlug.toLowerCase() };
+      console.log(`[DEBUG] Looking up by slug: ${sanitizedSlug}`);
     }
 
-    // Check permissions
+    // Check permissions - IMPORTANT: This query structure was causing the issue
+    const permissionQuery = { ...query }; // Start with the original query
+    
     if (req.user?.role !== 'admin') {
-      query.status = 'active';
-      query.isActive = true;
-    } else if (req.user?.role === 'user' || req.user?.role === 'admin') {
-      // Users can see their own services regardless of status
-      query.$or = [
-        { _id: query._id || query.slug, createdBy: req.user._id },
-        { 
-          ...query, 
-          status: 'active',
-          isActive: true 
-        }
-      ];
+      if (req.user?.role === 'user') {
+        // Users can see their own services regardless of status, OR active public services
+        permissionQuery.$or = [
+          { ...query, createdBy: req.user._id },
+          { 
+            ...query, 
+            status: 'active',
+            isActive: true 
+          }
+        ];
+      } else {
+        // Non-authenticated users can only see active services
+        permissionQuery.status = 'active';
+        permissionQuery.isActive = true;
+      }
     }
+    // Admins can see everything - no extra conditions needed
+
+    console.log(`[DEBUG] Final query:`, JSON.stringify(permissionQuery, null, 2));
 
     const defaultExclude = ['__v', 'lastUpdatedBy'];
     let select = {};
@@ -813,7 +829,7 @@ const getServiceById = async (req, res, next) => {
     }
 
     let populateOptions = [];
-    if (populate) {
+    if (populate === 'true' || populate === true) {
       populateOptions = [
         {
           path: 'category',
@@ -833,19 +849,27 @@ const getServiceById = async (req, res, next) => {
       ];
     }
 
-    const service = await Service.findOne(query)
+    const service = await Service.findOne(permissionQuery)
       .select(Object.keys(select).length > 0 ? select : null)
       .populate(populateOptions);
+
+    console.log(`[DEBUG] Service found: ${!!service}, type: ${service ? service._id : 'none'}`);
 
     if (!service) {
       return res.status(404).json({
         success: false,
         message: 'Service not found',
         code: 'SERVICE_NOT_FOUND',
-        requestId
+        requestId,
+        details: {
+          identifier: id,
+          isObjectId: isObjectId,
+          identifierType: isObjectId ? 'ObjectId' : 'slug'
+        }
       });
     }
 
+    // Additional permission check for inactive services
     if (service.status !== 'active' && req.user?.role !== 'admin') {
       if (req.user?.role !== 'user' || service.createdBy._id.toString() !== req.user._id.toString()) {
         return res.status(403).json({
@@ -857,10 +881,19 @@ const getServiceById = async (req, res, next) => {
       }
     }
 
+    // Increment view count for active services
     if (incrementView === 'true' && service.status === 'active') {
-      await Service.incrementViews(service._id);
+      try {
+        await Service.updateOne(
+          { _id: service._id },
+          { $inc: { views: 1 } }
+        );
+      } catch (viewError) {
+        console.error('[ERROR] Failed to increment view count:', viewError);
+      }
     }
 
+    // Log audit for viewing inactive services
     if (service.status !== 'active') {
       logAudit('VIEW_INACTIVE', 'SERVICE', service._id, req.user?._id, {
         status: service.status
@@ -869,8 +902,8 @@ const getServiceById = async (req, res, next) => {
 
     const safeService = service.toObject();
     
+    // Limit creator info shown
     if (safeService.createdBy) {
-      // Limit creator info shown
       safeService.createdBy = {
         _id: safeService.createdBy._id,
         name: safeService.createdBy.name,
@@ -879,9 +912,11 @@ const getServiceById = async (req, res, next) => {
       };
     }
     
+    // Remove sensitive fields
     delete safeService.__v;
     delete safeService.lastUpdatedBy;
 
+    // Format packages for display
     if (safeService.packages && Array.isArray(safeService.packages)) {
       safeService.packages = safeService.packages.map(pkg => ({
         ...pkg,
@@ -898,12 +933,33 @@ const getServiceById = async (req, res, next) => {
     });
 
   } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'GET_BY_ID', req.user?._id, { id: req.params.id, error: error.message });
+    console.error(`[ERROR] getServiceById error:`, error);
+    
+    // Handle specific error types
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service identifier format',
+        code: 'INVALID_IDENTIFIER_FORMAT',
+        requestId,
+        details: {
+          identifier: req.params.id,
+          expected: 'Either MongoDB ObjectId or service slug'
+        }
+      });
+    }
+    
+    logAudit('ERROR', 'SERVICE', 'GET_BY_ID', req.user?._id, { 
+      id: req.params.id, 
+      error: error.message,
+      stack: error.stack 
+    });
+    
     next(error);
   }
 };
 
-// Update Service
+// In service.controller.js - Update the updateService function
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   let uploadedFiles = [];
@@ -950,6 +1006,11 @@ const updateService = async (req, res, next) => {
     
     const sanitizedData = sanitizeServiceInput(req.body, uploadedFiles);
     
+    // Handle empty subcategory - set to null instead of empty string
+    if (sanitizedData.subcategory === '') {
+      sanitizedData.subcategory = null;
+    }
+    
     if (!isAdmin) {
       // Regular users cannot update certain fields
       delete sanitizedData.status;
@@ -962,24 +1023,9 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.category, 
-        isActive: true 
-      });
-      
-      if (!category) {
-        await cleanupUploadedFiles(uploadedFiles);
-        return res.status(400).json({
-          success: false,
-          message: 'Category not found or inactive',
-          code: 'CATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
-    }
-
+    // Only validate subcategory if it's being changed and not null
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (service.subcategory?.toString() || '')) {
+      // Validate subcategory belongs to category
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory, 
         isActive: true,
@@ -992,6 +1038,24 @@ const updateService = async (req, res, next) => {
           success: false,
           message: 'Subcategory not found or does not belong to the category',
           code: 'SUBCATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
+    }
+
+    // Handle category change validation
+    if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
+      const category = await Category.findOne({ 
+        _id: sanitizedData.category, 
+        isActive: true 
+      });
+      
+      if (!category) {
+        await cleanupUploadedFiles(uploadedFiles);
+        return res.status(400).json({
+          success: false,
+          message: 'Category not found or inactive',
+          code: 'CATEGORY_NOT_FOUND',
           requestId
         });
       }
@@ -1091,6 +1155,17 @@ const updateService = async (req, res, next) => {
       });
     }
     
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
     logAudit('ERROR', 'SERVICE', 'UPDATE', req.user._id, { 
       id: req.params.id, 
       error: error.message 
@@ -1100,6 +1175,7 @@ const updateService = async (req, res, next) => {
 };
 
 // Delete Service
+// In service.controller.js - Fix the deleteService function
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -1127,7 +1203,7 @@ const deleteService = async (req, res, next) => {
     }
 
     const isOwner = service.createdBy.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
     
     if (!isOwner && !isAdmin) {
       logAudit('UNAUTHORIZED_DELETE', 'SERVICE', id, req.user._id);
@@ -1139,10 +1215,10 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-
     let result;
     
     if (permanent === 'true' && isAdmin) {
+      // Permanent delete - bypass validation
       try {
         if (service.images && Array.isArray(service.images)) {
           deleteImageFiles(service.images);
@@ -1155,7 +1231,8 @@ const deleteService = async (req, res, next) => {
         console.error('Error cleaning up files during permanent delete:', cleanupError);
       }
       
-      result = await Service.findByIdAndDelete(id);
+      // Use deleteOne instead of findByIdAndDelete to avoid hooks
+      await Service.deleteOne({ _id: id });
       
       logAudit('PERMANENT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
@@ -1164,24 +1241,54 @@ const deleteService = async (req, res, next) => {
         imagesCleaned: service.images?.length || 0
       });
       
-      res.json({
+      return res.json({
         success: true,
         message: 'Service permanently deleted',
         requestId,
         timestamp: new Date().toISOString()
       });
     } else {
-      service.isActive = false;
-      service.status = 'suspended';
-      service.lastUpdatedBy = req.user._id;
-      await service.save();
+      // Soft delete - update without validation
+      const wasOpen = service.status === 'open';
       
+      // Update using updateOne to bypass validation
+      result = await Service.updateOne(
+        { _id: id },
+        { 
+          $set: {
+            isActive: false,
+            status: 'suspended',
+            deletedAt: new Date(),
+            deletedBy: req.user._id,
+            lastUpdatedBy: req.user._id
+          }
+        }
+      );
+
+      if (!result.modifiedCount) {
+        return res.status(404).json({
+          success: false,
+          message: 'Service not found during deletion',
+          code: 'DELETE_FAILED',
+          requestId
+        });
+      }
+
+      // Update category count if service was open
+      if (wasOpen && service.category) {
+        await Category.findByIdAndUpdate(service.category, {
+          $inc: { servicesCount: -1 }
+        });
+      }
+
+      
+
       logAudit('SOFT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
         createdBy: service.createdBy
       });
       
-      res.json({
+      return res.json({
         success: true,
         message: 'Service deactivated',
         requestId,
@@ -1190,6 +1297,19 @@ const deleteService = async (req, res, next) => {
     }
 
   } catch (error) {
+    console.error('[DELETE SERVICE ERROR]', error);
+    
+    // Check if it's a validation error
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete service due to validation constraints',
+        code: 'VALIDATION_ERROR_ON_DELETE',
+        details: Object.values(error.errors).map(err => err.message),
+        requestId
+      });
+    }
+    
     logAudit('ERROR', 'SERVICE', 'DELETE', req.user._id, { 
       id: req.params.id, 
       error: error.message 

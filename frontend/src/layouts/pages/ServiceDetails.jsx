@@ -60,6 +60,7 @@ import { toast } from 'react-hot-toast';
 // Import Zustand stores and TanStack Query hooks
 import { useAuthStore } from '../../store/useAuthStore';
 import { useService } from '../../hooks/useServices';
+import { SeoWrapper } from '../../components/SeoWrapper';
 
 const ServiceDetails = () => {
   const { id } = useParams();
@@ -82,7 +83,7 @@ const ServiceDetails = () => {
   const [viewCount, setViewCount] = useState(0);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [imageViewMode, setImageViewMode] = useState('thumbnail');
-  const [showMessaging, setShowMessaging] = useState(false); // Fixed: Added missing state
+  const [showMessaging, setShowMessaging] = useState(false);
 
   // Update view count when service loads
   useEffect(() => {
@@ -96,6 +97,177 @@ const ServiceDetails = () => {
       }
     }
   }, [service]);
+
+  // Helper functions for structured data generation
+  const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
+    if (!service || !websiteUrl) return null;
+
+    const serviceUrl = `${websiteUrl}/services/${service._id}`;
+    const provider = serviceUser || service.createdBy || service.creatorDetails;
+    
+    // Format price for structured data
+    const formatStructuredPrice = (price, currency) => {
+      return {
+        "@type": "PriceSpecification",
+        "price": parseFloat(price) || 0,
+        "priceCurrency": currency || "USD"
+      };
+    };
+
+    // Generate offers array
+    const offers = [];
+    
+    // Add base service offer
+    offers.push({
+      "@type": "Offer",
+      ...formatStructuredPrice(service.price, service.currency),
+      "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      "itemOffered": {
+        "@type": "Service",
+        "name": service.title,
+        "description": service.shortDescription || service.description?.substring(0, 200),
+        "serviceType": service.category || "Freelance Service",
+        "provider": provider ? {
+          "@type": "Person",
+          "name": provider.name,
+          "url": `${websiteUrl}/profile/${provider._id}`,
+          "image": provider.picture
+        } : undefined,
+        "areaServed": {
+          "@type": "Country",
+          "name": "Worldwide"
+        }
+      },
+      "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    });
+
+    // Add package offers if available
+    if (service.packages && service.packages.length > 0) {
+      service.packages.forEach((pkg, index) => {
+        offers.push({
+          "@type": "Offer",
+          ...formatStructuredPrice(pkg.price, service.currency),
+          "name": pkg.name,
+          "description": pkg.description || `Package: ${pkg.name}`,
+          "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+          "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        });
+      });
+    }
+
+    // Main service structured data
+    const structuredData = {
+      "@context": "https://schema.org",
+      "@type": "Service",
+      "name": service.title,
+      "description": service.description?.substring(0, 300) || service.shortDescription,
+      "url": serviceUrl,
+      "image": service.thumbnail?.url || (service.images?.[0]?.url) || `${websiteUrl}/default-service.jpg`,
+      "offers": offers,
+      "provider": provider ? {
+        "@type": provider.role === 'business' ? "Organization" : "Person",
+        "name": provider.name,
+        "description": provider.bio?.substring(0, 200),
+        "url": `${websiteUrl}/profile/${provider._id}`,
+        "image": provider.picture,
+        "telephone": provider.phone,
+        "email": provider.email,
+        "address": {
+          "@type": "PostalAddress",
+          "addressCountry": provider.country,
+          "addressLocality": provider.city
+        },
+        "aggregateRating": provider.rating ? {
+          "@type": "AggregateRating",
+          "ratingValue": provider.rating,
+          "ratingCount": provider.totalReviews || 0,
+          "bestRating": 5,
+          "worstRating": 1
+        } : undefined
+      } : undefined,
+      "aggregateRating": service.rating ? {
+        "@type": "AggregateRating",
+        "ratingValue": service.rating,
+        "ratingCount": service.reviewsCount || 0,
+        "bestRating": 5,
+        "worstRating": 1
+      } : undefined,
+      "areaServed": {
+        "@type": "Country",
+        "name": "Worldwide"
+      },
+      "serviceType": service.category,
+      "category": service.category,
+      "keywords": service.tags?.join(', '),
+      "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": serviceUrl
+      },
+      "additionalProperty": [
+        {
+          "@type": "PropertyValue",
+          "name": "deliveryTime",
+          "value": `${service.deliveryTime} ${service.deliveryTimeUnit}`
+        },
+        {
+          "@type": "PropertyValue",
+          "name": "revisions",
+          "value": service.revisions || 0
+        },
+        {
+          "@type": "PropertyValue",
+          "name": "status",
+          "value": service.status || 'active'
+        }
+      ]
+    };
+
+    return structuredData;
+  };
+
+  const generateBreadcrumbStructuredData = (breadcrumbItems = [], websiteUrl) => {
+    return {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": breadcrumbItems.map((item, index) => ({
+        "@type": "ListItem",
+        "position": index + 1,
+        "name": item.name,
+        "item": item.url.startsWith('http') ? item.url : `${websiteUrl}${item.url}`
+      }))
+    };
+  };
+
+  const generateReviewStructuredData = (reviews = [], serviceTitle, serviceUrl) => {
+    if (!reviews || reviews.length === 0) return null;
+
+    return {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": serviceTitle,
+      "review": reviews.slice(0, 5).map(review => ({
+        "@type": "Review",
+        "reviewRating": {
+          "@type": "Rating",
+          "ratingValue": review.rating,
+          "bestRating": 5
+        },
+        "author": {
+          "@type": "Person",
+          "name": review.user?.name || "Anonymous"
+        },
+        "datePublished": review.createdAt,
+        "reviewBody": review.comment
+      })),
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length,
+        "reviewCount": reviews.length,
+        "bestRating": 5,
+        "worstRating": 1
+      }
+    };
+  };
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -451,1198 +623,1258 @@ const ServiceDetails = () => {
   const categoryName = getCategoryName();
   const subcategoryName = getSubcategoryName();
 
+  // Generate structured data
+  const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const serviceStructuredData = generateServiceStructuredData(service, serviceUser, websiteUrl);
+  const breadcrumbStructuredData = generateBreadcrumbStructuredData([
+    { name: "Home", url: "/" },
+    { name: "Services", url: "/services" },
+    { name: categoryName, url: `/services?category=${service.category}` },
+    { name: service.title, url: `/services/${service._id}` }
+  ], websiteUrl);
+  const reviewStructuredData = generateReviewStructuredData(
+    service.reviews || [],
+    service.title,
+    `${websiteUrl}/services/${service._id}`
+  );
+
+  const structuredData = [serviceStructuredData, breadcrumbStructuredData, reviewStructuredData].filter(Boolean);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
-      
-      {/* Breadcrumb */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <nav className="flex items-center space-x-2 text-sm">
-              <button
-                onClick={() => navigate('/')}
-                className="text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                Home
-              </button>
-              <ChevronRight className="h-4 w-4 text-gray-400" />
-              <button
-                onClick={() => navigate('/services')}
-                className="text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                Services
-              </button>
-              {categoryName && (
-                <>
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
-                  <span className="text-gray-500">
-                    {categoryName}
-                  </span>
-                </>
-              )}
-              <ChevronRight className="h-4 w-4 text-gray-400" />
-              <span className="text-emerald-600 font-medium truncate max-w-xs">
-                {service.title}
-              </span>
-            </nav>
-            
-            <button
-              onClick={handleRefresh}
-              className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Service Details */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Title and Actions */}
-            <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
-                <div>
-                  <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2">
-                    {service.title}
-                    {renderRequiredIndicator('title', service.title)}
-                  </h1>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(service.status)}`}>
-                      {service.status?.toUpperCase() || 'ACTIVE'}
-                    </span>
-                    {service.isFeatured && (
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                        <Award className="inline h-4 w-4 mr-1" />
-                        FEATURED
-                      </span>
-                    )}
-                    {service.isPopular && (
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800 border border-orange-200">
-                        <TrendingUp className="inline h-4 w-4 mr-1" />
-                        POPULAR
-                      </span>
-                    )}
-                    <span className="flex items-center text-gray-500 text-sm">
-                      <Eye className="h-4 w-4 mr-1" />
-                      {viewCount} views
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => setIsLiked(!isLiked)}
-                    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                    title={isLiked ? 'Remove from favorites' : 'Add to favorites'}
-                  >
-                    <Heart
-                      className={`h-6 w-6 ${
-                        isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
-                      }`}
-                    />
-                  </button>
-                  <button
-                    onClick={handleShare}
-                    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                    title="Share"
-                  >
-                    <Share2 className="h-6 w-6 text-gray-400" />
-                  </button>
-                  <button
-                    onClick={handleReport}
-                    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                    title="Report"
-                  >
-                    <Flag className="h-6 w-6 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Enhanced User Info */}
-              {serviceUser && (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
-                  <Link 
-                    to={`/profile/${serviceUser._id}`}
-                    className="flex items-center space-x-4 group cursor-pointer flex-1"
-                  >
-                    <div className="relative">
-                      <img
-                        src={serviceUser.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
-                        alt={serviceUser.name}
-                        className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
-                      />
-                      {isOnline && (
-                        <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
-                      )}
-                      {serviceUser.emailVerified && (
-                        <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
-                          <CheckCircle className="h-3 w-3 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors">
-                          {serviceUser.name || 'User'}
-                        </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                          {serviceUser.role === 'admin' ? 'Admin' : 'Provider'}
-                        </span>
-                        {isOnline && (
-                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full flex items-center gap-1">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            Online
-                          </span>
-                        )}
-                      </div>
-                      
-                      {/* Enhanced User Details */}
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-gray-600">
-                        {serviceUser.occupation && (
-                          <span className="flex items-center">
-                            <Briefcase className="h-4 w-4 mr-1" />
-                            {serviceUser.occupation}
-                          </span>
-                        )}
-                        
-                        {serviceUser.country && (
-                          <span className="flex items-center">
-                            <MapPin className="h-4 w-4 mr-1" />
-                            {serviceUser.city ? `${serviceUser.city}, ${serviceUser.country}` : serviceUser.country}
-                          </span>
-                        )}
-                        
-                        {serviceUser.rating && (
-                          <span className="flex items-center">
-                            {renderStars(serviceUser.rating)}
-                            <span className="ml-1">({serviceUser.totalReviews || 0})</span>
-                          </span>
-                        )}
-                        
-                        {serviceUser.education && (
-                          <span className="flex items-center">
-                            <GraduationCap className="h-4 w-4 mr-1" />
-                            {serviceUser.education}
-                          </span>
-                        )}
-                        
-                        {serviceUser.languages && serviceUser.languages.length > 0 && (
-                          <span className="flex items-center">
-                            <Languages className="h-4 w-4 mr-1" />
-                            {serviceUser.languages.length} language{serviceUser.languages.length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                        
-                        {serviceUser.createdAt && (
-                          <span className="flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            Member for {accountAge}
-                          </span>
-                        )}
-                      </div>
-                      
-                      {/* User Stats */}
-                      <div className="flex flex-wrap gap-4 mt-3">
-                        {serviceUser.completedOrders !== undefined && (
-                          <div className="flex items-center gap-1">
-                            <Activity className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              {serviceUser.completedOrders} completed order{serviceUser.completedOrders !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                        )}
-                        
-                        {serviceUser.responseRate && (
-                          <div className="flex items-center gap-1">
-                            <TrendingUp className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              {serviceUser.responseRate}% response rate
-                            </span>
-                          </div>
-                        )}
-                        
-                        {serviceUser.responseTime && (
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              Avg. response: {serviceUser.responseTime}h
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* View Profile Link */}
-                      <div className="mt-2">
-                        <span className="text-emerald-600 text-sm font-medium group-hover:text-emerald-700 flex items-center gap-1">
-                          View Full Profile
-                          <ExternalLink className="h-3 w-3" />
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                </div>
-              )}
-
-              {/* Required Fields Summary Card */}
-              <div className="mb-8 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
-                <h2 className="text-xl font-bold text-amber-800 mb-4 flex items-center gap-2">
-                  <Info className="h-5 w-5" />
-                  Required Service Information
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('title', service.title).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('title', service.title).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Service Title</h4>
-                      <p className="text-xs text-gray-500">Minimum 5 characters</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('description', service.description).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('description', service.description).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Description</h4>
-                      <p className="text-xs text-gray-500">Minimum 50 characters</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('shortDescription', service.shortDescription).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('shortDescription', service.shortDescription).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Short Description</h4>
-                      <p className="text-xs text-gray-500">Minimum 20 characters</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('category', service.category).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('category', service.category).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Category</h4>
-                      <p className="text-xs text-gray-500">Main service category</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('subcategory', service.subcategory).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('subcategory', service.subcategory).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Subcategory</h4>
-                      <p className="text-xs text-gray-500">Required subcategory</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                    <div className={`p-2 rounded-full ${isFieldComplete('price', service.price).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {isFieldComplete('price', service.price).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Price</h4>
-                      <p className="text-xs text-gray-500">Minimum $1</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Service Images Section */}
-              <div className="mb-8">
-                {/* View Mode Toggle */}
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <ImageIcon className="h-6 w-6 text-emerald-600" />
-                    Service Images
-                  </h2>
-                  {galleryImages.length > 0 && (
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => setImageViewMode('thumbnail')}
-                        className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
-                          imageViewMode === 'thumbnail'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <ImageIcon className="h-4 w-4" />
-                        Thumbnail
-                      </button>
-                      <button
-                        onClick={() => setImageViewMode('gallery')}
-                        className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
-                          imageViewMode === 'gallery'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <Grid3x3 className="h-4 w-4" />
-                        Gallery ({galleryImages.length})
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Thumbnail Section */}
-                {imageViewMode === 'thumbnail' && (
-                  <div className="mb-8">
-                    <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
-                      <img
-                        src={thumbnailImage.url}
-                        alt={service.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                        }}
-                      />
-                      <div className="absolute top-4 left-4">
-                        <span className="px-3 py-1 bg-emerald-600 text-white text-xs rounded-full">
-                          <CheckCircle className="inline h-3 w-3 mr-1" />
-                          Thumbnail
-                        </span>
-                      </div>
-                      {thumbnailImage.width && thumbnailImage.height && (
-                        <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                          {thumbnailImage.width} × {thumbnailImage.height}
-                          {thumbnailImage.size && ` • ${Math.round(thumbnailImage.size / 1024)}KB`}
-                          {thumbnailImage.format && ` • ${thumbnailImage.format.toUpperCase()}`}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Thumbnail Info */}
-                    <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold text-emerald-900">Featured Thumbnail</h4>
-                          <p className="text-sm text-emerald-700">
-                            This image is prominently displayed as the service thumbnail
-                          </p>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {thumbnailImage.uploadedAt && (
-                            <span>Uploaded: {new Date(thumbnailImage.uploadedAt).toLocaleDateString()}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Gallery Images Section */}
-                {imageViewMode === 'gallery' && galleryImages.length > 0 && (
-                  <div className="mb-8">
-                    {/* Gallery Info */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold text-gray-900">Service Gallery</h4>
-                          <p className="text-sm text-gray-600">
-                            {galleryImages.length} additional image{galleryImages.length !== 1 ? 's' : ''} showcasing this service
-                          </p>
-                        </div>
-                        <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                          <Grid3x3 className="inline h-4 w-4 mr-1" />
-                          {galleryImages.length} images
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Gallery Navigation */}
-                    {galleryImages.length > 1 && (
-                      <div className="flex justify-between items-center mb-4">
-                        <button
-                          onClick={() => setActiveImage(prev => prev === 0 ? galleryImages.length - 1 : prev - 1)}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Previous
-                        </button>
-                        <span className="text-sm text-gray-600">
-                          {activeImage + 1} of {galleryImages.length}
-                        </span>
-                        <button
-                          onClick={() => setActiveImage(prev => prev === galleryImages.length - 1 ? 0 : prev + 1)}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
-                        >
-                          Next
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Gallery Image Display */}
-                    {galleryImages.length > 0 && (
-                      <>
-                        <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
-                          <img
-                            src={galleryImages[activeImage]?.url}
-                            alt={`${service.title} - Gallery Image ${activeImage + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                            }}
-                          />
-                          {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
-                            <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                              {galleryImages[activeImage].width} × {galleryImages[activeImage].height}
-                              {galleryImages[activeImage].size && ` • ${Math.round(galleryImages[activeImage].size / 1024)}KB`}
-                              {galleryImages[activeImage].format && ` • ${galleryImages[activeImage].format.toUpperCase()}`}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Gallery Thumbnails */}
-                        <div className="flex space-x-3 overflow-x-auto pb-3">
-                          {galleryImages.map((image, index) => (
-                            <button
-                              key={index}
-                              onClick={() => setActiveImage(index)}
-                              className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
-                                activeImage === index
-                                  ? 'border-emerald-500'
-                                  : 'border-transparent hover:border-gray-300'
-                              }`}
-                            >
-                              <img
-                                src={image.url}
-                                alt={`Gallery ${index + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
-                                }}
-                              />
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* No Gallery Images Message */}
-                {imageViewMode === 'gallery' && galleryImages.length === 0 && (
-                  <div className="text-center p-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
-                    <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">No Gallery Images</h3>
-                    <p className="text-gray-600 mb-4">
-                      This service doesn't have additional gallery images yet.
-                    </p>
-                    <button
-                      onClick={() => setImageViewMode('thumbnail')}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                    >
-                      View Thumbnail
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Essential Service Information Card */}
-              <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                  <TargetIcon className="h-6 w-6 text-blue-600" />
-                  Essential Service Information
-                </h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {/* Category & Subcategory */}
-                  <div className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Package className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Category</h3>
-                        <div className="text-sm text-gray-600 flex items-center gap-1">
-                          <Info className="h-3 w-3" />
-                          Required field
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Main Category:</span>
-                        <span className="font-medium text-gray-900">{categoryName || 'Not set'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Subcategory:</span>
-                        <span className="font-medium text-gray-900">{subcategoryName || 'Not set'}</span>
-                      </div>
-                    </div>
-                    {renderRequiredIndicator('category', service.category)}
-                    {renderRequiredIndicator('subcategory', service.subcategory)}
-                  </div>
-
-                  {/* Pricing Information */}
-                  <div className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <DollarSignIcon className="h-5 w-5 text-green-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Pricing</h3>
-                        <div className="text-sm text-gray-600 flex items-center gap-1">
-                          <Info className="h-3 w-3" />
-                          Required fields
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Base Price:</span>
-                        <span className="font-medium text-emerald-600">
-                          {formatPrice(service.price, service.currency)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Currency:</span>
-                        <span className="font-medium text-gray-900">{service.currency || 'USD'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Revisions:</span>
-                        <span className="font-medium text-gray-900">{service.revisions || 0} included</span>
-                      </div>
-                    </div>
-                    {renderRequiredIndicator('price', service.price)}
-                    {renderRequiredIndicator('currency', service.currency)}
-                  </div>
-
-                  {/* Delivery Information */}
-                  <div className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 bg-amber-100 rounded-lg">
-                        <Clock3 className="h-5 w-5 text-amber-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Delivery</h3>
-                        <div className="text-sm text-gray-600 flex items-center gap-1">
-                          <Info className="h-3 w-3" />
-                          Required fields
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Delivery Time:</span>
-                        <span className="font-medium text-gray-900">
-                          {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Unit:</span>
-                        <span className="font-medium text-gray-900">{service.deliveryTimeUnit || 'days'}</span>
-                      </div>
-                    </div>
-                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
-                    {renderRequiredIndicator('deliveryTimeUnit', service.deliveryTimeUnit)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Price & Delivery Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <DollarSign className="h-5 w-5 text-emerald-600" />
-                      Starting From
-                    </h3>
-                    {service.currency && (
-                      <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
-                        {service.currency}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-left">
-                    <div className="text-3xl font-bold text-emerald-600 mb-1">
-                      {formatPrice(service.price, service.currency)}
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      Base price for this service
-                    </p>
-                    {renderRequiredIndicator('price', service.price)}
-                    {service.packages && service.packages.length > 0 && (
-                      <div className="mt-3 text-xs text-gray-600">
-                        <span className="inline-block px-2 py-1 bg-white rounded border">
-                          {service.packages.length} packages available
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-6 bg-blue-50 rounded-xl border border-blue-100">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <Clock className="h-5 w-5 text-blue-600" />
-                      Delivery Time
-                    </h3>
-                    <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
-                      {service.deliveryTimeUnit || 'days'}
-                    </span>
-                  </div>
-                  <div className="text-left">
-                    <div className="text-2xl font-bold text-blue-600 mb-1">
-                      {service.deliveryTime} {service.deliveryTimeUnit}
-                    </div>
-                    <p className="text-sm text-gray-500 mb-2">
-                      Average delivery time
-                    </p>
-                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
-                    {service.revisions && (
-                      <div className="text-xs text-gray-600">
-                        {service.revisions} revision{service.revisions !== 1 ? 's' : ''} included
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Description Section with Required Indicator */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <FileText className="h-6 w-6 text-emerald-600" />
-                    Service Description
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    {renderRequiredIndicator('description', service.description)}
-                    {renderRequiredIndicator('shortDescription', service.shortDescription)}
-                  </div>
-                </div>
-                <div className="prose max-w-none">
-                  <div className="bg-gray-50 rounded-xl p-6">
-                    <p className="text-gray-700 whitespace-pre-line leading-relaxed">
-                      {service.description}
-                    </p>
-                    {service.shortDescription && (
-                      <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-                        <div className="flex items-center gap-2 mb-2">
-                          <BookOpen className="h-4 w-4 text-gray-400" />
-                          <h3 className="font-medium text-gray-900">Short Description</h3>
-                        </div>
-                        <p className="text-gray-600">{service.shortDescription}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Features */}
-              {service.features && service.features.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <CheckSquare className="h-6 w-6 text-emerald-600" />
-                    What's Included
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {service.features.map((feature, index) => (
-                      <div key={index} className="flex items-start p-4 bg-white border border-gray-200 rounded-xl hover:border-emerald-200 transition-colors">
-                        <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mr-3 mt-1 ${
-                          feature.included ? 'bg-emerald-100' : 'bg-gray-100'
-                        }`}>
-                          {feature.included ? (
-                            <CheckCircle className="h-4 w-4 text-emerald-600" />
-                          ) : (
-                            <X className="h-4 w-4 text-gray-400" />
-                          )}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-gray-900">{feature.title}</h4>
-                          {feature.description && (
-                            <p className="text-sm text-gray-600 mt-1">{feature.description}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Requirements */}
-              {service.requirements && service.requirements.length > 0 && (
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                      <FileQuestion className="h-6 w-6 text-emerald-600" />
-                      Client Requirements
-                    </h2>
-                    <span className="text-sm text-gray-500">
-                      {service.requirements.filter(req => req.required).length} required field(s)
-                    </span>
-                  </div>
-                  <div className="space-y-4">
-                    {service.requirements.map((req, index) => (
-                      <div key={index} className="p-4 bg-gray-50 rounded-xl">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center">
-                            <FileText className="h-5 w-5 text-gray-400 mr-3" />
-                            <div>
-                              <h3 className="font-semibold text-gray-900">{req.question}</h3>
-                              {req.required && (
-                                <span className="text-xs text-red-600 font-medium mt-1">
-                                  Required field
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 text-xs rounded-full ${
-                              req.required ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {req.required ? 'Required' : 'Optional'}
-                            </span>
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                              {req.type}
-                            </span>
-                          </div>
-                        </div>
-                        {req.options && req.options.length > 0 && (
-                          <div className="mt-3 pl-8">
-                            <p className="text-sm text-gray-600 mb-2">Options:</p>
-                            <div className="flex flex-wrap gap-2">
-                              {req.options.map((option, optIndex) => (
-                                <span key={optIndex} className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-sm">
-                                  {option}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* FAQs */}
-              {service.faqs && service.faqs.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <MessageCircle className="h-6 w-6 text-emerald-600" />
-                    Frequently Asked Questions
-                  </h2>
-                  <div className="space-y-4">
-                    {service.faqs.map((faq, index) => (
-                      <div key={index} className="p-4 bg-white border border-gray-200 rounded-xl">
-                        <h3 className="font-semibold text-gray-900 mb-2">{faq.question}</h3>
-                        <p className="text-gray-600">{faq.answer}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Tags */}
-              {service.tags && service.tags.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <Tag className="h-6 w-6 text-emerald-600" />
-                    Service Tags
-                  </h2>
-                  <div className="flex flex-wrap gap-3">
-                    {service.tags.map((tag, index) => (
-                      <span
-                        key={index}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full font-medium hover:bg-gray-200 transition-colors cursor-pointer"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Last Updated */}
-              <div className="pt-6 border-t border-gray-200">
-                <div className="flex flex-wrap justify-between items-center gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">
-                      Posted {timeAgo} • Last updated: {new Date(service.updatedAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Service ID: {service._id}
-                    </p>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <span className="flex items-center mr-4">
-                      <Package className="h-4 w-4 mr-1" />
+    <SeoWrapper 
+      title={`${service.title} - Professional ${categoryName} Service | Vorkana`}
+      description={`${service.shortDescription || service.description?.substring(0, 155)}... Starting at ${formatPrice(service.price, service.currency)}. ${service.deliveryTime}-day delivery.`}
+      keywords={`${service.tags?.join(', ')}, ${categoryName}, ${subcategoryName}, freelance service, online service, ${serviceUser?.occupation || 'professional'}`}
+      canonical={`/services/${service._id}`}
+      ogTitle={service.title}
+      ogDescription={service.shortDescription || service.description?.substring(0, 200)}
+      ogImage={service.thumbnail?.url || service.images?.[0]?.url}
+      ogType="article"
+      ogArticle={{
+        publishedTime: service.createdAt,
+        modifiedTime: service.updatedAt,
+        author: serviceUser?.name,
+        section: categoryName
+      }}
+      twitterCard="summary_large_image"
+      twitterSite="@vorkana"
+      twitterCreator={serviceUser?.twitter || '@vorkana'}
+      robots={service.status === 'active' ? 'index, follow' : 'noindex, nofollow'}
+      lang="en"
+      breadcrumb={[
+        { name: "Home", url: "/" },
+        { name: "Services", url: "/services" },
+        { name: categoryName, url: `/services?category=${service.category}` },
+        { name: service.title, url: `/services/${service._id}` }
+      ]}
+      structuredData={structuredData}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+        
+        {/* Breadcrumb */}
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <nav className="flex items-center space-x-2 text-sm">
+                <button
+                  onClick={() => navigate('/')}
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  Home
+                </button>
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+                <button
+                  onClick={() => navigate('/services')}
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  Services
+                </button>
+                {categoryName && (
+                  <>
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                    <span className="text-gray-500">
                       {categoryName}
                     </span>
-                    {subcategoryName && (
-                      <span className="flex items-center">
-                        <ChevronRight className="h-4 w-4 mr-1" />
-                        {subcategoryName}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                  </>
+                )}
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+                <span className="text-emerald-600 font-medium truncate max-w-xs">
+                  {service.title}
+                </span>
+              </nav>
+              
+              <button
+                onClick={handleRefresh}
+                className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
+              >
+                Refresh Page
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Right Column - Service Info & Actions */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-8 space-y-8">
-
-              {/* Service Quick Stats */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Service Stats</h3>
-                <div className="space-y-5">
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Status</span>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
-                      {service.status?.toUpperCase() || 'ACTIVE'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Rating</span>
-                    <div className="flex items-center gap-2">
-                      {renderStars(service.rating || 0)}
-                      <span className="text-gray-900 font-medium">({service.reviewsCount || 0})</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Views</span>
-                    <span className="font-semibold text-blue-600">{viewCount}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Likes</span>
-                    <span className="font-semibold text-pink-600">{service.likes || 0}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Posted</span>
-                    <span className="font-semibold text-gray-900">{timeAgo}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600">Delivery Time</span>
-                    <span className="font-semibold text-gray-900">
-                      {service.deliveryTime} {service.deliveryTimeUnit}
-                    </span>
-                  </div>
-                  {service.revisions !== undefined && (
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Revisions</span>
-                      <span className="font-semibold text-gray-900">{service.revisions}</span>
-                    </div>
-                  )}
-                  {service.images && (
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Images</span>
-                      <span className="font-semibold text-purple-600">
-                        {service.images.length + (service.thumbnail?.url ? 1 : 0)}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column - Service Details */}
+            <div className="lg:col-span-2 space-y-8">
+              {/* Title and Actions */}
+              <div 
+                className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100" 
+                itemScope
+                itemType="https://schema.org/Service"
+              >
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
+                  <div>
+                    <h1 
+                      className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2" 
+                      itemProp="name"
+                    >
+                      {service.title}
+                      {renderRequiredIndicator('title', service.title)}
+                    </h1>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(service.status)}`}>
+                        {service.status?.toUpperCase() || 'ACTIVE'}
+                      </span>
+                      {service.isFeatured && (
+                        <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                          <Award className="inline h-4 w-4 mr-1" />
+                          FEATURED
+                        </span>
+                      )}
+                      {service.isPopular && (
+                        <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                          <TrendingUp className="inline h-4 w-4 mr-1" />
+                          POPULAR
+                        </span>
+                      )}
+                      <span className="flex items-center text-gray-500 text-sm">
+                        <Eye className="h-4 w-4 mr-1" />
+                        {viewCount} views
                       </span>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Price & Delivery Card */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Price & Delivery</h3>
-                
-                <div className="space-y-4">
-                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-semibold text-emerald-900">Starting Price</h4>
-                      <span className="text-2xl font-bold text-emerald-600">
-                        {formatPrice(service.price, service.currency)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span>Currency: {service.currency}</span>
-                    </div>
-                    <div className="mt-2">
-                      {renderRequiredIndicator('price', service.price)}
-                    </div>
                   </div>
-                  
-                  {service.packages && service.packages.length > 0 ? (
-                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-gray-600 mb-2">
-                        <Package className="inline h-4 w-4 mr-1" />
-                        {service.packages.length} packages available
-                      </p>
-                      <button className="text-blue-600 hover:text-blue-700 font-medium text-sm">
-                        View Packages
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <p className="text-gray-600">No packages available</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Delivery Time</span>
-                      <span className="font-semibold">{service.deliveryTime} {service.deliveryTimeUnit}</span>
-                    </div>
-                    {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Revisions</span>
-                      <span className="font-semibold">{service.revisions || 0} included</span>
-                    </div>
-                    
-                    {renderRequiredIndicator('revisions', service.revisions)}
-                    
-                    {service.deliveryTime && (
-                      <div className="text-xs text-gray-500 mt-2">
-                        Estimated completion time based on average delivery
-                      </div>
-                    )}
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => setIsLiked(!isLiked)}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      title={isLiked ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      <Heart
+                        className={`h-6 w-6 ${
+                          isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
+                        }`}
+                      />
+                    </button>
+                    <button
+                      onClick={handleShare}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      title="Share"
+                    >
+                      <Share2 className="h-6 w-6 text-gray-400" />
+                    </button>
+                    <button
+                      onClick={handleReport}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      title="Report"
+                    >
+                      <Flag className="h-6 w-6 text-gray-400" />
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Category & Tags */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Category & Tags</h3>
-                <div className="space-y-4">
-                  {categoryName && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-gray-600">Main Category</h4>
-                        <span className="text-xs text-emerald-600 font-medium">Required</span>
-                      </div>
-                      <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
-                        <Package className="h-5 w-5 text-emerald-600 mr-3" />
-                        <div>
-                          <span className="font-semibold text-gray-900 block">{categoryName}</span>
-                          {renderRequiredIndicator('category', service.category)}
-                          {service.categoryDetails?.description && (
-                            <p className="text-xs text-gray-500 mt-1">{service.categoryDetails.description}</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {subcategoryName && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-gray-600">Subcategory</h4>
-                        <span className="text-xs text-emerald-600 font-medium">Required</span>
-                      </div>
-                      <div className="flex items-center p-3 bg-blue-50 rounded-lg">
-                        <Layers className="h-5 w-5 text-blue-600 mr-3" />
-                        <div>
-                          <span className="font-semibold text-gray-900">{subcategoryName}</span>
-                          {renderRequiredIndicator('subcategory', service.subcategory)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {service.tags && service.tags.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Service Tags</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {service.tags.slice(0, 6).map((tag, index) => (
-                          <span
-                            key={index}
-                            className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {service.searchKeywords && service.searchKeywords.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-600 mb-2">Search Keywords</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {service.searchKeywords.slice(0, 5).map((keyword, index) => (
-                          <span
-                            key={index}
-                            className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full"
-                          >
-                            {keyword}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Enhanced User Information Card */}
-              {serviceUser && (
-                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                  <h3 className="text-xl font-bold text-gray-900 mb-6">Provider Profile</h3>
-                  <div className="space-y-4">
+                {/* Enhanced User Info */}
+                {serviceUser && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                     <Link 
                       to={`/profile/${serviceUser._id}`}
-                      className="flex items-center space-x-3 group cursor-pointer p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                      className="flex items-center space-x-4 group cursor-pointer flex-1"
                     >
                       <div className="relative">
                         <img
                           src={serviceUser.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
                           alt={serviceUser.name}
-                          className="w-12 h-12 rounded-full border-2 border-white group-hover:border-emerald-100 transition-colors"
+                          className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
                         />
                         {isOnline && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                          <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+                        )}
+                        {serviceUser.emailVerified && (
+                          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
+                            <CheckCircle className="h-3 w-3 text-white" />
+                          </div>
                         )}
                       </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                          {serviceUser.name}
-                        </h4>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
-                          View Profile
-                          <ExternalLink className="h-3 w-3" />
-                        </p>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors">
+                            {serviceUser.name || 'User'}
+                          </span>
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                            {serviceUser.role === 'admin' ? 'Admin' : 'Provider'}
+                          </span>
+                          {isOnline && (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full flex items-center gap-1">
+                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                              Online
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Enhanced User Details */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                          {serviceUser.occupation && (
+                            <span className="flex items-center">
+                              <Briefcase className="h-4 w-4 mr-1" />
+                              {serviceUser.occupation}
+                            </span>
+                          )}
+                          
+                          {serviceUser.country && (
+                            <span className="flex items-center">
+                              <MapPin className="h-4 w-4 mr-1" />
+                              {serviceUser.city ? `${serviceUser.city}, ${serviceUser.country}` : serviceUser.country}
+                            </span>
+                          )}
+                          
+                          {serviceUser.rating && (
+                            <span className="flex items-center">
+                              {renderStars(serviceUser.rating)}
+                              <span className="ml-1">({serviceUser.totalReviews || 0})</span>
+                            </span>
+                          )}
+                          
+                          {serviceUser.education && (
+                            <span className="flex items-center">
+                              <GraduationCap className="h-4 w-4 mr-1" />
+                              {serviceUser.education}
+                            </span>
+                          )}
+                          
+                          {serviceUser.languages && serviceUser.languages.length > 0 && (
+                            <span className="flex items-center">
+                              <Languages className="h-4 w-4 mr-1" />
+                              {serviceUser.languages.length} language{serviceUser.languages.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          
+                          {serviceUser.createdAt && (
+                            <span className="flex items-center">
+                              <Calendar className="h-4 w-4 mr-1" />
+                              Member for {accountAge}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* User Stats */}
+                        <div className="flex flex-wrap gap-4 mt-3">
+                          {serviceUser.completedOrders !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <Activity className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">
+                                {serviceUser.completedOrders} completed order{serviceUser.completedOrders !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {serviceUser.responseRate && (
+                            <div className="flex items-center gap-1">
+                              <TrendingUp className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">
+                                {serviceUser.responseRate}% response rate
+                              </span>
+                            </div>
+                          )}
+                          
+                          {serviceUser.responseTime && (
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-4 w-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">
+                                Avg. response: {serviceUser.responseTime}h
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* View Profile Link */}
+                        <div className="mt-2">
+                          <span className="text-emerald-600 text-sm font-medium group-hover:text-emerald-700 flex items-center gap-1">
+                            View Full Profile
+                            <ExternalLink className="h-3 w-3" />
+                          </span>
+                        </div>
                       </div>
                     </Link>
+                  </div>
+                )}
 
-                    {/* User Details Grid */}
-                    <div className="grid grid-cols-2 gap-3">
-                      {serviceUser.country && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <MapPin className="h-4 w-4 text-gray-600 mr-2" />
-                          <div className="truncate">
-                            <h4 className="text-xs text-gray-500">Location</h4>
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {serviceUser.country}
-                            </p>
-                          </div>
+                {/* Required Fields Summary Card */}
+                <div className="mb-8 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
+                  <h2 className="text-xl font-bold text-amber-800 mb-4 flex items-center gap-2">
+                    <Info className="h-5 w-5" />
+                    Required Service Information
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('title', service.title).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('title', service.title).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Service Title</h4>
+                        <p className="text-xs text-gray-500">Minimum 5 characters</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('description', service.description).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('description', service.description).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Description</h4>
+                        <p className="text-xs text-gray-500">Minimum 50 characters</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('shortDescription', service.shortDescription).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('shortDescription', service.shortDescription).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Short Description</h4>
+                        <p className="text-xs text-gray-500">Minimum 20 characters</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('category', service.category).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('category', service.category).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Category</h4>
+                        <p className="text-xs text-gray-500">Main service category</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('subcategory', service.subcategory).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('subcategory', service.subcategory).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Subcategory</h4>
+                        <p className="text-xs text-gray-500">Required subcategory</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
+                      <div className={`p-2 rounded-full ${isFieldComplete('price', service.price).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {isFieldComplete('price', service.price).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">Price</h4>
+                        <p className="text-xs text-gray-500">Minimum $1</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Service Images Section */}
+                <div className="mb-8">
+                  {/* View Mode Toggle */}
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                      <ImageIcon className="h-6 w-6 text-emerald-600" />
+                      Service Images
+                    </h2>
+                    {galleryImages.length > 0 && (
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setImageViewMode('thumbnail')}
+                          className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
+                            imageViewMode === 'thumbnail'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <ImageIcon className="h-4 w-4" />
+                          Thumbnail
+                        </button>
+                        <button
+                          onClick={() => setImageViewMode('gallery')}
+                          className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium ${
+                            imageViewMode === 'gallery'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Grid3x3 className="h-4 w-4" />
+                          Gallery ({galleryImages.length})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Thumbnail Section */}
+                  {imageViewMode === 'thumbnail' && (
+                    <div className="mb-8">
+                      <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
+                        <img
+                          src={thumbnailImage.url}
+                          alt={service.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+                          }}
+                        />
+                        <div className="absolute top-4 left-4">
+                          <span className="px-3 py-1 bg-emerald-600 text-white text-xs rounded-full">
+                            <CheckCircle className="inline h-3 w-3 mr-1" />
+                            Thumbnail
+                          </span>
                         </div>
-                      )}
-
-                      {serviceUser.occupation && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Briefcase className="h-4 w-4 text-gray-600 mr-2" />
-                          <div className="truncate">
-                            <h4 className="text-xs text-gray-500">Occupation</h4>
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {serviceUser.occupation}
-                            </p>
+                        {thumbnailImage.width && thumbnailImage.height && (
+                          <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                            {thumbnailImage.width} × {thumbnailImage.height}
+                            {thumbnailImage.size && ` • ${Math.round(thumbnailImage.size / 1024)}KB`}
+                            {thumbnailImage.format && ` • ${thumbnailImage.format.toUpperCase()}`}
                           </div>
-                        </div>
-                      )}
-
-                      {serviceUser.rating && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <TrendingUp className="h-4 w-4 text-gray-600 mr-2" />
+                        )}
+                      </div>
+                      
+                      {/* Thumbnail Info */}
+                      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                        <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="text-xs text-gray-500">Rating</h4>
+                            <h4 className="font-semibold text-emerald-900">Featured Thumbnail</h4>
+                            <p className="text-sm text-emerald-700">
+                              This image is prominently displayed as the service thumbnail
+                            </p>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {thumbnailImage.uploadedAt && (
+                              <span>Uploaded: {new Date(thumbnailImage.uploadedAt).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gallery Images Section */}
+                  {imageViewMode === 'gallery' && galleryImages.length > 0 && (
+                    <div className="mb-8">
+                      {/* Gallery Info */}
+                      <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-semibold text-gray-900">Service Gallery</h4>
+                            <p className="text-sm text-gray-600">
+                              {galleryImages.length} additional image{galleryImages.length !== 1 ? 's' : ''} showcasing this service
+                            </p>
+                          </div>
+                          <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                            <Grid3x3 className="inline h-4 w-4 mr-1" />
+                            {galleryImages.length} images
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Gallery Navigation */}
+                      {galleryImages.length > 1 && (
+                        <div className="flex justify-between items-center mb-4">
+                          <button
+                            onClick={() => setActiveImage(prev => prev === 0 ? galleryImages.length - 1 : prev - 1)}
+                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Previous
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            {activeImage + 1} of {galleryImages.length}
+                          </span>
+                          <button
+                            onClick={() => setActiveImage(prev => prev === galleryImages.length - 1 ? 0 : prev + 1)}
+                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Gallery Image Display */}
+                      {galleryImages.length > 0 && (
+                        <>
+                          <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
+                            <img
+                              src={galleryImages[activeImage]?.url}
+                              alt={`${service.title} - Gallery Image ${activeImage + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+                              }}
+                            />
+                            {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
+                              <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                                {galleryImages[activeImage].width} × {galleryImages[activeImage].height}
+                                {galleryImages[activeImage].size && ` • ${Math.round(galleryImages[activeImage].size / 1024)}KB`}
+                                {galleryImages[activeImage].format && ` • ${galleryImages[activeImage].format.toUpperCase()}`}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Gallery Thumbnails */}
+                          <div className="flex space-x-3 overflow-x-auto pb-3">
+                            {galleryImages.map((image, index) => (
+                              <button
+                                key={index}
+                                onClick={() => setActiveImage(index)}
+                                className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
+                                  activeImage === index
+                                    ? 'border-emerald-500'
+                                    : 'border-transparent hover:border-gray-300'
+                                }`}
+                              >
+                                <img
+                                  src={image.url}
+                                  alt={`Gallery ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
+                                  }}
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* No Gallery Images Message */}
+                  {imageViewMode === 'gallery' && galleryImages.length === 0 && (
+                    <div className="text-center p-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+                      <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">No Gallery Images</h3>
+                      <p className="text-gray-600 mb-4">
+                        This service doesn't have additional gallery images yet.
+                      </p>
+                      <button
+                        onClick={() => setImageViewMode('thumbnail')}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                      >
+                        View Thumbnail
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Essential Service Information Card */}
+                <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <TargetIcon className="h-6 w-6 text-blue-600" />
+                    Essential Service Information
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Category & Subcategory */}
+                    <div className="bg-white p-4 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <Package className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Category</h3>
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <Info className="h-3 w-3" />
+                            Required field
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Main Category:</span>
+                          <span className="font-medium text-gray-900">{categoryName || 'Not set'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Subcategory:</span>
+                          <span className="font-medium text-gray-900">{subcategoryName || 'Not set'}</span>
+                        </div>
+                      </div>
+                      {renderRequiredIndicator('category', service.category)}
+                      {renderRequiredIndicator('subcategory', service.subcategory)}
+                    </div>
+
+                    {/* Pricing Information */}
+                    <div className="bg-white p-4 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-green-100 rounded-lg">
+                          <DollarSignIcon className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Pricing</h3>
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <Info className="h-3 w-3" />
+                            Required fields
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Base Price:</span>
+                          <span className="font-medium text-emerald-600">
+                            {formatPrice(service.price, service.currency)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Currency:</span>
+                          <span className="font-medium text-gray-900">{service.currency || 'USD'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Revisions:</span>
+                          <span className="font-medium text-gray-900">{service.revisions || 0} included</span>
+                        </div>
+                      </div>
+                      {renderRequiredIndicator('price', service.price)}
+                      {renderRequiredIndicator('currency', service.currency)}
+                    </div>
+
+                    {/* Delivery Information */}
+                    <div className="bg-white p-4 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="p-2 bg-amber-100 rounded-lg">
+                          <Clock3 className="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Delivery</h3>
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <Info className="h-3 w-3" />
+                            Required fields
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Delivery Time:</span>
+                          <span className="font-medium text-gray-900">
+                            {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Unit:</span>
+                          <span className="font-medium text-gray-900">{service.deliveryTimeUnit || 'days'}</span>
+                        </div>
+                      </div>
+                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
+                      {renderRequiredIndicator('deliveryTimeUnit', service.deliveryTimeUnit)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Price & Delivery Info */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <DollarSign className="h-5 w-5 text-emerald-600" />
+                        Starting From
+                      </h3>
+                      {service.currency && (
+                        <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
+                          {service.currency}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <div 
+                        className="text-3xl font-bold text-emerald-600 mb-1" 
+                        itemProp="offers" 
+                        itemScope 
+                        itemType="https://schema.org/Offer"
+                      >
+                        <span itemProp="price" content={service.price}>{formatPrice(service.price, service.currency)}</span>
+                        <meta itemProp="priceCurrency" content={service.currency || 'USD'} />
+                        <meta itemProp="availability" content={service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'} />
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        Base price for this service
+                      </p>
+                      {renderRequiredIndicator('price', service.price)}
+                      {service.packages && service.packages.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-600">
+                          <span className="inline-block px-2 py-1 bg-white rounded border">
+                            {service.packages.length} packages available
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-blue-50 rounded-xl border border-blue-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-blue-600" />
+                        Delivery Time
+                      </h3>
+                      <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+                        {service.deliveryTimeUnit || 'days'}
+                      </span>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-2xl font-bold text-blue-600 mb-1">
+                        {service.deliveryTime} {service.deliveryTimeUnit}
+                      </div>
+                      <p className="text-sm text-gray-500 mb-2">
+                        Average delivery time
+                      </p>
+                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
+                      {service.revisions && (
+                        <div className="text-xs text-gray-600">
+                          {service.revisions} revision{service.revisions !== 1 ? 's' : ''} included
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description Section with Required Indicator */}
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                      <FileText className="h-6 w-6 text-emerald-600" />
+                      Service Description
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      {renderRequiredIndicator('description', service.description)}
+                      {renderRequiredIndicator('shortDescription', service.shortDescription)}
+                    </div>
+                  </div>
+                  <div className="prose max-w-none" itemProp="description">
+                    <div className="bg-gray-50 rounded-xl p-6">
+                      <p className="text-gray-700 whitespace-pre-line leading-relaxed">
+                        {service.description}
+                      </p>
+                      {service.shortDescription && (
+                        <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <BookOpen className="h-4 w-4 text-gray-400" />
+                            <h3 className="font-medium text-gray-900">Short Description</h3>
+                          </div>
+                          <p className="text-gray-600">{service.shortDescription}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Features */}
+                {service.features && service.features.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <CheckSquare className="h-6 w-6 text-emerald-600" />
+                      What's Included
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {service.features.map((feature, index) => (
+                        <div key={index} className="flex items-start p-4 bg-white border border-gray-200 rounded-xl hover:border-emerald-200 transition-colors">
+                          <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mr-3 mt-1 ${
+                            feature.included ? 'bg-emerald-100' : 'bg-gray-100'
+                          }`}>
+                            {feature.included ? (
+                              <CheckCircle className="h-4 w-4 text-emerald-600" />
+                            ) : (
+                              <X className="h-4 w-4 text-gray-400" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{feature.title}</h4>
+                            {feature.description && (
+                              <p className="text-sm text-gray-600 mt-1">{feature.description}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Requirements */}
+                {service.requirements && service.requirements.length > 0 && (
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <FileQuestion className="h-6 w-6 text-emerald-600" />
+                        Client Requirements
+                      </h2>
+                      <span className="text-sm text-gray-500">
+                        {service.requirements.filter(req => req.required).length} required field(s)
+                      </span>
+                    </div>
+                    <div className="space-y-4">
+                      {service.requirements.map((req, index) => (
+                        <div key={index} className="p-4 bg-gray-50 rounded-xl">
+                          <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center">
-                              <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                              <span className="text-sm font-medium text-gray-900 ml-1">
-                                {serviceUser.rating.toFixed(1)}
+                              <FileText className="h-5 w-5 text-gray-400 mr-3" />
+                              <div>
+                                <h3 className="font-semibold text-gray-900">{req.question}</h3>
+                                {req.required && (
+                                  <span className="text-xs text-red-600 font-medium mt-1">
+                                    Required field
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 text-xs rounded-full ${
+                                req.required ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {req.required ? 'Required' : 'Optional'}
+                              </span>
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                {req.type}
                               </span>
                             </div>
                           </div>
+                          {req.options && req.options.length > 0 && (
+                            <div className="mt-3 pl-8">
+                              <p className="text-sm text-gray-600 mb-2">Options:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {req.options.map((option, optIndex) => (
+                                  <span key={optIndex} className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-sm">
+                                    {option}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                      {serviceUser.completedOrders !== undefined && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Activity className="h-4 w-4 text-gray-600 mr-2" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Completed</h4>
-                            <p className="text-sm font-medium text-gray-900">
-                              {serviceUser.completedOrders}
-                            </p>
-                          </div>
+                {/* FAQs */}
+                {service.faqs && service.faqs.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <MessageCircle className="h-6 w-6 text-emerald-600" />
+                      Frequently Asked Questions
+                    </h2>
+                    <div className="space-y-4">
+                      {service.faqs.map((faq, index) => (
+                        <div key={index} className="p-4 bg-white border border-gray-200 rounded-xl">
+                          <h3 className="font-semibold text-gray-900 mb-2">{faq.question}</h3>
+                          <p className="text-gray-600">{faq.answer}</p>
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                      {serviceUser.accountType && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Award className="h-4 w-4 text-gray-600 mr-2" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Account Type</h4>
-                            <p className="text-sm font-medium text-gray-900 capitalize">
-                              {serviceUser.accountType}
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                {/* Tags */}
+                {service.tags && service.tags.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <Tag className="h-6 w-6 text-emerald-600" />
+                      Service Tags
+                    </h2>
+                    <div className="flex flex-wrap gap-3">
+                      {service.tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full font-medium hover:bg-gray-200 transition-colors cursor-pointer"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                      {serviceUser.languages && serviceUser.languages.length > 0 && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Languages className="h-4 w-4 text-gray-600 mr-2" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Languages</h4>
-                            <p className="text-sm font-medium text-gray-900">
-                              {serviceUser.languages.length}
-                            </p>
-                          </div>
-                        </div>
+                {/* Last Updated */}
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="flex flex-wrap justify-between items-center gap-4">
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        Posted {timeAgo} • Last updated: {new Date(service.updatedAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Service ID: {service._id}
+                      </p>
+                    </div>
+                    <div className="flex items-center text-sm text-gray-500">
+                      <span className="flex items-center mr-4">
+                        <Package className="h-4 w-4 mr-1" />
+                        {categoryName}
+                      </span>
+                      {subcategoryName && (
+                        <span className="flex items-center">
+                          <ChevronRight className="h-4 w-4 mr-1" />
+                          {subcategoryName}
+                        </span>
                       )}
                     </div>
-
-                    {/* Contact Provider Button */}
-                    <button
-                      onClick={() => setShowMessaging(true)}
-                      className="w-full px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-colors font-medium flex items-center justify-center gap-2"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      Contact Provider
-                    </button>
                   </div>
                 </div>
-              )}
+              </div>
+            </div>
 
-              {/* Safety & Trust */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                  <ShieldCheck className="h-6 w-6 text-emerald-600" />
-                  Safety & Trust
-                </h3>
-                <div className="space-y-4">
-                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            {/* Right Column - Service Info & Actions */}
+            <div className="lg:col-span-1">
+              <div className="sticky top-8 space-y-8">
+
+                {/* Service Quick Stats */}
+                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900 mb-6">Service Stats</h3>
+                  <div className="space-y-5">
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Status</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
+                        {service.status?.toUpperCase() || 'ACTIVE'}
+                      </span>
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 text-sm">Secure Payments</h4>
-                      <p className="text-xs text-gray-600">Your payment is protected</p>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Rating</span>
+                      <div className="flex items-center gap-2">
+                        {renderStars(service.rating || 0)}
+                        <span className="text-gray-900 font-medium">({service.reviewsCount || 0})</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Views</span>
+                      <span className="font-semibold text-blue-600">{viewCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Likes</span>
+                      <span className="font-semibold text-pink-600">{service.likes || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Posted</span>
+                      <span className="font-semibold text-gray-900">{timeAgo}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Delivery Time</span>
+                      <span className="font-semibold text-gray-900">
+                        {service.deliveryTime} {service.deliveryTimeUnit}
+                      </span>
+                    </div>
+                    {service.revisions !== undefined && (
+                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span className="text-gray-600">Revisions</span>
+                        <span className="font-semibold text-gray-900">{service.revisions}</span>
+                      </div>
+                    )}
+                    {service.images && (
+                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span className="text-gray-600">Images</span>
+                        <span className="font-semibold text-purple-600">
+                          {service.images.length + (service.thumbnail?.url ? 1 : 0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price & Delivery Card */}
+                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900 mb-6">Price & Delivery</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="font-semibold text-emerald-900">Starting Price</h4>
+                        <span className="text-2xl font-bold text-emerald-600">
+                          {formatPrice(service.price, service.currency)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>Currency: {service.currency}</span>
+                      </div>
+                      <div className="mt-2">
+                        {renderRequiredIndicator('price', service.price)}
+                      </div>
+                    </div>
+                    
+                    {service.packages && service.packages.length > 0 ? (
+                      <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-gray-600 mb-2">
+                          <Package className="inline h-4 w-4 mr-1" />
+                          {service.packages.length} packages available
+                        </p>
+                        <button className="text-blue-600 hover:text-blue-700 font-medium text-sm">
+                          View Packages
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-gray-600">No packages available</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Delivery Time</span>
+                        <span className="font-semibold">{service.deliveryTime} {service.deliveryTimeUnit}</span>
+                      </div>
+                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Revisions</span>
+                        <span className="font-semibold">{service.revisions || 0} included</span>
+                      </div>
+                      
+                      {renderRequiredIndicator('revisions', service.revisions)}
+                      
+                      {service.deliveryTime && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          Estimated completion time based on average delivery
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                      <ThumbsUp className="h-4 w-4 text-emerald-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 text-sm">Satisfaction Guarantee</h4>
-                      <p className="text-xs text-gray-600">{service.revisions || 0} revisions included</p>
+                </div>
+
+                {/* Category & Tags */}
+                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900 mb-6">Category & Tags</h3>
+                  <div className="space-y-4">
+                    {categoryName && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-medium text-gray-600">Main Category</h4>
+                          <span className="text-xs text-emerald-600 font-medium">Required</span>
+                        </div>
+                        <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
+                          <Package className="h-5 w-5 text-emerald-600 mr-3" />
+                          <div>
+                            <span className="font-semibold text-gray-900 block">{categoryName}</span>
+                            {renderRequiredIndicator('category', service.category)}
+                            {service.categoryDetails?.description && (
+                              <p className="text-xs text-gray-500 mt-1">{service.categoryDetails.description}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {subcategoryName && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-medium text-gray-600">Subcategory</h4>
+                          <span className="text-xs text-emerald-600 font-medium">Required</span>
+                        </div>
+                        <div className="flex items-center p-3 bg-blue-50 rounded-lg">
+                          <Layers className="h-5 w-5 text-blue-600 mr-3" />
+                          <div>
+                            <span className="font-semibold text-gray-900">{subcategoryName}</span>
+                            {renderRequiredIndicator('subcategory', service.subcategory)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {service.tags && service.tags.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-600 mb-2">Service Tags</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {service.tags.slice(0, 6).map((tag, index) => (
+                            <span
+                              key={index}
+                              className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {service.searchKeywords && service.searchKeywords.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-600 mb-2">Search Keywords</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {service.searchKeywords.slice(0, 5).map((keyword, index) => (
+                            <span
+                              key={index}
+                              className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full"
+                            >
+                              {keyword}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Enhanced User Information Card */}
+                {serviceUser && (
+                  <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                    <h3 className="text-xl font-bold text-gray-900 mb-6">Provider Profile</h3>
+                    <div className="space-y-4">
+                      <Link 
+                        to={`/profile/${serviceUser._id}`}
+                        className="flex items-center space-x-3 group cursor-pointer p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        <div className="relative">
+                          <img
+                            src={serviceUser.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                            alt={serviceUser.name}
+                            className="w-12 h-12 rounded-full border-2 border-white group-hover:border-emerald-100 transition-colors"
+                          />
+                          {isOnline && (
+                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">
+                            {serviceUser.name}
+                          </h4>
+                          <p className="text-sm text-gray-500 flex items-center gap-1">
+                            View Profile
+                            <ExternalLink className="h-3 w-3" />
+                          </p>
+                        </div>
+                      </Link>
+
+                      {/* User Details Grid */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {serviceUser.country && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <MapPin className="h-4 w-4 text-gray-600 mr-2" />
+                            <div className="truncate">
+                              <h4 className="text-xs text-gray-500">Location</h4>
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {serviceUser.country}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {serviceUser.occupation && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <Briefcase className="h-4 w-4 text-gray-600 mr-2" />
+                            <div className="truncate">
+                              <h4 className="text-xs text-gray-500">Occupation</h4>
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {serviceUser.occupation}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {serviceUser.rating && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <TrendingUp className="h-4 w-4 text-gray-600 mr-2" />
+                            <div>
+                              <h4 className="text-xs text-gray-500">Rating</h4>
+                              <div className="flex items-center">
+                                <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
+                                <span className="text-sm font-medium text-gray-900 ml-1">
+                                  {serviceUser.rating.toFixed(1)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {serviceUser.completedOrders !== undefined && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <Activity className="h-4 w-4 text-gray-600 mr-2" />
+                            <div>
+                              <h4 className="text-xs text-gray-500">Completed</h4>
+                              <p className="text-sm font-medium text-gray-900">
+                                {serviceUser.completedOrders}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {serviceUser.accountType && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <Award className="h-4 w-4 text-gray-600 mr-2" />
+                            <div>
+                              <h4 className="text-xs text-gray-500">Account Type</h4>
+                              <p className="text-sm font-medium text-gray-900 capitalize">
+                                {serviceUser.accountType}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {serviceUser.languages && serviceUser.languages.length > 0 && (
+                          <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                            <Languages className="h-4 w-4 text-gray-600 mr-2" />
+                            <div>
+                              <h4 className="text-xs text-gray-500">Languages</h4>
+                              <p className="text-sm font-medium text-gray-900">
+                                {serviceUser.languages.length}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Contact Provider Button */}
+                      <button
+                        onClick={() => setShowMessaging(true)}
+                        className="w-full px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-colors font-medium flex items-center justify-center gap-2"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        Contact Provider
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                      <Timer className="h-4 w-4 text-emerald-600" />
+                )}
+
+                {/* Safety & Trust */}
+                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <ShieldCheck className="h-6 w-6 text-emerald-600" />
+                    Safety & Trust
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                        <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 text-sm">Secure Payments</h4>
+                        <p className="text-xs text-gray-600">Your payment is protected</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 text-sm">On-time Delivery</h4>
-                      <p className="text-xs text-gray-600">{service.deliveryTime}-day delivery guarantee</p>
+                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                        <ThumbsUp className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 text-sm">Satisfaction Guarantee</h4>
+                        <p className="text-xs text-gray-600">{service.revisions || 0} revisions included</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                        <Timer className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 text-sm">On-time Delivery</h4>
+                        <p className="text-xs text-gray-600">{service.deliveryTime}-day delivery guarantee</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 text-sm">Verified Provider</h4>
-                      <p className="text-xs text-gray-600">Identity verified</p>
+                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 text-sm">Verified Provider</h4>
+                        <p className="text-xs text-gray-600">Identity verified</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1651,7 +1883,7 @@ const ServiceDetails = () => {
           </div>
         </div>
       </div>
-    </div>
+    </SeoWrapper>
   );
 };
 

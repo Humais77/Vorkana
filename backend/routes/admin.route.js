@@ -159,6 +159,10 @@ router.get('/categories/analytics',
 );
 
 // Service Management
+// In admin.route.js - Add admin service routes
+// Add these routes for admin service management
+
+// Admin Service Routes
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
@@ -181,6 +185,65 @@ router.get('/services',
     next();
   },
   serviceController.getAdminServices
+);
+
+// ADD THIS: Admin delete service route
+router.delete('/services/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_services'),
+  auditLog('DELETE_SERVICE', 'services'),
+  async (req, res, next) => {
+    try {
+      // Forward to the regular service controller with admin context
+      req.isAdmin = true;
+      req.params.id = req.params.id;
+      next();
+    } catch (error) {
+      console.error('[ADMIN DELETE SERVICE ERROR]', error);
+      next(error);
+    }
+  },
+  serviceController.deleteService
+);
+// In admin.route.js - Add a dedicated admin delete route
+
+// ADD THIS: Admin get service by ID route
+router.get('/services/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_services'),
+  auditLog('VIEW_SERVICE', 'services'),
+  async (req, res, next) => {
+    try {
+      // Forward to the regular service controller with admin context
+      req.isAdmin = true;
+      next();
+    } catch (error) {
+      console.error('[ADMIN GET SERVICE ERROR]', error);
+      next(error);
+    }
+  },
+  serviceController.getServiceById
+);
+
+// ADD THIS: Admin update service route
+router.put('/services/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_services'),
+  auditLog('UPDATE_SERVICE', 'services'),
+  async (req, res, next) => {
+    try {
+      // Forward to the regular service controller with admin context
+      req.isAdmin = true;
+      next();
+    } catch (error) {
+      console.error('[ADMIN UPDATE SERVICE ERROR]', error);
+      next(error);
+    }
+  },
+  serviceController.updateService
 );
 
 router.get('/services/stats', 
