@@ -1,85 +1,102 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
-export const SeoWrapper = ({ 
-  children, 
+export const SeoWrapper = ({
+  children,
   title = 'Create Service | Vorkana',
   description = 'Create and publish your freelance service on Vorkana marketplace. Reach thousands of potential clients worldwide.',
   keywords = 'create service, freelance, gig, offer services, sell skills, freelancer, marketplace',
   canonical,
-  structuredData,
+  structuredData, // array of JSON-LD objects or single object
   ogTitle,
   ogDescription,
   ogImage,
   ogType = 'website',
+  ogUrl,
   twitterCard = 'summary_large_image',
   twitterSite = '@vorkana',
   robots = 'index, follow',
   lang = 'en',
-  alternateLanguages = [],
-  breadcrumb = [],
-  schemaType = 'WebPage'
+  alternateLanguages = [], // [{ href: string, hreflang: string }]
+  breadcrumb = [], // [{ name: string, url: string }]
 }) => {
+  const createdElements = useRef([]); // Track elements we create
+  const originalTitle = useRef(typeof document !== 'undefined' ? document.title : '');
+
   useEffect(() => {
-    // Store original title to reset on unmount
-    const previousTitle = document.title;
+    if (typeof document === 'undefined') return;
 
-    // Update document title
-    if (title) {
-      document.title = title.includes('Vorkana') ? title : `${title} | Vorkana`;
-    }
+    // === 1. Title ===
+    const fullTitle = title.includes('Vorkana') ? title : `${title} | Vorkana`;
+    document.title = fullTitle;
 
-    // Set language
-    if (lang) {
-      document.documentElement.lang = lang;
-    }
+    // === 2. Language ===
+    document.documentElement.lang = lang;
 
-    const updateOrCreateMeta = (name, content, property = null) => {
-      let metaTag;
-      if (property) {
-        metaTag = document.querySelector(`meta[property="${property}"]`);
-        if (!metaTag) {
-          metaTag = document.createElement('meta');
-          metaTag.setAttribute('property', property);
-          document.head.appendChild(metaTag);
-        }
-      } else {
-        metaTag = document.querySelector(`meta[name="${name}"]`);
-        if (!metaTag) {
-          metaTag = document.createElement('meta');
-          metaTag.setAttribute('name', name);
-          document.head.appendChild(metaTag);
-        }
+    // === Helper to create or update meta/link/script ===
+    const updateOrCreate = (tagName, attributes, contentAttr = 'content') => {
+      let selector = '';
+      if (tagName === 'meta') {
+        if (attributes.property) selector = `meta[property="${attributes.property}"]`;
+        else if (attributes.name) selector = `meta[name="${attributes.name}"]`;
+      } else if (tagName === 'link') {
+        selector = `link[rel="${attributes.rel}"]${attributes.hreflang ? `[hreflang="${attributes.hreflang}"]` : ''}`;
       }
-      metaTag.setAttribute('content', content);
+
+      let el = selector ? document.querySelector(selector) : null;
+
+      if (!el) {
+        el = document.createElement(tagName);
+        Object.keys(attributes).forEach((key) => el.setAttribute(key, attributes[key]));
+        document.head.appendChild(el);
+        createdElements.current.push(el);
+      }
+
+      if (contentAttr) el.setAttribute(contentAttr, attributes[contentAttr] || '');
+      return el;
     };
 
-    // Logic to update tags
+    // === 3. Basic Meta ===
     if (description) {
-      updateOrCreateMeta('description', description);
-      updateOrCreateMeta(null, ogDescription || description, 'og:description');
-      updateOrCreateMeta(null, ogDescription || description, 'twitter:description');
+      updateOrCreate('meta', { name: 'description', content: description });
     }
-    if (keywords) updateOrCreateMeta('keywords', keywords);
-    if (robots) updateOrCreateMeta('robots', robots);
+    if (keywords) {
+      updateOrCreate('meta', { name: 'keywords', content: keywords });
+    }
+    updateOrCreate('meta', { name: 'robots', content: robots });
 
-    // Canonical
-    if (canonical && typeof window !== 'undefined') {
-      let canonicalLink = document.querySelector('link[rel="canonical"]');
-      if (!canonicalLink) {
-        canonicalLink = document.createElement('link');
-        canonicalLink.rel = 'canonical';
-        document.head.appendChild(canonicalLink);
+    // === 4. Open Graph ===
+    const finalOgTitle = ogTitle || title;
+    const finalOgDescription = ogDescription || description;
+    const baseUrl = window.location.origin;
+    const finalOgImage = ogImage || `${baseUrl}/images/og-create-service.jpg`;
+    const finalOgUrl = ogUrl || window.location.href;
+
+    updateOrCreate('meta', { property: 'og:title', content: finalOgTitle });
+    updateOrCreate('meta', { property: 'og:description', content: finalOgDescription });
+    updateOrCreate('meta', { property: 'og:type', content: ogType });
+    updateOrCreate('meta', { property: 'og:url', content: finalOgUrl });
+    updateOrCreate('meta', { property: 'og:image', content: finalOgImage });
+
+    // === 5. Twitter ===
+    updateOrCreate('meta', { name: 'twitter:card', content: twitterCard });
+    updateOrCreate('meta', { name: 'twitter:site', content: twitterSite });
+    updateOrCreate('meta', { name: 'twitter:title', content: finalOgTitle });
+    updateOrCreate('meta', { name: 'twitter:description', content: finalOgDescription });
+    updateOrCreate('meta', { name: 'twitter:image', content: finalOgImage });
+
+    // === 6. Canonical ===
+    if (canonical) {
+      updateOrCreate('link', { rel: 'canonical', href: canonical }, 'href');
+    }
+
+    // === 7. Alternate Languages ===
+    alternateLanguages.forEach(({ href, hreflang }) => {
+      if (href && hreflang) {
+        updateOrCreate('link', { rel: 'alternate', hreflang, href }, 'href');
       }
-      canonicalLink.href = canonical;
-    }
+    });
 
-    // OG/Twitter Image
-    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    const imgUrl = ogImage || `${websiteUrl}/images/og-create-service.jpg`;
-    updateOrCreateMeta(null, imgUrl, 'og:image');
-    updateOrCreateMeta(null, imgUrl, 'twitter:image');
-
-    // Breadcrumb
+    // === 8. Breadcrumb (if provided) ===
     if (breadcrumb.length > 0) {
       const breadcrumbSchema = {
         "@context": "https://schema.org",
@@ -91,41 +108,56 @@ export const SeoWrapper = ({
           "item": item.url
         }))
       };
-      const script = document.createElement('script');
-      script.type = 'application/ld+json';
-      script.text = JSON.stringify(breadcrumbSchema);
-      script.id = 'breadcrumb-schema';
-      document.head.appendChild(script);
+
+      const scriptEl = document.createElement('script');
+      scriptEl.type = 'application/ld+json';
+      scriptEl.text = JSON.stringify(breadcrumbSchema);
+      scriptEl.dataset.seo = 'breadcrumb';
+      document.head.appendChild(scriptEl);
+      createdElements.current.push(scriptEl);
     }
 
-    // --- CLEANUP FUNCTION ---
+    // === 9. General Structured Data ===
+    const dataToAdd = Array.isArray(structuredData) ? structuredData : structuredData ? [structuredData] : [];
+    dataToAdd.forEach((data, index) => {
+      if (!data) return;
+      const scriptEl = document.createElement('script');
+      scriptEl.type = 'application/ld+json';
+      scriptEl.text = JSON.stringify(data);
+      scriptEl.dataset.seo = `custom-${index}`;
+      document.head.appendChild(scriptEl);
+      createdElements.current.push(scriptEl);
+    });
+
+    // === Cleanup ===
     return () => {
-      // 1. Reset Title
-      document.title = "Vorkana"; // Or use previousTitle
+      // Restore original title
+      document.title = originalTitle.current || 'Vorkana';
 
-      // 2. Remove specific tags that shouldn't persist
-      const tagsToRemove = [
-        'meta[name="description"]',
-        'meta[property="og:description"]',
-        'meta[property="twitter:description"]',
-        'meta[name="keywords"]',
-        'meta[property="og:title"]',
-        'link[rel="canonical"]',
-        'script#breadcrumb-schema'
-      ];
-
-      tagsToRemove.forEach(selector => {
-        const element = document.querySelector(selector);
-        if (element) element.remove();
+      // Remove all elements we created
+      createdElements.current.forEach((el) => {
+        if (el?.parentNode) el.parentNode.removeChild(el);
       });
-
-      // 3. Clean up alternates
-      alternateLanguages.forEach(({ lang }) => {
-        const link = document.querySelector(`link[rel="alternate"][hreflang="${lang}"]`);
-        if (link) link.remove();
-      });
+      createdElements.current = [];
     };
-  }, [title, description, keywords, canonical, structuredData, ogTitle, ogDescription, ogImage, ogType, twitterCard, twitterSite, robots, lang, alternateLanguages, breadcrumb]);
+  }, [
+    title,
+    description,
+    keywords,
+    canonical,
+    structuredData,
+    ogTitle,
+    ogDescription,
+    ogImage,
+    ogType,
+    ogUrl,
+    twitterCard,
+    twitterSite,
+    robots,
+    lang,
+    alternateLanguages,
+    breadcrumb,
+  ]);
 
   return <>{children}</>;
 };

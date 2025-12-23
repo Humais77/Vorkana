@@ -101,7 +101,7 @@ const CategoryGrid = () => {
         const fetchedCategories = await categoriesAPI.getAll({
           parentCategory: null, // Only get top-level categories
           includeSubcategories: false,
-          limit: 10, // Limit to 20 main categories
+          limit: 20, // Fetch up to 20 categories for lg display
           sortBy: 'name',
           order: 'asc'
         });
@@ -165,46 +165,58 @@ const CategoryGrid = () => {
         slug: 'digital-marketing'
       },
       { 
-        id: '6', 
+        id: '4', 
         name: "AI Services", 
         icon: <Cpu className="w-5 h-5" />,
         slug: 'ai-services'
       },
       { 
-        id: '8', 
+        id: '5', 
         name: "Business Services", 
         icon: <Briefcase className="w-5 h-5" />,
         slug: 'business-services'
       },
       { 
-        id: '9', 
+        id: '6', 
         name: "IT & Consulting", 
         icon: <Users className="w-5 h-5" />,
         slug: 'it-consulting'
       },
       { 
-        id: '10', 
+        id: '7', 
         name: "Photography", 
         icon: <Camera className="w-5 h-5" />,
         slug: 'photography'
       },
       { 
-        id: '11', 
+        id: '8', 
         name: "Writing & Translation", 
         icon: <FileText className="w-5 h-5" />,
         slug: 'writing-translation'
       },
       { 
-        id: '12', 
+        id: '9', 
         name: "Video & Animation", 
         icon: <Film className="w-5 h-5" />,
         slug: 'video-animation'
       },
       { 
-        id: '13', 
+        id: '10', 
         name: "Music & Audio", 
         icon: <Music className="w-5 h-5" />,
         slug: 'music-audio'
+      },
+      { 
+        id: '11', 
+        name: "Web Development", 
+        icon: <Globe className="w-5 h-5" />,
+        slug: 'web-development'
+      },
+      { 
+        id: '12', 
+        name: "Mobile Development", 
+        icon: <Smartphone className="w-5 h-5" />,
+        slug: 'mobile-development'
       },
     ];
     setCategories(fallbackCategories);
@@ -271,6 +283,8 @@ const CategoryGrid = () => {
 
 // Separate view component
 const CategoryGridView = ({ categories }) => {
+  const [showAll, setShowAll] = useState(false);
+  
   if (categories.length === 0) {
     return (
       <section className="py-6 px-4 bg-white mt-10">
@@ -281,49 +295,110 @@ const CategoryGridView = ({ categories }) => {
     );
   }
 
+  // For lg screens: show exactly 10 categories in one row
+  // For md/sm screens: show 4 per row, and show "Show More" text button if more than 8
+  const displayCategories = showAll ? categories : categories.slice(0, 8);
+  const hasMoreCategories = categories.length > 8;
+  
   return (
     <section className="py-6 px-4 bg-white mt-10">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-left mb-6">
-          <h2 className="text-4xl font-bold text-gray-900 mb-2">
+        <div className="text-left mb-8">
+          <h2 className="text-4xl font-bold text-gray-900 mb-3">
             Browse Categories
           </h2>
-          <p className="text-gray-600 text-sm md:text-base">
+          <p className="text-gray-600 text-base md:text-lg">
             Explore services across different professional domains
           </p>
         </div>
 
         {/* Category Grid */}
-        <div className="flex flex-wrap justify-center gap-3 md:gap-4">
-          {categories.map((cat) => (
-            <Link
-              key={cat.id}
-              to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug}`}
-              className="flex flex-col items-center justify-center
-                w-24 h-20              
-                sm:w-28 sm:h-24      
-                md:w-32 md:h-28        
-                lg:w-28 lg:h-34       
-                bg-white rounded-lg shadow-sm
-                hover:shadow-md transition-all duration-200
-                border border-gray-100 hover:border-blue-100
-                group p-2"
-            >
-              <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200">
-                {cat.icon}
-              </div>
-              <span className="mt-1 text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight">
-                {cat.name}
-              </span>
-              {/* Optional: Show services count if available */}
-              {cat.servicesCount > 0 && (
-                <span className="text-xs text-gray-500 mt-1">
-                  {cat.servicesCount} services
+        <div className="relative">
+          {/* For lg screens: 10 categories in one row */}
+          <div className="hidden lg:flex justify-center gap-5">
+            {categories.slice(0, 10).map((cat) => (
+              <Link
+                key={cat.id}
+                to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug}`}
+                className="flex flex-col items-center justify-center
+                  w-28 h-34       
+                  bg-white rounded-lg shadow-sm
+                  hover:shadow-md transition-all duration-200
+                  border border-gray-100 hover:border-blue-100
+                  group p-3"
+              >
+                <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+                  {cat.icon}
+                </div>
+                <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1">
+                  {cat.name}
                 </span>
-              )}
-            </Link>
-          ))}
+                {cat.servicesCount > 0 && (
+                  <span className="text-xs text-gray-500 mt-2">
+                    {cat.servicesCount} services
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+
+          {/* For md/sm screens: 4 per row with show more text button */}
+          <div className="lg:hidden">
+            <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
+              {displayCategories.map((cat) => (
+                <Link
+                  key={cat.id}
+                  to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug}`}
+                  className="flex flex-col items-center justify-center
+                    bg-white rounded-lg shadow-sm
+                    hover:shadow-md transition-all duration-200
+                    border border-gray-100 hover:border-blue-100
+                    group p-3 h-full min-h-[120px]"
+                >
+                  <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+                    {cat.icon}
+                  </div>
+                  <span className="text-xs font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1">
+                    {cat.name}
+                  </span>
+                  {cat.servicesCount > 0 && (
+                    <span className="text-xs text-gray-500 mt-1">
+                      {cat.servicesCount}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+            
+            {/* Show More text button for md/sm when there are more than 8 categories */}
+            {hasMoreCategories && !showAll && categories.length > 8 && (
+              <div className="text-center mt-6">
+                <button
+                  onClick={() => setShowAll(true)}
+                  className="px-6 py-2 text-sm font-medium text-blue-600 
+                    hover:text-blue-700 transition-colors duration-200
+                    hover:underline"
+                >
+                  Show More Categories
+                </button>
+              </div>
+            )}
+            
+            {/* Show Less button when expanded */}
+            {showAll && hasMoreCategories && (
+              <div className="text-center mt-6">
+                <button
+                  onClick={() => setShowAll(false)}
+                  className="px-6 py-2 text-sm font-medium text-blue-600 
+                    hover:text-blue-700 transition-colors duration-200
+                    hover:underline"
+                >
+                  Show Less
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </section>

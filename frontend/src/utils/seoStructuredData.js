@@ -351,9 +351,9 @@ export const generateServiceStructuredData = (service, serviceUser, websiteUrl) 
     "@context": "https://schema.org",
     "@type": "Service",
     "name": service.title,
-    "description": service.description?.substring(0, 300) || service.shortDescription,
+    "description":(service.description || service.shortDescription || '').substring(0, 300),
     "url": serviceUrl,
-    "image": service.thumbnail?.url || (service.images?.[0]?.url) || `${websiteUrl}/default-service.jpg`,
+    "image": service.thumbnail?.url || service.images?.[0]?.url || `${baseUrl}/default-service.jpg`,
     "offers": offers,
     "provider": provider ? {
       "@type": provider.role === 'business' ? "Organization" : "Person",
