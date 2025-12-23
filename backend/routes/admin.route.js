@@ -55,11 +55,26 @@ router.get('/users/export',
   adminController.exportUsers
 );
 
+// In admin.route.js - Update the PUT /users/:id route
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_users'),
   auditLog('UPDATE_USER', 'users'),
+  async (req, res, next) => {
+    try {
+      console.log('[ADMIN USER UPDATE] Incoming request:', {
+        userId: req.params.id,
+        body: req.body,
+        admin: req.admin?.email,
+        ip: req.ip
+      });
+      next();
+    } catch (error) {
+      console.error('[ADMIN USER UPDATE MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
   adminController.updateUser
 );
 

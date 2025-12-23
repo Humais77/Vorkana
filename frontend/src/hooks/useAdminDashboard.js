@@ -192,23 +192,38 @@ export const useDeleteUser = () => {
     }
   });
 };
-// Add this to your useAdminDashboard.js file, right after useCreateUser
 export const useUpdateUser = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateUser(id, data),
+    mutationFn: async ({ id, data }) => {
+      console.log('[USE UPDATE USER] Updating user:', { id, data });
+      
+      try {
+        const response = await adminAPI.updateUser(id, data);
+        console.log('[USE UPDATE USER] Update response:', response.data);
+        return response;
+      } catch (error) {
+        console.error('[USE UPDATE USER] Error:', error);
+        console.error('[USE UPDATE USER] Error response:', error.response?.data);
+        throw error;
+      }
+    },
     onMutate: async ({ id, data }) => {
+      console.log('[USE UPDATE USER] Optimistic update for user:', id);
+      
       await queryClient.cancelQueries(['admin', 'users']);
       
       const previousUsers = queryClient.getQueryData(['admin', 'users']);
       
+      // Optimistically update the user in cache
       queryClient.setQueryData(['admin', 'users'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
         return {
           ...old,
           data: old.data.map(user => 
-            user._id === id ? { ...user, ...data } : user
+            user._id === id ? { ...user, ...data, updatedAt: new Date().toISOString() } : user
           )
         };
       });
@@ -216,20 +231,49 @@ export const useUpdateUser = () => {
       return { previousUsers };
     },
     onSuccess: (response) => {
+      console.log('[USE UPDATE USER] Success:', response.data);
+      
       if (response.data.success) {
-        toast.success('User updated successfully');
+        toast.success(response.data.message || 'User updated successfully');
+        
+        // Invalidate and refetch all relevant queries
         queryClient.invalidateQueries(['admin', 'users']);
         queryClient.invalidateQueries(['admin', 'dashboard']);
+        
+        // Also update user in single user query if it exists
+        if (response.data.data?._id) {
+          queryClient.setQueryData(['admin', 'users', response.data.data._id], response.data.data);
+        }
       } else {
         toast.error(response.data.message || 'Update failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[USE UPDATE USER] Mutation error:', error);
+      
+      // Revert optimistic update on error
       if (context?.previousUsers) {
         queryClient.setQueryData(['admin', 'users'], context.previousUsers);
       }
-      toast.error(error.response?.data?.message || 'Update failed');
-    }
+      
+      // Show detailed error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to update user';
+      
+      // Show validation errors if they exist
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        toast.error(errorMessage);
+      }
+    },
+    // Retry logic
+    retry: 1,
+    retryDelay: 1000
   });
 };
 export const useUpdateCategory = () => {

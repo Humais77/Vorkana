@@ -278,8 +278,7 @@ const getUsers = async (req, res) => {
       User.countDocuments(query)
     ]);
 
-    // Security: Sanitize user data
-    const sanitizedUsers = users.map(user => ({
+   const sanitizedUsers = users.map(user => ({
       _id: user._id,
       name: user.name,
       email: user.email,
@@ -288,9 +287,23 @@ const getUsers = async (req, res) => {
       isActive: user.isActive,
       emailVerified: user.emailVerified,
       twoFactorEnabled: user.twoFactorEnabled,
+      phoneNumber: user.phoneNumber,
+      bio: user.bio,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth,
+      country: user.country,
+      city: user.city,
+      occupation: user.occupation,
+      education: user.education,
+      languages: user.languages,
+      accountType: user.accountType,
+      privacySettings: user.privacySettings,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
-      lastLoginAt: user.lastLoginAt
+      lastLoginAt: user.lastLoginAt,
+      // Add any other fields you need
     }));
 
     const totalPages = Math.ceil(total / limitNum);
@@ -329,6 +342,10 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    console.log('[ADMIN UPDATE USER] Request body:', JSON.stringify(updates, null, 2));
+    console.log('[ADMIN UPDATE USER] User ID:', id);
+    console.log('[ADMIN UPDATE USER] Admin ID:', req.admin?._id);
+
     // Security: Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -339,15 +356,63 @@ const updateUser = async (req, res) => {
       });
     }
 
-    // Security: Define allowed update fields
-    const allowedUpdates = ['name', 'role', 'isActive', 'emailVerified', 'twoFactorEnabled'];
+    // Security: Define allowed update fields (expanded list)
+    const allowedUpdates = [
+      'name', 'role', 'isActive', 'emailVerified', 'twoFactorEnabled',
+      'phoneNumber', 'bio', 'gender', 'dateOfBirth', 'country', 'city',
+      'occupation', 'education', 'languages', 'accountType', 'privacySettings',
+      'picture', 'bio', 'rating', 'responseRate', 'responseTime'
+    ];
+    
     const filteredUpdates = {};
     
     Object.keys(updates).forEach(key => {
       if (allowedUpdates.includes(key)) {
-        filteredUpdates[key] = updates[key];
+        // Handle different data types
+        if (key === 'languages' && typeof updates[key] === 'string') {
+          // Convert string to array if needed
+          filteredUpdates[key] = updates[key].split(',').map(lang => lang.trim());
+        } else if (key === 'privacySettings' && typeof updates[key] === 'string') {
+          // Parse JSON string for privacySettings
+          try {
+            filteredUpdates[key] = JSON.parse(updates[key]);
+          } catch (e) {
+            console.error('[ADMIN UPDATE USER] Invalid privacySettings JSON:', e);
+          }
+        } else {
+          filteredUpdates[key] = updates[key];
+        }
       }
     });
+
+    // Validate email if being updated
+    if (filteredUpdates.email) {
+      if (!validator.isEmail(filteredUpdates.email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format',
+          code: 'INVALID_EMAIL',
+          requestId
+        });
+      }
+      
+      // Check if email already exists (excluding current user)
+      const existingUser = await User.findOne({ 
+        email: filteredUpdates.email.toLowerCase(),
+        _id: { $ne: id }
+      });
+      
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email already exists',
+          code: 'DUPLICATE_EMAIL',
+          requestId
+        });
+      }
+      
+      filteredUpdates.email = filteredUpdates.email.toLowerCase();
+    }
 
     // Security: Prevent self-demotion
     if (filteredUpdates.role && filteredUpdates.role !== 'admin' && id === req.admin._id.toString()) {
@@ -359,14 +424,46 @@ const updateUser = async (req, res) => {
       });
     }
 
-    // Find and update user
+    // Validate date of birth if being updated
+    if (filteredUpdates.dateOfBirth && !validateDateOfBirth(filteredUpdates.dateOfBirth)) {
+      return res.status(400).json({
+        success: false,
+        message: 'You must be at least 13 years old and not older than 120 years',
+        code: 'INVALID_DATE_OF_BIRTH',
+        requestId
+      });
+    }
+
+    // Validate phone number if being updated
+    if (filteredUpdates.phoneNumber && !validatePhoneNumber(filteredUpdates.phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format',
+        code: 'INVALID_PHONE',
+        requestId
+      });
+    }
+
+    console.log('[ADMIN UPDATE USER] Filtered updates:', JSON.stringify(filteredUpdates, null, 2));
+
+    // Add updatedAt to the updates object (not as separate operator)
+    filteredUpdates.updatedAt = new Date();
+
+    // Find and update user - FIXED VERSION
     const user = await User.findByIdAndUpdate(
       id,
-      filteredUpdates,
-      { new: true, runValidators: true }
-    ).select('-password -resetPasswordToken -resetPasswordExpires');
+      filteredUpdates,  // Directly pass the updates object (mongoose handles $set automatically)
+      { 
+        new: true, 
+        runValidators: true,
+        context: 'query'
+      }
+    )
+    .select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret -emailVerificationToken -deviceTokens -loginHistory')
+    .lean();
 
     if (!user) {
+      console.log('[ADMIN UPDATE USER] User not found:', id);
       return res.status(404).json({
         success: false,
         message: 'User not found',
@@ -377,23 +474,65 @@ const updateUser = async (req, res) => {
 
     // Security: Log admin action
     await logAdminAction(req.admin._id, 'UPDATE_USER', `user:${id}`, {
-      updates: filteredUpdates,
-      ip: req.ip
+      updates: Object.keys(filteredUpdates),
+      ip: req.ip,
+      userEmail: user.email
     });
+
+    console.log('[ADMIN UPDATE USER] Successfully updated user:', user._id);
 
     res.json({
       success: true,
       message: 'User updated successfully',
-      data: user,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber,
+        bio: user.bio,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
+        country: user.country,
+        city: user.city,
+        occupation: user.occupation,
+        education: user.education,
+        languages: user.languages,
+        accountType: user.accountType,
+        privacySettings: user.privacySettings,
+        picture: user.picture,
+        rating: user.rating,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: user.lastLoginAt
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('[UPDATE USER ERROR]', error);
+    console.error('[UPDATE USER ERROR STACK]', error.stack);
     
-    if (error.code === 11000) {
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      console.error('[UPDATE USER VALIDATION ERROR]', messages);
       return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      console.error('[UPDATE USER DUPLICATE ERROR]', error);
+      return res.status(409).json({
         success: false,
         message: 'Email already exists',
         code: 'DUPLICATE_EMAIL',
@@ -401,11 +540,22 @@ const updateUser = async (req, res) => {
       });
     }
     
+    // Handle cast errors
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data format',
+        code: 'CAST_ERROR',
+        requestId
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to update user',
+      message: 'Failed to update user: ' + (error.message || 'Internal server error'),
       code: 'USER_UPDATE_ERROR',
-      requestId
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

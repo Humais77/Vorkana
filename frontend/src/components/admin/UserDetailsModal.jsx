@@ -1,12 +1,30 @@
-import { FiX, FiMail, FiPhone, FiMapPin, FiCalendar, FiGlobe, FiBriefcase, FiFileText, FiUser, FiShield, FiClock, FiHash } from 'react-icons/fi';
+import { FiX, FiMail, FiPhone, FiMapPin, FiCalendar, FiGlobe, FiBriefcase, FiFileText, FiUser, FiShield, FiClock, FiHash, FiCheckCircle, FiXCircle, FiMap } from 'react-icons/fi';
 import { format } from 'date-fns';
 
 const UserDetailsModal = ({ user, onClose }) => {
+  console.log('[USER DETAILS MODAL] User data:', user); // Debug log
+
+  if (!user) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <div className="text-center">
+            <p className="text-gray-500">No user data available</p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const getRoleColor = (role) => {
     const colors = {
       admin: 'bg-purple-100 text-purple-800',
-      seller: 'bg-blue-100 text-blue-800',
-      buyer: 'bg-green-100 text-green-800',
       user: 'bg-gray-100 text-gray-800'
     };
     return colors[role] || colors.user;
@@ -14,7 +32,11 @@ const UserDetailsModal = ({ user, onClose }) => {
 
   const formatDate = (date) => {
     if (!date) return 'Never';
-    return format(new Date(date), 'MMM d, yyyy HH:mm');
+    try {
+      return format(new Date(date), 'MMM d, yyyy HH:mm');
+    } catch (error) {
+      return 'Invalid date';
+    }
   };
 
   return (
@@ -66,7 +88,7 @@ const UserDetailsModal = ({ user, onClose }) => {
                 </div>
               </div>
               
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center space-x-2">
                   <FiMail className="h-4 w-4 text-gray-400" />
                   <div>
@@ -83,15 +105,6 @@ const UserDetailsModal = ({ user, onClose }) => {
                     </div>
                   </div>
                 )}
-                <div className="flex items-center space-x-2">
-                  <FiShield className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-600">Email Status</p>
-                    <p className={`font-medium ${user.emailVerified ? 'text-green-600' : 'text-yellow-600'}`}>
-                      {user.emailVerified ? 'Verified' : 'Not Verified'}
-                    </p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -109,12 +122,24 @@ const UserDetailsModal = ({ user, onClose }) => {
                 <p className="font-medium">{formatDate(user.lastLoginAt)}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Last Seen</p>
-                <p className="font-medium">{formatDate(user.lastSeenAt)}</p>
+                <p className="text-sm text-gray-600">Email Status</p>
+                <p className={`font-medium flex items-center ${user.emailVerified ? 'text-green-600' : 'text-yellow-600'}`}>
+                  {user.emailVerified ? (
+                    <>
+                      <FiCheckCircle className="h-4 w-4 mr-1" />
+                      Verified
+                    </>
+                  ) : (
+                    <>
+                      <FiXCircle className="h-4 w-4 mr-1" />
+                      Not Verified
+                    </>
+                  )}
+                </p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Last Updated</p>
-                <p className="font-medium">{formatDate(user.updatedAt)}</p>
+                <p className="text-sm text-gray-600">Account Type</p>
+                <p className="font-medium capitalize">{user.accountType || 'basic'}</p>
               </div>
             </div>
           </div>
@@ -124,9 +149,9 @@ const UserDetailsModal = ({ user, onClose }) => {
             <h4 className="text-sm font-medium text-gray-900 mb-4">Profile Information</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {user.bio && (
-                <div>
+                <div className="md:col-span-2">
                   <p className="text-sm text-gray-600 mb-1">Bio</p>
-                  <p className="text-gray-800">{user.bio}</p>
+                  <p className="text-gray-800 bg-gray-50 p-3 rounded-lg">{user.bio}</p>
                 </div>
               )}
               
@@ -136,7 +161,7 @@ const UserDetailsModal = ({ user, onClose }) => {
                   <div>
                     <p className="text-sm text-gray-600">Location</p>
                     <p className="font-medium">
-                      {[user.city, user.country].filter(Boolean).join(', ')}
+                      {[user.city, user.country].filter(Boolean).join(', ') || 'Not specified'}
                     </p>
                   </div>
                 </div>
@@ -173,20 +198,46 @@ const UserDetailsModal = ({ user, onClose }) => {
               )}
 
               {user.languages && user.languages.length > 0 && (
-                <div className="flex items-start space-x-2">
+                <div className="flex items-start space-x-2 md:col-span-2">
                   <FiGlobe className="h-4 w-4 text-gray-400 mt-1" />
                   <div>
                     <p className="text-sm text-gray-600">Languages</p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {user.languages.map((lang, index) => (
-                        <span
-                          key={index}
-                          className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
-                        >
-                          {lang}
-                        </span>
-                      ))}
+                      {Array.isArray(user.languages) 
+                        ? user.languages.map((lang, index) => (
+                            <span
+                              key={index}
+                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
+                            >
+                              {lang}
+                            </span>
+                          ))
+                        : <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
+                            {user.languages}
+                          </span>
+                      }
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {user.gender && (
+                <div className="flex items-start space-x-2">
+                  <FiUser className="h-4 w-4 text-gray-400 mt-1" />
+                  <div>
+                    <p className="text-sm text-gray-600">Gender</p>
+                    <p className="font-medium capitalize">{user.gender}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Additional fields that might exist in your user model */}
+              {user.rating !== undefined && (
+                <div className="flex items-start space-x-2">
+                  <FiShield className="h-4 w-4 text-gray-400 mt-1" />
+                  <div>
+                    <p className="text-sm text-gray-600">Rating</p>
+                    <p className="font-medium">{user.rating || 0}/5</p>
                   </div>
                 </div>
               )}
@@ -200,7 +251,7 @@ const UserDetailsModal = ({ user, onClose }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Profile Visibility</p>
-                  <p className="font-medium capitalize">{user.privacySettings.profileVisibility}</p>
+                  <p className="font-medium capitalize">{user.privacySettings.profileVisibility || 'public'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -233,7 +284,16 @@ const UserDetailsModal = ({ user, onClose }) => {
           )}
 
           {/* Footer */}
-          <div className="pt-6 border-t border-gray-200 flex justify-end">
+          <div className="pt-6 border-t border-gray-200 flex justify-end space-x-3">
+            <button
+              onClick={() => {
+                // This would trigger edit modal
+                onClose();
+              }}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Edit User
+            </button>
             <button
               onClick={onClose}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
