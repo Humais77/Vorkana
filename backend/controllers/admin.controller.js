@@ -7,6 +7,8 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
+// Add this at the top with your other imports
+const gigController = require('../controllers/gig.controller.js');
 // Security: Generate admin-specific token
 const generateAdminToken = (userId) => {
   return jwt.sign(
@@ -1628,26 +1630,80 @@ const updateGig = async (req, res) => {
   }
 };
 
-// Delete Gig (Admin - Soft Delete)
 const deleteGig = async (req, res) => {
-  const requestId = uuidv4();
+  const requestId = crypto.randomBytes(8).toString('hex');
   
   try {
     const { id } = req.params;
-    const { permanent = 'false' } = req.query;
-
-    // Security: Validate ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    const { permanent = 'false', force = 'false' } = req.query;
+    
+    console.log('[ADMIN DELETE GIG] Starting deletion:', {
+      id,
+      params: req.params,
+      query: req.query,
+      admin: req.admin?.email,
+      ip: req.ip
+    });
+    
+    // Fix the ID if it's [object Object]
+    let gigId = id;
+    
+    // Handle [object Object] case
+    if (id === '[object Object]' || id === 'undefined' || id === 'null') {
+      console.log('[ADMIN DELETE GIG] Fixing ID...');
+      
+      // Try to get ID from body
+      if (req.body && req.body.id) {
+        gigId = req.body.id;
+        console.log('[ADMIN DELETE GIG] Using ID from body:', gigId);
+      } 
+      // Try to get ID from query
+      else if (req.query && req.query.id) {
+        gigId = req.query.id;
+        console.log('[ADMIN DELETE GIG] Using ID from query:', gigId);
+      }
+      // Try to parse from the string itself
+      else {
+        try {
+          const decoded = decodeURIComponent(gigId);
+          if (decoded.startsWith('{')) {
+            const parsed = JSON.parse(decoded);
+            gigId = parsed._id || parsed.id;
+            console.log('[ADMIN DELETE GIG] Parsed ID from JSON:', gigId);
+          }
+        } catch (e) {
+          console.error('[ADMIN DELETE GIG] Failed to parse ID:', e);
+        }
+      }
+    }
+    
+    // Validate the ID
+    if (!gigId || gigId === 'undefined' || gigId === 'null') {
+      console.error('[ADMIN DELETE GIG] No valid ID found');
       return res.status(400).json({
         success: false,
-        message: 'Invalid gig ID',
-        code: 'INVALID_GIG_ID',
+        message: 'Gig ID is required',
+        code: 'MISSING_GIG_ID',
         requestId
       });
     }
-
-    const gig = await Gig.findById(id);
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(gigId)) {
+      console.error('[ADMIN DELETE GIG] Invalid MongoDB ID:', gigId);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId
+      });
+    }
+    
+    // Find the gig
+    const gig = await Gig.findById(gigId);
+    
     if (!gig) {
+      console.error('[ADMIN DELETE GIG] Gig not found:', gigId);
       return res.status(404).json({
         success: false,
         message: 'Gig not found',
@@ -1655,89 +1711,107 @@ const deleteGig = async (req, res) => {
         requestId
       });
     }
-
+    
+    if (gig.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gig is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
+    }
+    
     let result;
+    const now = new Date();
     
     if (permanent === 'true') {
       // Permanent delete
-      if (gig.status === 'open') {
+      if (force !== 'true' && gig.status === 'in_progress') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete gig that is in progress',
+          code: 'GIG_IN_PROGRESS',
+          requestId
+        });
+      }
+      
+      // Delete from database
+      result = await Gig.deleteOne({ _id: gigId });
+      
+      // Decrement category count if gig was open
+      if (gig.status === 'open' && gig.projectCategory) {
         await Category.findByIdAndUpdate(gig.projectCategory, {
           $inc: { gigsCount: -1 }
         });
       }
       
-      result = await Gig.findByIdAndDelete(id);
+      console.log('[ADMIN DELETE GIG] Permanent deletion successful:', gigId);
       
-      // Security: Log permanent deletion
-      await logAdminAction(req.admin._id, 'PERMANENT_DELETE_GIG', `gig:${id}`, {
-        ip: req.ip,
-        gigTitle: gig.title,
-        category: gig.projectCategory
-      });
-
     } else {
       // Soft delete
-      const wasOpen = gig.status === 'open';
-      
       result = await Gig.findByIdAndUpdate(
-        id,
-        { 
+        gigId,
+        {
           isActive: false,
-          deletedAt: new Date(),
+          deletedAt: now,
           deletedBy: req.admin._id,
           lastUpdatedBy: req.admin._id
         },
         { new: true }
       );
-
-      if (!result) {
-        return res.status(404).json({
-          success: false,
-          message: 'Gig not found during deletion',
-          code: 'DELETE_FAILED',
-          requestId
-        });
-      }
-
-      // Update category count if gig was open
-      if (wasOpen) {
+      
+      // Decrement category count if gig was open
+      if (gig.status === 'open' && gig.projectCategory) {
         await Category.findByIdAndUpdate(gig.projectCategory, {
           $inc: { gigsCount: -1 }
         });
       }
-
-      // Security: Log soft deletion
-      await logAdminAction(req.admin._id, 'SOFT_DELETE_GIG', `gig:${id}`, {
-        ip: req.ip,
-        gigTitle: gig.title
-      });
+      
+      console.log('[ADMIN DELETE GIG] Soft deletion successful:', gigId);
     }
-
+    
+    // Log admin action
+    await logAdminAction(req.admin._id, 'DELETE_GIG', `gig:${gigId}`, {
+      title: gig.title || 'Unknown',
+      permanent: permanent === 'true',
+      force: force === 'true',
+      ip: req.ip
+    });
+    
     res.json({
       success: true,
       message: permanent === 'true' ? 'Gig permanently deleted' : 'Gig deleted successfully',
       data: {
         _id: gig._id,
-        title: gig.title,
+        title: gig.title || 'Unknown',
         slug: gig.slug,
         isActive: false,
-        deletedAt: new Date()
+        deletedAt: now
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: now.toISOString()
     });
-
+    
   } catch (error) {
-    console.error('[DELETE GIG ERROR]', error);
+    console.error('[ADMIN DELETE GIG ERROR]', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to delete gig',
-      code: 'GIG_DELETE_ERROR',
+      message: error.message || 'Failed to delete gig',
+      code: 'DELETE_GIG_ERROR',
       requestId
     });
   }
 };
-
 // Bulk Update Gigs
 const bulkUpdateGigs = async (req, res) => {
   const requestId = uuidv4();

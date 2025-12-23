@@ -605,22 +605,44 @@ export const useUpdateGig = () => {
   });
 };
 
+// In useAdminDashboard.js or similar
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => adminAPI.deleteGig(id),
-    onSuccess: (response) => {
-      if (response.data.success) {
-        toast.success('Gig deleted successfully');
-        queryClient.invalidateQueries(['admin', 'gigs']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
+    mutationFn: async ({ id, options = {} }) => {
+      console.log('[USE DELETE GIG] Mutation called with:', { id, options });
+      
+      // Handle different ID formats
+      let gigId;
+      
+      if (typeof id === 'object') {
+        // If an object is passed, extract the _id
+        gigId = id._id || id.id;
+        console.log('[USE DELETE GIG] Extracted ID from object:', gigId);
       } else {
-        toast.error(response.data.message || 'Delete failed');
+        gigId = id;
       }
+      
+      // Ensure it's a string
+      gigId = String(gigId).trim();
+      
+      if (!gigId || gigId === 'undefined' || gigId === 'null') {
+        throw new Error('Invalid gig ID');
+      }
+      
+      console.log('[USE DELETE GIG] Calling API with ID:', gigId);
+      
+      // For admin delete, use the admin endpoint
+      return await adminAPI.deleteGig(gigId, options);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['admin', 'gigs']);
+      toast.success('Gig deleted successfully');
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Delete failed');
+      console.error('[USE DELETE GIG] Error:', error);
+      toast.error(error.message || 'Failed to delete gig');
     }
   });
 };

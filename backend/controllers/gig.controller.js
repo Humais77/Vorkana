@@ -1103,6 +1103,21 @@ const updateGig = async (req, res, next) => {
 
     const sanitizedData = sanitizeGigInput(req.body);
     
+    // Handle empty assignedTo - set to null instead of empty string
+    if (sanitizedData.assignedTo === '' || sanitizedData.assignedTo === null) {
+      sanitizedData.assignedTo = null;
+    }
+    
+    // Handle empty subcategory
+    if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
+      sanitizedData.subcategory = null;
+    }
+    
+    // Handle empty deadline
+    if (sanitizedData.deadline === '' || sanitizedData.deadline === null) {
+      sanitizedData.deadline = null;
+    }
+    
     if (!isAdmin) {
       delete sanitizedData.status;
       delete sanitizedData.assignedTo;
@@ -1725,11 +1740,28 @@ const uploadThumbnail = async (req, res, next) => {
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+  console.log('[DELETE GIG] Received request:', {
+    id: req.params.id,
+    params: req.params,
+    query: req.query,
+    user: req.user?.email
+  });
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
 
+    console.log('[DELETE GIG] Validating ID:', id);
+    
+    // Improved ID validation
+    if (!id || id === '[object Object]' || id === 'undefined' || id === 'null') {
+      console.error('[DELETE GIG] Invalid ID format:', id);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -1738,10 +1770,11 @@ const deleteGig = async (req, res, next) => {
         requestId
       });
     }
-
+ console.log('[DELETE GIG] Looking for gig with ID:', id);
     const gig = await Gig.findById(id);
     
     if (!gig) {
+      console.error('[DELETE GIG] Gig not found:', id);
       return res.status(404).json({
         success: false,
         message: 'Gig not found',
@@ -1787,6 +1820,12 @@ const deleteGig = async (req, res, next) => {
     if (permanent === 'true' && isAdmin) {
       if (gig.status === 'open') {
         await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+      }
+      if (force === 'true') {
+        // Delete bids, messages, reviews associated with this gig
+        await Bid.deleteMany({ gig: id });
+        await Message.deleteMany({ gig: id });
+        // Add other associated models as needed
       }
       
       result = await Gig.deleteOne({ _id: id });

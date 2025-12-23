@@ -361,26 +361,61 @@ export const gigsAPI = {
     }
   },
   
-  delete: async (id, options = {}) => {
-    try {
-      const params = {};
-      if (options.permanent) params.permanent = 'true';
-      if (options.force) params.force = 'true';
-      
-      const response = await axiosInstance.delete(`/api/gigs/${id}`, { params });
-      
-      return {
-        success: true,
-        data: response.data,
-        message: response.message || 'Gig deleted successfully',
-        ...response
-      };
-      
-    } catch (error) {
-      throw error;
+  // In gigsAPI.js - Add better debugging
+// In gigsAPI.delete function - Ensure proper ID handling
+delete: async (id, options = {}) => {
+  try {
+    console.log('[GIGS API] Deleting gig with ID:', id);
+    console.log('[GIGS API] Delete options:', options);
+    
+    // Ensure id is a string and not an object
+    let gigId;
+    
+    if (typeof id === 'object') {
+      // If it's an object, extract the ID
+      if (id._id) {
+        gigId = id._id;
+      } else if (id.id) {
+        gigId = id.id;
+      } else {
+        // Try to stringify and parse
+        gigId = JSON.stringify(id);
+      }
+      console.log('[GIGS API] Converted object ID to string:', gigId);
+    } else {
+      gigId = String(id).trim();
     }
-  },
-  
+    
+    // Validate ID
+    if (!gigId || gigId === 'undefined' || gigId === 'null' || gigId === '[object Object]') {
+      console.error('[GIGS API] Invalid ID after processing:', gigId);
+      throw {
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        status: 400
+      };
+    }
+    
+    // Use POST for DELETE to send body data, or use query params
+    const config = {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    // Send ID in body for admin API
+    const response = await axiosInstance.delete(`/api/admin/gigs/${gigId}`, {
+      data: { id: gigId, ...options }
+    });
+    
+    return response;
+    
+  } catch (error) {
+    console.error('[GIGS API] Delete error:', error);
+    throw error;
+  }
+},
   getStats: async () => {
     try {
       const response = await axiosInstance.get('/api/gigs/stats');

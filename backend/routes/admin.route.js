@@ -329,11 +329,43 @@ router.put('/gigs/:id',
   adminController.updateGig
 );
 
+// In admin.route.js - Update the DELETE route
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('DELETE_GIG', 'gigs'),
+  // Add body parser for DELETE requests
+  express.json(),
+  async (req, res, next) => {
+    try {
+      // Log the incoming request for debugging
+      console.log('[ADMIN GIG DELETE] Request received:', {
+        params: req.params,
+        body: req.body,
+        query: req.query,
+        admin: req.admin?.email
+      });
+      
+      // If ID is [object Object], try to get from body or query
+      if (req.params.id === '[object Object]') {
+        console.log('[ADMIN GIG DELETE] Detected object ID, attempting to fix...');
+        
+        if (req.body && req.body.id) {
+          req.params.id = req.body.id;
+          console.log('[ADMIN GIG DELETE] Fixed ID from body:', req.params.id);
+        } else if (req.query && req.query.id) {
+          req.params.id = req.query.id;
+          console.log('[ADMIN GIG DELETE] Fixed ID from query:', req.params.id);
+        }
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[ADMIN GIG DELETE MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
   adminController.deleteGig
 );
 

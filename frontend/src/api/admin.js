@@ -226,7 +226,7 @@ getServiceStats: () => adminApi.get('/api/services/admin/stats'),
   getGigById: (id) => adminApi.get(`/api/admin/gigs/${id}`),
   createGig: (data) => adminApi.post('/api/admin/gigs', data),
   updateGig: (id, data) => adminApi.put(`/api/admin/gigs/${id}`, data),
-  deleteGig: (id) => adminApi.delete(`/api/admin/gigs/${id}`),
+deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { params }),
   bulkUpdateGigs: (data) => adminApi.post('/api/admin/gigs/bulk', data),
   exportGigs: (format = 'csv') => 
     adminApi.get('/api/admin/gigs/export', { 
