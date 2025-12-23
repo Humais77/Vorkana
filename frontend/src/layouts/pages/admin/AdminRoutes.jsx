@@ -12,6 +12,10 @@ const SecurityPage = lazy(() => import('../../../components/admin/SecurityPage')
 const ActivityLogPage = lazy(() => import('../../../components/admin/ActivityLogPage'));
 const SettingsPage = lazy(() => import('../../../components/admin/SettingsPage'));
 
+// Add new admin service pages
+const AdminEditService = lazy(() => import('../../../components/admin/AdminEditService'));
+const AdminViewService = lazy(() => import('../../../components/admin/AdminViewService'));
+
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-64">
     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -39,6 +43,17 @@ const AdminRoutes = () => {
       <Route path="services" element={
         <Suspense fallback={<LoadingSpinner />}>
           <ServicesManagement />
+        </Suspense>
+      } />
+      {/* Add new service routes */}
+      <Route path="services/:id" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <AdminViewService />
+        </Suspense>
+      } />
+      <Route path="services/:id/edit" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <AdminEditService />
         </Suspense>
       } />
       <Route path="gigs" element={

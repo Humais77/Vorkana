@@ -135,42 +135,22 @@ export const useAdminCategories = (params = {}) => {
 };
 
 // Keep the mutation hooks as they are
-export const useUpdateUser = () => {
+export const useCreateUser = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateUser(id, data),
-    onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries(['admin', 'users']);
-      
-      const previousUsers = queryClient.getQueryData(['admin', 'users']);
-      
-      queryClient.setQueryData(['admin', 'users'], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          data: old.data.map(user => 
-            user._id === id ? { ...user, ...data } : user
-          )
-        };
-      });
-      
-      return { previousUsers };
-    },
+    mutationFn: (userData) => adminAPI.createUser(userData),
     onSuccess: (response) => {
       if (response.data.success) {
-        toast.success('User updated successfully');
+        toast.success('User created successfully');
         queryClient.invalidateQueries(['admin', 'users']);
         queryClient.invalidateQueries(['admin', 'dashboard']);
       } else {
-        toast.error(response.data.message || 'Update failed');
+        toast.error(response.data.message || 'Creation failed');
       }
     },
-    onError: (error, variables, context) => {
-      if (context?.previousUsers) {
-        queryClient.setQueryData(['admin', 'users'], context.previousUsers);
-      }
-      toast.error(error.response?.data?.message || 'Update failed');
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to create user');
     }
   });
 };
@@ -212,7 +192,46 @@ export const useDeleteUser = () => {
     }
   });
 };
+// Add this to your useAdminDashboard.js file, right after useCreateUser
+export const useUpdateUser = () => {
+  const queryClient = useQueryClient();
 
+  return useMutation({
+    mutationFn: ({ id, data }) => adminAPI.updateUser(id, data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries(['admin', 'users']);
+      
+      const previousUsers = queryClient.getQueryData(['admin', 'users']);
+      
+      queryClient.setQueryData(['admin', 'users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(user => 
+            user._id === id ? { ...user, ...data } : user
+          )
+        };
+      });
+      
+      return { previousUsers };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('User updated successfully');
+        queryClient.invalidateQueries(['admin', 'users']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['admin', 'users'], context.previousUsers);
+      }
+      toast.error(error.response?.data?.message || 'Update failed');
+    }
+  });
+};
 export const useUpdateCategory = () => {
   const queryClient = useQueryClient();
 

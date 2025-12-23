@@ -6,7 +6,7 @@ const Gig = require('../models/gig.model.js');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-
+const validator = require('validator');
 // Security: Generate admin-specific token
 const generateAdminToken = (userId) => {
   return jwt.sign(
@@ -23,7 +23,29 @@ const generateAdminToken = (userId) => {
     }
   );
 };
+const generateToken = (id) => {
+  return jwt.sign(
+    { id }, 
+    process.env.JWT_SECRET, 
+    {
+      expiresIn: '7d',
+      issuer: 'vorkana',
+      audience: 'vorkana-web'
+    }
+  );
+};
 
+const generateRefreshToken = (id) => {
+  return jwt.sign(
+    { id, type: 'refresh' },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    {
+      expiresIn: '30d',
+      issuer: 'vorkana',
+      audience: 'vorkana-web'
+    }
+  );
+};
 // Security: Audit trail function
 const logAdminAction = async (adminId, action, resource, details = {}) => {
   try {
@@ -500,7 +522,226 @@ const deleteUser = async (req, res) => {
     });
   }
 };
+const createUser = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const userData = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
 
+    console.log('[ADMIN CREATE USER] Request body:', JSON.stringify(userData, null, 2));
+
+    // Security: Validate required fields
+    if (!userData.email || !userData.password || !userData.name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, password, and name are required',
+        code: 'MISSING_REQUIRED_FIELDS',
+        requestId
+      });
+    }
+
+    // Validate email format
+    if (!validator.isEmail(userData.email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format',
+        code: 'INVALID_EMAIL',
+        requestId
+      });
+    }
+
+    // Validate password strength
+    if (!validatePassword(userData.password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)',
+        code: 'WEAK_PASSWORD',
+        requestId
+      });
+    }
+
+    // Check for existing user
+    const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+    if (existingUser) {
+      console.log('[ADMIN CREATE USER] User already exists:', userData.email);
+      return res.status(409).json({
+        success: false,
+        message: 'User already exists with this email',
+        code: 'USER_EXISTS',
+        requestId
+      });
+    }
+
+    // Sanitize user data
+    const sanitizedData = {
+      name: validator.escape(userData.name.trim()),
+      email: userData.email.toLowerCase().trim(),
+      password: userData.password,
+      role: userData.role || 'user',
+      isActive: userData.isActive !== undefined ? userData.isActive : true,
+      emailVerified: userData.emailVerified !== undefined ? userData.emailVerified : true,
+      phoneNumber: userData.phoneNumber ? validator.escape(userData.phoneNumber.trim()) : '',
+      bio: userData.bio ? validator.escape(userData.bio.trim()) : '',
+      gender: userData.gender || '',
+      dateOfBirth: userData.dateOfBirth || null,
+      country: userData.country ? validator.escape(userData.country.trim()) : '',
+      city: userData.city ? validator.escape(userData.city.trim()) : '',
+      occupation: userData.occupation ? validator.escape(userData.occupation.trim()) : '',
+      education: userData.education ? validator.escape(userData.education.trim()) : '',
+      languages: Array.isArray(userData.languages) ? userData.languages : [],
+      privacySettings: userData.privacySettings || {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      },
+      picture: userData.picture || null,
+      createdByAdmin: req.admin._id,
+      adminNotes: userData.adminNotes || ''
+    };
+
+    console.log('[ADMIN CREATE USER] Sanitized data:', JSON.stringify(sanitizedData, null, 2));
+
+    // Validate date of birth if provided
+    if (sanitizedData.dateOfBirth && !validateDateOfBirth(sanitizedData.dateOfBirth)) {
+      return res.status(400).json({
+        success: false,
+        message: 'You must be at least 13 years old and not older than 120 years',
+        code: 'INVALID_DATE_OF_BIRTH',
+        requestId
+      });
+    }
+
+    // Validate phone number if provided
+    if (sanitizedData.phoneNumber && !validatePhoneNumber(sanitizedData.phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format',
+        code: 'INVALID_PHONE',
+        requestId
+      });
+    }
+
+    // Create the user
+    console.log('[ADMIN CREATE USER] Creating user in database...');
+    const user = await User.create(sanitizedData);
+    console.log('[ADMIN CREATE USER] User created successfully:', user._id);
+
+    // Prepare response data (exclude sensitive fields)
+    const responseData = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      emailVerified: user.emailVerified,
+      createdAt: user.createdAt,
+      picture: user.picture,
+      phoneNumber: user.phoneNumber,
+      country: user.country,
+      city: user.city,
+      occupation: user.occupation,
+      education: user.education,
+      createdByAdmin: user.createdByAdmin,
+      privacySettings: user.privacySettings,
+      languages: user.languages || []
+    };
+
+    // Security: Log admin action
+    await logAdminAction(req.admin._id, 'CREATE_USER', `user:${user._id}`, {
+      email: user.email,
+      role: user.role,
+      ip: req.ip
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      data: responseData,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[ADMIN CREATE USER ERROR]', error);
+    console.error('[ADMIN CREATE USER ERROR DETAILS]', error.stack);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      console.error('[ADMIN CREATE USER VALIDATION ERROR]', messages);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      console.error('[ADMIN CREATE USER DUPLICATE ERROR]', error);
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists',
+        code: 'DUPLICATE_EMAIL',
+        requestId
+      });
+    }
+    
+    // Handle other errors
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create user: ' + (error.message || 'Internal server error'),
+      code: 'USER_CREATE_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const validatePassword = (password) => {
+  if (typeof password !== 'string') return false;
+  
+  const minLength = 8;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumbers = /\d/.test(password);
+  const hasSpecialChar = /[@$!%*?&]/.test(password);
+  
+  return password.length >= minLength && 
+         hasUpperCase && 
+         hasLowerCase && 
+         hasNumbers && 
+         hasSpecialChar;
+};
+
+// Helper function: validate date of birth
+const validateDateOfBirth = (dob) => {
+  if (!dob) return true;
+  
+  const date = new Date(dob);
+  if (isNaN(date.getTime())) return false;
+  
+  const today = new Date();
+  const age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    return age - 1 >= 13 && age - 1 <= 120;
+  }
+  
+  return age >= 13 && age <= 120;
+};
+
+// Helper function: validate phone number
+const validatePhoneNumber = (phone) => {
+  if (!phone) return true;
+  return validator.isMobilePhone(phone, 'any', { strictMode: false });
+};
 // Export Users
 const exportUsers = async (req, res) => {
   try {
@@ -1703,6 +1944,7 @@ const getGigStats = async (req, res) => {
 module.exports = {
   getDashboardStats,
   getUsers,
+  createUser,
   getCategories,
   updateUser,
   deleteUser,

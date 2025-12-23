@@ -40,7 +40,14 @@ router.get('/users',
   auditLog('VIEW_USERS', 'users'),
   adminController.getUsers
 );
-
+// Add this route in your admin.route.js file (somewhere after other user routes)
+router.post('/users', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_users'),
+  auditLog('CREATE_USER', 'users'),
+  adminController.createUser
+);
 router.get('/users/export', 
   verifyAdmin, 
   requirePermission('manage_users'),
