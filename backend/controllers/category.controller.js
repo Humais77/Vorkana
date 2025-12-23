@@ -3,7 +3,7 @@ const Category = require('../models/category.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
-
+const cache = require('../utils/cache.js');
 // Security: Request ID for tracking
 const crypto = require('crypto');
 const generateRequestId = () => crypto.randomUUID();
@@ -12,7 +12,12 @@ const sanitizeCategoryInput = (data) => {
   const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];
   return sanitizeObject(data, skipKeys);
 };
-
+const invalidateCategoryCache = async () => {
+  await cache.del('categories:*');
+  await cache.del('category:single:*');
+  await cache.del('category:stats:*');
+  await cache.del('category:search:*');
+};
 // Security: Build secure query
 const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   const {
@@ -232,7 +237,12 @@ const createCategory = async (req, res, next) => {
       createdBy: req.user._id,
       version: 1
     });
-
+const invalidateCategoryCache = async () => {
+  await cache.del('categories:*');
+  await cache.del('category:single:*');
+  await cache.del('category:stats:*');
+  await cache.del('category:search:*');
+};
     // Security: Audit log
     logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
       name: category.name,
@@ -288,249 +298,148 @@ const createCategory = async (req, res, next) => {
 const getCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+
   try {
     const {
-      search,
-      q,
-      name,
-      slug,
-      parentCategory,
-      featured,
-      popular,
-      isActive,
-      level,
-      minServicesCount,
-      maxServicesCount,
-      minGigsCount,
-      maxGigsCount,
-      createdAfter,
-      createdBefore,
-      updatedAfter,
-      updatedBefore,
-      createdBy,
-      hasImage,
-      hasParent,
-      ids,
-      excludeIds,
-      sort = 'createdAt',
-      order = 'desc',
-      sortBy,
-      page = 1,
-      limit = 10,
-      offset,
-      fields,
-      excludeFields,
-      populate = true,
-      populateFields = 'name',
-      showAll = false,
-      includeSubcategories = false,
-      includeCounts = false,
-      lean = true,
-      cache = false
+      search, q, name, slug, parentCategory, featured, popular, isActive, level,
+      minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
+      createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
+      hasImage, hasParent, ids, excludeIds,
+      sort = 'createdAt', order = 'desc', page = 1, limit = 10, offset,
+      fields, excludeFields, populate = true, populateFields = 'name',
+      showAll = false, includeSubcategories = false, includeCounts = false,
+      cache: useCacheParam = false
     } = req.query;
 
-    // Security: Validate user permissions
-    const showAllFlag = showAll && req.user?.role === 'admin';
+    const showAllFlag = showAll === 'true' && req.user?.role === 'admin';
+    const useCache = useCacheParam === 'true';
 
-    // Build secure query
     const filter = buildSecureCategoryQuery({
-      search: search || q,
-      name,
-      slug,
-      parentCategory,
-      featured,
-      popular,
-      isActive: showAllFlag ? isActive : undefined,
-      level,
-      minServicesCount,
-      maxServicesCount,
-      minGigsCount,
-      maxGigsCount,
-      createdAfter,
-      createdBefore,
-      updatedAfter,
-      updatedBefore,
-      createdBy,
-      hasImage,
-      hasParent,
-      ids,
-      excludeIds,
-      showAll: showAllFlag
+      search: search || q, name, slug, parentCategory, featured, popular,
+      isActive: showAllFlag ? isActive : undefined, level,
+      minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
+      createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
+      hasImage, hasParent, ids, excludeIds, showAll: showAllFlag
     }, req.user?.role, req.user?._id);
 
-    // Security: Validate pagination
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
-    const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
+    const skip = offset !== undefined ? Math.max(0, parseInt(offset) || 0) : (pageNum - 1) * limitNum;
 
-    // Security: Validate sort field
     const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount', 'level', 'featured', 'popular'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    // Security: Field selection
-    const defaultExclude = ['__v', 'createdBy', 'deletedAt', 'deletedBy'];
-    let select = {};
-    
-    if (fields) {
-      const fieldArray = fields.split(',').map(f => f.trim());
-      fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
-          select[field] = 1;
-        }
-      });
-    } else {
-      // Default select all except excluded
-      defaultExclude.forEach(field => {
-        select[field] = 0;
-      });
-    }
-    
-    if (excludeFields) {
-      const excludeArray = excludeFields.split(',').map(f => f.trim());
-      excludeArray.forEach(field => {
-        select[field] = 0;
-      });
+    const cacheKey = `categories:${JSON.stringify({
+      filter, page: pageNum, limit: limitNum, sort: sortField, order: sortOrder,
+      populate: populate === 'true', includeSubcategories: includeSubcategories === 'true',
+      includeCounts: includeCounts === 'true', showAll: showAllFlag
+    })}`;
+
+    if (useCache) {
+      const cachedResult = await cache.get(cacheKey);
+      if (cachedResult) {
+        console.log('Cache HIT:', cacheKey);
+        res.set({
+          'X-Request-ID': requestId,
+          'X-Cache': 'HIT',
+          'X-Response-Time': `${Date.now() - startTime}ms`,
+          'Cache-Control': 'public, max-age=300'
+        });
+        return res.json({
+          ...cachedResult,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString(),
+          responseTime: `${Date.now() - startTime}ms`
+        });
+      }
     }
 
-    // Security: Populate configuration
     let populateOptions = [];
-    if (populate) {
-      const ALLOWED_POPULATE_FIELDS = ['parentCategory', 'subcategories', 'createdBy', 'lastUpdatedBy'];
-const ALLOWED_SELECT_FIELDS = ['name', 'slug', 'icon', 'description', 'servicesCount', 'gigsCount'];
-
-const validatePopulateFields = (requestedFields) => {
-  const fields = requestedFields.split(',').map(f => f.trim());
-  return fields.filter(field => ALLOWED_POPULATE_FIELDS.includes(field));
-};
-
-const validateSelectFields = (requestedFields) => {
-  const fields = requestedFields.split(',').map(f => f.trim());
-  return fields.filter(field => ALLOWED_SELECT_FIELDS.includes(field));
-};
-
-// In controller:
-const safePopulateFields = validatePopulateFields(populateFields || '');
-const safeSelectFields = validateSelectFields(fields || '');
-      
-      // Parent category populate
+    if (populate === 'true') {
       populateOptions.push({
         path: 'parentCategory',
         select: 'name slug icon',
         match: { isActive: true }
       });
-
-      // Subcategories if requested
-      if (includeSubcategories) {
+      if (includeSubcategories === 'true') {
         populateOptions.push({
           path: 'subcategories',
-          select: 'name slug icon servicesCount gigsCount',
+          select: 'name slug icon servicesCount gigsCount featured popular',
           match: { isActive: true },
-          options: { limit: 10 }
+          options: { sort: { order: 1, name: 1 }, limit: 20 }
         });
       }
     }
 
-    // Security: Execute queries in parallel with timeout
-    const queryOptions = {
-      select: Object.keys(select).length > 0 ? select : null,
-      sort: sortObj,
-      skip,
-      limit: limitNum,
-      populate: populateOptions.length > 0 ? populateOptions : null,
-      lean: lean !== false,
-      maxTimeMS: 5000 // 5 second timeout for security
-    };
-
     const [categories, total] = await Promise.all([
-      Category.find(filter, null, queryOptions),
+      Category.find(filter)
+        .select('-__v -createdBy -deletedAt -deletedBy -version -lastUpdatedBy')
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limitNum)
+        .populate(populateOptions.length > 0 ? populateOptions : null)
+        .lean({ virtuals: true }),
       Category.countDocuments(filter)
     ]);
 
-    // Security: Remove sensitive data
-    const safeCategories = categories.map(cat => {
-      if (lean) {
-        // For lean documents
-        const safeCat = { ...cat };
-        delete safeCat.createdBy;
-        delete safeCat.__v;
-        delete safeCat.deletedAt;
-        delete safeCat.deletedBy;
-        delete safeCat.version;
-        return safeCat;
-      } else {
-        // For mongoose documents
-        const safeCat = cat.toObject();
-        delete safeCat.createdBy;
-        delete safeCat.__v;
-        delete safeCat.deletedAt;
-        delete safeCat.deletedBy;
-        delete safeCat.version;
-        return safeCat;
-      }
-    });
+    let counts = undefined;
+    if (includeCounts === 'true') {
+      const countStats = await Category.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            active: { $sum: { $cond: ['$isActive', 1, 0] } },
+            featured: { $sum: { $cond: ['$featured', 1, 0] } },
+            popular: { $sum: { $cond: ['$popular', 1, 0] } },
+            withParent: { $sum: { $cond: [{ $ne: ['$parentCategory', null] }, 1, 0] } }
+          }
+        }
+      ]);
+      counts = countStats[0] || { active: 0, featured: 0, popular: 0, withParent: 0 };
+    }
 
-    // Calculate pagination
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
-    // Response headers for security
+    const responseData = {
+      success: true,
+      data: categories,
+      pagination: { page: pageNum, limit: limitNum, total, totalPages, hasNext, hasPrev, nextPage: hasNext ? pageNum + 1 : null, prevPage: hasPrev ? pageNum - 1 : null },
+      counts: counts || undefined,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${Date.now() - startTime}ms`
+    };
+
+    if (useCache) {
+      await cache.set(cacheKey, responseData, 300);
+      console.log('Cache MISS → stored:', cacheKey);
+      res.set('X-Cache', 'MISS');
+    } else {
+      res.set('X-Cache', 'BYPASSED');
+    }
+
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
-      'X-Response-Time': `${Date.now() - startTime}ms`,
-      'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
+      'X-Response-Time': responseData.responseTime,
+      'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
     });
 
-    // Include counts if requested
-    let counts = {};
-    if (includeCounts) {
-      counts = {
-        active: await Category.countDocuments({ ...filter, isActive: true }),
-        featured: await Category.countDocuments({ ...filter, featured: true }),
-        popular: await Category.countDocuments({ ...filter, popular: true }),
-        withParent: await Category.countDocuments({ ...filter, parentCategory: { $exists: true, $ne: null } })
-      };
-    }
-
-    const responseTime = Date.now() - startTime;
-    
-    res.json({
-      success: true,
-      data: safeCategories,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasNext,
-        hasPrev,
-        nextPage: hasNext ? pageNum + 1 : null,
-        prevPage: hasPrev ? pageNum - 1 : null,
-      },
-      counts: Object.keys(counts).length > 0 ? counts : undefined,
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
+    res.json(responseData);
 
   } catch (error) {
-    // Security: Handle query timeout
-    if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
-      return res.status(408).json({
-        success: false,
-        message: 'Query timeout',
-        code: 'QUERY_TIMEOUT',
-        requestId
-      });
+    if (error.name === 'MongoError' || (error.name === 'MongooseError' && error.message.includes('timed out'))) {
+      return res.status(408).json({ success: false, message: 'Query timeout', code: 'QUERY_TIMEOUT', requestId });
     }
-    
     logAudit('ERROR', 'CATEGORY', 'GET_LIST', req.user?._id, { error: error.message });
     next(error);
   }
@@ -540,66 +449,53 @@ const safeSelectFields = validateSelectFields(fields || '');
 const getCategoryById = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+
   try {
     const { id } = req.params;
     const { fields, populate = true, includeSubcategories = false } = req.query;
 
-    // Security: Validate input
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category identifier is required',
-        code: 'MISSING_IDENTIFIER',
-        requestId
-      });
+      return res.status(400).json({ success: false, message: 'Category identifier is required', code: 'MISSING_IDENTIFIER', requestId });
+    }
+
+    const cacheKey = `category:single:${id}:${populate === 'true'}:${includeSubcategories === 'true'}:${fields || 'default'}`;
+
+    if (populate === 'true') {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        console.log('Cache HIT single:', cacheKey);
+        res.set({ 'X-Cache': 'HIT' });
+        return res.json({ success: true, data: cached, requestId, timestamp: new Date().toISOString(), responseTime: `${Date.now() - startTime}ms` });
+      }
     }
 
     let query;
     const isObjectId = mongoose.Types.ObjectId.isValid(id);
-
-    // Security: Build query based on identifier type
     if (isObjectId) {
       query = { _id: id };
     } else {
-      // Sanitize slug input
       const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] });
       query = { slug: sanitizedSlug.toLowerCase() };
     }
 
-    // Security: Check permissions
     if (req.user?.role !== 'admin') {
       query.isActive = true;
     }
 
-    // Security: Field selection
     const defaultExclude = ['__v', 'createdBy', 'deletedAt', 'deletedBy', 'version'];
     let select = {};
-    
     if (fields) {
-      const fieldArray = fields.split(',').map(f => f.trim());
-      fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
-          select[field] = 1;
-        }
+      fields.split(',').map(f => f.trim()).forEach(field => {
+        if (!defaultExclude.includes(field)) select[field] = 1;
       });
     } else {
-      // Default exclude sensitive fields
-      defaultExclude.forEach(field => {
-        select[field] = 0;
-      });
+      defaultExclude.forEach(field => select[field] = 0);
     }
 
-    // Security: Populate configuration
     let populateOptions = [];
-    if (populate) {
-      populateOptions.push({
-        path: 'parentCategory',
-        select: 'name slug icon',
-        match: { isActive: true }
-      });
-
-      if (includeSubcategories) {
+    if (populate === 'true') {
+      populateOptions.push({ path: 'parentCategory', select: 'name slug icon', match: { isActive: true } });
+      if (includeSubcategories === 'true') {
         populateOptions.push({
           path: 'subcategories',
           select: 'name slug icon servicesCount gigsCount featured popular',
@@ -611,28 +507,16 @@ const getCategoryById = async (req, res, next) => {
 
     const category = await Category.findOne(query)
       .select(Object.keys(select).length > 0 ? select : null)
-      .populate(populateOptions);
+      .populate(populateOptions.length > 0 ? populateOptions : null);
 
     if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found',
-        code: 'CATEGORY_NOT_FOUND',
-        requestId
-      });
+      return res.status(404).json({ success: false, message: 'Category not found', code: 'CATEGORY_NOT_FOUND', requestId });
     }
 
-    // Security: Check if user can view inactive category
     if (!category.isActive && req.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access to inactive category denied',
-        code: 'ACCESS_DENIED',
-        requestId
-      });
+      return res.status(403).json({ success: false, message: 'Access to inactive category denied', code: 'ACCESS_DENIED', requestId });
     }
 
-    // Security: Remove sensitive data
     const safeCategory = category.toObject();
     delete safeCategory.__v;
     delete safeCategory.createdBy;
@@ -640,19 +524,21 @@ const getCategoryById = async (req, res, next) => {
     delete safeCategory.deletedBy;
     delete safeCategory.version;
 
-    // Security: Audit log for sensitive access
     if (!category.isActive) {
       logAudit('VIEW_INACTIVE', 'CATEGORY', category._id, req.user?._id);
     }
 
-    const responseTime = Date.now() - startTime;
-    
+    // Cache single category if populated
+    if (populate === 'true') {
+      await cache.set(cacheKey, safeCategory, 600); // 10 minutes for single item
+    }
+
     res.json({
       success: true,
       data: safeCategory,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${Date.now() - startTime}ms`
     });
 
   } catch (error) {
@@ -755,7 +641,7 @@ const updateCategory = async (req, res, next) => {
           requestId
         });
       }
-      
+      await invalidateCategoryCache();
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -920,7 +806,7 @@ const deleteCategory = async (req, res, next) => {
       });
       
       const responseTime = Date.now() - startTime;
-      
+      await invalidateCategoryCache();
       res.json({
         success: true,
         message: 'Category soft deleted successfully',
@@ -1016,7 +902,7 @@ const restoreCategory = async (req, res, next) => {
     logAudit('RESTORE', 'CATEGORY', id, req.user._id);
 
     const responseTime = Date.now() - startTime;
-    
+    await invalidateCategoryCache();
     res.json({
       success: true,
       message: 'Category restored successfully',
@@ -1068,7 +954,14 @@ const getCategoryStats = async (req, res, next) => {
         requestId
       });
     }
+    const cacheKey = 'category:stats:global';
 
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      console.log('Cache HIT stats');
+      res.set({ 'X-Cache': 'HIT' });
+      return res.json({ success: true, data: cached, requestId, timestamp: new Date().toISOString(), responseTime: `${Date.now() - startTime}ms` });
+    }
     const stats = await Category.aggregate([
       {
         $facet: {
@@ -1141,7 +1034,7 @@ const getCategoryStats = async (req, res, next) => {
 
     // Security: Sanitize output
     const sanitizedStats = stats[0];
-    
+    await cache.set(cacheKey, sanitizedStats, 600);
     const responseTime = Date.now() - startTime;
     
     res.json({
@@ -1307,7 +1200,7 @@ if (result.matchedCount < validIds.length) {
     });
 
     const responseTime = Date.now() - startTime;
-    
+    await invalidateCategoryCache();
     res.json({
       success: true,
       message: `Bulk ${operation} completed successfully`,
@@ -1448,55 +1341,42 @@ const exportCategories = async (req, res, next) => {
 const searchCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+
   try {
     const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
 
-    // Security: Sanitize search query
     if (!query || typeof query !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query is required',
-        code: 'MISSING_QUERY',
-        requestId
-      });
+      return res.status(400).json({ success: false, message: 'Search query is required', code: 'MISSING_QUERY', requestId });
     }
 
-    const sanitizedQuery = sanitizeHtml(query, { 
-      allowedTags: [], 
-      allowedAttributes: {} 
-    }).trim();
+    const sanitizedQuery = sanitizeHtml(query, { allowedTags: [], allowedAttributes: {} }).trim();
 
     if (sanitizedQuery.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query must be at least 2 characters',
-        code: 'QUERY_TOO_SHORT',
-        requestId
+      return res.status(400).json({ success: false, message: 'Search query must be at least 2 characters', code: 'QUERY_TOO_SHORT', requestId });
+    }
+
+    const cacheKey = `category:search:${sanitizedQuery}:${fuzzy}:${limit}`;
+
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      console.log('Cache HIT search:', cacheKey);
+      res.set({ 'X-Cache': 'HIT' });
+      return res.json({
+        success: true,
+        query: sanitizedQuery,
+        data: cached,
+        count: cached.length,
+        requestId,
+        timestamp: new Date().toISOString(),
+        responseTime: `${Date.now() - startTime}ms`
       });
     }
-    const MAX_FIELD_LENGTHS = {
-  description: 500, // Truncate in projection
-  metaDescription: 160,
-  metaTitle: 60
-};
 
-const applyFieldLimits = (query, fields) => {
-  if (fields && fields.includes('description')) {
-    query.select('+description'); // Explicitly include
-    // Or use aggregation to truncate
-  }
-};
-
-    // Security: Limit search results
     const searchLimit = Math.min(parseInt(limit) || 20, 100);
-
     let results;
-    
+
     if (fuzzy === 'true') {
-      // Fuzzy search using regex (simplified)
       const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      
       results = await Category.find({
         $or: [
           { name: searchRegex },
@@ -1510,7 +1390,6 @@ const applyFieldLimits = (query, fields) => {
       .limit(searchLimit)
       .lean();
     } else {
-      // Exact or starts with search
       results = await Category.find({
         $or: [
           { name: new RegExp(`^${sanitizedQuery}`, 'i') },
@@ -1523,7 +1402,6 @@ const applyFieldLimits = (query, fields) => {
       .lean();
     }
 
-    // Security: Remove any sensitive data
     const safeResults = results.map(result => ({
       _id: result._id,
       name: result.name,
@@ -1536,8 +1414,8 @@ const applyFieldLimits = (query, fields) => {
       popular: result.popular || false
     }));
 
-    const responseTime = Date.now() - startTime;
-    
+    await cache.set(cacheKey, safeResults, 300);
+
     res.json({
       success: true,
       query: sanitizedQuery,
@@ -1545,14 +1423,11 @@ const applyFieldLimits = (query, fields) => {
       count: safeResults.length,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${Date.now() - startTime}ms`
     });
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { 
-      query: req.query.query,
-      error: error.message 
-    });
+    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { query: req.query.query, error: error.message });
     next(error);
   }
 };

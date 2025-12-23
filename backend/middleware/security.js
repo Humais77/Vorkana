@@ -6,7 +6,8 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const sanitize = require('mongo-sanitize');
 const { createLogger, transports, format } = require('winston');
-
+const mongoSanitize = require('express-mongo-sanitize');
+const expressMongoSanitize = require('@exortek/express-mongo-sanitize');
 module.exports = function (app) {
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
@@ -22,27 +23,19 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: [
-          "'self'",
-          "'unsafe-inline'",
-          "'unsafe-eval'",
-          'http://localhost:*',
-          'ws://localhost:*'
-        ],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        scriptSrc: ["'self'"],  // Remove 'unsafe-inline'/'unsafe-eval' – use nonces/hashes in prod
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],  // Keep inline if needed, but prefer external
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        connectSrc: ["'self'", 'http://localhost:*', 'ws://localhost:*'],
-        frameSrc: ["'none'"],
+        connectSrc: ["'self'"],
         frameAncestors: ["'none'"],
-        formAction: ["'self'"],
-        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
-      }
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+      },
     },
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // Change this line
-    crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
-    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    crossOriginResourcePolicy: { policy: "same-origin" },  // Change to same-origin (more restrictive)
+    crossOriginOpenerPolicy: { policy: "same-origin" },
+    referrerPolicy: { policy: "no-referrer" },
     strictTransportSecurity: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -69,13 +62,11 @@ app.use(
   })
 );
 
-  // Request sanitization
-  app.use((req, res, next) => {
-    if (req.body) req.body = sanitize(req.body);
-    if (req.query) req.query = sanitize(req.query);
-    if (req.params) req.params = sanitize(req.params);
-    next();
-  });
+  app.use(expressMongoSanitize({
+  replaceWith: '_',      // Optional: replace $/. with _
+  // allowDots: true,    // If you need dotted keys in queries
+  // dryRun: false,      // For testing
+}));
 
   // XSS protection
   app.use((req, res, next) => {
@@ -124,18 +115,13 @@ app.use(
     },
   });
 
-  const authLimiter = rateLimit({
-    windowMs: 10 * 60 * 1000,
-    limit: 15,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    handler: (req, res) => {
-      res.status(429).json({
-        success: false,
-        message: 'Too many login attempts. Try again later.',
-      });
-    },
-  });
+ const authLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,  // Stricter for login/register
+  message: { success: false, message: 'Too many attempts, try later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
   // ========== REQUEST VALIDATION ==========
   const validateRequest = (req, res, next) => {
