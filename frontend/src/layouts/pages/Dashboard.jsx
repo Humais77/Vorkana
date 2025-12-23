@@ -1,7 +1,18 @@
-// Dashboard.js - Updated version
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+// Dashboard.js - OPTIMIZED VERSION
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuthStore } from '../../store/useAuthStore';
 import { 
+  useMyGigs, 
+  useDeleteMultipleGigs, 
+  useUpdateMultipleGigsStatus,
+  extractGigsFromResponse
+} from '../../hooks/useGigs';
+import { useMyServices, useDeleteService } from '../../hooks/useServices';
+import { toast } from 'react-hot-toast';
+import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../utils/profileUtils';
+import {
   Plus,
   Trash2,
   CheckSquare,
@@ -29,20 +40,336 @@ import {
   MessageSquare,
   Users,
   AlertCircle,
-  Shield
+  Shield,
+  Info
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../../store/useAuthStore';
-import { 
-  useMyGigs, 
-  useDeleteMultipleGigs, 
-  useUpdateMultipleGigsStatus,
-  extractGigsFromResponse
-} from '../../hooks/useGigs';
-import { useMyServices, useDeleteService } from '../../hooks/useServices';
-import { toast } from 'react-hot-toast';
-import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../utils/profileUtils';
 
+// Memoized Stats Card
+const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, subText }) => (
+  <div className={`${colorClass} rounded-2xl p-6 border ${colorClass.includes('blue') ? 'border-blue-100' : colorClass.includes('green') ? 'border-green-100' : 'border-orange-100'}`}>
+    <div className="flex items-center">
+      <Icon className={`w-5 h-5 ${colorClass.includes('blue') ? 'text-blue-600' : colorClass.includes('green') ? 'text-green-600' : 'text-orange-600'} mr-2`} />
+      <span className={`text-sm font-medium ${colorClass.includes('blue') ? 'text-blue-900' : colorClass.includes('green') ? 'text-green-900' : 'text-orange-900'}`}>{title}</span>
+    </div>
+    <p className={`text-2xl font-bold ${colorClass.includes('blue') ? 'text-blue-900' : colorClass.includes('green') ? 'text-green-900' : 'text-orange-900'} mt-2`}>{value}</p>
+    <div className="flex items-center mt-1">
+      <span className={`text-xs ${colorClass.includes('blue') ? 'text-blue-600' : colorClass.includes('green') ? 'text-green-600' : 'text-orange-600'}`}>
+        {subValue}
+      </span>
+    </div>
+    {subText && <p className="text-xs text-gray-500 mt-1">{subText}</p>}
+  </div>
+));
+StatsCard.displayName = 'StatsCard';
+
+// Memoized Profile Warning Banner
+const ProfileWarningBanner = memo(({ profileCompletion, profileSuggestions, onCompleteProfile }) => (
+  <motion.div
+    initial={{ opacity: 0, y: -20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="mb-8 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl border border-yellow-200 shadow-lg p-6"
+  >
+    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="flex items-center gap-4">
+        <div className="bg-yellow-100 p-3 rounded-full">
+          <Shield className="w-8 h-8 text-yellow-600" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-bold text-yellow-900 mb-1">
+            Complete Your Profile to Start Creating
+          </h3>
+          <p className="text-yellow-800 mb-3">
+            Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs and services.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between text-sm text-yellow-800 mb-1">
+                <span>Profile Progress</span>
+                <span className="font-bold">{profileCompletion}%</span>
+              </div>
+              <div className="w-full bg-yellow-200 rounded-full h-2.5">
+                <div 
+                  className="bg-yellow-600 h-2.5 rounded-full transition-all duration-500"
+                  style={{ width: `${profileCompletion}%` }}
+                />
+              </div>
+            </div>
+            {profileSuggestions.length > 0 && (
+              <div>
+                <p className="text-sm text-yellow-800 font-medium mb-1">Suggested improvements:</p>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  {profileSuggestions.map((suggestion, index) => (
+                    <li key={index} className="flex items-center">
+                      <ArrowRight className="w-3 h-3 mr-2 flex-shrink-0" />
+                      <span className="truncate">{suggestion}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={onCompleteProfile}
+        className="px-6 py-3 bg-gradient-to-r from-yellow-600 to-orange-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0"
+      >
+        Complete Profile Now
+      </button>
+    </div>
+  </motion.div>
+));
+ProfileWarningBanner.displayName = 'ProfileWarningBanner';
+
+// Memoized Profile Info Bar
+const ProfileInfoBar = memo(({ profileCompletion, canCreateContent, onImproveProfile }) => {
+  const statusColor = useMemo(() => {
+    if (profileCompletion >= 80) return 'bg-green-100 text-green-800';
+    if (profileCompletion >= 70) return 'bg-blue-100 text-blue-800';
+    return 'bg-yellow-100 text-yellow-800';
+  }, [profileCompletion]);
+
+  const statusIcon = useMemo(() => 
+    canCreateContent ? CheckCircle : AlertCircle
+  , [canCreateContent]);
+
+  const statusText = useMemo(() => 
+    canCreateContent ? 'Ready to Create Content' : 'Complete Profile Required'
+  , [canCreateContent]);
+
+  return (
+    <div className="mb-6 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <User className="w-5 h-5 text-gray-600 flex-shrink-0" />
+            <span className="text-sm font-medium text-gray-900">Profile Status:</span>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="w-48">
+              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <span>Completion</span>
+                <span className="font-bold">{profileCompletion}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    profileCompletion >= 80 ? 'bg-green-600' :
+                    profileCompletion >= 70 ? 'bg-blue-600' : 'bg-yellow-500'
+                  }`}
+                  style={{ width: `${profileCompletion}%` }}
+                />
+              </div>
+            </div>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+              {React.createElement(statusIcon, { className: "w-3 h-3 mr-1" })}
+              {statusText}
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={onImproveProfile}
+          className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 flex-shrink-0"
+        >
+          Improve Profile
+        </button>
+      </div>
+    </div>
+  );
+});
+ProfileInfoBar.displayName = 'ProfileInfoBar';
+
+// Memoized Bulk Actions Bar
+const BulkActionsBar = memo(({ 
+  activeTab, 
+  selectedCount, 
+  onUpdateStatus, 
+  onDelete,
+  isUpdating,
+  isDeleting
+}) => {
+  if (!selectedCount) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.2 }}
+      className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200 p-4 mb-6"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center">
+          <CheckSquare className="w-5 h-5 text-blue-600 mr-2 flex-shrink-0" />
+          <span className="font-medium text-blue-900">
+            {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => onUpdateStatus('active')}
+            disabled={isUpdating}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            {isUpdating ? 'Updating...' : 'Make Active'}
+          </button>
+          <button
+            onClick={() => onUpdateStatus('paused')}
+            disabled={isUpdating}
+            className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            {isUpdating ? 'Updating...' : 'Pause'}
+          </button>
+          <button
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            <Trash2 className="w-4 h-4 mr-2 flex-shrink-0" />
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+BulkActionsBar.displayName = 'BulkActionsBar';
+
+// Memoized Item Card for Grid View
+const ItemCard = memo(({ 
+  item, 
+  type, 
+  isSelected, 
+  onSelect, 
+  onClick, 
+  getStatusColor, 
+  getStatusIcon 
+}) => {
+  const bgColor = type === 'services' ? 'hover:text-green-600' : 'hover:text-blue-600';
+  const hoverBg = type === 'services' ? 'hover:bg-green-50' : 'hover:bg-blue-50';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -5 }}
+      className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
+    >
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center">
+            <button
+              onClick={() => onSelect(item._id || item.id)}
+              className="mr-3 flex-shrink-0"
+            >
+              {isSelected ? (
+                <CheckSquare className="w-5 h-5 text-green-600" />
+              ) : (
+                <Square className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+            <div className="min-w-0">
+              <h4 
+                className={`font-medium text-gray-900 ${bgColor} cursor-pointer truncate`}
+                onClick={() => onClick(item._id || item.id)}
+              >
+                {item.title || `Untitled ${type === 'services' ? 'Service' : 'Gig'}`}
+              </h4>
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(item.status)}`}>
+                {getStatusIcon(item.status)}
+                <span className="ml-1 truncate">
+                  {item.status ? 
+                    item.status.charAt(0).toUpperCase() + item.status.slice(1) 
+                    : 'Draft'
+                  }
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+          {item.shortDescription || item.description || 'No description available'}
+        </p>
+
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <DollarSign className="w-4 h-4 text-gray-600 mr-1 flex-shrink-0" />
+            <span className="font-bold text-gray-900 truncate">
+              ${type === 'services' ? (item.price || 0) : (item.budget || item.price || 0)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center min-w-0">
+            <Tag className="w-3 h-3 text-gray-400 mr-1 flex-shrink-0" />
+            <span className="text-xs text-gray-600 truncate">
+              {item.category?.name || 'Uncategorized'}
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onClick(item._id || item.id)}
+              className={`p-2 text-gray-600 ${bgColor} ${hoverBg} rounded-lg transition-colors flex-shrink-0`}
+              title="View Details"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+ItemCard.displayName = 'ItemCard';
+
+// Memoized Empty State
+const EmptyState = memo(({ 
+  type, 
+  filter, 
+  onCreate, 
+  icon: Icon, 
+  createButtonText,
+  gradientFrom,
+  gradientTo
+}) => {
+  const getTitle = useCallback(() => {
+    if (filter === 'all') return `No ${type} found`;
+    return `No ${type} with status "${filter}" found`;
+  }, [type, filter]);
+
+  const getDescription = useCallback(() => {
+    if (filter === 'all') return `You haven't created any ${type} yet`;
+    return `You don't have any ${type} with this status`;
+  }, [type, filter]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
+    >
+      <div className="p-12 text-center">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Icon className="w-8 h-8 text-gray-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">{getTitle()}</h3>
+        <p className="text-gray-600 mb-6">{getDescription()}</p>
+        <button
+          onClick={onCreate}
+          className={`inline-flex items-center px-5 py-3 bg-gradient-to-r ${gradientFrom} ${gradientTo} text-white rounded-xl font-medium hover:opacity-90 transition-opacity`}
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          {createButtonText}
+        </button>
+      </div>
+    </motion.div>
+  );
+});
+EmptyState.displayName = 'EmptyState';
+
+// Main Dashboard Component
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,18 +383,16 @@ const Dashboard = () => {
   const [serviceStatusFilter, setServiceStatusFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('services');
   const [viewMode, setViewMode] = useState('grid');
-  const [showProfileWarning, setShowProfileWarning] = useState(false);
   
-  // Calculate profile completion
+  // Profile calculations
   const profileCompletion = useMemo(() => calculateProfileCompletion(user), [user]);
   const canCreateContent = useMemo(() => isProfileCompleteEnough(user, 70), [user]);
   const profileSuggestions = useMemo(() => getProfileSuggestions(user), [user]);
 
-  // Use services hook
+  // Services hook
   const { 
     data: servicesResponse, 
     isLoading: servicesLoading, 
-    error: servicesError, 
     refetch: refetchServices 
   } = useMyServices({
     status: serviceStatusFilter === 'all' ? undefined : serviceStatusFilter,
@@ -76,6 +401,7 @@ const Dashboard = () => {
     order: 'desc'
   });
 
+  // Memoized services extraction
   const services = useMemo(() => {
     if (!servicesResponse) return [];
     
@@ -90,10 +416,10 @@ const Dashboard = () => {
     return [];
   }, [servicesResponse]);
 
+  // Gigs hook
   const { 
     data: gigsResponse, 
     isLoading: gigsLoading, 
-    error: gigsError, 
     refetch: refetchGigs 
   } = useMyGigs({
     status: statusFilter === 'all' ? undefined : statusFilter,
@@ -102,16 +428,18 @@ const Dashboard = () => {
     order: 'desc'
   });
 
+  // Memoized gigs extraction
   const gigs = useMemo(() => 
     extractGigsFromResponse(gigsResponse) || [], 
     [gigsResponse]
   );
 
+  // Mutations
   const deleteMultipleGigsMutation = useDeleteMultipleGigs();
   const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
   const deleteServiceMutation = useDeleteService();
-  
-  // Calculate stats from actual data
+
+  // Memoized stats
   const stats = useMemo(() => {
     const activeServices = services.filter(s => s.status === 'active').length;
     const activeGigs = gigs.filter(g => g.status === 'active' || g.status === 'open').length;
@@ -124,6 +452,7 @@ const Dashboard = () => {
     };
   }, [gigs, services]);
 
+  // Reset selection
   const resetSelection = useCallback(() => {
     setSelectedGigs([]);
     setSelectedServices([]);
@@ -135,37 +464,36 @@ const Dashboard = () => {
     resetSelection();
   }, [gigs, services, resetSelection]);
 
-  const handleCreateService = () => {
+  // Event handlers
+  const handleCreateService = useCallback(() => {
     if (!canCreateContent) {
-      setShowProfileWarning(true);
       toast.error('Complete your profile to create services');
       return;
     }
     navigate('/services/create');
-  };
+  }, [canCreateContent, navigate]);
 
-  const handleCreateGig = () => {
+  const handleCreateGig = useCallback(() => {
     if (!canCreateContent) {
-      setShowProfileWarning(true);
       toast.error('Complete your profile to create gigs');
       return;
     }
     navigate('/create-gig');
-  };
+  }, [canCreateContent, navigate]);
 
-  const handleCompleteProfile = () => {
+  const handleCompleteProfile = useCallback(() => {
     navigate('/profile');
-  };
+  }, [navigate]);
 
-  const handleServiceClick = (serviceId) => {
+  const handleServiceClick = useCallback((serviceId) => {
     navigate(`/services/${serviceId}`);
-  };
+  }, [navigate]);
 
-  const handleGigClick = (gigId) => {
+  const handleGigClick = useCallback((gigId) => {
     navigate(`/gig/${gigId}`);
-  };
+  }, [navigate]);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     if (allSelected) {
       setSelectedGigs([]);
     } else {
@@ -173,9 +501,9 @@ const Dashboard = () => {
       setSelectedGigs(filteredGigs.map(gig => gig._id || gig.id));
     }
     setAllSelected(!allSelected);
-  };
+  }, [allSelected, gigs]);
 
-  const handleSelectAllServices = () => {
+  const handleSelectAllServices = useCallback(() => {
     if (allServicesSelected) {
       setSelectedServices([]);
     } else {
@@ -183,25 +511,25 @@ const Dashboard = () => {
       setSelectedServices(filteredServices.map(service => service._id || service.id));
     }
     setAllServicesSelected(!allServicesSelected);
-  };
+  }, [allServicesSelected, services]);
 
-  const handleSelectGig = (gigId) => {
+  const handleSelectGig = useCallback((gigId) => {
     setSelectedGigs(prev =>
       prev.includes(gigId)
         ? prev.filter(id => id !== gigId)
         : [...prev, gigId]
     );
-  };
+  }, []);
 
-  const handleSelectService = (serviceId) => {
+  const handleSelectService = useCallback((serviceId) => {
     setSelectedServices(prev =>
       prev.includes(serviceId)
         ? prev.filter(id => id !== serviceId)
         : [...prev, serviceId]
     );
-  };
+  }, []);
 
-  const handleDeleteGigs = async () => {
+  const handleDeleteGigs = useCallback(async () => {
     if (selectedGigs.length === 0) {
       toast.error('Please select gigs to delete');
       return;
@@ -217,9 +545,9 @@ const Dashboard = () => {
     } catch (error) {
       toast.error('Failed to delete gigs');
     }
-  };
+  }, [selectedGigs, deleteMultipleGigsMutation, resetSelection]);
 
-  const handleDeleteServices = async () => {
+  const handleDeleteServices = useCallback(async () => {
     if (selectedServices.length === 0) {
       toast.error('Please select services to delete');
       return;
@@ -240,9 +568,9 @@ const Dashboard = () => {
     } catch (error) {
       toast.error('Failed to delete services');
     }
-  };
+  }, [selectedServices, deleteServiceMutation, resetSelection, refetchServices]);
 
-  const handleUpdateGigStatus = async (status) => {
+  const handleUpdateGigStatus = useCallback(async (status) => {
     if (selectedGigs.length === 0) {
       toast.error('Please select gigs to update');
       return;
@@ -258,16 +586,16 @@ const Dashboard = () => {
     } catch (error) {
       toast.error('Failed to update gigs status');
     }
-  };
+  }, [selectedGigs, updateMultipleGigsStatusMutation, resetSelection]);
 
-  const handleUpdateServiceStatus = async (status) => {
+  const handleUpdateServiceStatus = useCallback(async (status) => {
     if (selectedServices.length === 0) {
       toast.error('Please select services to update');
       return;
     }
 
     toast.info('Service status update feature coming soon');
-  };
+  }, []);
 
   const filterGigs = useCallback((gigsToFilter) => {
     if (statusFilter === 'all') return gigsToFilter;
@@ -282,7 +610,7 @@ const Dashboard = () => {
   const filteredGigs = useMemo(() => filterGigs(gigs), [gigs, filterGigs]);
   const filteredServices = useMemo(() => filterServices(services), [services, filterServices]);
 
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     switch (status) {
       case 'active':
       case 'open': return 'bg-green-100 text-green-800';
@@ -298,25 +626,25 @@ const Dashboard = () => {
       case 'assigned': return 'bg-indigo-100 text-indigo-800';
       default: return 'bg-gray-100 text-gray-800';
     }
-  };
+  }, []);
 
-  const getStatusIcon = (status) => {
+  const getStatusIcon = useCallback((status) => {
     switch (status) {
       case 'active':
-      case 'open': return <CheckCircle className="w-4 h-4" />;
-      case 'draft': return <FileText className="w-4 h-4" />;
+      case 'open': return <CheckCircle className="w-4 h-4 flex-shrink-0" />;
+      case 'draft': return <FileText className="w-4 h-4 flex-shrink-0" />;
       case 'paused': 
       case 'cancelled': 
       case 'denied': 
-      case 'suspended': return <X className="w-4 h-4" />;
+      case 'suspended': return <X className="w-4 h-4 flex-shrink-0" />;
       case 'completed': 
       case 'closed': 
-      case 'pending': return <Award className="w-4 h-4" />;
-      case 'in_progress': return <Loader2 className="w-4 h-4 animate-spin" />;
-      case 'assigned': return <User className="w-4 h-4" />;
+      case 'pending': return <Award className="w-4 h-4 flex-shrink-0" />;
+      case 'in_progress': return <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />;
+      case 'assigned': return <User className="w-4 h-4 flex-shrink-0" />;
       default: return null;
     }
-  };
+  }, []);
 
   if (!isAuthenticated) {
     return (
@@ -346,160 +674,58 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header Section */}
+        {/* Header */}
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
               <p className="text-gray-600 mt-2">Manage your services, gigs, and track your performance</p>
             </div>
-            
           </div>
         </div>
 
         {/* Profile Completion Warning */}
         {!canCreateContent && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl border border-yellow-200 shadow-lg p-6"
-          >
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="bg-yellow-100 p-3 rounded-full">
-                  <Shield className="w-8 h-8 text-yellow-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-yellow-900 mb-1">
-                    Complete Your Profile to Start Creating
-                  </h3>
-                  <p className="text-yellow-800">
-                    Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs and services.
-                  </p>
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-sm text-yellow-800 mb-1">
-                      <span>Profile Progress</span>
-                      <span className="font-bold">{profileCompletion}%</span>
-                    </div>
-                    <div className="w-full bg-yellow-200 rounded-full h-2.5">
-                      <div 
-                        className="bg-yellow-600 h-2.5 rounded-full transition-all duration-500"
-                        style={{ width: `${profileCompletion}%` }}
-                      />
-                    </div>
-                  </div>
-                  {profileSuggestions.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-sm text-yellow-800 font-medium mb-1">Suggested improvements:</p>
-                      <ul className="text-sm text-yellow-700">
-                        {profileSuggestions.map((suggestion, index) => (
-                          <li key={index} className="flex items-center">
-                            <ArrowRight className="w-3 h-3 mr-2" />
-                            {suggestion}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={handleCompleteProfile}
-                className="px-6 py-3 bg-gradient-to-r from-yellow-600 to-orange-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity whitespace-nowrap"
-              >
-                Complete Profile Now
-              </button>
-            </div>
-          </motion.div>
+          <ProfileWarningBanner
+            profileCompletion={profileCompletion}
+            profileSuggestions={profileSuggestions}
+            onCompleteProfile={handleCompleteProfile}
+          />
         )}
 
-        {/* Profile Completion Info Bar */}
-        <div className="mb-6 bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-gray-600" />
-                <span className="text-sm font-medium text-gray-900">Profile Status:</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-48">
-                  <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                    <span>Completion</span>
-                    <span className="font-bold">{profileCompletion}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className={`h-2 rounded-full transition-all duration-500 ${
-                        profileCompletion >= 80 ? 'bg-green-600' :
-                        profileCompletion >= 70 ? 'bg-blue-600' : 'bg-yellow-500'
-                      }`}
-                      style={{ width: `${profileCompletion}%` }}
-                    />
-                  </div>
-                </div>
-                {canCreateContent ? (
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Ready to Create Content
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    <AlertCircle className="w-3 h-3 mr-1" />
-                    Complete Profile Required
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={handleCompleteProfile}
-              className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800"
-            >
-              Improve Profile
-            </button>
-          </div>
-        </div>
+        {/* Profile Info Bar */}
+        <ProfileInfoBar
+          profileCompletion={profileCompletion}
+          canCreateContent={canCreateContent}
+          onImproveProfile={handleCompleteProfile}
+        />
 
-        {/* Quick Stats Row */}
+        {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
-            <div className="flex items-center">
-              <Package className="w-5 h-5 text-blue-600 mr-2" />
-              <span className="text-sm font-medium text-blue-900">Total Services</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-900 mt-2">{stats.totalServices}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-blue-600">
-                ({stats.activeServices} active)
-              </span>
-            </div>
-          </div>
-          <div className="bg-green-50 rounded-2xl p-6 border border-green-100">
-            <div className="flex items-center">
-              <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-              <span className="text-sm font-medium text-green-900">Active Services</span>
-            </div>
-            <p className="text-2xl font-bold text-green-900 mt-2">{stats.activeServices}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-green-600">
-                of {stats.totalServices} total
-              </span>
-            </div>
-          </div>
-          <div className="bg-orange-50 rounded-2xl p-6 border border-orange-100">
-            <div className="flex items-center">
-              <FileText className="w-5 h-5 text-orange-600 mr-2" />
-              <span className="text-sm font-medium text-orange-900">Total Gigs</span>
-            </div>
-            <p className="text-2xl font-bold text-orange-900 mt-2">{stats.totalGigs}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-xs text-orange-600">
-                ({stats.activeGigs} active)
-              </span>
-            </div>
-          </div>
+          <StatsCard
+            title="Total Services"
+            value={stats.totalServices}
+            subValue={`(${stats.activeServices} active)`}
+            icon={Package}
+            colorClass="bg-blue-50"
+          />
+          <StatsCard
+            title="Active Services"
+            value={stats.activeServices}
+            subValue={`of ${stats.totalServices} total`}
+            icon={CheckCircle}
+            colorClass="bg-green-50"
+          />
+          <StatsCard
+            title="Total Gigs"
+            value={stats.totalGigs}
+            subValue={`(${stats.activeGigs} active)`}
+            icon={FileText}
+            colorClass="bg-orange-50"
+          />
         </div>
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -514,10 +740,10 @@ const Dashboard = () => {
                   canCreateContent 
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
                 title={!canCreateContent ? "Complete your profile to create gigs" : ""}
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
                 Create Gig
               </button>
               <button
@@ -527,10 +753,10 @@ const Dashboard = () => {
                   canCreateContent 
                     ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
                 title={!canCreateContent ? "Complete your profile to create services" : ""}
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
                 Create Service
               </button>
             </div>
@@ -540,7 +766,7 @@ const Dashboard = () => {
           {!canCreateContent && (
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex items-center gap-3">
-                <Info className="w-5 h-5 text-blue-600" />
+                <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
                 <p className="text-blue-800 text-sm">
                   Complete your profile to unlock the ability to create gigs and services. 
                   A complete profile helps build trust with clients and increases your chances of success.
@@ -549,40 +775,39 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Rest of your existing Dashboard code remains the same... */}
           {/* Tab Navigation */}
           <div className="bg-gray-50 rounded-xl p-2 mb-6">
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex border border-gray-200 rounded-xl overflow-hidden">
                 <button
                   onClick={() => setActiveTab('services')}
-                  className={`px-5 py-2.5 font-medium transition-all ${
+                  className={`px-5 py-2.5 font-medium transition-all flex-shrink-0 ${
                     activeTab === 'services'
                       ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Briefcase className="w-4 h-4" />
-                    Services ({stats.totalServices})
+                    <Briefcase className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">Services ({stats.totalServices})</span>
                   </div>
                 </button>
                 <button
                   onClick={() => setActiveTab('gigs')}
-                  className={`px-5 py-2.5 font-medium transition-all ${
+                  className={`px-5 py-2.5 font-medium transition-all flex-shrink-0 ${
                     activeTab === 'gigs'
                       ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Gigs ({stats.totalGigs})
+                    <FileText className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">Gigs ({stats.totalGigs})</span>
                   </div>
                 </button>
               </div>
 
-              <div className="flex items-center space-x-4 ml-auto">
+              <div className="flex items-center space-x-4">
                 <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
                   <button
                     onClick={() => setViewMode('grid')}
@@ -601,77 +826,17 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Bulk Actions Bar */}
-          <AnimatePresence>
-            {hasSelectedItems && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.2 }}
-                className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200 p-4 mb-6"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center">
-                    <CheckSquare className="w-5 h-5 text-blue-600 mr-2" />
-                    <span className="font-medium text-blue-900">
-                      {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {activeTab === 'gigs' ? (
-                      <>
-                        <button
-                          onClick={() => handleUpdateGigStatus('active')}
-                          disabled={updateMultipleGigsStatusMutation.isPending}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Make Active'}
-                        </button>
-                        <button
-                          onClick={() => handleUpdateGigStatus('paused')}
-                          disabled={updateMultipleGigsStatusMutation.isPending}
-                          className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {updateMultipleGigsStatusMutation.isPending ? 'Updating...' : 'Pause'}
-                        </button>
-                        <button
-                          onClick={handleDeleteGigs}
-                          disabled={deleteMultipleGigsMutation.isPending}
-                          className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          {deleteMultipleGigsMutation.isPending ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleUpdateServiceStatus('active')}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-                        >
-                          Activate
-                        </button>
-                        <button
-                          onClick={() => handleUpdateServiceStatus('paused')}
-                          className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors"
-                        >
-                          Pause
-                        </button>
-                        <button
-                          onClick={handleDeleteServices}
-                          className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Bulk Actions */}
+          <BulkActionsBar
+            activeTab={activeTab}
+            selectedCount={selectedCount}
+            onUpdateStatus={activeTab === 'gigs' ? handleUpdateGigStatus : handleUpdateServiceStatus}
+            onDelete={activeTab === 'gigs' ? handleDeleteGigs : handleDeleteServices}
+            isUpdating={updateMultipleGigsStatusMutation.isPending}
+            isDeleting={activeTab === 'gigs' 
+              ? deleteMultipleGigsMutation.isPending 
+              : deleteServiceMutation.isPending}
+          />
 
           {/* Filter Bar */}
           <div className="bg-gray-50 rounded-xl p-4 mb-6">
@@ -685,16 +850,16 @@ const Dashboard = () => {
                   >
                     {activeTab === 'services' 
                       ? allServicesSelected
-                        ? <CheckSquare className="w-5 h-5 text-green-600" />
-                        : <Square className="w-5 h-5 text-gray-400" />
+                        ? <CheckSquare className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
                       : allSelected
-                        ? <CheckSquare className="w-5 h-5 text-blue-600" />
-                        : <Square className="w-5 h-5 text-gray-400" />
+                        ? <CheckSquare className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
                     }
                   </button>
-                  <span className="text-gray-600">Select All</span>
+                  <span className="text-gray-600 whitespace-nowrap">Select All</span>
                 </div>
-                <span className="text-gray-500">
+                <span className="text-gray-500 whitespace-nowrap">
                   {items.length} {activeTab === 'services' ? 'service' : 'gig'}{items.length !== 1 ? 's' : ''} found
                 </span>
               </div>
@@ -706,7 +871,7 @@ const Dashboard = () => {
                     : setStatusFilter(e.target.value)
                   }
                   disabled={isLoading}
-                  className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
+                  className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 min-w-[150px]"
                 >
                   <option value="all">All Status</option>
                   {activeTab === 'services' ? (
@@ -744,55 +909,51 @@ const Dashboard = () => {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'services' ? (
-                viewMode === 'grid' ? (
-                  <ServicesGridView 
-                    services={filteredServices}
-                    isLoading={isLoading}
-                    selectedServices={selectedServices}
-                    handleSelectService={handleSelectService}
-                    handleServiceClick={handleServiceClick}
-                    getStatusColor={getStatusColor}
-                    getStatusIcon={getStatusIcon}
-                  />
-                ) : (
-                  <ServicesListView 
-                    services={filteredServices}
-                    isLoading={isLoading}
-                    selectedServices={selectedServices}
-                    handleSelectService={handleSelectService}
-                    handleServiceClick={handleServiceClick}
-                    handleCreateService={handleCreateService}
-                    serviceStatusFilter={serviceStatusFilter}
-                    getStatusColor={getStatusColor}
-                    getStatusIcon={getStatusIcon}
-                  />
-                )
+              {isLoading ? (
+                <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                  <div className="p-12 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
+                    <p className="text-gray-600">Loading your {activeTab}...</p>
+                  </div>
+                </div>
+              ) : items.length === 0 ? (
+                <EmptyState
+                  type={activeTab}
+                  filter={activeTab === 'services' ? serviceStatusFilter : statusFilter}
+                  onCreate={activeTab === 'services' ? handleCreateService : handleCreateGig}
+                  icon={activeTab === 'services' ? Briefcase : FileText}
+                  createButtonText={`Create Your First ${activeTab === 'services' ? 'Service' : 'Gig'}`}
+                  gradientFrom={activeTab === 'services' ? 'from-green-600' : 'from-blue-600'}
+                  gradientTo={activeTab === 'services' ? 'to-emerald-600' : 'to-purple-600'}
+                />
+              ) : viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {items.map((item) => (
+                    <ItemCard
+                      key={item._id || item.id}
+                      item={item}
+                      type={activeTab}
+                      isSelected={activeTab === 'services' 
+                        ? selectedServices.includes(item._id || item.id)
+                        : selectedGigs.includes(item._id || item.id)
+                      }
+                      onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
+                      onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
+                      getStatusColor={getStatusColor}
+                      getStatusIcon={getStatusIcon}
+                    />
+                  ))}
+                </div>
               ) : (
-                viewMode === 'grid' ? (
-                  <GigsGridView 
-                    gigs={filteredGigs}
-                    isLoading={isLoading}
-                    selectedGigs={selectedGigs}
-                    handleSelectGig={handleSelectGig}
-                    handleGigClick={handleGigClick}
-                    getStatusColor={getStatusColor}
-                    getStatusIcon={getStatusIcon}
-                  />
-                ) : (
-                  <GigsListView 
-                    gigs={filteredGigs}
-                    isLoading={isLoading}
-                    selectedGigs={selectedGigs}
-                    handleSelectGig={handleSelectGig}
-                    handleGigClick={handleGigClick}
-                    handleDeleteGigs={handleDeleteGigs}
-                    handleCreateGig={handleCreateGig}
-                    statusFilter={statusFilter}
-                    getStatusColor={getStatusColor}
-                    getStatusIcon={getStatusIcon}
-                  />
-                )
+                <ListView
+                  items={items}
+                  type={activeTab}
+                  selectedIds={activeTab === 'services' ? selectedServices : selectedGigs}
+                  onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
+                  onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
+                  getStatusColor={getStatusColor}
+                  getStatusIcon={getStatusIcon}
+                />
               )}
             </motion.div>
           </AnimatePresence>
@@ -802,184 +963,9 @@ const Dashboard = () => {
   );
 };
 
-// Add Info icon import if not already present
-const Info = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const ServicesGridView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your services...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (services.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Briefcase className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
-          <p className="text-gray-600 mb-6">You haven't created any services yet</p>
-          <button
-            onClick={() => window.location.href = '/services/create'}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Service
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ staggerChildren: 0.1 }}
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-    >
-      {services.map((service) => (
-        <motion.div
-          key={service._id || service.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ y: -5 }}
-          className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
-        >
-          <div className="p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center">
-                <button
-                  onClick={() => handleSelectService(service._id || service.id)}
-                  className="mr-3"
-                >
-                  {selectedServices.includes(service._id || service.id) ? (
-                    <CheckSquare className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-                <div>
-                  <h4 
-                    className="font-medium text-gray-900 hover:text-green-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleServiceClick(service._id || service.id)}
-                  >
-                    {service.title || 'Untitled Service'}
-                  </h4>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(service.status)}`}>
-                    {getStatusIcon(service.status)}
-                    <span className="ml-1">
-                      {service.status ? 
-                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-              {service.shortDescription || service.description || 'No description available'}
-            </p>
-
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="font-bold text-gray-900">
-                  ${service.price || 0}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                <span className="text-xs text-gray-600">
-                  {service.category?.name || 'Uncategorized'}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handleServiceClick(service._id || service.id)}
-                  className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                  title="View Details"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-};
-
-// ServicesListView
-const ServicesListView = ({ services, isLoading, selectedServices, handleSelectService, handleServiceClick, handleCreateService, serviceStatusFilter, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your services...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (services.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Briefcase className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
-          <p className="text-gray-600 mb-6">
-            {serviceStatusFilter === 'all' 
-              ? "You haven't created any services yet"
-              : `No services with status "${serviceStatusFilter}" found`}
-          </p>
-          <button
-            onClick={handleCreateService}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Service
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
+// Memoized List View Component
+const ListView = memo(({ items, type, selectedIds, onSelect, onClick, getStatusColor, getStatusIcon }) => {
+  const isService = type === 'services';
 
   return (
     <motion.div 
@@ -992,272 +978,13 @@ const ServicesListView = ({ services, isLoading, selectedServices, handleSelectS
           <thead className="bg-gray-50">
             <tr>
               <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Service</span>
+                <span className="text-sm font-semibold text-gray-700 uppercase">{type === 'services' ? 'Service' : 'Gig'}</span>
               </th>
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
               </th>
               <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Price</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {services.map((service) => (
-              <motion.tr
-                key={service._id || service.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
-                className="transition-colors"
-              >
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <button
-                      onClick={() => handleSelectService(service._id || service.id)}
-                      className="mr-3"
-                    >
-                      {selectedServices.includes(service._id || service.id) ? (
-                        <CheckSquare className="w-5 h-5 text-green-600" />
-                      ) : (
-                        <Square className="w-5 h-5 text-gray-400" />
-                      )}
-                    </button>
-                    <div 
-                      className="cursor-pointer"
-                      onClick={() => handleServiceClick(service._id || service.id)}
-                    >
-                      <h4 className="font-medium text-gray-900 hover:text-green-600">
-                        {service.title || 'Untitled Service'}
-                      </h4>
-                      <div className="flex items-center mt-1">
-                        <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-600">
-                          {service.category?.name || 'Uncategorized'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-4 px-6">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
-                    {getStatusIcon(service.status)}
-                    <span className="ml-1">
-                      {service.status ? 
-                        service.status.charAt(0).toUpperCase() + service.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </td>
-                <td className="py-4 px-6">
-                  <div className="flex items-center">
-                    <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                    <span className="font-medium">
-                      ${service.price || 0}
-                    </span>
-                  </div>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </motion.div>
-  );
-};
-
-// GigsGridView
-const GigsGridView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your gigs...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (gigs.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No gigs found</h3>
-          <p className="text-gray-600 mb-6">You haven't created any gigs yet</p>
-          <button
-            onClick={() => window.location.href = '/create-gig'}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Gig
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ staggerChildren: 0.1 }}
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-    >
-      {gigs.map((gig) => (
-        <motion.div
-          key={gig._id || gig.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ y: -5 }}
-          className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300"
-        >
-          <div className="p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center">
-                <button
-                  onClick={() => handleSelectGig(gig._id || gig.id)}
-                  className="mr-3"
-                >
-                  {selectedGigs.includes(gig._id || gig.id) ? (
-                    <CheckSquare className="w-5 h-5 text-blue-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-                <div>
-                  <h4 
-                    className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer line-clamp-1"
-                    onClick={() => handleGigClick(gig._id || gig.id)}
-                  >
-                    {gig.title || 'Untitled Gig'}
-                  </h4>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(gig.status)}`}>
-                    {getStatusIcon(gig.status)}
-                    <span className="ml-1">
-                      {gig.status ? 
-                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
-                        : 'Draft'
-                      }
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-              {gig.description || 'No description available'}
-            </p>
-
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
-                <span className="font-bold text-gray-900">
-                  ${gig.budget || gig.price || 0}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                <span className="text-xs text-gray-600">
-                  {gig.category?.name || 'Uncategorized'}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handleGigClick(gig._id || gig.id)}
-                  className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="View Details"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-};
-
-// GigsListView
-const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGigClick, handleDeleteGigs, handleCreateGig, statusFilter, getStatusColor, getStatusIcon }) => {
-  if (isLoading) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading your gigs...</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (gigs.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No gigs found</h3>
-          <p className="text-gray-600 mb-6">
-            {statusFilter === 'all' 
-              ? "You haven't created any gigs yet"
-              : `No gigs with status "${statusFilter}" found`}
-          </p>
-          <button
-            onClick={handleCreateGig}
-            className="inline-flex items-center px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create Your First Gig
-          </button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Gig</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Status</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700 uppercase">Budget</span>
+                <span className="text-sm font-semibold text-gray-700 uppercase">{type === 'services' ? 'Price' : 'Budget'}</span>
               </th>
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700 uppercase">Actions</span>
@@ -1265,9 +992,9 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {gigs.map((gig) => (
+            {items.map((item) => (
               <motion.tr
-                key={gig._id || gig.id}
+                key={item._id || item.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 whileHover={{ backgroundColor: 'rgba(243, 244, 246, 0.5)' }}
@@ -1276,37 +1003,37 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                 <td className="py-4 px-6">
                   <div className="flex items-center">
                     <button
-                      onClick={() => handleSelectGig(gig._id || gig.id)}
-                      className="mr-3"
+                      onClick={() => onSelect(item._id || item.id)}
+                      className="mr-3 flex-shrink-0"
                     >
-                      {selectedGigs.includes(gig._id || gig.id) ? (
-                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                      {selectedIds.includes(item._id || item.id) ? (
+                        <CheckSquare className={`w-5 h-5 ${isService ? 'text-green-600' : 'text-blue-600'}`} />
                       ) : (
                         <Square className="w-5 h-5 text-gray-400" />
                       )}
                     </button>
                     <div 
-                      className="cursor-pointer"
-                      onClick={() => handleGigClick(gig._id || gig.id)}
+                      className="cursor-pointer min-w-0"
+                      onClick={() => onClick(item._id || item.id)}
                     >
-                      <h4 className="font-medium text-gray-900 hover:text-blue-600">
-                        {gig.title || 'Untitled Gig'}
+                      <h4 className={`font-medium text-gray-900 hover:${isService ? 'text-green-600' : 'text-blue-600'} truncate`}>
+                        {item.title || `Untitled ${type === 'services' ? 'Service' : 'Gig'}`}
                       </h4>
                       <div className="flex items-center mt-1">
-                        <Tag className="w-3 h-3 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-600">
-                          {gig.category?.name || 'Uncategorized'}
+                        <Tag className="w-3 h-3 text-gray-400 mr-1 flex-shrink-0" />
+                        <span className="text-sm text-gray-600 truncate">
+                          {item.category?.name || 'Uncategorized'}
                         </span>
                       </div>
                     </div>
                   </div>
                 </td>
                 <td className="py-4 px-6">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(gig.status)}`}>
-                    {getStatusIcon(gig.status)}
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                    {getStatusIcon(item.status)}
                     <span className="ml-1">
-                      {gig.status ? 
-                        gig.status.charAt(0).toUpperCase() + gig.status.slice(1) 
+                      {item.status ? 
+                        item.status.charAt(0).toUpperCase() + item.status.slice(1) 
                         : 'Draft'
                       }
                     </span>
@@ -1314,17 +1041,17 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
                 </td>
                 <td className="py-4 px-6">
                   <div className="flex items-center">
-                    <DollarSign className="w-4 h-4 text-gray-600 mr-1" />
+                    <DollarSign className="w-4 h-4 text-gray-600 mr-1 flex-shrink-0" />
                     <span className="font-medium">
-                      ${gig.budget || gig.price || 0}
+                      ${isService ? (item.price || 0) : (item.budget || item.price || 0)}
                     </span>
                   </div>
                 </td>
                 <td className="py-4 px-6">
                   <div className="flex items-center space-x-2">
                     <button
-                      onClick={() => handleGigClick(gig._id || gig.id)}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      onClick={() => onClick(item._id || item.id)}
+                      className={`p-2 text-gray-600 hover:${isService ? 'text-green-600 hover:bg-green-50' : 'text-blue-600 hover:bg-blue-50'} rounded-lg transition-colors`}
                       title="View Details"
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -1338,6 +1065,7 @@ const GigsListView = ({ gigs, isLoading, selectedGigs, handleSelectGig, handleGi
       </div>
     </motion.div>
   );
-};
+});
+ListView.displayName = 'ListView';
 
 export default Dashboard;
