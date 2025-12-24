@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase } from "lucide-react";
+import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, TrendingUp, Sparkles, FolderKanban, ShoppingBag, MessageSquare, BookOpen, Palette, Code, Megaphone, PenTool } from "lucide-react";
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,10 +10,9 @@ import default_pp from '../assets/default_pp-modified.png'
 import SearchComponent from "../components/Search/SearchComponent";
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [exploreOpen, setExploreOpen] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState(null); // 'profile', 'explore', or null
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,8 +22,33 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   const isHomePage = location.pathname === "/";
 
+  // Refs for dropdowns
+  const profileRef = useRef(null);
+  const exploreRef = useRef(null);
+
   // Check if user is admin
   const isAdminUser = isAuthenticated && (user?.role === 'admin' || user?.isAdmin === true);
+
+  // Categories with icons
+  const categories = [
+    { name: "Web Development", color: "text-blue-600" },
+    { name: "Graphic Design", color: "text-purple-600" },
+    { name: "Digital Marketing", color: "text-green-600" },
+    { name: "Writing & Translation", color: "text-amber-600" },
+    { name: "Video & Animation", color: "text-red-600" },
+    { name: "Music & Audio", color: "text-pink-600" },
+    { name: "Business", color: "text-indigo-600" },
+    { name: "Lifestyle", color: "text-teal-600" }
+  ];
+
+  // Quick links with icons
+  const quickLinks = [
+    { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/all-gigs" },
+    { name: "Popular Services", icon: <TrendingUp className="w-4 h-4" />, path: "/services/popular" },
+    { name: "New Services", icon: <Sparkles className="w-4 h-4" />, path: "/services/new" },
+    { name: "Learn & Tutorials", icon: <BookOpen className="w-4 h-4" />, path: "/learn" },
+    { name: "Community Forum", icon: <MessageSquare className="w-4 h-4" />, path: "/community" }
+  ];
 
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -54,10 +78,9 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
         setScrolled(false);
       }
 
-      // Close profile and explore dropdowns when scrolling
-      if (menuOpen || exploreOpen) {
-        setMenuOpen(false);
-        setExploreOpen(false);
+      // Close dropdowns when scrolling
+      if (activeDropdown) {
+        setActiveDropdown(null);
       }
     };
 
@@ -69,12 +92,39 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     }
 
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHomePage, menuOpen, exploreOpen]);
+  }, [isHomePage, activeDropdown]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (activeDropdown === 'profile' && profileRef.current && !profileRef.current.contains(event.target)) {
+        setActiveDropdown(null);
+      }
+      if (activeDropdown === 'explore' && exploreRef.current && !exploreRef.current.contains(event.target)) {
+        setActiveDropdown(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [activeDropdown]);
+
+  const toggleDropdown = (dropdown) => {
+    if (activeDropdown === dropdown) {
+      setActiveDropdown(null);
+    } else {
+      setActiveDropdown(dropdown);
+    }
+  };
+
+  const closeAllDropdowns = () => {
+    setActiveDropdown(null);
+  };
 
   const handleLogout = async () => {
     try {
       await logoutMutation.mutateAsync();
-      setMenuOpen(false);
+      closeAllDropdowns();
       setMobileMenuOpen(false);
       navigate("/");
     } catch (error) {
@@ -84,6 +134,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   const handleMobileMenuClick = () => {
     setMobileMenuOpen(!mobileMenuOpen);
+    closeAllDropdowns();
   };
 
   const iconRotate = {
@@ -111,11 +162,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   // Search field animation
   const searchAnimation = {
-    hidden: { opacity: 0, x: -20, scale: 0.95 },
+    hidden: { opacity: 0, width: 0, x: -20 },
     visible: { 
       opacity: 1, 
-      x: 0, 
-      scale: 1,
+      width: "auto", 
+      x: 0,
       transition: { 
         duration: 0.3, 
         ease: "easeOut",
@@ -124,8 +175,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     },
     exit: { 
       opacity: 0, 
-      x: -20, 
-      scale: 0.95,
+      width: 0, 
+      x: -20,
       transition: { 
         duration: 0.2, 
         ease: "easeIn" 
@@ -148,10 +199,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
       <nav className="w-full bg-white border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between h-10 lg:h-12">
-            <div className="flex items-center space-x-4 flex-1 h-full">
+            {/* Left: Hamburger Menu (Mobile only) */}
+            <div className="flex items-center lg:hidden">
               <button
                 onClick={handleMobileMenuClick}
-                className="lg:hidden p-2 text-gray-600 hover:text-black transition-colors duration-200"
+                className="p-2 text-gray-600 hover:text-black transition-colors duration-200"
+                aria-label="Menu"
               >
                 <motion.div
                   animate={mobileMenuOpen ? "open" : "closed"}
@@ -165,8 +218,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   )}
                 </motion.div>
               </button>
+            </div>
 
-              <Link to="/" className="flex items-center shrink-0 gap-1">
+            {/* Desktop: Logo (moved to left) */}
+            <div className="hidden lg:flex items-center shrink-0">
+              <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
                 <img
                   src={Logo2}
                   alt="Vorkana Logo"
@@ -176,107 +232,172 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   Vorkana
                 </span>
               </Link>
+            </div>
 
-              {/* Search bar with Framer Motion animation */}
+            {/* Desktop: Search bar (moved to left after logo) */}
+            <div className="hidden lg:flex items-center flex-1 ml-6">
               <AnimatePresence mode="wait">
-                {showSearch && (
+                {showSearch ? (
                   <motion.div
                     key="search-field"
                     initial="hidden"
                     animate="visible"
                     exit="exit"
                     variants={searchAnimation}
-                    className="flex-1 max-w-2xl ml-6"
+                    className="flex-1 max-w-2xl ml-6" 
                   >
                     <SearchComponent 
                       placeholder="Search for services, freelancers, or categories..."
                       variant="navbar"
+                      className="w-full"
+                      onFocus={closeAllDropdowns}
                     />
+                  </motion.div>
+                ) : (
+                  // Static search placeholder when not scrolled
+                  <motion.div 
+                    className="w-full max-w-3xl"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <div className="h-10 flex items-center">
+                      {/* Empty space to maintain layout */}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            <div className="hidden lg:block">
-              <div className="relative">
+            {/* Center: Logo (Mobile only) */}
+            <div className="flex items-center justify-center lg:hidden">
+              <Link to="/" className="flex items-center shrink-0 gap-1" onClick={closeAllDropdowns}>
+                <img
+                  src={Logo2}
+                  alt="Vorkana Logo"
+                  className="h-8 w-auto"
+                />
+                <span className="text-xl font-black text-black">
+                  Vorkana
+                </span>
+              </Link>
+            </div>
+
+            {/* Right: Profile/Join Button (Mobile & Desktop) */}
+            <div className="flex items-center lg:hidden">
+              {isAuthenticated ? (
                 <button
-                  onClick={() => setExploreOpen(!exploreOpen)}
+                  onClick={() => toggleDropdown('profile')}
+                  className="p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
+                  aria-label="Profile menu"
+                >
+                  <img
+                    src={user?.picture || default_pp}
+                    alt="Profile"
+                    className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = default_pp;
+                    }}
+                  />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    closeAllDropdowns();
+                    if (onSignupClick) onSignupClick();
+                  }}
+                  className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-200 text-sm"
+                >
+                  Join
+                </button>
+              )}
+            </div>
+
+            {/* Desktop: Navigation Items (on the right) */}
+            <div className="hidden lg:flex items-center space-x-4">
+              <div className="relative" ref={exploreRef}>
+                <button
+                  onClick={() => toggleDropdown('explore')}
                   className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-200"
                 >
                   <Globe className="w-5 h-5" />
                   <span className="font-medium">Explore</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${exploreOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
                 </button>
 
-                {exploreOpen && (
-                  <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                    <div className="p-4">
-                      <div className="space-y-3">
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Categories</h4>
-                          <div className="space-y-1">
-                            {['Web Development', 'Graphic Design', 'Digital Marketing', 'Writing & Translation', 'Video & Animation', 'Music & Audio', 'Business', 'Lifestyle'].map((category) => (
+                <AnimatePresence>
+                  {activeDropdown === 'explore' && (
+                    <motion.div
+                      initial="hidden"
+                      animate="visible"
+                      exit="exit"
+                      variants={dropdownAnimation}
+                      className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 z-50"
+                    >
+                      <div className="p-4">
+                        <div className="mb-4">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Browse Categories</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {categories.map((category) => (
                               <Link
-                                key={category}
-                                to={`/categories/${category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
-                                onClick={() => setExploreOpen(false)}
-                                className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
+                                key={category.name}
+                                to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
+                                onClick={closeAllDropdowns}
+                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200 group"
                               >
-                                {category}
+                                <span className="truncate">{category.name}</span>
                               </Link>
                             ))}
                           </div>
                         </div>
 
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Quick Links</h4>
+                        <div className="pt-4 border-t border-gray-100">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Quick Links</h4>
                           <div className="space-y-1">
-                            <Link
-                              to="/all-gigs"
-                              onClick={() => setExploreOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              Browse All Gigs
-                            </Link>
-                            <Link
-                              to="/services/popular"
-                              onClick={() => setExploreOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              Popular Services
-                            </Link>
-                            <Link
-                              to="/services/new"
-                              onClick={() => setExploreOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              New Services
-                            </Link>
+                            {quickLinks.map((link) => (
+                              <Link
+                                key={link.name}
+                                to={link.path}
+                                onClick={closeAllDropdowns}
+                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
+                              >
+                                {link.icon}
+                                <span>{link.name}</span>
+                              </Link>
+                            ))}
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
 
-            <div className="flex items-center space-x-4">
+              <Link
+                to="/find-work"
+                className="px-4 py-2.5 text-gray-700 hover:text-black font-medium hover:bg-gray-50 rounded-lg transition-all duration-200"
+                onClick={closeAllDropdowns}
+              >
+                Find Work
+              </Link>
+
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">
                   {/* ADMIN BUTTON - Only shown if user is admin */}
                   {isAdminUser && (
                     <Link
                       to="/admin"
-                      className="md:inline bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-3 py-1 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
+                      className="bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-4 py-1.5 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
+                      onClick={closeAllDropdowns}
                     >
-                      <span>Admin</span>
+                      Admin
                     </Link>
                   )}
 
-                  <div className="relative">
+                  <div className="relative" ref={profileRef}>
                     <button
-                      onClick={() => setMenuOpen(!menuOpen)}
+                      onClick={() => toggleDropdown('profile')}
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
                     >
                       <img
@@ -288,11 +409,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           e.target.src = default_pp;
                         }}
                       />
-                      <ChevronDown className={`w-4 h-4 text-gray-600 hidden lg:block transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
                     <AnimatePresence>
-                      {menuOpen && (
+                      {activeDropdown === 'profile' && (
                         <motion.div
                           initial="hidden"
                           animate="visible"
@@ -318,7 +439,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <div className="p-2">
                             <Link
                               to="/profile"
-                              onClick={() => setMenuOpen(false)}
+                              onClick={closeAllDropdowns}
                               className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
                             >
                               <User className="w-4 h-4" />
@@ -327,7 +448,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
                             <Link
                               to="/dashboard"
-                              onClick={() => setMenuOpen(false)}
+                              onClick={closeAllDropdowns}
                               className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
                             >
                               <Package className="w-4 h-4" />
@@ -349,23 +470,23 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 </div>
               ) : (
                 <div className="flex items-center space-x-3">
-                  {/* Sign In button - hidden on md and below, shown on lg and above */}
                   <button
                     onClick={() => {
+                      closeAllDropdowns();
                       if (onSigninClick) onSigninClick();
                     }}
-                    className="hidden lg:block text-gray-700 hover:text-black font-medium px-3 py-2 transition-colors duration-200"
+                    className="text-gray-700 hover:text-black font-medium px-4 py-2.5 transition-colors duration-200"
                   >
                     Sign In
                   </button>
-                  {/* Join button - always visible */}
                   <button
                     onClick={() => {
+                      closeAllDropdowns();
                       if (onSignupClick) onSignupClick();
                     }}
-                    className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-200"
+                    className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-200 shadow-sm hover:shadow-md"
                   >
-                    Join
+                    Join Free
                   </button>
                 </div>
               )}
@@ -373,6 +494,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
           </div>
         </div>
 
+        {/* Mobile Menu */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <>
@@ -393,6 +515,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <button
                         onClick={() => setMobileMenuOpen(false)}
                         className="p-2 text-gray-500 hover:text-gray-700 transition-colors duration-200 hover:bg-gray-100 rounded-lg"
+                        aria-label="Close menu"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -404,6 +527,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         placeholder="Search services..."
                         variant="full"
                         className="w-full"
+                        onFocus={() => setMobileMenuOpen(false)}
                       />
                     </div>
 
@@ -434,6 +558,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   </div>
 
                   <div className="flex-1 overflow-y-auto px-6 py-4">
+                    {/* Main Navigation */}
                     <div className="space-y-1 mb-6">
                       <Link
                         to="/"
@@ -454,76 +579,85 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       </Link>
                     </div>
 
+                    {/* Explore Section */}
                     <div className="mb-6">
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
-                        Explore
+                      <div className="flex items-center space-x-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+                        <Globe className="w-4 h-4" />
+                        <span>Explore</span>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2 px-3">Categories</h4>
-                          <div className="space-y-1">
-                            {['Web Development', 'Graphic Design', 'Digital Marketing', 'Writing & Translation'].map((category) => (
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2 px-3">Categories</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {categories.slice(0, 6).map((category) => (
                               <Link
-                                key={category}
-                                to={`/categories/${category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
+                                key={category.name}
+                                to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
                                 onClick={() => setMobileMenuOpen(false)}
-                                className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
+                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
                               >
-                                {category}
+                                <span className="truncate">{category.name}</span>
                               </Link>
                             ))}
                           </div>
                         </div>
 
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2 px-3">Quick Links</h4>
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2 px-3">Quick Links</h4>
                           <div className="space-y-1">
-                            <Link
-                              to="/all-gigs"
-                              onClick={() => setMobileMenuOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              Browse All Gigs
-                            </Link>
-                            <Link
-                              to="/services/popular"
-                              onClick={() => setMobileMenuOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              Popular Services
-                            </Link>
-                            <Link
-                              to="/services/new"
-                              onClick={() => setMobileMenuOpen(false)}
-                              className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-md transition-all duration-200"
-                            >
-                              New Services
-                            </Link>
+                            {quickLinks.map((link) => (
+                              <Link
+                                key={link.name}
+                                to={link.path}
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
+                              >
+                                {link.icon}
+                                <span>{link.name}</span>
+                              </Link>
+                            ))}
                           </div>
                         </div>
                       </div>
                     </div>
 
+                    {/* Authentication Links */}
                     {!isAuthenticated ? (
                       <div className="space-y-3 mt-8 pt-6 border-t border-gray-100">
-                        <Link
-                          to="/sign-in"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className="block py-3.5 text-center border-2 border-gray-200 text-gray-800 font-medium rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            if (onSigninClick) onSigninClick();
+                          }}
+                          className="w-full py-3.5 text-center border-2 border-gray-200 text-gray-800 font-medium rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
                         >
                           Sign In
-                        </Link>
-                        <Link
-                          to="/sign-up"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className="block py-3.5 bg-black text-white font-medium rounded-xl text-center hover:bg-gray-800 transition-all duration-200 hover:shadow-lg"
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            if (onSignupClick) onSignupClick();
+                          }}
+                          className="w-full py-3.5 bg-black text-white font-medium rounded-xl text-center hover:bg-gray-800 transition-all duration-200 hover:shadow-lg"
                         >
                           Join Free
-                        </Link>
+                        </button>
                       </div>
                     ) : (
                       <div className="space-y-1 mt-8 pt-6 border-t border-gray-100">
+                        {/* Admin Link if user is admin */}
+                        {isAdminUser && (
+                          <Link
+                            to="/admin"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200 text-red-600 font-medium"
+                          >
+                            <span className="w-5 h-5 flex items-center justify-center">⚙️</span>
+                            <span>Admin Panel</span>
+                          </Link>
+                        )}
+
                         <Link
                           to="/profile"
                           onClick={() => setMobileMenuOpen(false)}
@@ -576,16 +710,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
           )}
         </AnimatePresence>
       </nav>
-
-      {(menuOpen || exploreOpen) && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => {
-            setMenuOpen(false);
-            setExploreOpen(false);
-          }}
-        />
-      )}
     </>
   );
 };

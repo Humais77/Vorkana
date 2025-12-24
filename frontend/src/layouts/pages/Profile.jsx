@@ -1,4 +1,4 @@
-// Profile.jsx - OPTIMIZED VERSION
+// Profile.jsx - OPTIMIZED VERSION (FIXED)
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -81,7 +81,7 @@ const ProfileSection = memo(({
 
 ProfileSection.displayName = 'ProfileSection';
 
-const ProfileHeader = memo(({ user, profileCompletion, onProfilePictureClick, isUploadingPicture }) => (
+const ProfileHeader = memo(({ user, profileCompletion, onProfilePictureClick, isUploadingPicture, isLoading }) => (
   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8" itemScope itemType="https://schema.org/Person">
     <div className="flex items-center gap-4">
       <div className="relative group">
@@ -109,10 +109,12 @@ const ProfileHeader = memo(({ user, profileCompletion, onProfilePictureClick, is
       <div>
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900" itemProp="name">{user?.name}</h1>
         <p className="text-gray-600 mt-1" itemProp="email">{user?.email}</p>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-sm text-gray-500">Profile: {profileCompletion}% complete</span>
-          {profileCompletion >= 80 && <Award className="w-4 h-4 text-yellow-500" />}
-        </div>
+        {!isLoading && (
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-sm text-gray-500">Profile: {profileCompletion}% complete</span>
+            {profileCompletion >= 80 && <Award className="w-4 h-4 text-yellow-500" />}
+          </div>
+        )}
       </div>
     </div>
 
@@ -146,9 +148,10 @@ const SetupPrompt = memo(({
   onDismiss, 
   onCompleteNow, 
   onSaveAll, 
-  isSaving 
+  isSaving,
+  isLoading 
 }) => {
-  if (!showSetupPrompt) return null;
+  if (!showSetupPrompt || isLoading) return null;
 
   return (
     <div className="mb-8 bg-white rounded-lg border border-gray-200 shadow-sm p-6">
@@ -220,6 +223,55 @@ const SetupPrompt = memo(({
 
 SetupPrompt.displayName = 'SetupPrompt';
 
+const LoadingSkeleton = memo(() => (
+  <div className="min-h-screen bg-gray-50 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Header Skeleton */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-24 h-24 bg-gray-200 rounded-full animate-pulse"></div>
+          <div className="space-y-3">
+            <div className="h-8 w-48 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column */}
+        <div className="lg:col-span-2 space-y-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
+              <div className="h-6 bg-gray-200 rounded mb-4 w-1/3"></div>
+              <div className="space-y-2">
+                <div className="h-4 bg-gray-200 rounded"></div>
+                <div className="h-4 bg-gray-200 rounded"></div>
+                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Right Column */}
+        <div className="space-y-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
+              <div className="h-6 bg-gray-200 rounded mb-4 w-1/2"></div>
+              <div className="space-y-3">
+                <div className="h-4 bg-gray-200 rounded"></div>
+                <div className="h-4 bg-gray-200 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+));
+
+LoadingSkeleton.displayName = 'LoadingSkeleton';
+
 const UnsavedChangesBanner = memo(({ isSaving, onSaveAll, onCancel }) => (
   <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200">
     <div className="flex items-center justify-between">
@@ -251,12 +303,18 @@ UnsavedChangesBanner.displayName = 'UnsavedChangesBanner';
 // Main Profile Component
 const Profile = () => {
   const navigate = useNavigate();
-  const { user, isAuthenticated, setUser } = useAuthStore();
+  const { user: authUser, isAuthenticated, setUser } = useAuthStore();
   const fileInputRef = useRef(null);
 
-  // API hooks
+  // API hooks - IMPORTANT: Get fresh profile data
   const updateProfileMutation = useUpdateProfile();
-  const { refetch: refetchProfile } = useGetProfile();
+  const { 
+    data: profileData, 
+    isLoading: isLoadingProfile,
+    refetch: refetchProfile,
+    isSuccess: isProfileLoaded
+  } = useGetProfile();
+
   const { uploadProfilePicture } = useProfilePicture();
 
   // States
@@ -266,9 +324,14 @@ const Profile = () => {
   const [showSetupPrompt, setShowSetupPrompt] = useState(false);
   const [newLanguage, setNewLanguage] = useState('');
 
-  // Form data
+  // Use the fresh profile data from API, fallback to auth store user
+  const user = useMemo(() => {
+    return profileData?.user || authUser;
+  }, [profileData, authUser]);
+
+  // Form data - initialize with user data
   const [formData, setFormData] = useState({
-    bio: '',  
+    bio: '',
     phoneNumber: '',
     country: '',
     city: '',
@@ -289,9 +352,11 @@ const Profile = () => {
     }
   });
 
-  // Memoized profile completion calculation
+  // Memoized profile completion calculation - only calculate when user data is loaded
   const { profileCompletion, missingFields, nextSuggestion } = useMemo(() => {
-    if (!user) return { profileCompletion: 0, missingFields: [], nextSuggestion: '' };
+    if (!user || isLoadingProfile) {
+      return { profileCompletion: 0, missingFields: [], nextSuggestion: 'Loading...' };
+    }
 
     const fieldWeights = {
       bio: { weight: 20, value: formData.bio?.trim() || user.bio?.trim() },
@@ -359,11 +424,11 @@ const Profile = () => {
       missingFields: missing,
       nextSuggestion
     };
-  }, [user, formData]);
+  }, [user, formData, isLoadingProfile]);
 
-  // Initialize form data
+  // Initialize form data when user data is loaded
   useEffect(() => {
-    if (user) {
+    if (user && !isLoadingProfile) {
       setFormData({
         bio: user.bio || '',
         phoneNumber: user.phoneNumber || '',
@@ -386,11 +451,12 @@ const Profile = () => {
         }
       });
 
+      // Only show setup prompt if profile is actually incomplete
       if (profileCompletion < 60) {
         setShowSetupPrompt(true);
       }
     }
-  }, [user]);
+  }, [user, isLoadingProfile, profileCompletion]);
 
   // Optimized handlers
   const handleProfilePictureClick = useCallback(() => {
@@ -417,8 +483,13 @@ const Profile = () => {
       const pictureUrl = await uploadProfilePicture(file);
       
       if (pictureUrl) {
-        setUser({ ...user, picture: pictureUrl });
+        // Update both local state and auth store
+        const updatedUser = { ...user, picture: pictureUrl };
+        setUser(updatedUser);
         toast.success('Profile picture updated!');
+        
+        // Refetch profile to ensure consistency
+        refetchProfile();
       }
     } catch (error) {
       console.error('Error uploading picture:', error);
@@ -427,7 +498,7 @@ const Profile = () => {
       setIsUploadingPicture(false);
       event.target.value = '';
     }
-  }, [user, uploadProfilePicture, setUser]);
+  }, [user, uploadProfilePicture, setUser, refetchProfile]);
 
   const handleSave = useCallback(async (field) => {
     if (isSaving || updateProfileMutation.isPending) return;
@@ -471,9 +542,13 @@ const Profile = () => {
         toast.success('Profile updated successfully!');
         setEditingField(null);
         
+        // Only hide setup prompt if profile is now complete enough
         if (profileCompletion >= 70) {
           setShowSetupPrompt(false);
         }
+        
+        // Refetch profile to get latest data
+        refetchProfile();
       }
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -481,7 +556,7 @@ const Profile = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [formData, isSaving, updateProfileMutation, profileCompletion, setUser]);
+  }, [formData, isSaving, updateProfileMutation, profileCompletion, setUser, refetchProfile]);
 
   const handleCancel = useCallback(() => {
     if (user) {
@@ -562,14 +637,19 @@ const Profile = () => {
   }, [missingFields]);
 
   const hasUnsavedChanges = useMemo(() => {
-    if (!user) return false;
+    if (!user || isLoadingProfile) return false;
     return Object.keys(formData).some(key => {
       if (key === 'privacySettings') {
         return JSON.stringify(formData[key]) !== JSON.stringify(user.privacySettings || {});
       }
       return formData[key] !== (user[key] || '');
     });
-  }, [user, formData]);
+  }, [user, formData, isLoadingProfile]);
+
+  // Show loading skeleton while fetching data
+  if (isLoadingProfile) {
+    return <LoadingSkeleton />;
+  }
 
   if (!isAuthenticated) {
     return (
@@ -582,6 +662,18 @@ const Profile = () => {
           >
             Sign In
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render main content until user data is available
+  if (!user && !isLoadingProfile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600">Loading profile data...</p>
         </div>
       </div>
     );
@@ -612,6 +704,7 @@ const Profile = () => {
             onCompleteNow={handleCompleteNow}
             onSaveAll={() => handleSave('all')}
             isSaving={isSaving}
+            isLoading={isLoadingProfile}
           />
 
           <ProfileHeader
@@ -619,262 +712,277 @@ const Profile = () => {
             profileCompletion={profileCompletion}
             onProfilePictureClick={handleProfilePictureClick}
             isUploadingPicture={isUploadingPicture}
+            isLoading={isLoadingProfile}
           />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column */}
-            <div className="lg:col-span-2 space-y-6">
-              <ProfileSection
-                title="About Me"
-                icon={User}
-                weight="20"
-                isEditing={editingField === 'bio'}
-                onEdit={() => setEditingField('bio')}
-                onCancel={handleCancel}
-              >
-                {editingField === 'bio' ? (
-                  <div>
-                    <textarea
-                      value={formData.bio}
-                      onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-lg resize-none mb-3"
-                      rows="4"
-                      placeholder="Tell us about yourself..."
-                      maxLength="500"
-                    />
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">{formData.bio.length}/500 characters</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleSave('bio')}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
+          {isLoadingProfile ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Loading skeleton for content */}
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
+                  <div className="h-6 bg-gray-200 rounded mb-4 w-1/3"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-gray-200 rounded"></div>
+                    <div className="h-4 bg-gray-200 rounded"></div>
                   </div>
-                ) : (
-                  <p className="text-gray-600">
-                    {formData.bio || (
-                      <span className="text-gray-400">
-                        Add a bio to introduce yourself
-                      </span>
-                    )}
-                  </p>
-                )}
-              </ProfileSection>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column */}
+              <div className="lg:col-span-2 space-y-6">
                 <ProfileSection
-                  title="Professional"
-                  icon={Briefcase}
-                  weight="30"
-                  isEditing={editingField === 'professional'}
-                  onEdit={() => setEditingField('professional')}
-                  onCancel={handleCancel}
-                >
-                  {editingField === 'professional' ? (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Occupation</label>
-                        <input
-                          type="text"
-                          value={formData.occupation}
-                          onChange={(e) => setFormData(prev => ({ ...prev, occupation: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-lg"
-                          placeholder="Your occupation"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Education</label>
-                        <input
-                          type="text"
-                          value={formData.education}
-                          onChange={(e) => setFormData(prev => ({ ...prev, education: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-lg"
-                          placeholder="Your education"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleSave('professional')}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div>
-                        <h4 className="text-sm text-gray-500">Occupation</h4>
-                        <p className="text-gray-900">
-                          {formData.occupation || 'Not specified'}
-                        </p>
-                      </div>
-                      <div>
-                        <h4 className="text-sm text-gray-500">Education</h4>
-                        <p className="text-gray-900">
-                          {formData.education || 'Not specified'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </ProfileSection>
-
-                <ProfileSection
-                  title="Personal"
+                  title="About Me"
                   icon={User}
-                  weight="10"
-                  isEditing={editingField === 'personal'}
-                  onEdit={() => setEditingField('personal')}
+                  weight="20"
+                  isEditing={editingField === 'bio'}
+                  onEdit={() => setEditingField('bio')}
                   onCancel={handleCancel}
                 >
-                  {editingField === 'personal' ? (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Gender</label>
-                        <select
-                          value={formData.gender}
-                          onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="">Select gender</option>
-                          <option value="male">Male</option>
-                          <option value="female">Female</option>
-                          <option value="other">Other</option>
-                          <option value="prefer-not-to-say">Prefer not to say</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Date of Birth</label>
-                        <input
-                          type="date"
-                          value={formData.dateOfBirth}
-                          onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-lg"
-                          max={new Date().toISOString().split('T')[0]}
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleSave('personal')}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                        >
-                          {isSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancel}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div>
-                        <h4 className="text-sm text-gray-500">Gender</h4>
-                        <p className="text-gray-900 capitalize">
-                          {formData.gender ? formData.gender.replace(/-/g, ' ') : 'Not specified'}
-                        </p>
-                      </div>
-                      <div>
-                        <h4 className="text-sm text-gray-500">Date of Birth</h4>
-                        <p className="text-gray-900">
-                          {formData.dateOfBirth ? format(new Date(formData.dateOfBirth), 'MMM d, yyyy') : 'Not specified'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </ProfileSection>
-              </div>
-
-              <ProfileSection
-                title="Languages"
-                icon={Languages}
-                weight="10"
-                isEditing={editingField === 'languages'}
-                onEdit={() => setEditingField('languages')}
-                onCancel={handleCancel}
-              >
-                {editingField === 'languages' ? (
-                  <div>
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="text"
-                        value={newLanguage}
-                        onChange={(e) => setNewLanguage(e.target.value)}
-                        placeholder="Add language"
-                        className="flex-1 p-2 border border-gray-300 rounded-lg"
-                        onKeyPress={(e) => e.key === 'Enter' && addLanguage()}
+                  {editingField === 'bio' ? (
+                    <div>
+                      <textarea
+                        value={formData.bio}
+                        onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
+                        className="w-full p-3 border border-gray-300 rounded-lg resize-none mb-3"
+                        rows="4"
+                        placeholder="Tell us about yourself..."
+                        maxLength="500"
                       />
-                      <button
-                        onClick={addLanguage}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {formData.languages.map((language, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full"
-                        >
-                          {language}
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-500">{formData.bio.length}/500 characters</span>
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => removeLanguage(language)}
-                            className="text-gray-500 hover:text-gray-700"
+                            onClick={() => handleSave('bio')}
+                            disabled={isSaving}
+                            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
                           >
-                            ×
+                            {isSaving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancel}
+                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                          >
+                            Cancel
                           </button>
                         </div>
-                      ))}
+                      </div>
                     </div>
-                    
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSave('languages')}
-                        disabled={isSaving}
-                        className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                      >
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button
-                        onClick={handleCancel}
-                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {formData.languages.length > 0 ? (
-                      formData.languages.map((language, index) => (
-                        <span
-                          key={index}
-                          className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                  ) : (
+                    <p className="text-gray-600">
+                      {formData.bio || (
+                        <span className="text-gray-400">
+                          Add a bio to introduce yourself
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </ProfileSection>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <ProfileSection
+                    title="Professional"
+                    icon={Briefcase}
+                    weight="30"
+                    isEditing={editingField === 'professional'}
+                    onEdit={() => setEditingField('professional')}
+                    onCancel={handleCancel}
+                  >
+                    {editingField === 'professional' ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Occupation</label>
+                          <input
+                            type="text"
+                            value={formData.occupation}
+                            onChange={(e) => setFormData(prev => ({ ...prev, occupation: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg"
+                            placeholder="Your occupation"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Education</label>
+                          <input
+                            type="text"
+                            value={formData.education}
+                            onChange={(e) => setFormData(prev => ({ ...prev, education: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg"
+                            placeholder="Your education"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSave('professional')}
+                            disabled={isSaving}
+                            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                          >
+                            {isSaving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancel}
+                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <h4 className="text-sm text-gray-500">Occupation</h4>
+                          <p className="text-gray-900">
+                            {formData.occupation || 'Not specified'}
+                          </p>
+                        </div>
+                        <div>
+                          <h4 className="text-sm text-gray-500">Education</h4>
+                          <p className="text-gray-900">
+                            {formData.education || 'Not specified'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </ProfileSection>
+
+                  <ProfileSection
+                    title="Personal"
+                    icon={User}
+                    weight="10"
+                    isEditing={editingField === 'personal'}
+                    onEdit={() => setEditingField('personal')}
+                    onCancel={handleCancel}
+                  >
+                    {editingField === 'personal' ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Gender</label>
+                          <select
+                            value={formData.gender}
+                            onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg"
+                          >
+                            <option value="">Select gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                            <option value="prefer-not-to-say">Prefer not to say</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Date of Birth</label>
+                          <input
+                            type="date"
+                            value={formData.dateOfBirth}
+                            onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg"
+                            max={new Date().toISOString().split('T')[0]}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSave('personal')}
+                            disabled={isSaving}
+                            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                          >
+                            {isSaving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancel}
+                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <h4 className="text-sm text-gray-500">Gender</h4>
+                          <p className="text-gray-900 capitalize">
+                            {formData.gender ? formData.gender.replace(/-/g, ' ') : 'Not specified'}
+                          </p>
+                        </div>
+                        <div>
+                          <h4 className="text-sm text-gray-500">Date of Birth</h4>
+                          <p className="text-gray-900">
+                            {formData.dateOfBirth ? format(new Date(formData.dateOfBirth), 'MMM d, yyyy') : 'Not specified'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </ProfileSection>
+                </div>
+
+                <ProfileSection
+                  title="Languages"
+                  icon={Languages}
+                  weight="10"
+                  isEditing={editingField === 'languages'}
+                  onEdit={() => setEditingField('languages')}
+                  onCancel={handleCancel}
+                >
+                  {editingField === 'languages' ? (
+                    <div>
+                      <div className="flex gap-2 mb-3">
+                        <input
+                          type="text"
+                          value={newLanguage}
+                          onChange={(e) => setNewLanguage(e.target.value)}
+                          placeholder="Add language"
+                          className="flex-1 p-2 border border-gray-300 rounded-lg"
+                          onKeyPress={(e) => e.key === 'Enter' && addLanguage()}
+                        />
+                        <button
+                          onClick={addLanguage}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
                         >
-                          {language}
+                          <Plus className="w-5 h-5" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {formData.languages.map((language, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full"
+                          >
+                            {language}
+                            <button
+                              onClick={() => removeLanguage(language)}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave('languages')}
+                          disabled={isSaving}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                        >
+                          {isSaving ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={handleCancel}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.languages.length > 0 ? (
+                        formData.languages.map((language, index) => (
+                          <span
+                            key={index}
+                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                          >
+                            {language}
                         </span>
                       ))
                     ) : (
@@ -1193,6 +1301,7 @@ const Profile = () => {
               </ProfileSection>
             </div>
           </div>
+          )}
 
           {hasUnsavedChanges && editingField && (
             <UnsavedChangesBanner
