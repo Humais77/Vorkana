@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -35,9 +35,19 @@ import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore';
-import { isProfileCompleteEnough } from '../../utils/profileUtils'
+import { isProfileCompleteEnough } from '../../utils/profileUtils';
 import { SeoWrapper } from '../../components/SeoWrapper';
 import { generateCreateServiceStructuredData, generateServiceCreationStructuredData } from '../../utils/seoStructuredData';
+import { ImageUploadPlaceholder, ValidationPlaceholder } from './components/LoadingPlaceholder.jsx';
+
+// Lazy load heavy components
+const ImageUploadPreview = lazy(() => import('../../components/ImageUploadPreview'));
+const ValidationSummary = lazy(() => import('../../components/ValidationSummary'));
+
+// Cache for form data
+const formDataCache = new Map();
+const CACHE_KEY = 'create-service-form';
+
 const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
@@ -50,46 +60,54 @@ const CreateService = () => {
     refetch: refetchCategories 
   } = useCategories();
   
-  const { user:currentUser } = useAuthStore();
+  const { user: currentUser } = useAuthStore();
   
   // Form state with all fields from service model
-  const [formData, setFormData] = useState({
-    // Basic Information
-    title: '',
-    description: '',
-    shortDescription: '',
-    category: '',
-    subcategory: '',
-    userLevel: 'new',
+  const [formData, setFormData] = useState(() => {
+    // Try to load from cache
+    const cachedData = formDataCache.get(CACHE_KEY);
+    if (cachedData) {
+      return cachedData;
+    }
+    
+    return {
+      // Basic Information
+      title: '',
+      description: '',
+      shortDescription: '',
+      category: '',
+      subcategory: '',
+      userLevel: 'new',
 
-    // Pricing & Delivery
-    price: '',
-    currency: 'USD',
-    deliveryTime: '',
-    deliveryTimeUnit: 'days',
-    revisions: 1,
+      // Pricing & Delivery
+      price: '',
+      currency: 'USD',
+      deliveryTime: '',
+      deliveryTimeUnit: 'days',
+      revisions: 1,
 
-    // Arrays
-    tags: [],
-    features: [],
-    requirements: [],
-    faqs: [],
-    packages: [],
-    searchKeywords: [],
+      // Arrays
+      tags: [],
+      features: [],
+      requirements: [],
+      faqs: [],
+      packages: [],
+      searchKeywords: [],
 
-    // Metadata
-    metaTitle: '',
-    metaDescription: '',
-    gigType: 'basic',
+      // Metadata
+      metaTitle: '',
+      metaDescription: '',
+      gigType: 'basic',
 
-    // Status
-    status: 'draft',
+      // Status
+      status: 'draft',
 
-    // Optional fields with defaults
-    sellerLevel: 'new',
-    isFeatured: false,
-    isRecommended: false,
-    isPopular: false,
+      // Optional fields with defaults
+      sellerLevel: 'new',
+      isFeatured: false,
+      isRecommended: false,
+      isPopular: false,
+    };
   });
 
   // Component states
@@ -128,6 +146,36 @@ const CreateService = () => {
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
 
+  // Cache form data on unmount
+  useEffect(() => {
+    return () => {
+      formDataCache.set(CACHE_KEY, formData);
+    };
+  }, [formData]);
+
+  // Memoize expensive computations
+  const selectedCategory = useMemo(() => {
+    if (!formData.category || !categoriesData || !Array.isArray(categoriesData)) return null;
+    return categoriesData.find(cat => cat._id === formData.category);
+  }, [formData.category, categoriesData]);
+
+  const selectedSubcategory = useMemo(() => {
+    if (!formData.subcategory) return null;
+    return subcategories.find(s => s._id === formData.subcategory);
+  }, [formData.subcategory, subcategories]);
+
+  // Completion percentage memoized
+  const completionPercentage = useMemo(() => {
+    const fields = ['title', 'description', 'category', 'price', 'deliveryTime'];
+    const completed = fields.filter(f => {
+      if (f === 'price' || f === 'deliveryTime') {
+        return formData[f] && !isNaN(parseFloat(formData[f])) && parseFloat(formData[f]) > 0;
+      }
+      return formData[f] && formData[f].toString().trim().length > 0;
+    }).length;
+    return Math.round((completed / fields.length) * 100);
+  }, [formData]);
+
   useEffect(() => {
     if (!isProfileCompleteEnough(currentUser, 70)) {
       toast.error('Please complete your profile before creating a service');
@@ -139,11 +187,11 @@ const CreateService = () => {
   useEffect(() => {
     if (formData.category && categoriesData && Array.isArray(categoriesData)) {
       // Find the selected category
-      const selectedCategory = categoriesData.find(cat => cat._id === formData.category);
+      const category = selectedCategory;
       
-      if (selectedCategory) {
+      if (category) {
         // If categories have subcategories field
-        const subs = selectedCategory.children || selectedCategory.subcategories || [];
+        const subs = category.children || category.subcategories || [];
         setSubcategories(subs);
         
         // Reset subcategory if parent category changes and subcategory is not valid
@@ -158,18 +206,19 @@ const CreateService = () => {
       setSubcategories([]);
       setFormData(prev => ({ ...prev, subcategory: '' }));
     }
-  }, [formData.category, categoriesData]);
+  }, [formData.category, categoriesData, selectedCategory]);
 
-  const handleInputChange = (e) => {
+  // Memoized handlers
+  const handleInputChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
-  };
+  }, []);
 
   // Tag Management
-  const handleAddTag = () => {
+  const handleAddTag = useCallback(() => {
     if (newTag.trim() && !formData.tags.includes(newTag.trim()) && formData.tags.length < 20) {
       setFormData(prev => ({
         ...prev,
@@ -180,18 +229,18 @@ const CreateService = () => {
     } else if (formData.tags.length >= 20) {
       toast.error('Maximum 20 tags allowed');
     }
-  };
+  }, [newTag, formData.tags]);
 
-  const handleRemoveTag = (tagToRemove) => {
+  const handleRemoveTag = useCallback((tagToRemove) => {
     setFormData(prev => ({
       ...prev,
       tags: prev.tags.filter(tag => tag !== tagToRemove)
     }));
     toast.success('Tag removed');
-  };
+  }, []);
 
   // Search Keywords Management
-  const handleAddKeyword = () => {
+  const handleAddKeyword = useCallback(() => {
     if (newKeyword.trim() && !formData.searchKeywords.includes(newKeyword.trim()) && formData.searchKeywords.length < 20) {
       setFormData(prev => ({
         ...prev,
@@ -202,18 +251,18 @@ const CreateService = () => {
     } else if (formData.searchKeywords.length >= 20) {
       toast.error('Maximum 20 keywords allowed');
     }
-  };
+  }, [newKeyword, formData.searchKeywords]);
 
-  const handleRemoveKeyword = (keywordToRemove) => {
+  const handleRemoveKeyword = useCallback((keywordToRemove) => {
     setFormData(prev => ({
       ...prev,
       searchKeywords: prev.searchKeywords.filter(keyword => keyword !== keywordToRemove)
     }));
     toast.success('Keyword removed');
-  };
+  }, []);
 
   // Features Management
-  const handleAddFeature = () => {
+  const handleAddFeature = useCallback(() => {
     if (newFeature.title.trim()) {
       setFormData(prev => ({
         ...prev,
@@ -222,18 +271,18 @@ const CreateService = () => {
       setNewFeature({ title: '', description: '', included: true });
       toast.success('Feature added');
     }
-  };
+  }, [newFeature]);
 
-  const handleRemoveFeature = (index) => {
+  const handleRemoveFeature = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       features: prev.features.filter((_, i) => i !== index)
     }));
     toast.success('Feature removed');
-  };
+  }, []);
 
   // Requirements Management
-  const handleAddRequirementOption = () => {
+  const handleAddRequirementOption = useCallback(() => {
     if (newRequirementOption.trim() && newRequirement.options.length < 20) {
       setNewRequirement(prev => ({
         ...prev,
@@ -242,17 +291,17 @@ const CreateService = () => {
       setNewRequirementOption('');
       toast.success('Option added');
     }
-  };
+  }, [newRequirementOption, newRequirement.options]);
 
-  const handleRemoveRequirementOption = (optionToRemove) => {
+  const handleRemoveRequirementOption = useCallback((optionToRemove) => {
     setNewRequirement(prev => ({
       ...prev,
       options: prev.options.filter(option => option !== optionToRemove)
     }));
     toast.success('Option removed');
-  };
+  }, []);
 
-  const handleAddRequirement = () => {
+  const handleAddRequirement = useCallback(() => {
     if (newRequirement.question.trim()) {
       setFormData(prev => ({
         ...prev,
@@ -266,18 +315,18 @@ const CreateService = () => {
       });
       toast.success('Requirement added');
     }
-  };
+  }, [newRequirement]);
 
-  const handleRemoveRequirement = (index) => {
+  const handleRemoveRequirement = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       requirements: prev.requirements.filter((_, i) => i !== index)
     }));
     toast.success('Requirement removed');
-  };
+  }, []);
 
   // FAQs Management
-  const handleAddFAQ = () => {
+  const handleAddFAQ = useCallback(() => {
     if (newFAQ.question.trim() && newFAQ.answer.trim()) {
       setFormData(prev => ({
         ...prev,
@@ -286,18 +335,18 @@ const CreateService = () => {
       setNewFAQ({ question: '', answer: '' });
       toast.success('FAQ added');
     }
-  };
+  }, [newFAQ]);
 
-  const handleRemoveFAQ = (index) => {
+  const handleRemoveFAQ = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       faqs: prev.faqs.filter((_, i) => i !== index)
     }));
     toast.success('FAQ removed');
-  };
+  }, []);
 
   // Packages Management
-  const handleAddPackageFeature = () => {
+  const handleAddPackageFeature = useCallback(() => {
     if (newPackageFeature.trim() && newPackage.features.length < 20) {
       setNewPackage(prev => ({
         ...prev,
@@ -306,17 +355,17 @@ const CreateService = () => {
       setNewPackageFeature('');
       toast.success('Package feature added');
     }
-  };
+  }, [newPackageFeature, newPackage.features]);
 
-  const handleRemovePackageFeature = (featureToRemove) => {
+  const handleRemovePackageFeature = useCallback((featureToRemove) => {
     setNewPackage(prev => ({
       ...prev,
       features: prev.features.filter(feature => feature !== featureToRemove)
     }));
     toast.success('Package feature removed');
-  };
+  }, []);
 
-  const handleAddPackage = () => {
+  const handleAddPackage = useCallback(() => {
     if (newPackage.name.trim() && newPackage.price && newPackage.deliveryTime) {
       setFormData(prev => ({
         ...prev,
@@ -337,21 +386,19 @@ const CreateService = () => {
       });
       toast.success('Package added');
     }
-  };
+  }, [newPackage]);
 
-  const handleRemovePackage = (index) => {
+  const handleRemovePackage = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       packages: prev.packages.filter((_, i) => i !== index)
     }));
     toast.success('Package removed');
-  };
+  }, []);
 
-  // Validation
-  const validateForm = () => {
+  // Validation - memoized
+  const validateForm = useCallback(() => {
     const errors = [];
-
-    console.group('=== FORM VALIDATION ===');
 
     // Title validation
     if (!formData.title.trim()) {
@@ -418,13 +465,10 @@ const CreateService = () => {
       errors.push('Delivery time cannot exceed 365 days');
     }
 
-    console.groupEnd();
-    console.log('Total validation errors:', errors.length);
-
     return errors;
-  };
+  }, [formData, categoriesData, subcategories]);
 
-  const handleImageUpload = async (files) => {
+  const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
     
     const newFiles = Array.from(files);
@@ -470,9 +514,9 @@ const CreateService = () => {
     } finally {
       setUploadingImages(false);
     }
-  };
+  }, [uploadingImages, uploadedImages]);
 
-  const handleThumbnailUpload = (file) => {
+  const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
     
     // Validate file
@@ -496,30 +540,55 @@ const CreateService = () => {
     });
     
     toast.success('Thumbnail selected');
-  };
+  }, [uploadingThumbnail]);
 
-  const removeImage = (index) => {
+  const removeImage = useCallback((index) => {
     const image = uploadedImages[index];
     URL.revokeObjectURL(image.preview); // Clean up memory
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
     toast.success('Image removed');
-  };
+  }, [uploadedImages]);
 
-  const removeThumbnail = () => {
+  const removeThumbnail = useCallback(() => {
     if (thumbnailFile) {
       URL.revokeObjectURL(thumbnailFile.preview);
       setThumbnailFile(null);
       toast.success('Thumbnail removed');
     }
-  };
+  }, [thumbnailFile]);
+
+  // Helper function to handle Enter key press
+  const handleKeyPress = useCallback((e, type) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      switch(type) {
+        case 'tag': handleAddTag(); break;
+        case 'keyword': handleAddKeyword(); break;
+        case 'feature': handleAddFeature(); break;
+        case 'requirement': handleAddRequirement(); break;
+        case 'requirementOption': handleAddRequirementOption(); break;
+        case 'faq': handleAddFAQ(); break;
+        case 'packageFeature': handleAddPackageFeature(); break;
+        case 'package': handleAddPackage(); break;
+      }
+    }
+  }, [
+    handleAddTag, 
+    handleAddKeyword, 
+    handleAddFeature, 
+    handleAddRequirement, 
+    handleAddRequirementOption, 
+    handleAddFAQ, 
+    handleAddPackageFeature, 
+    handleAddPackage
+  ]);
 
   // Submit Handler
-  const handleSubmit = async (e, status = 'draft') => {
+  const handleSubmit = useCallback(async (e, status = 'draft') => {
     e.preventDefault();
 
     // Check if user is logged in
     const token = localStorage.getItem('token') || localStorage.getItem('userToken');
-    console.log('Auth token exists:', !!token);
 
     if (!token) {
       toast.error('Please login to create a service');
@@ -540,7 +609,6 @@ const CreateService = () => {
 
     // Client-side validation
     const validationErrors = validateForm();
-    console.log('Validation errors:', validationErrors);
 
     if (validationErrors.length > 0) {
       validationErrors.forEach(error => {
@@ -552,8 +620,6 @@ const CreateService = () => {
       }
       return;
     }
-
-    console.log('Validation passed');
 
     // Prepare data with proper type conversion
     const serviceData = {
@@ -618,22 +684,16 @@ const CreateService = () => {
       submitFormData.append('images', img.file);
     });
 
-    console.log('Final service data to submit:', JSON.stringify(serviceData, null, 2));
-    console.log('Selected category ID:', formData.category);
-
     try {
       await createServiceMutation.mutateAsync({
         serviceData: serviceData,
         files: submitFormData
       });
       
-      // Navigation is handled in the mutation's onSuccess callback
+      // Clear cache on successful submission
+      formDataCache.delete(CACHE_KEY);
       
     } catch (error) {
-      console.error('=== CREATE SERVICE ERROR ===');
-      console.error('Full error:', error);
-      
-      // Handle specific error messages
       if (error.message.includes('Category not found') || error.message.includes('Invalid category')) {
         toast.error('Invalid category selected. Please refresh the page and select a valid category.');
         await refetchCategories();
@@ -643,41 +703,20 @@ const CreateService = () => {
         toast.error(error.message || 'Failed to create service');
       }
     }
-  };
+  }, [
+    formData, 
+    validateForm, 
+    categoryLoading, 
+    categoryError, 
+    navigate, 
+    createServiceMutation, 
+    thumbnailFile, 
+    uploadedImages, 
+    refetchCategories
+  ]);
 
-  // Get category name for display
-  const getCategoryName = () => {
-    if (!formData.category || !categoriesData || !Array.isArray(categoriesData)) return "";
-    const category = categoriesData.find(c => c._id === formData.category);
-    return category?.name || "";
-  };
-
-  // Get subcategory name for display
-  const getSubcategoryName = () => {
-    if (!formData.subcategory) return "";
-    const subcategory = subcategories.find(s => s._id === formData.subcategory);
-    return subcategory?.name || "";
-  };
-
-  // Helper function to handle Enter key press
-  const handleKeyPress = (e, type) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      switch(type) {
-        case 'tag': handleAddTag(); break;
-        case 'keyword': handleAddKeyword(); break;
-        case 'feature': handleAddFeature(); break;
-        case 'requirement': handleAddRequirement(); break;
-        case 'requirementOption': handleAddRequirementOption(); break;
-        case 'faq': handleAddFAQ(); break;
-        case 'packageFeature': handleAddPackageFeature(); break;
-        case 'package': handleAddPackage(); break;
-      }
-    }
-  };
-
-  // Fill test data (for development only)
-  const fillTestData = () => {
+  // Fill test data (for development only) - memoized
+  const fillTestData = useCallback(() => {
     if (process.env.NODE_ENV !== 'development') return;
     
     // Check if we have categories loaded
@@ -784,11 +823,98 @@ const CreateService = () => {
     });
     
     toast.success("Test data filled. Please review and submit.");
-  };
+  }, [categoriesData]);
+
+  // Memoized JSX components
+  const QuickStats = useMemo(() => (
+    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-8 border border-blue-100">
+      <div className="flex flex-wrap gap-6">
+        <div className="flex items-center">
+          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+            <Target className="w-4 h-4 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Required Fields</p>
+            <p className="font-semibold text-gray-900">5</p>
+          </div>
+        </div>
+        <div className="flex items-center">
+          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Completion</p>
+            <p className="font-semibold text-gray-900">{completionPercentage}%</p>
+          </div>
+        </div>
+        <div className="flex items-center">
+          <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
+            <Shield className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Security</p>
+            <p className="font-semibold text-gray-900">Verified</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), [completionPercentage]);
+
+  const ActionButtons = useMemo(() => (
+    <div className="flex flex-col sm:flex-row gap-4 pt-8">
+      <button
+        type="button"
+        onClick={() => navigate('/profile')}
+        disabled={createServiceMutation.isPending}
+        className="px-8 py-4 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Cancel
+      </button>
+
+      <div className="flex flex-col sm:flex-row gap-4 flex-1">
+        <button
+          type="submit"
+          disabled={createServiceMutation.isPending || categoryLoading}
+          className="flex-1 px-8 py-4 bg-gray-600 text-white font-medium rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          {createServiceMutation.isPending ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-5 h-5 mr-2" />
+              Save as Draft
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => handleSubmit(e, 'active')}
+          disabled={createServiceMutation.isPending || categoryLoading}
+          className="flex-1 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          {createServiceMutation.isPending ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              Publishing...
+            </>
+          ) : (
+            <>
+              <Zap className="w-5 h-5 mr-2" />
+              Publish Service
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  ), [createServiceMutation.isPending, categoryLoading, navigate, handleSubmit]);
 
   return (
     <SeoWrapper
-    title="Create Service - List Your Freelance Skills | Vorkana"
+      title="Create Service - List Your Freelance Skills | Vorkana"
       description="Easily create and publish your freelance service on Vorkana. Complete step-by-step form with categories, pricing, packages, and SEO optimization. Start earning today!"
       keywords="create freelance service, list services, sell skills online, freelance marketplace, service creation, gig setup, service listing"
       canonical="/create-service"
@@ -801,7 +927,6 @@ const CreateService = () => {
         { name: "Create Service", url: "/create-service" }
       ]}
     >
-
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8">
         <div className="max-w-6xl mx-auto px-4">
           {/* Header */}
@@ -829,49 +954,7 @@ const CreateService = () => {
               )}
             </div>
 
-            {/* Quick Stats */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-8 border border-blue-100">
-              <div className="flex flex-wrap gap-6">
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                    <Target className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Required Fields</p>
-                    <p className="font-semibold text-gray-900">5</p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Completion</p>
-                    <p className="font-semibold text-gray-900">
-                      {(() => {
-                        const fields = ['title', 'description', 'category', 'price', 'deliveryTime'];
-                        const completed = fields.filter(f => {
-                          if (f === 'price' || f === 'deliveryTime') {
-                            return formData[f] && !isNaN(parseFloat(formData[f])) && parseFloat(formData[f]) > 0;
-                          }
-                          return formData[f] && formData[f].toString().trim().length > 0;
-                        }).length;
-                        return `${Math.round((completed / fields.length) * 100)}%`;
-                      })()}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
-                    <Shield className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Security</p>
-                    <p className="font-semibold text-gray-900">Verified</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {QuickStats}
           </div>
 
           <form onSubmit={(e) => handleSubmit(e, 'draft')} className="space-y-8">
@@ -882,163 +965,165 @@ const CreateService = () => {
                 Basic Information
               </h2>
               
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                  <Upload className="w-6 h-6 mr-2 text-blue-600" />
-                  Service Images
-                </h2>
+              <Suspense  fallback={<ImageUploadPlaceholder />}>
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+                  <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                    <Upload className="w-6 h-6 mr-2 text-blue-600" />
+                    Service Images
+                  </h2>
 
-                <div className="space-y-8">
-                  {/* Image Upload */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
-                    <div className="space-y-4">
-                      {/* Upload Area */}
-                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
-                        <input
-                          type="file"
-                          id="image-upload"
-                          multiple
-                          accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                          onChange={(e) => handleImageUpload(e.target.files)}
-                          className="hidden"
-                          disabled={uploadingImages || createServiceMutation.isPending}
-                        />
-                        <label htmlFor="image-upload" className="cursor-pointer">
-                          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h4 className="text-lg font-medium text-gray-900 mb-2">
-                            Upload Service Images
-                          </h4>
-                          <p className="text-gray-600 mb-4">
-                            Drag & drop images or click to browse
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
-                          </p>
-                        </label>
-                      </div>
-
-                      {/* Image Preview Grid */}
-                      {uploadedImages.length > 0 && (
-                        <div>
-                          <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-medium text-gray-900">
-                              Selected Images ({uploadedImages.length}/10)
-                            </h4>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-                                setUploadedImages([]);
-                              }}
-                              className="text-sm text-red-600 hover:text-red-700"
-                              disabled={createServiceMutation.isPending}
-                            >
-                              Remove All
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                            {uploadedImages.map((image, index) => (
-                              <div key={index} className="relative group">
-                                <img
-                                  src={image.preview}
-                                  alt={`Preview ${index + 1}`}
-                                  className="w-full h-32 object-cover rounded-lg"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => removeImage(index)}
-                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  disabled={createServiceMutation.isPending}
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
-                                  {image.name.substring(0, 20)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Thumbnail Upload */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
-                    <div className="space-y-4">
-                      <p className="text-gray-600 text-sm">
-                        The thumbnail is the main image displayed in service listings. 
-                        It should be eye-catching and representative of your service.
-                      </p>
-
-                      {thumbnailFile ? (
-                        <div className="flex items-start gap-4">
-                          <div className="relative">
-                            <img
-                              src={thumbnailFile.preview}
-                              alt="Thumbnail preview"
-                              className="w-32 h-32 object-cover rounded-lg"
-                            />
-                            <button
-                              type="button"
-                              onClick={removeThumbnail}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                              disabled={createServiceMutation.isPending}
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
-                            <p className="text-gray-500 text-sm">
-                              {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
-                            </p>
-                            <p className="text-gray-500 text-sm mt-2">
-                              This image will be used as the service thumbnail.
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                  <div className="space-y-8">
+                    {/* Image Upload */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
+                      <div className="space-y-4">
+                        {/* Upload Area */}
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
                           <input
                             type="file"
-                            id="thumbnail-upload"
-                            accept="image/jpeg,image/jpg,image/png,image/webp"
-                            onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                            id="image-upload"
+                            multiple
+                            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                            onChange={(e) => handleImageUpload(e.target.files)}
                             className="hidden"
-                            disabled={uploadingThumbnail || createServiceMutation.isPending}
+                            disabled={uploadingImages || createServiceMutation.isPending}
                           />
-                          <label htmlFor="thumbnail-upload" className="cursor-pointer">
-                            <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                            <h4 className="text-lg font-medium text-gray-900 mb-1">
-                              Upload Thumbnail
+                          <label htmlFor="image-upload" className="cursor-pointer">
+                            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <h4 className="text-lg font-medium text-gray-900 mb-2">
+                              Upload Service Images
                             </h4>
-                            <p className="text-gray-600 text-sm mb-2">
-                              Recommended: 800×600 pixels, max 2MB
+                            <p className="text-gray-600 mb-4">
+                              Drag & drop images or click to browse
                             </p>
-                            <p className="text-gray-500 text-xs">
-                              Click to browse or drag & drop
+                            <p className="text-sm text-gray-500">
+                              Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
                             </p>
                           </label>
                         </div>
-                      )}
 
-                      {/* Tip */}
-                      {uploadedImages.length > 0 && !thumbnailFile && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-sm text-blue-700">
-                            <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
-                            after creating the service.
-                          </p>
-                        </div>
-                      )}
+                        {/* Image Preview Grid */}
+                        {uploadedImages.length > 0 && (
+                          <div>
+                            <div className="flex justify-between items-center mb-4">
+                              <h4 className="font-medium text-gray-900">
+                                Selected Images ({uploadedImages.length}/10)
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                                  setUploadedImages([]);
+                                }}
+                                className="text-sm text-red-600 hover:text-red-700"
+                                disabled={createServiceMutation.isPending}
+                              >
+                                Remove All
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                              {uploadedImages.map((image, index) => (
+                                <div key={index} className="relative group">
+                                  <img
+                                    src={image.preview}
+                                    alt={`Preview ${index + 1}`}
+                                    className="w-full h-32 object-cover rounded-lg"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeImage(index)}
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    disabled={createServiceMutation.isPending}
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                                    {image.name.substring(0, 20)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Thumbnail Upload */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+                      <div className="space-y-4">
+                        <p className="text-gray-600 text-sm">
+                          The thumbnail is the main image displayed in service listings. 
+                          It should be eye-catching and representative of your service.
+                        </p>
+
+                        {thumbnailFile ? (
+                          <div className="flex items-start gap-4">
+                            <div className="relative">
+                              <img
+                                src={thumbnailFile.preview}
+                                alt="Thumbnail preview"
+                                className="w-32 h-32 object-cover rounded-lg"
+                              />
+                              <button
+                                type="button"
+                                onClick={removeThumbnail}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                                disabled={createServiceMutation.isPending}
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                              <p className="text-gray-500 text-sm">
+                                {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
+                              </p>
+                              <p className="text-gray-500 text-sm mt-2">
+                                This image will be used as the service thumbnail.
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                            <input
+                              type="file"
+                              id="thumbnail-upload"
+                              accept="image/jpeg,image/jpg,image/png,image/webp"
+                              onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                              className="hidden"
+                              disabled={uploadingThumbnail || createServiceMutation.isPending}
+                            />
+                            <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                              <h4 className="text-lg font-medium text-gray-900 mb-1">
+                                Upload Thumbnail
+                              </h4>
+                              <p className="text-gray-600 text-sm mb-2">
+                                Recommended: 800×600 pixels, max 2MB
+                              </p>
+                              <p className="text-gray-500 text-xs">
+                                Click to browse or drag & drop
+                              </p>
+                            </label>
+                          </div>
+                        )}
+
+                        {/* Tip */}
+                        {uploadedImages.length > 0 && !thumbnailFile && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-sm text-blue-700">
+                              <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
+                              after creating the service.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </Suspense>
 
               <div className="space-y-6">
                 <div>
@@ -1141,7 +1226,7 @@ const CreateService = () => {
                     )}
                     {formData.subcategory && (
                       <p className="text-xs text-green-600 mt-2">
-                        Selected: <span className="font-medium">{getSubcategoryName()}</span>
+                        Selected: <span className="font-medium">{selectedSubcategory?.name || ''}</span>
                       </p>
                     )}
                   </div>
@@ -2050,149 +2135,100 @@ const CreateService = () => {
               </div>
             </div>
 
-          
-
-  {/* Validation Summary */}
-  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-    <h3 className="text-lg font-semibold text-yellow-800 mb-4 flex items-center">
-      <AlertCircle className="w-5 h-5 mr-2" />
-      Before You Submit
-    </h3>
-    
-    <div className="space-y-2">
-      <div className="flex items-center">
-        {formData.title.length >= 5 ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-          Title: {formData.title.length >= 5 ? '✓ Valid' : `Needs ${5 - formData.title.length} more characters`}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.description.length >= 50 ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.description.length >= 50 ? 'text-green-600' : 'text-red-600'}`}>
-          Description: {formData.description.length >= 50 ? '✓ Valid' : `Needs ${50 - formData.description.length} more characters`}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.shortDescription && formData.shortDescription.length >= 20 ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.shortDescription && formData.shortDescription.length >= 20 ? 'text-green-600' : 'text-red-600'}`}>
-          Short Description: {formData.shortDescription && formData.shortDescription.length >= 20 ? '✓ Valid' : `Needs ${20 - (formData.shortDescription?.length || 0)} more characters`}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.category ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.category ? 'text-green-600' : 'text-red-600'}`}>
-          Category: {formData.category ? '✓ Selected' : 'Required'}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.subcategory ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.subcategory ? 'text-green-600' : 'text-red-600'}`}>
-          Subcategory: {formData.subcategory ? '✓ Selected' : 'Required'}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.price && parseFloat(formData.price) >= 1 ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.price && parseFloat(formData.price) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-          Price: {formData.price && parseFloat(formData.price) >= 1 ? '✓ Valid' : 'Required ($1 minimum)'}
-        </span>
-      </div>
-      
-      <div className="flex items-center">
-        {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? (
-          <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-        )}
-        <span className={`text-sm ${formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-          Delivery Time: {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? '✓ Valid' : 'Required (1 day minimum)'}
-        </span>
-      </div>
-    </div>
-  </div>
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 pt-8">
-              <button
-                type="button"
-                onClick={() => navigate('/profile')}
-                disabled={createServiceMutation.isPending}
-                className="px-8 py-4 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-
-              <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                <button
-                  type="submit"
-                  disabled={createServiceMutation.isPending || categoryLoading}
-                  className="flex-1 px-8 py-4 bg-gray-600 text-white font-medium rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {createServiceMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5 mr-2" />
-                      Save as Draft
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => handleSubmit(e, 'active')}
-                  disabled={createServiceMutation.isPending || categoryLoading}
-                  className="flex-1 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {createServiceMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Publishing...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-5 h-5 mr-2" />
-                      Publish Service
-                    </>
-                  )}
-                </button>
+            {/* Validation Summary */}
+            <Suspense fallback={<ValidationPlaceholder />}>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-yellow-800 mb-4 flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  Before You Submit
+                </h3>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    {formData.title.length >= 5 ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
+                      Title: {formData.title.length >= 5 ? '✓ Valid' : `Needs ${5 - formData.title.length} more characters`}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.description.length >= 50 ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.description.length >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                      Description: {formData.description.length >= 50 ? '✓ Valid' : `Needs ${50 - formData.description.length} more characters`}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.shortDescription && formData.shortDescription.length >= 20 ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.shortDescription && formData.shortDescription.length >= 20 ? 'text-green-600' : 'text-red-600'}`}>
+                      Short Description: {formData.shortDescription && formData.shortDescription.length >= 20 ? '✓ Valid' : `Needs ${20 - (formData.shortDescription?.length || 0)} more characters`}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.category ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.category ? 'text-green-600' : 'text-red-600'}`}>
+                      Category: {formData.category ? '✓ Selected' : 'Required'}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.subcategory ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.subcategory ? 'text-green-600' : 'text-red-600'}`}>
+                      Subcategory: {formData.subcategory ? '✓ Selected' : 'Required'}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.price && parseFloat(formData.price) >= 1 ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.price && parseFloat(formData.price) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      Price: {formData.price && parseFloat(formData.price) >= 1 ? '✓ Valid' : 'Required ($1 minimum)'}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                    )}
+                    <span className={`text-sm ${formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      Delivery Time: {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? '✓ Valid' : 'Required (1 day minimum)'}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
+            </Suspense>
+
+            {ActionButtons}
           </form>
         </div>
       </div>
     </SeoWrapper>
-
   );
 };
 
