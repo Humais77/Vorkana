@@ -204,35 +204,45 @@ export const useChangePassword = () => {
   });
 };
 
-export const useGetProfile = () => {
+// In useAuth.js - Update the useGetProfile hook
+export const useGetProfile = (options = {}) => {
   const setUser = useAuthStore((state) => state.setUser);
+  const token = useAuthStore((state) => state.token);
   
   return useQuery({
     queryKey: ['userProfile'],
     queryFn: async () => {
-      const response = await authAPI.getProfile();
-      if (response.success && response.user) {
-        // Add cache busting to picture URL
-        if (response.user.picture) {
-          response.user.picture = `${response.user.picture.split('?')[0]}?t=${Date.now()}`;
+      try {
+        const response = await authAPI.getProfile();
+        if (response.success && response.user) {
+          // Add cache busting to picture URL
+          if (response.user.picture) {
+            response.user.picture = `${response.user.picture.split('?')[0]}?t=${Date.now()}`;
+          }
+          setUser(response.user);
         }
-        setUser(response.user);
+        return response;
+      } catch (error) {
+        console.error('Error fetching profile:', error);
+        throw error;
       }
-      return response;
     },
-    enabled: !!useAuthStore.getState().token,
-    retry: 1,
+    enabled: !!token && !options.skip, // Skip if requested
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 1000 * 60 * 2, // 2 minutes - shorter for fresh data
+    cacheTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: true, // Refresh when tab becomes active
+    refetchOnMount: options.refetchOnMount !== false, // Refetch on mount by default
+    refetchOnReconnect: true,
     onError: (error) => {
       if (error.response?.status === 401) {
         useAuthStore.getState().logout();
       }
     },
-    // Add staleTime and cacheTime configuration
-    staleTime: 1000 * 30, // 30 seconds
-    cacheTime: 1000 * 60 * 5, // 5 minutes
+    ...options, // Allow overriding default options
   });
 };
-
 // In useAuth.js - improve the useUpdateProfile hook
 export const useUpdateProfile = () => {
   const setUser = useAuthStore((state) => state.setUser);
