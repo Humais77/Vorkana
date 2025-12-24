@@ -2,14 +2,9 @@
 const dotenv = require('dotenv');
 dotenv.config();
 const mongoose = require('mongoose');
-const PopularService = require('./models/PopularService');
-if (!process.env.MONGO_URL) {
-  console.error('❌ Error: MONGO_URL is not defined in .env file');
-  process.exit(1);
-}
-
-console.log('Connecting to:', process.env.MONGO_URL);
-const services = [
+const Service = require('./models/services.model');
+const Category = require('./models/category.model');
+const popularServicesData  = [
   {
     name: "Website Development",
     description: "Professional web solutions",
@@ -39,7 +34,7 @@ const services = [
     description: "Native and cross-platform apps",
     searchQuery: "mobile app",
     category: "mobile",
-    publicId: "duoiabdtuud9ija5m5r4", // fix duplicate if needed
+    publicId: "lnszmqoan7b4zdaezjei", 
     order: 4
   },
   {
@@ -61,18 +56,40 @@ const services = [
 ];
 
 // Connect to DB and insert
-mongoose.connect(process.env.MONGO_URL)
-  .then(async () => {
-    console.log('Connected to MongoDB');
-
-    // Optional: clear existing data (remove in production!)
-    await PopularService.deleteMany({});
-
-    await PopularService.insertMany(services);
+const seedPopularServices = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URL);
+    
+    for (const serviceData of popularServicesData) {
+      const category = await Category.findOne({ 
+        slug: serviceData.categorySlug,
+        isActive: true 
+      });
+      
+      if (category) {
+        await Service.updateMany(
+          { 
+            category: category._id,
+            status: 'active',
+            isActive: true,
+            rating: { $gte: 4.5 }
+          },
+          { 
+            $set: { 
+              isPopular: true,
+              searchKeywords: serviceData.searchKeywords 
+            } 
+          }
+        );
+      }
+    }
+    
     console.log('✅ Popular services seeded successfully');
     process.exit(0);
-  })
-  .catch(err => {
-    console.error('Seeding failed:', err);
+  } catch (error) {
+    console.error('❌ Error seeding popular services:', error);
     process.exit(1);
-  });
+  }
+};
+
+seedPopularServices();
