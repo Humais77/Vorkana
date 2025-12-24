@@ -214,6 +214,20 @@ router.get('/my-services',
 );
 // Get service by ID or slug
 router.get('/:id', optionalAuth, controller.getServiceById);
+router.get('/popular', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getPopularServices
+);
+
+// Get popular services by category (for frontend component)
+router.get('/popular/category', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getPopularServicesByCategory
+);
+
+// Toggle popular status (admin only)
 
 // ============================================
 // PROTECTED ROUTES (All authenticated users)
@@ -394,7 +408,12 @@ router.post('/admin/:id/thumbnail',
   handleMulterError, 
   controller.uploadThumbnail
 );
-
+router.patch('/:id/popular', 
+  protect, 
+  adminOnly, 
+  serviceLimiter, 
+  controller.togglePopularStatus
+);
 // ============================================
 // BATCH OPERATION ROUTES (Admin only)
 // ============================================

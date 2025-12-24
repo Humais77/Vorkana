@@ -11,8 +11,41 @@ const {
   deleteCloudinaryImages,
   processProfilePictureUpload 
 } = require('../middleware/upload.middleware.js');
+const cache = require('../utils/cache.js'); // Import cache utility
+
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
+};
+
+// Cache helper functions
+const generateCacheKey = (prefix, params) => {
+  const key = `${prefix}:${JSON.stringify(params)}`;
+  return crypto.createHash('md5').update(key).digest('hex');
+};
+
+const invalidateServiceCache = async (serviceId) => {
+  try {
+    await cache.del(`service:*${serviceId}*`);
+    await cache.del('services:*');
+    await cache.del('service_stats:*');
+    await cache.del('service_popular:*');
+    await cache.del('service_similar:*');
+    console.log(`Cache invalidated for service: ${serviceId}`);
+  } catch (err) {
+    console.warn('Error invalidating service cache:', err.message);
+  }
+};
+
+const invalidateAllServiceCache = async () => {
+  try {
+    await cache.del('services:*');
+    await cache.del('service_stats:*');
+    await cache.del('service_popular:*');
+    await cache.del('service_similar:*');
+    console.log('All service cache invalidated');
+  } catch (err) {
+    console.warn('Error invalidating all service cache:', err.message);
+  }
 };
 
 const sanitizeServiceInput = (data, files = {}) => {
@@ -285,6 +318,7 @@ const logAudit = (action, resource, resourceId, userId, details = {}) => {
 // Create Service
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
+  let serviceData;
   
   try {
     if (!req.user) {
@@ -360,7 +394,7 @@ const createService = async (req, res, next) => {
     }
 
     // Create service data
-  const serviceData = {
+    serviceData = {
       ...sanitizedData,
       createdBy: req.user._id,
       version: 1,
@@ -369,6 +403,7 @@ const createService = async (req, res, next) => {
       // Ensure short description is trimmed
       shortDescription: sanitizedData.shortDescription.trim()
     };
+    
     // Handle uploaded files
     const uploadedFiles = [];
     const uploadedThumbnail = [];
@@ -450,6 +485,9 @@ const createService = async (req, res, next) => {
 
     const service = await Service.create(serviceData);
 
+    // Invalidate cache after creating new service
+    await invalidateAllServiceCache();
+
     // Security: Audit log
     logAudit('CREATE', 'SERVICE', service._id, req.user._id, {
       title: service.title,
@@ -504,9 +542,13 @@ const createService = async (req, res, next) => {
     next(error);
   }
 };
+
 // Get Services
+// Get Services - OPTIMIZED VERSION
 const getServices = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const {
       search,
@@ -557,12 +599,19 @@ const getServices = async (req, res, next) => {
       includeReviews = false,
       includeStats = false,
       lean = true,
-      cache = false
+      cache: useCacheParam = 'false',
+      // NEW: Performance optimization parameters
+      optimize = 'true', // Enable performance optimizations
+      batchSize = 10, // Number of services to process at once
+      projection = 'basic' // 'basic', 'detailed', or 'minimal'
     } = req.query;
 
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
     const isUserView = req.user?.role === 'user' || req.user?.role === 'admin';
+    const useCache = useCacheParam === 'true';
+    const shouldOptimize = optimize === 'true';
 
+    // OPTIMIZATION: Use simpler filter for common cases
     const filter = buildSecureServiceQuery({
       search: search || q,
       title,
@@ -601,33 +650,92 @@ const getServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes'];
-    const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
+    // OPTIMIZATION: Pre-calculate sort options
+    const sortMapping = {
+      'price': 'price',
+      'rating': 'rating',
+      'createdAt': 'createdAt',
+      'updatedAt': 'updatedAt',
+      'deliveryTime': 'deliveryTime',
+      'ordersCount': 'ordersCount',
+      'views': 'views',
+      'likes': 'likes',
+      'popular': 'rating', // Map popular to rating for better UX
+      'featured': 'isFeatured',
+      'recommended': 'isRecommended'
+    };
+
+    const sortField = sortMapping[sort] || 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    const defaultExclude = ['__v', 'lastUpdatedBy'];
+    // OPTIMIZATION: Select only needed fields based on projection
     let select = {};
-    
     if (fields) {
       const fieldArray = fields.split(',').map(f => f.trim());
       fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
+        if (field !== '__v' && field !== 'lastUpdatedBy') {
           select[field] = 1;
         }
       });
-    }
-    
-    if (excludeFields) {
-      const excludeArray = excludeFields.split(',').map(f => f.trim());
-      excludeArray.forEach(field => {
-        select[field] = 0;
-      });
+    } else {
+      // Default projection optimization
+      if (projection === 'minimal') {
+        select = {
+          _id: 1,
+          title: 1,
+          slug: 1,
+          price: 1,
+          currency: 1,
+          rating: 1,
+          deliveryTime: 1,
+          thumbnail: 1,
+          status: 1,
+          isActive: 1
+        };
+      } else if (projection === 'basic') {
+        select = {
+          _id: 1,
+          title: 1,
+          slug: 1,
+          shortDescription: 1,
+          price: 1,
+          currency: 1,
+          rating: 1,
+          reviewsCount: 1,
+          deliveryTime: 1,
+          deliveryTimeUnit: 1,
+          revisions: 1,
+          views: 1,
+          likes: 1,
+          thumbnail: 1,
+          images: 1,
+          status: 1,
+          isActive: 1,
+          isFeatured: 1,
+          isPopular: 1,
+          isRecommended: 1,
+          category: 1,
+          subcategory: 1,
+          createdBy: 1,
+          createdAt: 1,
+          updatedAt: 1
+        };
+      } else {
+        // 'detailed' - include all fields except metadata
+        select = {
+          __v: 0,
+          lastUpdatedBy: 0,
+          version: 0,
+          deletedAt: 0,
+          deletedBy: 0
+        };
+      }
     }
 
+    // OPTIMIZATION: Smart population based on needs
     let populateOptions = [];
-    
-    if (populate) {
+    if (populate === 'true' && populate !== 'false') {
       const populateArray = populateFields.split(',').map(f => f.trim());
       
       if (includeCategory) {
@@ -637,87 +745,156 @@ const getServices = async (req, res, next) => {
           match: { isActive: true }
         });
         
-        populateOptions.push({
-          path: 'subcategory',
-          select: 'name slug',
-          match: { isActive: true }
-        });
+        if (subcategory) {
+          populateOptions.push({
+            path: 'subcategory',
+            select: 'name slug',
+            match: { isActive: true }
+          });
+        }
       }
       
       if (includeCreator) {
         populateOptions.push({
           path: 'createdBy',
-          select: 'name email picture role',
+          select: 'name picture', // Only get name and picture
           match: { isActive: true }
         });
       }
     }
 
-    const queryOptions = {
-      select: Object.keys(select).length > 0 ? select : null,
-      sort: sortObj,
-      skip,
+    // OPTIMIZATION: Create cache key
+    const cacheKey = generateCacheKey('services', {
+      filter: JSON.stringify(filter), // Stringify for consistent key
+      page: pageNum,
       limit: limitNum,
-      populate: populateOptions.length > 0 ? populateOptions : null,
-      lean: lean !== false,
-      maxTimeMS: 5000
+      sort: sortField,
+      order: sortOrder,
+      populate: populate === 'true',
+      projection,
+      userRole: req.user?.role,
+      userId: req.user?._id
+    });
+
+    let services, total, cachedStats;
+
+    // OPTIMIZATION: Use cache for first 3 pages only
+    if (useCache && pageNum <= 3 && !search && !q) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        services = cached.services;
+        total = cached.total;
+        cachedStats = cached.stats;
+        console.log(`Cache hit for services: ${cacheKey} in ${Date.now() - startTime}ms`);
+      }
+    }
+
+    if (!services || !total) {
+      const queryOptions = {
+        select,
+        sort: sortObj,
+        skip,
+        limit: limitNum,
+        populate: populateOptions.length > 0 ? populateOptions : null,
+        lean: lean !== false,
+        maxTimeMS: shouldOptimize ? 3000 : 5000, // Shorter timeout for optimized queries
+        readPreference: 'secondaryPreferred' // Use secondary nodes for reads if available
+      };
+
+      // OPTIMIZATION: Parallel execution of queries
+      try {
+        [services, total] = await Promise.all([
+          Service.find(filter, null, queryOptions),
+          Service.countDocuments(filter).maxTimeMS(2000) // Faster count
+        ]);
+
+        console.log(`Database query completed in ${Date.now() - startTime}ms, found ${services.length} services`);
+      } catch (queryError) {
+        // Fallback: Execute sequentially if parallel fails
+        console.warn('Parallel query failed, falling back to sequential:', queryError.message);
+        services = await Service.find(filter, null, queryOptions);
+        total = await Service.countDocuments(filter);
+      }
+
+      // Cache the result if enabled (first 3 pages only)
+      if (useCache && pageNum <= 3 && !search && !q) {
+        await cache.set(cacheKey, { services, total, stats: cachedStats }, 180); // 3 minutes for listings
+      }
+    }
+
+    // OPTIMIZATION: Process services in batches for large datasets
+    const processServiceBatch = (batch) => {
+      return batch.map(service => {
+        const safeService = { ...service };
+        
+        if (safeService.createdBy && safeService.createdBy._id) {
+          safeService.createdBy = {
+            _id: safeService.createdBy._id,
+            name: safeService.createdBy.name,
+            picture: safeService.createdBy.picture
+          };
+        }
+        
+        // Only process description if needed
+        if (projection !== 'minimal' && safeService.description && safeService.description.length > 200) {
+          safeService.description = safeService.description.substring(0, 200) + '...';
+        }
+        
+        return safeService;
+      });
     };
 
-    const [services, total] = await Promise.all([
-      Service.find(filter, null, queryOptions),
-      Service.countDocuments(filter)
-    ]);
-
-    const safeServices = services.map(service => {
-      const safeService = { ...service };
-      
-      if (safeService.createdBy && safeService.createdBy._id) {
-        // Only show limited creator info
-        safeService.createdBy = {
-          _id: safeService.createdBy._id,
-          name: safeService.createdBy.name,
-          picture: safeService.createdBy.picture
-        };
+    let safeServices;
+    if (services.length > 50 && shouldOptimize) {
+      // Process in batches for large datasets
+      const batchSizeNum = parseInt(batchSize) || 10;
+      safeServices = [];
+      for (let i = 0; i < services.length; i += batchSizeNum) {
+        const batch = services.slice(i, i + batchSizeNum);
+        safeServices.push(...processServiceBatch(batch));
       }
-      
-      delete safeService.__v;
-      delete safeService.lastUpdatedBy;
-      
-      if (safeService.description && safeService.description.length > 200) {
-        safeService.description = safeService.description.substring(0, 200) + '...';
-      }
-      
-      return safeService;
-    });
+    } else {
+      safeServices = processServiceBatch(services);
+    }
 
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
-    let stats = {};
-    if (includeStats) {
-      stats = await Service.aggregate([
-        { $match: filter },
-        {
-          $group: {
-            _id: null,
-            avgPrice: { $avg: '$price' },
-            avgRating: { $avg: '$rating' },
-            avgDeliveryTime: { $avg: '$deliveryTime' },
-            totalViews: { $sum: '$views' },
-            totalLikes: { $sum: '$likes' }
+    let stats = cachedStats || {};
+    if (includeStats && !cachedStats) {
+      // OPTIMIZATION: Only calculate stats if explicitly requested
+      try {
+        stats = await Service.aggregate([
+          { $match: filter },
+          {
+            $group: {
+              _id: null,
+              avgPrice: { $avg: '$price' },
+              avgRating: { $avg: '$rating' },
+              avgDeliveryTime: { $avg: '$deliveryTime' },
+              totalViews: { $sum: '$views' },
+              totalLikes: { $sum: '$likes' }
+            }
           }
-        }
-      ]);
+        ]).maxTimeMS(2000);
+      } catch (statsError) {
+        console.warn('Stats aggregation failed:', statsError.message);
+        stats = [];
+      }
     }
 
+    const responseTime = Date.now() - startTime;
+    
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
-      'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
+      'X-Response-Time': `${responseTime}ms`,
+      'X-Cache': (useCache && pageNum <= 3 && !search && !q && services !== undefined) ? 'HIT' : 'MISS',
+      'Cache-Control': useCache ? 'public, max-age=180' : 'no-cache, no-store, must-revalidate'
     });
 
     const response = {
@@ -734,40 +911,62 @@ const getServices = async (req, res, next) => {
         prevPage: hasPrev ? pageNum - 1 : null,
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+      cached: (useCache && pageNum <= 3 && !search && !q && services !== undefined)
     };
 
     if (includeStats && stats.length > 0) {
       response.stats = stats[0];
     }
 
+    // Log performance metrics
+    if (responseTime > 500) {
+      console.warn(`SLOW ENDPOINT: GET /api/services - ${responseTime}ms (Page: ${pageNum}, Limit: ${limitNum})`);
+    }
+
     res.json(response);
 
   } catch (error) {
+    const errorTime = Date.now() - startTime;
+    console.error(`GET /api/services ERROR after ${errorTime}ms:`, error.message);
+    
     if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
       return res.status(408).json({
         success: false,
-        message: 'Query timeout',
+        message: 'Query timeout - please try with fewer filters',
         code: 'QUERY_TIMEOUT',
-        requestId
+        requestId,
+        suggestion: 'Try using projection=minimal or reduce filter criteria'
       });
     }
     
-    logAudit('ERROR', 'SERVICE', 'GET_LIST', req.user?._id, { error: error.message });
+    logAudit('ERROR', 'SERVICE', 'GET_LIST', req.user?._id, { 
+      error: error.message,
+      responseTime: errorTime 
+    });
     next(error);
   }
 };
 
-// Get Service by ID or Slug
-// Get Service by ID or Slug - FIXED VERSION
 const getServiceById = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
   
   try {
     const { id } = req.params;
-    const { fields, populate = true, incrementView = 'true' } = req.query;
+    const { 
+      fields, 
+      populate = 'true', 
+      incrementView = 'true',
+      cache: useCacheParam = 'true',
+      // NEW: Performance parameters
+      fast = 'false', // Fast mode with minimal data
+      noImages = 'false', // Skip images for faster loading
+      minimal = 'false' // Minimal data mode
+    } = req.query;
 
-    console.log(`[DEBUG] getServiceById called with id: ${id}, type: ${typeof id}, isObjectId: ${mongoose.Types.ObjectId.isValid(id)}`);
+    console.log(`[PERF] getServiceById called with id: ${id}`);
     
     if (!id || id.trim() === '') {
       return res.status(400).json({
@@ -778,82 +977,73 @@ const getServiceById = async (req, res, next) => {
       });
     }
 
-    let query;
     const isObjectId = mongoose.Types.ObjectId.isValid(id);
+    const useCache = useCacheParam === 'true';
+    const isFastMode = fast === 'true';
+    const skipImages = noImages === 'true';
+    const isMinimal = minimal === 'true';
 
-    if (isObjectId) {
-      // Handle ObjectId lookup
-      query = { _id: id };
-      console.log(`[DEBUG] Looking up by ObjectId: ${id}`);
-    } else {
-      // Handle slug lookup
-      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] }).trim();
-      query = { slug: sanitizedSlug.toLowerCase() };
-      console.log(`[DEBUG] Looking up by slug: ${sanitizedSlug}`);
-    }
+    // OPTIMIZATION: Generate cache key early
+    const cacheKey = generateCacheKey('service_single', {
+      id,
+      isObjectId,
+      fields,
+      populate: populate === 'true',
+      isFastMode,
+      skipImages,
+      isMinimal,
+      userRole: req.user?.role
+    });
 
-    // Check permissions - IMPORTANT: This query structure was causing the issue
-    const permissionQuery = { ...query }; // Start with the original query
+    let service;
     
-    if (req.user?.role !== 'admin') {
-      if (req.user?.role === 'user') {
-        // Users can see their own services regardless of status, OR active public services
-        permissionQuery.$or = [
-          { ...query, createdBy: req.user._id },
-          { 
-            ...query, 
-            status: 'active',
-            isActive: true 
-          }
-        ];
-      } else {
-        // Non-authenticated users can only see active services
-        permissionQuery.status = 'active';
-        permissionQuery.isActive = true;
+    // OPTIMIZATION: Try cache first (if enabled and not admin)
+    if (useCache && req.user?.role !== 'admin') {
+      service = await cache.get(cacheKey);
+      if (service) {
+        console.log(`[PERF] Cache HIT for service: ${cacheKey} (${Date.now() - startTime}ms)`);
+        
+        // Handle view increment in background (non-blocking)
+        if (incrementView === 'true' && service.status === 'active') {
+          incrementViewCountAsync(service._id).catch(console.error);
+        }
+        
+        return sendServiceResponse(res, service, requestId, startTime, true);
       }
     }
-    // Admins can see everything - no extra conditions needed
 
-    console.log(`[DEBUG] Final query:`, JSON.stringify(permissionQuery, null, 2));
-
-    const defaultExclude = ['__v', 'lastUpdatedBy'];
-    let select = {};
-    
-    if (fields) {
-      const fieldArray = fields.split(',').map(f => f.trim());
-      fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
-          select[field] = 1;
-        }
-      });
+    // Build optimized query
+    let query;
+    if (isObjectId) {
+      query = { _id: id };
+    } else {
+      const sanitizedSlug = sanitizeHtml(id, { allowedTags: [] }).trim();
+      query = { slug: sanitizedSlug.toLowerCase() };
     }
 
+    // OPTIMIZATION: Simplified permission logic
+    const permissionQuery = buildPermissionQuery(query, req.user);
+    
+    console.log(`[PERF] Query built in ${Date.now() - startTime}ms`);
+
+    // OPTIMIZATION: Select only needed fields based on mode
+    let select = getOptimizedSelect(fields, isFastMode, skipImages, isMinimal);
+    
+    // OPTIMIZATION: Smart population - only populate what's needed
     let populateOptions = [];
     if (populate === 'true' || populate === true) {
-      populateOptions = [
-        {
-          path: 'category',
-          select: 'name slug icon description',
-          match: { isActive: true }
-        },
-        {
-          path: 'subcategory',
-          select: 'name slug',
-          match: { isActive: true }
-        },
-        {
-          path: 'createdBy',
-          select: 'name picture role createdAt',
-          match: { isActive: true }
-        }
-      ];
+      populateOptions = getOptimizedPopulateOptions(isFastMode, isMinimal);
     }
 
-    const service = await Service.findOne(permissionQuery)
-      .select(Object.keys(select).length > 0 ? select : null)
-      .populate(populateOptions);
+    // OPTIMIZATION: Use lean for faster queries and less memory
+    const queryStart = Date.now();
+    service = await Service.findOne(permissionQuery)
+      .select(select)
+      .populate(populateOptions)
+      .lean()
+      .maxTimeMS(2000); // 2 second timeout for single document
 
-    console.log(`[DEBUG] Service found: ${!!service}, type: ${service ? service._id : 'none'}`);
+    console.log(`[PERF] Database query completed in ${Date.now() - queryStart}ms`);
 
     if (!service) {
       return res.status(404).json({
@@ -869,71 +1059,44 @@ const getServiceById = async (req, res, next) => {
       });
     }
 
-    // Additional permission check for inactive services
-    if (service.status !== 'active' && req.user?.role !== 'admin') {
-      if (req.user?.role !== 'user' || service.createdBy._id.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access to this service is restricted',
-          code: 'ACCESS_DENIED',
-          requestId
-        });
+    // OPTIMIZATION: Quick permission check (admin can see everything)
+    if (req.user?.role !== 'admin') {
+      if (service.status !== 'active') {
+        if (req.user?.role !== 'user' || service.createdBy?._id?.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access to this service is restricted',
+            code: 'ACCESS_DENIED',
+            requestId
+          });
+        }
       }
     }
 
-    // Increment view count for active services
+    // OPTIMIZATION: Async view increment (non-blocking)
     if (incrementView === 'true' && service.status === 'active') {
-      try {
-        await Service.updateOne(
-          { _id: service._id },
-          { $inc: { views: 1 } }
-        );
-      } catch (viewError) {
-        console.error('[ERROR] Failed to increment view count:', viewError);
-      }
+      incrementViewCountAsync(service._id).catch(console.error);
     }
 
-    // Log audit for viewing inactive services
-    if (service.status !== 'active') {
-      logAudit('VIEW_INACTIVE', 'SERVICE', service._id, req.user?._id, {
-        status: service.status
-      });
-    }
-
-    const safeService = service.toObject();
+    // OPTIMIZATION: Process service data
+    const processedService = processServiceData(service, isFastMode, isMinimal, skipImages);
     
-    // Limit creator info shown
-    if (safeService.createdBy) {
-      safeService.createdBy = {
-        _id: safeService.createdBy._id,
-        name: safeService.createdBy.name,
-        picture: safeService.createdBy.picture,
-        accountAge: Date.now() - new Date(safeService.createdBy.createdAt).getTime()
-      };
-    }
-    
-    // Remove sensitive fields
-    delete safeService.__v;
-    delete safeService.lastUpdatedBy;
-
-    // Format packages for display
-    if (safeService.packages && Array.isArray(safeService.packages)) {
-      safeService.packages = safeService.packages.map(pkg => ({
-        ...pkg,
-        deliveryText: `${pkg.deliveryTime} ${service.deliveryTimeUnit}`,
-        priceText: `${service.currency} ${pkg.price}`
-      }));
+    // OPTIMIZATION: Cache for future requests (if not admin)
+    if (useCache && req.user?.role !== 'admin') {
+      const cacheTime = isFastMode ? 300 : 600; // 5-10 minutes
+      await cache.set(cacheKey, processedService, cacheTime);
+      console.log(`[PERF] Cached service: ${cacheKey}`);
     }
 
-    res.json({
-      success: true,
-      service: safeService,
-      requestId,
-      timestamp: new Date().toISOString()
-    });
+    const totalTime = Date.now() - startTime;
+    if (totalTime > 200) {
+      console.warn(`[SLOW] getServiceById took ${totalTime}ms for service ${id}`);
+    }
+
+    return sendServiceResponse(res, processedService, requestId, startTime, false);
 
   } catch (error) {
-    console.error(`[ERROR] getServiceById error:`, error);
+    console.error(`[ERROR] getServiceById error after ${Date.now() - startTime}ms:`, error);
     
     // Handle specific error types
     if (error.name === 'CastError') {
@@ -949,17 +1112,223 @@ const getServiceById = async (req, res, next) => {
       });
     }
     
+    if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
+      return res.status(408).json({
+        success: false,
+        message: 'Service lookup timeout',
+        code: 'QUERY_TIMEOUT',
+        requestId,
+        suggestion: 'Try using fast=true parameter for quicker response'
+      });
+    }
+    
     logAudit('ERROR', 'SERVICE', 'GET_BY_ID', req.user?._id, { 
       id: req.params.id, 
       error: error.message,
-      stack: error.stack 
+      responseTime: Date.now() - startTime
     });
     
     next(error);
   }
 };
+const buildPermissionQuery = (query, user) => {
+  if (user?.role === 'admin') {
+    return query; // Admin can see everything
+  }
+  
+  if (user?.role === 'user') {
+    return {
+      $or: [
+        { ...query, createdBy: user._id },
+        { 
+          ...query, 
+          status: 'active',
+          isActive: true 
+        }
+      ]
+    };
+  }
+  
+  // Non-authenticated users
+  return {
+    ...query,
+    status: 'active',
+    isActive: true
+  };
+};
 
-// In service.controller.js - Update the updateService function
+// Get optimized field selection
+const getOptimizedSelect = (fields, isFastMode, skipImages, isMinimal) => {
+  if (fields) {
+    const fieldArray = fields.split(',').map(f => f.trim());
+    const select = {};
+    fieldArray.forEach(field => {
+      if (field !== '__v' && field !== 'lastUpdatedBy') {
+        select[field] = 1;
+      }
+    });
+    return select;
+  }
+  
+  // Pre-defined optimized selections
+  if (isFastMode) {
+    return {
+      _id: 1,
+      title: 1,
+      slug: 1,
+      shortDescription: 1,
+      price: 1,
+      currency: 1,
+      rating: 1,
+      deliveryTime: 1,
+      deliveryTimeUnit: 1,
+      revisions: 1,
+      thumbnail: 1,
+      status: 1,
+      isActive: 1,
+      category: 1,
+      createdBy: 1,
+      createdAt: 1
+    };
+  }
+  
+  if (isMinimal) {
+    return {
+      _id: 1,
+      title: 1,
+      slug: 1,
+      price: 1,
+      currency: 1,
+      rating: 1,
+      thumbnail: 1,
+      status: 1
+    };
+  }
+  
+  // Default optimized selection
+  const select = {
+    __v: 0,
+    lastUpdatedBy: 0,
+    version: 0,
+    deletedAt: 0,
+    deletedBy: 0
+  };
+  
+  if (skipImages) {
+    select.images = 0;
+  }
+  
+  return select;
+};
+
+// Get optimized populate options
+const getOptimizedPopulateOptions = (isFastMode, isMinimal) => {
+  if (isMinimal) {
+    return []; // No population for minimal mode
+  }
+  
+  if (isFastMode) {
+    return [
+      {
+        path: 'category',
+        select: 'name slug',
+        match: { isActive: true }
+      },
+      {
+        path: 'createdBy',
+        select: 'name picture',
+        match: { isActive: true }
+      }
+    ];
+  }
+  
+  // Full populate (but optimized)
+  return [
+    {
+      path: 'category',
+      select: 'name slug icon description',
+      match: { isActive: true }
+    },
+    {
+      path: 'subcategory',
+      select: 'name slug',
+      match: { isActive: true }
+    },
+    {
+      path: 'createdBy',
+      select: 'name picture role createdAt',
+      match: { isActive: true }
+    }
+  ];
+};
+
+// Process service data efficiently
+const processServiceData = (service, isFastMode, isMinimal, skipImages) => {
+  const processed = { ...service };
+  
+  // OPTIMIZATION: Only process creator info if needed
+  if (processed.createdBy && !isMinimal) {
+    processed.createdBy = {
+      _id: processed.createdBy._id,
+      name: processed.createdBy.name,
+      picture: processed.createdBy.picture
+    };
+    
+    if (!isFastMode) {
+      processed.createdBy.accountAge = Date.now() - new Date(processed.createdBy.createdAt).getTime();
+    }
+  }
+  
+  // OPTIMIZATION: Process packages only in full mode
+  if (!isFastMode && !isMinimal && processed.packages && Array.isArray(processed.packages)) {
+    processed.packages = processed.packages.map(pkg => ({
+      ...pkg,
+      deliveryText: `${pkg.deliveryTime} ${service.deliveryTimeUnit}`,
+      priceText: `${service.currency} ${pkg.price}`
+    }));
+  }
+  
+  // OPTIMIZATION: Limit images if skipImages is true
+  if (skipImages && processed.images && Array.isArray(processed.images)) {
+    processed.images = processed.images.slice(0, 1); // Keep only first image
+  }
+  
+  return processed;
+};
+
+// Send optimized response
+const sendServiceResponse = (res, service, requestId, startTime, cached) => {
+  const responseTime = Date.now() - startTime;
+  
+  res.set({
+    'X-Request-ID': requestId,
+    'X-Response-Time': `${responseTime}ms`,
+    'X-Cache': cached ? 'HIT' : 'MISS',
+    'Cache-Control': cached ? 'public, max-age=600' : 'no-cache, no-store, must-revalidate'
+  });
+  
+  return res.json({
+    success: true,
+    service,
+    requestId,
+    timestamp: new Date().toISOString(),
+    responseTime: `${responseTime}ms`,
+    cached
+  });
+};
+
+// Async view increment (non-blocking)
+const incrementViewCountAsync = async (serviceId) => {
+  try {
+    await Service.updateOne(
+      { _id: serviceId },
+      { $inc: { views: 1 } }
+    ).maxTimeMS(1000); // Quick update
+  } catch (error) {
+    console.error('Failed to increment view count:', error.message);
+  }
+};
+// Update Service
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   let uploadedFiles = [];
@@ -1123,6 +1492,9 @@ const updateService = async (req, res, next) => {
       console.error('Error cleaning up old images:', cleanupError);
     }
 
+    // Invalidate cache after update
+    await invalidateServiceCache(id);
+
     logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
       oldVersion: currentVersion || service.version,
@@ -1175,7 +1547,6 @@ const updateService = async (req, res, next) => {
 };
 
 // Delete Service
-// In service.controller.js - Fix the deleteService function
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -1241,6 +1612,9 @@ const deleteService = async (req, res, next) => {
         imagesCleaned: service.images?.length || 0
       });
       
+      // Invalidate cache after permanent delete
+      await invalidateServiceCache(id);
+      
       return res.json({
         success: true,
         message: 'Service permanently deleted',
@@ -1281,7 +1655,8 @@ const deleteService = async (req, res, next) => {
         });
       }
 
-      
+      // Invalidate cache after soft delete
+      await invalidateServiceCache(id);
 
       logAudit('SOFT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
@@ -1371,6 +1746,9 @@ const restoreService = async (req, res, next) => {
     service.lastUpdatedBy = req.user._id;
     await service.save();
 
+    // Invalidate cache after restoration
+    await invalidateServiceCache(id);
+
     logAudit('RESTORE', 'SERVICE', id, req.user._id);
 
     res.json({
@@ -1403,6 +1781,22 @@ const getServiceStats = async (req, res, next) => {
         message: 'Admin access required for statistics',
         code: 'ADMIN_ACCESS_REQUIRED',
         requestId
+      });
+    }
+
+    const cacheKey = 'service_stats:admin';
+
+    // Try to get from cache first
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for service stats: ${cacheKey}`);
+      return res.json({
+        success: true,
+        stats: cached,
+        requestId,
+        timestamp: new Date().toISOString(),
+        generatedAt: new Date(),
+        cached: true
       });
     }
 
@@ -1498,12 +1892,16 @@ const getServiceStats = async (req, res, next) => {
 
     const sanitizedStats = stats[0];
     
+    // Cache stats for 10 minutes
+    await cache.set(cacheKey, sanitizedStats, 600);
+    
     res.json({
       success: true,
       stats: sanitizedStats,
       requestId,
       timestamp: new Date().toISOString(),
-      generatedAt: new Date()
+      generatedAt: new Date(),
+      cached: false
     });
 
   } catch (error) {
@@ -1595,6 +1993,9 @@ const bulkUpdateServices = async (req, res, next) => {
       }
     );
 
+    // Invalidate cache for all affected services
+    await invalidateAllServiceCache();
+
     logAudit('BULK_OPERATION', 'SERVICE', 'MULTIPLE', req.user._id, {
       operation,
       affectedCount: result.modifiedCount,
@@ -1659,7 +2060,7 @@ const exportServices = async (req, res, next) => {
     if (count > 5000) {
       return res.status(400).json({
         success: false,
-        message: 'Export limit exceeded (max 5,000 records)',
+        message: 'Export limit exceeded (max 5,000 records',
         code: 'EXPORT_LIMIT_EXCEEDED',
         requestId
       });
@@ -1741,7 +2142,7 @@ const exportServices = async (req, res, next) => {
 const searchServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    const { query, category, minPrice, maxPrice, sort = 'relevance', limit = 20 } = req.query;
+    const { query, category, minPrice, maxPrice, sort = 'relevance', limit = 20, cache: useCacheParam = 'true' } = req.query;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
@@ -1767,76 +2168,106 @@ const searchServices = async (req, res, next) => {
     }
 
     const searchLimit = Math.min(parseInt(limit) || 20, 100);
+    const useCache = useCacheParam === 'true';
 
-    const filter = {
-      $text: { $search: sanitizedQuery },
-      status: 'active',
-      isActive: true
-    };
+    // Generate cache key
+    const cacheKey = generateCacheKey('service_search', {
+      query: sanitizedQuery,
+      category,
+      minPrice,
+      maxPrice,
+      sort,
+      limit: searchLimit
+    });
 
-    if (category && mongoose.Types.ObjectId.isValid(category)) {
-      filter.category = category;
+    // Try to get from cache
+    let safeResults, relatedCategories;
+    if (useCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        safeResults = cached.results;
+        relatedCategories = cached.relatedCategories;
+        console.log(`Cache hit for search: ${cacheKey}`);
+      }
     }
 
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    if (!safeResults) {
+      const filter = {
+        $text: { $search: sanitizedQuery },
+        status: 'active',
+        isActive: true
+      };
+
+      if (category && mongoose.Types.ObjectId.isValid(category)) {
+        filter.category = category;
+      }
+
+      if (minPrice || maxPrice) {
+        filter.price = {};
+        if (minPrice) filter.price.$gte = parseFloat(minPrice);
+        if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+      }
+
+      const sortOptions = {
+        relevance: { score: { $meta: 'textScore' } },
+        price_asc: { price: 1 },
+        price_desc: { price: -1 },
+        rating: { rating: -1 },
+        delivery: { deliveryTime: 1 },
+        newest: { createdAt: -1 }
+      };
+
+      const sortObj = sortOptions[sort] || sortOptions.relevance;
+
+      const results = await Service.find(filter, { 
+        score: { $meta: 'textScore' } 
+      })
+      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy category')
+      .populate('createdBy', 'name picture')
+      .populate('category', 'name slug')
+      .sort(sortObj)
+      .limit(searchLimit)
+      .lean();
+
+      safeResults = results.map(result => ({
+        _id: result._id,
+        title: result.title,
+        slug: result.slug,
+        description: result.description ? result.description.substring(0, 150) + '...' : '',
+        price: result.price,
+        currency: result.currency || 'USD',
+        rating: result.rating || 0,
+        reviewsCount: result.reviewsCount || 0,
+        deliveryTime: result.deliveryTime,
+        deliveryTimeUnit: result.deliveryTimeUnit,
+        revisions: result.revisions || 0,
+        views: result.views || 0,
+        thumbnail: result.thumbnail,
+        createdBy: {
+          _id: result.createdBy?._id,
+          name: result.createdBy?.name,
+          picture: result.createdBy?.picture
+        },
+        category: {
+          _id: result.category?._id,
+          name: result.category?.name,
+          slug: result.category?.slug
+        },
+        score: result.score || 0
+      }));
+
+      const categoryIds = [...new Set(safeResults.map(r => r.category?._id).filter(Boolean))];
+      relatedCategories = await Category.find({ 
+        _id: { $in: categoryIds },
+        isActive: true 
+      }).select('name slug icon servicesCount').lean();
+
+      // Cache search results for 5 minutes
+      if (useCache) {
+        await cache.set(cacheKey, { results: safeResults, relatedCategories }, 300);
+        console.log(`Cache set for search: ${cacheKey}`);
+      }
     }
-
-    const sortOptions = {
-      relevance: { score: { $meta: 'textScore' } },
-      price_asc: { price: 1 },
-      price_desc: { price: -1 },
-      rating: { rating: -1 },
-      delivery: { deliveryTime: 1 },
-      newest: { createdAt: -1 }
-    };
-
-    const sortObj = sortOptions[sort] || sortOptions.relevance;
-
-    const results = await Service.find(filter, { 
-      score: { $meta: 'textScore' } 
-    })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy category')
-    .populate('createdBy', 'name picture')
-    .populate('category', 'name slug')
-    .sort(sortObj)
-    .limit(searchLimit)
-    .lean();
-
-    const safeResults = results.map(result => ({
-      _id: result._id,
-      title: result.title,
-      slug: result.slug,
-      description: result.description ? result.description.substring(0, 150) + '...' : '',
-      price: result.price,
-      currency: result.currency || 'USD',
-      rating: result.rating || 0,
-      reviewsCount: result.reviewsCount || 0,
-      deliveryTime: result.deliveryTime,
-      deliveryTimeUnit: result.deliveryTimeUnit,
-      revisions: result.revisions || 0,
-      views: result.views || 0,
-      thumbnail: result.thumbnail,
-      createdBy: {
-        _id: result.createdBy?._id,
-        name: result.createdBy?.name,
-        picture: result.createdBy?.picture
-      },
-      category: {
-        _id: result.category?._id,
-        name: result.category?.name,
-        slug: result.category?.slug
-      },
-      score: result.score || 0
-    }));
-
-    const categoryIds = [...new Set(safeResults.map(r => r.category?._id).filter(Boolean))];
-    const relatedCategories = await Category.find({ 
-      _id: { $in: categoryIds },
-      isActive: true 
-    }).select('name slug icon servicesCount').lean();
 
     res.json({
       success: true,
@@ -1845,7 +2276,8 @@ const searchServices = async (req, res, next) => {
       relatedCategories,
       count: safeResults.length,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: useCache && safeResults !== undefined
     });
 
   } catch (error) {
@@ -1906,6 +2338,9 @@ const toggleLike = async (req, res, next) => {
         await Service.incrementLikes(id);
         message = 'Service liked';
         
+        // Invalidate cache for this service
+        await invalidateServiceCache(id);
+        
         logAudit('LIKE', 'SERVICE', id, req.user._id);
       } else {
         message = 'Service already liked';
@@ -1919,6 +2354,9 @@ const toggleLike = async (req, res, next) => {
         
         await Service.decrementLikes(id);
         message = 'Service unliked';
+        
+        // Invalidate cache for this service
+        await invalidateServiceCache(id);
         
         logAudit('UNLIKE', 'SERVICE', id, req.user._id);
       } else {
@@ -1960,7 +2398,7 @@ const getSimilarServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
     const { id } = req.params;
-    const { limit = 8 } = req.query;
+    const { limit = 8, cache: useCacheParam = 'true' } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -1969,6 +2407,32 @@ const getSimilarServices = async (req, res, next) => {
         code: 'INVALID_ID',
         requestId
       });
+    }
+
+    const useCache = useCacheParam === 'true';
+    const similarLimit = Math.min(parseInt(limit) || 8, 20);
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('service_similar', {
+      serviceId: id,
+      limit: similarLimit
+    });
+
+    // Try to get from cache
+    let safeServices;
+    if (useCache) {
+      safeServices = await cache.get(cacheKey);
+      if (safeServices) {
+        console.log(`Cache hit for similar services: ${cacheKey}`);
+        return res.json({
+          success: true,
+          services: safeServices,
+          count: safeServices.length,
+          requestId,
+          timestamp: new Date().toISOString(),
+          cached: true
+        });
+      }
     }
 
     const service = await Service.findById(id)
@@ -1983,8 +2447,6 @@ const getSimilarServices = async (req, res, next) => {
         requestId
       });
     }
-
-    const similarLimit = Math.min(parseInt(limit) || 8, 20);
 
     const similarServices = await Service.find({
       _id: { $ne: id },
@@ -2017,7 +2479,7 @@ const getSimilarServices = async (req, res, next) => {
       similarServices.push(...additionalServices);
     }
 
-    const safeServices = similarServices.map(s => ({
+    safeServices = similarServices.map(s => ({
       _id: s._id,
       title: s.title,
       slug: s.slug,
@@ -2036,12 +2498,19 @@ const getSimilarServices = async (req, res, next) => {
       }
     }));
 
+    // Cache similar services for 10 minutes
+    if (useCache) {
+      await cache.set(cacheKey, safeServices, 600);
+      console.log(`Cache set for similar services: ${cacheKey}`);
+    }
+
     res.json({
       success: true,
       services: safeServices,
       count: safeServices.length,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: false
     });
 
   } catch (error) {
@@ -2147,6 +2616,9 @@ const uploadImages = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
+    // Invalidate cache after image upload
+    await invalidateServiceCache(id);
+
     logAudit('UPLOAD_IMAGES', 'SERVICE', id, req.user._id, {
       imagesAdded: uploadedImages.length,
       totalImages: updatedImages.length
@@ -2170,6 +2642,7 @@ const uploadImages = async (req, res, next) => {
     next(error);
   }
 };
+
 // Remove Image
 const removeImage = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -2243,6 +2716,9 @@ const removeImage = async (req, res, next) => {
 
     // Delete image from Cloudinary
     await deleteCloudinaryImages([imageToRemove]);
+
+    // Invalidate cache after image removal
+    await invalidateServiceCache(id);
 
     logAudit('REMOVE_IMAGE', 'SERVICE', id, req.user._id, {
       imagePublicId: publicId,
@@ -2330,6 +2806,9 @@ const setThumbnail = async (req, res, next) => {
     service.lastUpdatedBy = req.user._id;
     service.version += 1;
     await service.save();
+
+    // Invalidate cache after thumbnail change
+    await invalidateServiceCache(id);
 
     logAudit('SET_THUMBNAIL', 'SERVICE', id, req.user._id, {
       thumbnail: image.url
@@ -2446,6 +2925,9 @@ const uploadThumbnail = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
+    // Invalidate cache after thumbnail upload
+    await invalidateServiceCache(id);
+
     logAudit('UPLOAD_THUMBNAIL', 'SERVICE', id, req.user._id, {
       thumbnail: newThumbnail.url
     });
@@ -2498,9 +2980,11 @@ const getMyServices = async (req, res, next) => {
       minPrice,
       maxPrice,
       includeDrafts = 'true',
-      includeInactive = 'false'
+      includeInactive = 'false',
+      cache: useCacheParam = 'false'
     } = req.query;
 
+    const useCache = useCacheParam === 'true';
     const filter = { createdBy: req.user._id };
     
     // For admin, respect createdBy parameter if provided
@@ -2565,74 +3049,108 @@ const getMyServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
-    const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
-    const sortOrder = order === 'asc' ? 1 : -1;
-    const sortObj = { [sortField]: sortOrder };
+    // Generate cache key for my services
+    const cacheKey = generateCacheKey('my_services', {
+      userId: req.user._id,
+      filter,
+      page: pageNum,
+      limit: limitNum,
+      sort,
+      order,
+      includeDrafts,
+      includeInactive
+    });
 
-    const [services, total] = await Promise.all([
-      Service.find(filter)
-        .select('-__v -lastUpdatedBy -version')
-        .populate('category', 'name slug icon')
-        .populate('subcategory', 'name slug')
-        .populate('createdBy', 'name picture')
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Service.countDocuments(filter)
-    ]);
+    let services, total, statusCounts;
+
+    // Try to get from cache
+    if (useCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        services = cached.services;
+        total = cached.total;
+        statusCounts = cached.statusCounts;
+        console.log(`Cache hit for my services: ${cacheKey}`);
+      }
+    }
+
+    if (!services || !total) {
+      const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
+      const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
+      const sortOrder = order === 'asc' ? 1 : -1;
+      const sortObj = { [sortField]: sortOrder };
+
+      [services, total] = await Promise.all([
+        Service.find(filter)
+          .select('-__v -lastUpdatedBy -version')
+          .populate('category', 'name slug icon')
+          .populate('subcategory', 'name slug')
+          .populate('createdBy', 'name picture')
+          .sort(sortObj)
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Service.countDocuments(filter)
+      ]);
+
+      // Get status counts
+      statusCounts = await Service.aggregate([
+        { $match: { createdBy: filter.createdBy } },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      // Cache the result if enabled
+      if (useCache) {
+        await cache.set(cacheKey, { services, total, statusCounts }, 300); // 5 minutes
+        console.log(`Cache set for my services: ${cacheKey}`);
+      }
+    }
 
     const formattedServices = services.map(service => {
-  const safeService = { ...service };
+      const safeService = { ...service };
 
-  safeService.hasImages = Boolean(service.images && service.images.length > 0);
-  safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
-  safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
+      safeService.hasImages = Boolean(service.images && service.images.length > 0);
+      safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
+      safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
 
-  safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
-  safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit || 'days'}`;
+      safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;
+      safeService.deliveryFormatted = `${service.deliveryTime} ${service.deliveryTimeUnit || 'days'}`;
 
-  const statusColors = {
-    active: 'success',
-    draft: 'warning',
-    pending: 'info',
-    paused: 'secondary',
-    denied: 'danger',
-    suspended: 'danger'
-  };
+      const statusColors = {
+        active: 'success',
+        draft: 'warning',
+        pending: 'info',
+        paused: 'secondary',
+        denied: 'danger',
+        suspended: 'danger'
+      };
 
-  // FIXED: Safe handling of missing/invalid status
-  const statusKey = service.status || 'draft';
-  const statusText = statusKey 
-    ? statusKey.charAt(0).toUpperCase() + statusKey.slice(1)
-    : 'Unknown';
+      // FIXED: Safe handling of missing/invalid status
+      const statusKey = service.status || 'draft';
+      const statusText = statusKey 
+        ? statusKey.charAt(0).toUpperCase() + statusKey.slice(1)
+        : 'Unknown';
 
-  safeService.statusBadge = {
-    text: statusText,
-    color: statusColors[statusKey] || 'secondary'
-  };
+      safeService.statusBadge = {
+        text: statusText,
+        color: statusColors[statusKey] || 'secondary'
+      };
 
-  if (safeService.description && safeService.description.length > 150) {
-    safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
-  }
+      if (safeService.description && safeService.description.length > 150) {
+        safeService.descriptionShort = safeService.description.substring(0, 150) + '...';
+      }
 
-  return safeService;
-});
+      return safeService;
+    });
 
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
-
-    const statusCounts = await Service.aggregate([
-      { $match: { createdBy: filter.createdBy } },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
 
     const statusSummary = statusCounts.reduce((acc, curr) => {
       acc[curr._id] = curr.count;
@@ -2644,7 +3162,8 @@ const getMyServices = async (req, res, next) => {
       'X-Total-Count': total,
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
-      'X-Current-Page': pageNum
+      'X-Current-Page': pageNum,
+      'X-Cache': useCache ? 'HIT' : 'MISS'
     });
 
     res.json({
@@ -2665,7 +3184,8 @@ const getMyServices = async (req, res, next) => {
         prevPage: hasPrev ? pageNum - 1 : null,
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: useCache && services !== undefined
     });
 
   } catch (error) {
@@ -2686,9 +3206,8 @@ const getMyServices = async (req, res, next) => {
     next(error);
   }
 };
-// Add to service.controller.js
-// In service.controller.js - Fix the getAdminServices function:
 
+// Get Admin Services
 const getAdminServices = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -2716,8 +3235,11 @@ const getAdminServices = async (req, res, next) => {
       category,
       rating,
       createdBy,
-      isActive = ''
+      isActive = '',
+      cache: useCacheParam = 'false'
     } = req.query;
+
+    const useCache = useCacheParam === 'true';
 
     // Build filter for admin - can see all services
     const filter = {};
@@ -2771,25 +3293,74 @@ const getAdminServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
-    // Sort options
-    const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'ordersCount', 'views'];
-    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
-    const sortDirection = sortOrder === 'asc' ? 1 : -1;
-    const sortOptions = { [sortField]: sortDirection };
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin_services', {
+      filter,
+      page: pageNum,
+      limit: limitNum,
+      sortBy,
+      sortOrder
+    });
 
-    // Execute query
-    const [services, total] = await Promise.all([
-      Service.find(filter)
-        .select('-__v -lastUpdatedBy -version')
-        .populate('category', 'name slug icon')
-        .populate('subcategory', 'name slug')
-        .populate('createdBy', 'name email picture role')
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Service.countDocuments(filter)
-    ]);
+    let services, total, stats;
+
+    // Try to get from cache
+    if (useCache && pageNum === 1) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        services = cached.services;
+        total = cached.total;
+        stats = cached.stats;
+        console.log(`Cache hit for admin services: ${cacheKey}`);
+      }
+    }
+
+    if (!services || !total) {
+      // Sort options
+      const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'ordersCount', 'views'];
+      const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      const sortDirection = sortOrder === 'asc' ? 1 : -1;
+      const sortOptions = { [sortField]: sortDirection };
+
+      // Execute query
+      [services, total] = await Promise.all([
+        Service.find(filter)
+          .select('-__v -lastUpdatedBy -version')
+          .populate('category', 'name slug icon')
+          .populate('subcategory', 'name slug')
+          .populate('createdBy', 'name email picture role')
+          .sort(sortOptions)
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Service.countDocuments(filter)
+      ]);
+
+      // Get statistics
+      stats = await Service.aggregate([
+        { $match: {} },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            active: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'active'] }, { $eq: ['$isActive', true] }] }, 1, 0] } },
+            draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
+            pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+            paused: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
+            suspended: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
+            featured: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
+            avgPrice: { $avg: '$price' },
+            avgRating: { $avg: '$rating' }
+          }
+        }
+      ]);
+
+      // Cache the result if enabled and first page
+      if (useCache && pageNum === 1) {
+        await cache.set(cacheKey, { services, total, stats }, 300); // 5 minutes
+        console.log(`Cache set for admin services: ${cacheKey}`);
+      }
+    }
 
     // Format response
     const formattedServices = services.map(service => ({
@@ -2821,25 +3392,6 @@ const getAdminServices = async (req, res, next) => {
 
     const totalPages = Math.ceil(total / limitNum);
 
-    // Get statistics
-    const stats = await Service.aggregate([
-      { $match: {} },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          active: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'active'] }, { $eq: ['$isActive', true] }] }, 1, 0] } },
-          draft: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
-          pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-          paused: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
-          suspended: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
-          featured: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
-          avgPrice: { $avg: '$price' },
-          avgRating: { $avg: '$rating' }
-        }
-      }
-    ]);
-
     res.json({
       success: true,
       data: formattedServices,
@@ -2863,7 +3415,8 @@ const getAdminServices = async (req, res, next) => {
         avgRating: 0
       },
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: useCache && pageNum === 1 && services !== undefined
     });
 
   } catch (error) {
@@ -2874,6 +3427,464 @@ const getAdminServices = async (req, res, next) => {
       code: 'SERVICES_FETCH_ERROR',
       requestId,
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get Popular Services
+const getPopularServices = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    const { 
+      limit = 12, 
+      category, 
+      random = 'false',
+      minRating = 4.0,
+      minOrders = 5,
+      maxPrice,
+      cache: useCacheParam = 'true'
+    } = req.query;
+
+    const useCache = useCacheParam === 'true';
+    
+    // Parse limit with maximum constraint
+    const queryLimit = Math.min(parseInt(limit) || 12, 50);
+    
+    // Build filter for popular services
+    const filter = {
+      status: 'active',
+      isActive: true,
+      isPopular: true,
+      rating: { $gte: parseFloat(minRating) }
+    };
+
+    // Optional category filter
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+
+    // Optional price filter
+    if (maxPrice) {
+      filter.price = { $lte: parseFloat(maxPrice) };
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('popular_services', {
+      filter,
+      random,
+      queryLimit
+    });
+
+    let services = [];
+    let categoryStats = [];
+
+    // Try to get from cache
+    if (useCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        services = cached.services;
+        categoryStats = cached.categoryStats;
+        console.log(`Cache hit for popular services: ${cacheKey}`);
+      }
+    }
+
+    if (!services.length) {
+      // Optional random ordering
+      const sortOptions = random === 'true' 
+        ? { $rand: {} }  // Use aggregation for random
+        : { 
+            rating: -1, 
+            views: -1, 
+            likes: -1,
+            createdAt: -1 
+          };
+
+      if (random === 'true') {
+        // Use aggregation for random sampling
+        services = await Service.aggregate([
+          { $match: filter },
+          { $sample: { size: queryLimit } },
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'createdBy',
+              foreignField: '_id',
+              as: 'createdBy'
+            }
+          },
+          { $unwind: '$createdBy' },
+          {
+            $lookup: {
+              from: 'categories',
+              localField: 'category',
+              foreignField: '_id',
+              as: 'category'
+            }
+          },
+          { $unwind: '$category' },
+          {
+            $project: {
+              _id: 1,
+              title: 1,
+              slug: 1,
+              shortDescription: 1,
+              description: 1,
+              price: 1,
+              currency: 1,
+              rating: 1,
+              reviewsCount: 1,
+              deliveryTime: 1,
+              deliveryTimeUnit: 1,
+              revisions: 1,
+              views: 1,
+              likes: 1,
+              thumbnail: 1,
+              images: { $slice: ['$images', 1] }, // Just first image
+              'createdBy._id': 1,
+              'createdBy.name': 1,
+              'createdBy.picture': 1,
+              'category._id': 1,
+              'category.name': 1,
+              'category.slug': 1,
+              'category.icon': 1
+            }
+          }
+        ]);
+      } else {
+        // Normal query with populate
+        services = await Service.find(filter)
+          .select('title slug shortDescription description price currency rating reviewsCount deliveryTime deliveryTimeUnit revisions views likes thumbnail images')
+          .populate('createdBy', 'name picture')
+          .populate('category', 'name slug icon')
+          .sort(sortOptions)
+          .limit(queryLimit)
+          .lean();
+      }
+
+      // Get category statistics if no specific category filter
+      if (!category) {
+        categoryStats = await Service.aggregate([
+          { $match: { ...filter } },
+          {
+            $group: {
+              _id: '$category',
+              count: { $sum: 1 },
+              avgRating: { $avg: '$rating' }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 6 }
+        ]);
+
+        // Populate category names
+        if (categoryStats.length > 0) {
+          const categoryIds = categoryStats.map(stat => stat._id);
+          const categories = await Category.find({ _id: { $in: categoryIds } })
+            .select('name slug icon')
+            .lean();
+
+          categoryStats = categoryStats.map(stat => {
+            const categoryInfo = categories.find(cat => cat._id.toString() === stat._id.toString());
+            return {
+              ...stat,
+              name: categoryInfo?.name,
+              slug: categoryInfo?.slug,
+              icon: categoryInfo?.icon
+            };
+          });
+        }
+      }
+
+      // Cache the result
+      if (useCache) {
+        await cache.set(cacheKey, { services, categoryStats }, 300); // 5 minutes
+        console.log(`Cache set for popular services: ${cacheKey}`);
+      }
+    }
+
+    // Format response
+    const formattedServices = services.map(service => ({
+      _id: service._id,
+      title: service.title,
+      slug: service.slug,
+      shortDescription: service.shortDescription || 
+        (service.description ? service.description.substring(0, 120) + '...' : ''),
+      price: service.price,
+      currency: service.currency || 'USD',
+      rating: service.rating || 0,
+      reviewsCount: service.reviewsCount || 0,
+      deliveryTime: service.deliveryTime,
+      deliveryTimeUnit: service.deliveryTimeUnit,
+      revisions: service.revisions || 0,
+      views: service.views || 0,
+      likes: service.likes || 0,
+      thumbnail: service.thumbnail,
+      firstImage: service.images && service.images.length > 0 ? service.images[0] : null,
+      createdBy: {
+        _id: service.createdBy?._id,
+        name: service.createdBy?.name,
+        picture: service.createdBy?.picture
+      },
+      category: {
+        _id: service.category?._id,
+        name: service.category?.name,
+        slug: service.category?.slug,
+        icon: service.category?.icon
+      }
+    }));
+
+    res.json({
+      success: true,
+      services: formattedServices,
+      count: formattedServices.length,
+      categoryStats,
+      requestId,
+      timestamp: new Date().toISOString(),
+      cached: useCache && services !== undefined
+    });
+
+  } catch (error) {
+    console.error('[POPULAR SERVICES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch popular services',
+      code: 'POPULAR_SERVICES_ERROR',
+      requestId
+    });
+  }
+};
+
+// Toggle Service Popular Status (Admin only)
+const togglePopularStatus = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    const { id } = req.params;
+    const { isPopular } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid service ID',
+        code: 'INVALID_ID',
+        requestId
+      });
+    }
+
+    if (isPopular === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'isPopular field is required',
+        code: 'MISSING_FIELD',
+        requestId
+      });
+    }
+
+    // Check admin permission
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const service = await Service.findById(id);
+    
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service not found',
+        code: 'SERVICE_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Update popular status
+    service.isPopular = isPopular;
+    service.lastUpdatedBy = req.user._id;
+    service.version += 1;
+    
+    await service.save();
+
+    // Invalidate cache for this service and popular services cache
+    await invalidateServiceCache(id);
+    await cache.del('popular_services:*');
+
+    // Log audit
+    logAudit('TOGGLE_POPULAR', 'SERVICE', id, req.user._id, {
+      isPopular,
+      serviceTitle: service.title,
+      serviceCategory: service.category
+    });
+
+    res.json({
+      success: true,
+      message: `Service ${isPopular ? 'marked as popular' : 'removed from popular'}`,
+      service: {
+        _id: service._id,
+        title: service.title,
+        isPopular: service.isPopular,
+        updatedAt: service.updatedAt
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[TOGGLE POPULAR ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update service popular status',
+      code: 'UPDATE_POPULAR_ERROR',
+      requestId
+    });
+  }
+};
+
+// Get Popular Services by Category
+const getPopularServicesByCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    const cacheKey = 'popular_services_by_category';
+    const useCache = req.query.cache !== 'false';
+
+    // Try to get from cache
+    let result;
+    if (useCache) {
+      result = await cache.get(cacheKey);
+      if (result) {
+        console.log(`Cache hit for popular services by category: ${cacheKey}`);
+        return res.json({
+          success: true,
+          data: result,
+          count: result.length,
+          requestId,
+          timestamp: new Date().toISOString(),
+          cached: true
+        });
+      }
+    }
+
+    // This replaces your separate PopularService model functionality
+    const categories = ['web', 'video', 'software', 'mobile', 'design', 'data'];
+    
+    // Map category strings to actual category IDs from your database
+    const categoryMap = {
+      web: 'web_development',
+      video: 'video_editing',
+      software: 'software_development',
+      mobile: 'mobile_apps',
+      design: 'graphic_design',
+      data: 'data_analysis'
+    };
+
+    result = [];
+
+    // For each category, find popular services
+    for (const categorySlug of categories) {
+      const category = await Category.findOne({ 
+        slug: categoryMap[categorySlug] || categorySlug,
+        isActive: true 
+      });
+
+      if (category) {
+        const services = await Service.find({
+          category: category._id,
+          status: 'active',
+          isActive: true,
+          isPopular: true,
+          rating: { $gte: 4.0 }
+        })
+        .select('title slug shortDescription price rating thumbnail images searchKeywords')
+        .populate('category', 'name slug')
+        .limit(6)
+        .lean();
+
+        if (services.length > 0) {
+          // Format for frontend
+          const formattedServices = services.map(service => ({
+            id: service._id.toString(),
+            name: service.title,
+            description: service.shortDescription || 
+              (service.description ? service.description.substring(0, 100) + '...' : ''),
+            searchQuery: service.searchKeywords?.[0] || 
+              service.title.toLowerCase().replace(/\s+/g, '-'),
+            category: categorySlug,
+            imageUrl: service.thumbnail?.url || 
+              (service.images && service.images[0]?.url) ||
+              `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,
+            rating: service.rating || 0,
+            price: service.price
+          }));
+
+          // Take up to 3 services per category for the carousel
+          result.push(...formattedServices.slice(0, 3));
+        }
+      }
+    }
+
+    // If we don't have enough popular services, fill with featured services
+    if (result.length < 6) {
+      const featuredServices = await Service.find({
+        status: 'active',
+        isActive: true,
+        isFeatured: true,
+        _id: { $nin: result.map(s => s.id) }
+      })
+      .select('title slug shortDescription price rating thumbnail images searchKeywords')
+      .populate('category', 'name slug')
+      .limit(12 - result.length)
+      .lean();
+
+      const additionalServices = featuredServices.map(service => ({
+        id: service._id.toString(),
+        name: service.title,
+        description: service.shortDescription || 
+          (service.description ? service.description.substring(0, 100) + '...' : ''),
+        searchQuery: service.searchKeywords?.[0] || 
+          service.title.toLowerCase().replace(/\s+/g, '-'),
+        category: service.category?.slug || 'web',
+        imageUrl: service.thumbnail?.url || 
+          (service.images && service.images[0]?.url) ||
+          `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,
+        rating: service.rating || 0,
+        price: service.price
+      }));
+
+      result.push(...additionalServices);
+    }
+
+    // Order by rating/price to ensure quality display
+    const orderedResult = result
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, 12);
+
+    // Cache the result for 10 minutes
+    if (useCache) {
+      await cache.set(cacheKey, orderedResult, 600);
+      console.log(`Cache set for popular services by category: ${cacheKey}`);
+    }
+
+    res.json({
+      success: true,
+      data: orderedResult,
+      count: orderedResult.length,
+      requestId,
+      timestamp: new Date().toISOString(),
+      cached: false
+    });
+
+  } catch (error) {
+    console.error('[POPULAR BY CATEGORY ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch popular services by category',
+      code: 'POPULAR_CATEGORY_ERROR',
+      requestId
     });
   }
 };
@@ -2896,5 +3907,8 @@ module.exports = {
   uploadImages,
   removeImage,
   setThumbnail,
-  uploadThumbnail
+  uploadThumbnail,
+  getPopularServices,
+  togglePopularStatus,
+  getPopularServicesByCategory
 };

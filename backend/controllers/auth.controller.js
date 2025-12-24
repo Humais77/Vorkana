@@ -8,6 +8,10 @@ const rateLimit = require('express-rate-limit');
 const blacklist = new Set(); // In production, use Redis
 const mongoose = require('mongoose');
 const EmailService = require('../services/email.service');
+
+// Cache utility import (make sure this file exists)
+const cache = require('../utils/cache.js');
+
 // ========== TOKEN FUNCTIONS ==========
 const generateToken = (id) => {
   return jwt.sign(
@@ -90,30 +94,19 @@ const validateDateOfBirth = (dob) => {
   return age >= 13 && age <= 120;
 };
 
-// ========== EMAIL SERVICE ==========
-const sendEmail = async (to, subject, text, html) => {
+// ========== CACHE FUNCTIONS ==========
+const generateCacheKey = (prefix, params) => {
+  const key = `${prefix}:${JSON.stringify(params)}`;
+  return crypto.createHash('md5').update(key).digest('hex');
+};
+
+const invalidateUserCache = async (userId) => {
   try {
-    // For development, still log to console but also send real email
-    console.log(`📧 Sending email to ${to}: ${subject}`);
-    
-    // Send real email using our email service
-    await EmailService.sendEmail(to, subject, 'basic', {
-      subject,
-      body: html || text,
-      name: to.split('@')[0]
-    });
-    
-    return true;
-  } catch (error) {
-    console.error('Email sending failed:', error);
-    
-    // Fallback to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`Development email to ${to}: ${subject}`);
-      console.log(`Text: ${text.substring(0, 200)}...`);
-    }
-    
-    return false;
+    await cache.del(`user:${userId}*`);
+    await cache.del('users:*');
+    console.log(`Cache invalidated for user: ${userId}`);
+  } catch (err) {
+    console.warn('Error invalidating user cache:', err.message);
   }
 };
 
@@ -201,14 +194,15 @@ const register = async (req, res) => {
     // Create user
     const user = await User.create(sanitizedData);
 
+    // Invalidate cache for user lists
+    await cache.del('users:*');
+
     // Generate verification token
     const verificationToken = user.createEmailVerificationToken();
     await user.save({ validateBeforeSave: false });
 
     // Send verification email
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-   await EmailService.sendVerificationEmail(user, verificationToken);
-try {
+    try {
       await EmailService.sendVerificationEmail(user, verificationToken);
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError);
@@ -218,6 +212,7 @@ try {
         error: emailError.message 
       });
     }
+
     // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -284,6 +279,19 @@ const login = async (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
+    // Generate cache key for failed login attempts
+    const loginAttemptsKey = `login_attempts:${email}:${ip}`;
+    
+    // Check rate limiting in cache
+    const attempts = await cache.get(loginAttemptsKey) || 0;
+    if (attempts >= 5) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many login attempts. Please try again later.',
+        code: 'RATE_LIMIT_EXCEEDED'
+      });
+    }
+
     // Basic validation
     if (!email || !password) {
       return res.status(400).json({
@@ -298,6 +306,9 @@ const login = async (req, res) => {
     
     // Check if account exists
     if (!user) {
+      // Increment failed attempts in cache
+      await cache.set(loginAttemptsKey, attempts + 1, 900); // 15 minutes TTL
+      
       // Constant-time delay to prevent timing attacks
       await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
       logSecurityEvent('LOGIN_FAILED_NO_USER', null, ip, { email });
@@ -336,6 +347,9 @@ const login = async (req, res) => {
     const isPasswordValid = await user.comparePassword(password);
     
     if (!isPasswordValid) {
+      // Increment failed attempts in cache
+      await cache.set(loginAttemptsKey, attempts + 1, 900);
+      
       // Log failed attempt
       await user.incrementLoginAttempts();
       await user.addLoginHistory(ip, userAgent, false);
@@ -367,6 +381,9 @@ const login = async (req, res) => {
     await user.resetLoginAttempts();
     await user.addLoginHistory(ip, userAgent, true);
     
+    // Clear failed attempts from cache
+    await cache.del(loginAttemptsKey);
+    
     // Update last login
     user.lastLoginAt = new Date();
     user.lastSeenAt = new Date();
@@ -381,6 +398,29 @@ const login = async (req, res) => {
     // Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+
+    // Cache user profile for public access
+    const userCacheKey = `user:${user._id}:public`;
+    const publicProfile = {
+      _id: user._id,
+      name: user.name,
+      picture: user.picture,
+      bio: user.bio,
+      rating: user.rating,
+      totalReviews: user.totalReviews,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
+      occupation: user.occupation,
+      education: user.education,
+      languages: user.languages,
+      createdAt: user.createdAt,
+      isOnline: user.isOnline,
+      accountType: user.accountType,
+      country: user.privacySettings.showLocation ? user.country : undefined,
+      city: user.privacySettings.showLocation ? user.city : undefined
+    };
+    
+    await cache.set(userCacheKey, publicProfile, 300); // Cache for 5 minutes
 
     // Log successful login
     logSecurityEvent('LOGIN_SUCCESS', user._id, ip, { 
@@ -427,9 +467,21 @@ const login = async (req, res) => {
   }
 };
 
-// Get user profile
+// Get user profile with caching
 const getProfile = async (req, res) => {
   try {
+    const cacheKey = `user:${req.user._id}:profile`;
+    
+    // Try to get from cache first
+    const cachedProfile = await cache.get(cacheKey);
+    if (cachedProfile) {
+      return res.json({
+        success: true,
+        user: cachedProfile,
+        cached: true
+      });
+    }
+
     const user = await User.findById(req.user._id);
     
     if (!user) {
@@ -443,39 +495,45 @@ const getProfile = async (req, res) => {
     user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
 
+    const userProfile = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      picture: user.picture,
+      emailVerified: user.emailVerified,
+      twoFactorEnabled: user.twoFactorEnabled,
+      phoneNumber: user.phoneNumber,
+      bio: user.bio,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth,
+      country: user.country,
+      city: user.city,
+      languages: user.languages,
+      occupation: user.occupation,
+      education: user.education,
+      privacySettings: user.privacySettings,
+      accountType: user.accountType,
+      rating: user.rating,
+      totalReviews: user.totalReviews,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      lastLoginAt: user.lastLoginAt,
+      lastSeenAt: user.lastSeenAt,
+      isOnline: user.isOnline,
+      age: user.age,
+      fullLocation: user.fullLocation
+    };
+
+    // Cache the profile for 5 minutes
+    await cache.set(cacheKey, userProfile, 300);
+
     res.json({
       success: true,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified,
-        twoFactorEnabled: user.twoFactorEnabled,
-        phoneNumber: user.phoneNumber,
-        bio: user.bio,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        country: user.country,
-        city: user.city,
-        languages: user.languages,
-        occupation: user.occupation,
-        education: user.education,
-        privacySettings: user.privacySettings,
-        accountType: user.accountType,
-        rating: user.rating,
-        totalReviews: user.totalReviews,
-        responseRate: user.responseRate,
-        responseTime: user.responseTime,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        lastLoginAt: user.lastLoginAt,
-        lastSeenAt: user.lastSeenAt,
-        isOnline: user.isOnline,
-        age: user.age,
-        fullLocation: user.fullLocation
-      }
+      user: userProfile,
+      cached: false
     });
   } catch (error) {
     console.error('Get profile error:', error);
@@ -583,6 +641,9 @@ const updateProfile = async (req, res) => {
         message: 'User not found after update'
       });
     }
+
+    // Invalidate cache for this user
+    await invalidateUserCache(req.user._id);
 
     res.json({
       success: true,
@@ -725,6 +786,9 @@ const changePassword = async (req, res) => {
     user.password = newPassword;
     await user.save({ validateBeforeSave: false });
 
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
+
     // Invalidate current token
     const authToken = req.headers.authorization?.split(' ')[1];
     if (authToken) {
@@ -736,7 +800,7 @@ const changePassword = async (req, res) => {
       passwordChangedAt: new Date().toISOString()
     });
 
-    // FIXED: Send security notification email using EmailService
+    // Send security notification email
     try {
       await EmailService.sendPasswordChangedEmail(user, ip);
     } catch (emailError) {
@@ -810,6 +874,9 @@ const verifyEmail = async (req, res) => {
     user.suspiciousActivityDetected = false;
     await user.save();
     
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
+    
     // Send welcome email
     try {
       await EmailService.sendWelcomeEmail(user);
@@ -843,6 +910,7 @@ const verifyEmail = async (req, res) => {
     });
   }
 };
+
 // Resend verification email with rate limiting
 const resendVerificationEmail = async (req, res) => {
   try {
@@ -891,7 +959,7 @@ const resendVerificationEmail = async (req, res) => {
     // Log resend attempt
     await user.addLoginHistory(ip, 'verification-resend', true);
 
-    // FIXED: Send verification email using EmailService
+    // Send verification email
     try {
       await EmailService.sendVerificationEmail(user, verificationToken);
     } catch (emailError) {
@@ -979,7 +1047,7 @@ const forgotPassword = async (req, res) => {
     // Log reset request
     await user.addLoginHistory(ip, 'password-reset', true);
 
-    // FIXED: Send password reset email using EmailService
+    // Send password reset email
     try {
       await EmailService.sendPasswordResetEmail(user, resetToken);
     } catch (emailError) {
@@ -1076,6 +1144,9 @@ const resetPassword = async (req, res) => {
     
     await user.save();
 
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
+
     // Generate new tokens
     const authToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -1083,7 +1154,7 @@ const resetPassword = async (req, res) => {
     // Log password reset
     logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
 
-    // FIXED: Send confirmation email using EmailService
+    // Send confirmation email
     try {
       await EmailService.sendPasswordChangedEmail(user, ip);
     } catch (emailError) {
@@ -1134,6 +1205,8 @@ const logout = async (req, res) => {
       const user = await User.findById(req.user._id);
       if (user) {
         await user.removeDeviceToken(deviceToken);
+        // Invalidate cache for this user
+        await invalidateUserCache(user._id);
       }
     }
 
@@ -1226,7 +1299,7 @@ const refreshToken = async (req, res) => {
   }
 };
 
-// Get public user profile (for other users to see)
+// Get public user profile (for other users to see) with caching
 const getPublicProfile = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1235,6 +1308,19 @@ const getPublicProfile = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Invalid user ID'
+      });
+    }
+
+    // Generate cache key
+    const cacheKey = `user:${userId}:public:${req.user ? 'auth' : 'guest'}`;
+    
+    // Try to get from cache first
+    const cachedProfile = await cache.get(cacheKey);
+    if (cachedProfile) {
+      return res.json({
+        success: true,
+        profile: cachedProfile,
+        cached: true
       });
     }
 
@@ -1305,9 +1391,13 @@ const getPublicProfile = async (req, res) => {
     const memberDuration = Math.floor((Date.now() - user.createdAt) / (1000 * 60 * 60 * 24));
     publicProfile.memberSince = `${memberDuration} days`;
 
+    // Cache the public profile for 10 minutes
+    await cache.set(cacheKey, publicProfile, 600);
+
     res.json({
       success: true,
-      profile: publicProfile
+      profile: publicProfile,
+      cached: false
     });
   } catch (error) {
     console.error('Get public profile error:', error);
@@ -1354,6 +1444,9 @@ const deactivateAccount = async (req, res) => {
     
     await user.save({ validateBeforeSave: false });
 
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
+
     // Invalidate all tokens
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
@@ -1363,7 +1456,7 @@ const deactivateAccount = async (req, res) => {
     // Log deactivation
     logSecurityEvent('ACCOUNT_DEACTIVATED', user._id, req.ip, { reason });
 
-    // FIXED: Send deactivation email using EmailService
+    // Send deactivation email
     try {
       await EmailService.sendAccountDeactivatedEmail(user, reason);
     } catch (emailError) {
@@ -1436,6 +1529,9 @@ const reactivateAccount = async (req, res) => {
     
     await user.save({ validateBeforeSave: false });
 
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
+
     // Generate new tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -1443,7 +1539,7 @@ const reactivateAccount = async (req, res) => {
     // Log reactivation
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
 
-    // FIXED: Send reactivation email using EmailService
+    // Send reactivation email
     try {
       await EmailService.sendAccountReactivatedEmail(user);
     } catch (emailError) {
@@ -1475,6 +1571,7 @@ const reactivateAccount = async (req, res) => {
     });
   }
 };
+
 const handleJSONErrors = (err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     return res.status(400).json({
@@ -1486,7 +1583,6 @@ const handleJSONErrors = (err, req, res, next) => {
   }
   next(err);
 };
-// In your auth.controller.js, add this function:
 
 const verifyEmailRedirect = async (req, res) => {
   try {
@@ -1554,6 +1650,9 @@ const verifyEmailRedirect = async (req, res) => {
     user.emailVerificationToken = undefined;
     user.suspiciousActivityDetected = false;
     await user.save();
+    
+    // Invalidate cache for this user
+    await invalidateUserCache(user._id);
     
     // Send welcome email
     try {
@@ -1714,6 +1813,7 @@ const verifyEmailRedirect = async (req, res) => {
     res.status(500).send(errorHtml);
   }
 };
+
 // Password reset redirect handler
 const resetPasswordRedirect = async (req, res) => {
   try {
@@ -2155,6 +2255,7 @@ const resetPasswordRedirect = async (req, res) => {
     res.status(500).send(errorHtml);
   }
 };
+
 module.exports = {
   register,
   login,
@@ -2173,6 +2274,6 @@ module.exports = {
   generateToken,
   generateRefreshToken,
   verifyEmailRedirect,
-  resetPasswordRedirect ,
+  resetPasswordRedirect,
   handleJSONErrors
 };

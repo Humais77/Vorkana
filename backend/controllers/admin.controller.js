@@ -144,13 +144,12 @@ const getCategories = async (req, res) => {
   }
 };
 
-// Dashboard Statistics
-// Simplify the getDashboardStats function to return only essential data
+// In admin.controller.js - FIXED getDashboardStats function
 const getDashboardStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    // Execute parallel queries
+    // Execute parallel queries with proper filters
     const [
       totalUsers,
       activeUsers,
@@ -162,21 +161,36 @@ const getDashboardStats = async (req, res) => {
       activeGigs,
       recentActivity
     ] = await Promise.all([
-      // Users
+      // Users - count all users
       User.countDocuments(),
+      // Users - count active users (isActive: true)
       User.countDocuments({ isActive: true }),
       
-      // Categories
-      Category.countDocuments(),
-      Category.countDocuments({ isActive: true, deletedAt: null }),
+      // Categories - count all non-deleted categories
+      Category.countDocuments({ deletedAt: null }),
+      // Categories - count active, non-deleted categories
+      Category.countDocuments({ 
+        isActive: true, 
+        deletedAt: null 
+      }),
       
-      // Services
-      Service.countDocuments(),
-      Service.countDocuments({ isActive: true }),
+      // Services - count all services (with proper filter)
+      Service.countDocuments({ deletedAt: null }),
+      // Services - count active services (check your Service model schema)
+      Service.countDocuments({ 
+        status: 'active',  // Change this to match your actual field name
+        isActive: true,    // Add if exists in your schema
+        deletedAt: null 
+      }),
       
-      // Gigs
-      Gig.countDocuments(),
-      Gig.countDocuments({ isActive: true }),
+      // Gigs - count all non-deleted gigs
+      Gig.countDocuments({ deletedAt: null }),
+      // Gigs - count active gigs (check your Gig model schema)
+      Gig.countDocuments({ 
+        status: { $in: ['open', 'in_progress'] }, // Active gig statuses
+        isActive: true,                           // Add if exists in your schema
+        deletedAt: null 
+      }),
       
       // Recent activity (last 5 users)
       User.find()
@@ -222,11 +236,31 @@ const getDashboardStats = async (req, res) => {
   } catch (error) {
     console.error('[DASHBOARD STATS ERROR]', error);
     
+    // Return proper fallback structure
     res.status(500).json({
       success: false,
       message: 'Failed to load dashboard statistics',
       code: 'DASHBOARD_ERROR',
-      requestId
+      requestId,
+      data: {
+        overview: {
+          totalUsers: 0,
+          activeUsers: 0
+        },
+        categories: {
+          totalCategories: 0,
+          activeCategories: 0
+        },
+        services: {
+          totalServices: 0,
+          activeServices: 0
+        },
+        gigs: {
+          totalGigs: 0,
+          activeGigs: 0
+        },
+        recentActivity: []
+      }
     });
   }
 };

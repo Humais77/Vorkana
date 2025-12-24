@@ -4,20 +4,46 @@ const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 const cache = require('../utils/cache.js');
+
 // Security: Request ID for tracking
 const crypto = require('crypto');
+
 const generateRequestId = () => crypto.randomUUID();
+
 // Security: Input sanitization for categories
 const sanitizeCategoryInput = (data) => {
   const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];
   return sanitizeObject(data, skipKeys);
 };
-const invalidateCategoryCache = async () => {
-  await cache.del('categories:*');
-  await cache.del('category:single:*');
-  await cache.del('category:stats:*');
-  await cache.del('category:search:*');
+
+// Cache helper functions
+const generateCacheKey = (prefix, params) => {
+  const key = `${prefix}:${JSON.stringify(params)}`;
+  return crypto.createHash('md5').update(key).digest('hex');
 };
+
+const invalidateCategoryCache = async () => {
+  try {
+    await cache.del('categories:*');
+    await cache.del('category:*');
+    await cache.del('category_stats:*');
+    await cache.del('category_search:*');
+    console.log('Category cache invalidated successfully');
+  } catch (err) {
+    console.warn('Error invalidating category cache:', err.message);
+  }
+};
+
+const invalidateSpecificCategoryCache = async (categoryId) => {
+  try {
+    await cache.del(`category:single:*${categoryId}*`);
+    await cache.del(`category:*${categoryId}*`);
+    console.log(`Cache invalidated for category: ${categoryId}`);
+  } catch (err) {
+    console.warn('Error invalidating specific category cache:', err.message);
+  }
+};
+
 // Security: Build secure query
 const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   const {
@@ -48,7 +74,7 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
   const filter = {};
 
   // Security: Only admin can see all categories
- if (showAll && userRole === 'admin') {
+  if (showAll && userRole === 'admin') {
     // Handle isActive with empty string check
     if (isActive !== undefined && isActive !== '') {
       filter.isActive = isActive === 'true' || isActive === true;
@@ -68,38 +94,40 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
       { metaKeywords: { $in: [new RegExp(sanitizedSearch, 'i')] } }
     ];
   }
-   // Safe boolean query param handling
-const parseBooleanParam = (param) => {
-  if (param === undefined || param === '' || param === null) return undefined;
-  if (typeof param === 'boolean') return param;
-  if (typeof param === 'string') {
-    const lower = param.toLowerCase().trim();
-    if (lower === 'true' || lower === '1') return true;
-    if (lower === 'false' || lower === '0') return false;
+
+  // Safe boolean query param handling
+  const parseBooleanParam = (param) => {
+    if (param === undefined || param === '' || param === null) return undefined;
+    if (typeof param === 'boolean') return param;
+    if (typeof param === 'string') {
+      const lower = param.toLowerCase().trim();
+      if (lower === 'true' || lower === '1') return true;
+      if (lower === 'false' || lower === '0') return false;
+    }
+    return undefined; // invalid → ignore
+  };
+
+  const parsedFeatured = parseBooleanParam(featured);
+  if (parsedFeatured !== undefined) {
+    filter.featured = parsedFeatured;
   }
-  return undefined; // invalid → ignore
-};
 
-const parsedFeatured = parseBooleanParam(featured);
-if (parsedFeatured !== undefined) {
-  filter.featured = parsedFeatured;
-}
+  const parsedPopular = parseBooleanParam(popular);
+  if (parsedPopular !== undefined) {
+    filter.popular = parsedPopular;
+  }
 
-const parsedPopular = parseBooleanParam(popular);
-if (parsedPopular !== undefined) {
-  filter.popular = parsedPopular;
-}
-// Add this helper function:
-const escapeRegex = (string) => {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
+  // Add this helper function:
+  const escapeRegex = (string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
 
-// Update the controller code:
-if (name) {
-  const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
-  const escapedName = escapeRegex(sanitizedName);
-  filter.name = { $regex: `^${escapedName}`, $options: 'i' };
-}
+  // Update the controller code:
+  if (name) {
+    const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
+    const escapedName = escapeRegex(sanitizedName);
+    filter.name = { $regex: `^${escapedName}`, $options: 'i' };
+  }
   
   if (slug) {
     filter.slug = sanitizeHtml(slug, { allowedTags: [] });
@@ -115,7 +143,6 @@ if (name) {
   }
 
   // Boolean filters
- 
   if (level !== undefined) filter.level = parseInt(level) || 0;
   
   if (hasImage === 'true' || hasImage === true) {
@@ -237,12 +264,10 @@ const createCategory = async (req, res, next) => {
       createdBy: req.user._id,
       version: 1
     });
-const invalidateCategoryCache = async () => {
-  await cache.del('categories:*');
-  await cache.del('category:single:*');
-  await cache.del('category:stats:*');
-  await cache.del('category:search:*');
-};
+
+    // Invalidate cache after creating new category
+    await invalidateCategoryCache();
+
     // Security: Audit log
     logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
       name: category.name,
@@ -331,11 +356,19 @@ const getCategories = async (req, res, next) => {
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    const cacheKey = `categories:${JSON.stringify({
-      filter, page: pageNum, limit: limitNum, sort: sortField, order: sortOrder,
-      populate: populate === 'true', includeSubcategories: includeSubcategories === 'true',
-      includeCounts: includeCounts === 'true', showAll: showAllFlag
-    })}`;
+    // Generate better cache key
+    const cacheKey = generateCacheKey('categories', {
+      filter, 
+      page: pageNum, 
+      limit: limitNum, 
+      sort: sortField, 
+      order: sortOrder,
+      populate: populate === 'true', 
+      includeSubcategories: includeSubcategories === 'true',
+      includeCounts: includeCounts === 'true', 
+      showAll: showAllFlag,
+      userRole: req.user?.role
+    });
 
     if (useCache) {
       const cachedResult = await cache.get(cacheKey);
@@ -409,7 +442,16 @@ const getCategories = async (req, res, next) => {
     const responseData = {
       success: true,
       data: categories,
-      pagination: { page: pageNum, limit: limitNum, total, totalPages, hasNext, hasPrev, nextPage: hasNext ? pageNum + 1 : null, prevPage: hasPrev ? pageNum - 1 : null },
+      pagination: { 
+        page: pageNum, 
+        limit: limitNum, 
+        total, 
+        totalPages, 
+        hasNext, 
+        hasPrev, 
+        nextPage: hasNext ? pageNum + 1 : null, 
+        prevPage: hasPrev ? pageNum - 1 : null 
+      },
       counts: counts || undefined,
       requestId,
       timestamp: new Date().toISOString(),
@@ -417,7 +459,7 @@ const getCategories = async (req, res, next) => {
     };
 
     if (useCache) {
-      await cache.set(cacheKey, responseData, 300);
+      await cache.set(cacheKey, responseData, 300); // Cache for 5 minutes
       console.log('Cache MISS → stored:', cacheKey);
       res.set('X-Cache', 'MISS');
     } else {
@@ -438,7 +480,12 @@ const getCategories = async (req, res, next) => {
 
   } catch (error) {
     if (error.name === 'MongoError' || (error.name === 'MongooseError' && error.message.includes('timed out'))) {
-      return res.status(408).json({ success: false, message: 'Query timeout', code: 'QUERY_TIMEOUT', requestId });
+      return res.status(408).json({ 
+        success: false, 
+        message: 'Query timeout', 
+        code: 'QUERY_TIMEOUT', 
+        requestId 
+      });
     }
     logAudit('ERROR', 'CATEGORY', 'GET_LIST', req.user?._id, { error: error.message });
     next(error);
@@ -455,17 +502,36 @@ const getCategoryById = async (req, res, next) => {
     const { fields, populate = true, includeSubcategories = false } = req.query;
 
     if (!id) {
-      return res.status(400).json({ success: false, message: 'Category identifier is required', code: 'MISSING_IDENTIFIER', requestId });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Category identifier is required', 
+        code: 'MISSING_IDENTIFIER', 
+        requestId 
+      });
     }
 
-    const cacheKey = `category:single:${id}:${populate === 'true'}:${includeSubcategories === 'true'}:${fields || 'default'}`;
+    // Generate cache key
+    const cacheKey = generateCacheKey('category_single', {
+      id,
+      populate: populate === 'true',
+      includeSubcategories: includeSubcategories === 'true',
+      fields,
+      userRole: req.user?.role
+    });
 
     if (populate === 'true') {
       const cached = await cache.get(cacheKey);
       if (cached) {
         console.log('Cache HIT single:', cacheKey);
         res.set({ 'X-Cache': 'HIT' });
-        return res.json({ success: true, data: cached, requestId, timestamp: new Date().toISOString(), responseTime: `${Date.now() - startTime}ms` });
+        return res.json({ 
+          success: true, 
+          data: cached, 
+          requestId, 
+          timestamp: new Date().toISOString(), 
+          responseTime: `${Date.now() - startTime}ms`,
+          cached: true
+        });
       }
     }
 
@@ -494,7 +560,11 @@ const getCategoryById = async (req, res, next) => {
 
     let populateOptions = [];
     if (populate === 'true') {
-      populateOptions.push({ path: 'parentCategory', select: 'name slug icon', match: { isActive: true } });
+      populateOptions.push({ 
+        path: 'parentCategory', 
+        select: 'name slug icon', 
+        match: { isActive: true } 
+      });
       if (includeSubcategories === 'true') {
         populateOptions.push({
           path: 'subcategories',
@@ -510,11 +580,21 @@ const getCategoryById = async (req, res, next) => {
       .populate(populateOptions.length > 0 ? populateOptions : null);
 
     if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found', code: 'CATEGORY_NOT_FOUND', requestId });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Category not found', 
+        code: 'CATEGORY_NOT_FOUND', 
+        requestId 
+      });
     }
 
     if (!category.isActive && req.user?.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Access to inactive category denied', code: 'ACCESS_DENIED', requestId });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access to inactive category denied', 
+        code: 'ACCESS_DENIED', 
+        requestId 
+      });
     }
 
     const safeCategory = category.toObject();
@@ -538,11 +618,15 @@ const getCategoryById = async (req, res, next) => {
       data: safeCategory,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cached: false
     });
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'GET_BY_ID', req.user?._id, { id: req.params.id, error: error.message });
+    logAudit('ERROR', 'CATEGORY', 'GET_BY_ID', req.user?._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
     next(error);
   }
 };
@@ -641,7 +725,6 @@ const updateCategory = async (req, res, next) => {
           requestId
         });
       }
-      await invalidateCategoryCache();
       return res.status(404).json({
         success: false,
         message: 'Category not found',
@@ -649,6 +732,10 @@ const updateCategory = async (req, res, next) => {
         requestId
       });
     }
+
+    // Invalidate cache after update
+    await invalidateCategoryCache();
+    await invalidateSpecificCategoryCache(id);
 
     // Security: Audit log
     logAudit('UPDATE', 'CATEGORY', category._id, req.user._id, {
@@ -785,6 +872,10 @@ const deleteCategory = async (req, res, next) => {
       
       const responseTime = Date.now() - startTime;
       
+      // Invalidate cache after permanent delete
+      await invalidateCategoryCache();
+      await invalidateSpecificCategoryCache(id);
+      
       res.json({
         success: true,
         message: 'Category permanently deleted',
@@ -806,7 +897,11 @@ const deleteCategory = async (req, res, next) => {
       });
       
       const responseTime = Date.now() - startTime;
+      
+      // Invalidate cache after soft delete
       await invalidateCategoryCache();
+      await invalidateSpecificCategoryCache(id);
+      
       res.json({
         success: true,
         message: 'Category soft deleted successfully',
@@ -901,8 +996,12 @@ const restoreCategory = async (req, res, next) => {
     // Security: Audit log
     logAudit('RESTORE', 'CATEGORY', id, req.user._id);
 
-    const responseTime = Date.now() - startTime;
+    // Invalidate cache after restoration
     await invalidateCategoryCache();
+    await invalidateSpecificCategoryCache(id);
+
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       message: 'Category restored successfully',
@@ -925,22 +1024,7 @@ const restoreCategory = async (req, res, next) => {
 
 // Get Category Statistics with Security
 const getCategoryStats = async (req, res, next) => {
-   const { startDate, endDate } = req.query;
-  const now = new Date();
-  const defaultStartDate = new Date(now.setMonth(now.getMonth() - 1)); // Last month
-  
-  const finalStartDate = startDate ? new Date(startDate) : defaultStartDate;
-  const finalEndDate = endDate ? new Date(endDate) : new Date();
-  
-  // Limit date range to prevent excessive data processing
-  const maxDateRange = 365 * 24 * 60 * 60 * 1000; // 1 year
-  if ((finalEndDate - finalStartDate) > maxDateRange) {
-    return res.status(400).json({
-      success: false,
-      message: 'Date range cannot exceed 1 year',
-      code: 'DATE_RANGE_EXCEEDED'
-    });
-  }
+  const { startDate, endDate } = req.query;
   const requestId = generateRequestId();
   const startTime = Date.now();
   
@@ -954,14 +1038,45 @@ const getCategoryStats = async (req, res, next) => {
         requestId
       });
     }
-    const cacheKey = 'category:stats:global';
+
+    const now = new Date();
+    const defaultStartDate = new Date(now.setMonth(now.getMonth() - 1)); // Last month
+    
+    const finalStartDate = startDate ? new Date(startDate) : defaultStartDate;
+    const finalEndDate = endDate ? new Date(endDate) : new Date();
+    
+    // Limit date range to prevent excessive data processing
+    const maxDateRange = 365 * 24 * 60 * 60 * 1000; // 1 year
+    if ((finalEndDate - finalStartDate) > maxDateRange) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date range cannot exceed 1 year',
+        code: 'DATE_RANGE_EXCEEDED',
+        requestId
+      });
+    }
+
+    // Generate cache key with date range
+    const cacheKey = generateCacheKey('category_stats', {
+      startDate: finalStartDate.toISOString(),
+      endDate: finalEndDate.toISOString(),
+      userRole: req.user.role
+    });
 
     const cached = await cache.get(cacheKey);
     if (cached) {
-      console.log('Cache HIT stats');
+      console.log('Cache HIT stats:', cacheKey);
       res.set({ 'X-Cache': 'HIT' });
-      return res.json({ success: true, data: cached, requestId, timestamp: new Date().toISOString(), responseTime: `${Date.now() - startTime}ms` });
+      return res.json({ 
+        success: true, 
+        data: cached, 
+        requestId, 
+        timestamp: new Date().toISOString(), 
+        responseTime: `${Date.now() - startTime}ms`,
+        cached: true 
+      });
     }
+
     const stats = await Category.aggregate([
       {
         $facet: {
@@ -1034,7 +1149,10 @@ const getCategoryStats = async (req, res, next) => {
 
     // Security: Sanitize output
     const sanitizedStats = stats[0];
+    
+    // Cache stats for 10 minutes
     await cache.set(cacheKey, sanitizedStats, 600);
+    
     const responseTime = Date.now() - startTime;
     
     res.json({
@@ -1043,7 +1161,8 @@ const getCategoryStats = async (req, res, next) => {
       requestId,
       timestamp: new Date().toISOString(),
       generatedAt: new Date(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${responseTime}ms`,
+      cached: false
     });
 
   } catch (error) {
@@ -1056,29 +1175,6 @@ const getCategoryStats = async (req, res, next) => {
 const bulkUpdateCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  // In bulkUpdateCategories controller, add:
-const MAX_BULK_OPERATION_SIZE = 100;
-const ALLOWED_BULK_OPERATIONS = ['activate', 'deactivate', 'update', 'delete', 'feature', 'unfeature', 'popular', 'unpopular'];
-
-// Validate operation size
-if (ids.length > MAX_BULK_OPERATION_SIZE) {
-  return res.status(400).json({
-    success: false,
-    message: `Cannot process more than ${MAX_BULK_OPERATION_SIZE} items in bulk`,
-    code: 'BULK_SIZE_EXCEEDED',
-    requestId
-  });
-}
-
-// Validate operation
-if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
-  return res.status(400).json({
-    success: false,
-    message: `Invalid operation. Allowed: ${ALLOWED_BULK_OPERATIONS.join(', ')}`,
-    code: 'INVALID_BULK_OPERATION',
-    requestId
-  });
-}
   
   try {
     // Security: Rate limiting check (implement separately)
@@ -1104,11 +1200,25 @@ if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
     }
 
     // Security: Limit batch size
-    if (ids.length > 100) {
+    const MAX_BULK_OPERATION_SIZE = 100;
+    const ALLOWED_BULK_OPERATIONS = ['activate', 'deactivate', 'update', 'delete', 'feature', 'unfeature', 'popular', 'unpopular'];
+
+    // Validate operation size
+    if (ids.length > MAX_BULK_OPERATION_SIZE) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot process more than 100 items in bulk',
-        code: 'BATCH_SIZE_EXCEEDED',
+        message: `Cannot process more than ${MAX_BULK_OPERATION_SIZE} items in bulk`,
+        code: 'BULK_SIZE_EXCEEDED',
+        requestId
+      });
+    }
+
+    // Validate operation
+    if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid operation. Allowed: ${ALLOWED_BULK_OPERATIONS.join(', ')}`,
+        code: 'INVALID_BULK_OPERATION',
         requestId
       });
     }
@@ -1139,15 +1249,6 @@ if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
       update: data || {}
     };
 
-    if (!allowedOperations[operation]) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid bulk operation',
-        code: 'INVALID_OPERATION',
-        requestId
-      });
-    }
-
     updateData = {
       ...allowedOperations[operation],
       lastUpdatedBy: req.user._id,
@@ -1159,38 +1260,37 @@ if (!ALLOWED_BULK_OPERATIONS.includes(operation)) {
       updateData.$inc = { version: 1 };
     }
 
-    // Security: Execute bulk operation with timeout
     // Add ownership or scope filtering:
-const filter = { 
-  _id: { $in: validIds },
-  // Add scope limitation for non-admin users
-  ...(req.user.role !== 'admin' ? { createdBy: req.user._id } : {})
-};
+    const filter = { 
+      _id: { $in: validIds },
+      // Add scope limitation for non-admin users
+      ...(req.user.role !== 'admin' ? { createdBy: req.user._id } : {})
+    };
 
-result = await Category.updateMany(
-  filter,
-  updateData,
-  { 
-    maxTimeMS: 10000,
-    runValidators: operation === 'update'
-  }
-);
+    result = await Category.updateMany(
+      filter,
+      updateData,
+      { 
+        maxTimeMS: 10000,
+        runValidators: operation === 'update'
+      }
+    );
 
-// Check if all IDs were processed
-if (result.matchedCount < validIds.length) {
-  // Some IDs were not authorized or not found
-  const processedIds = await Category.find(filter).select('_id');
-  const unauthorizedIds = validIds.filter(id => 
-    !processedIds.some(processed => processed._id.toString() === id)
-  );
-  
-  return res.status(403).json({
-    success: false,
-    message: 'Some categories could not be updated due to authorization',
-    unauthorizedIds,
-    requestId
-  });
-}
+    // Check if all IDs were processed
+    if (result.matchedCount < validIds.length) {
+      // Some IDs were not authorized or not found
+      const processedIds = await Category.find(filter).select('_id');
+      const unauthorizedIds = validIds.filter(id => 
+        !processedIds.some(processed => processed._id.toString() === id)
+      );
+      
+      return res.status(403).json({
+        success: false,
+        message: 'Some categories could not be updated due to authorization',
+        unauthorizedIds,
+        requestId
+      });
+    }
 
     // Security: Audit log
     logAudit('BULK_OPERATION', 'CATEGORY', 'MULTIPLE', req.user._id, {
@@ -1199,8 +1299,11 @@ if (result.matchedCount < validIds.length) {
       totalIds: ids.length
     });
 
-    const responseTime = Date.now() - startTime;
+    // Invalidate cache after bulk operation
     await invalidateCategoryCache();
+
+    const responseTime = Date.now() - startTime;
+    
     res.json({
       success: true,
       message: `Bulk ${operation} completed successfully`,
@@ -1346,16 +1449,32 @@ const searchCategories = async (req, res, next) => {
     const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
 
     if (!query || typeof query !== 'string') {
-      return res.status(400).json({ success: false, message: 'Search query is required', code: 'MISSING_QUERY', requestId });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Search query is required', 
+        code: 'MISSING_QUERY', 
+        requestId 
+      });
     }
 
     const sanitizedQuery = sanitizeHtml(query, { allowedTags: [], allowedAttributes: {} }).trim();
 
     if (sanitizedQuery.length < 2) {
-      return res.status(400).json({ success: false, message: 'Search query must be at least 2 characters', code: 'QUERY_TOO_SHORT', requestId });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Search query must be at least 2 characters', 
+        code: 'QUERY_TOO_SHORT', 
+        requestId 
+      });
     }
 
-    const cacheKey = `category:search:${sanitizedQuery}:${fuzzy}:${limit}`;
+    // Generate cache key
+    const cacheKey = generateCacheKey('category_search', {
+      query: sanitizedQuery,
+      fuzzy,
+      limit,
+      userRole: req.user?.role
+    });
 
     const cached = await cache.get(cacheKey);
     if (cached) {
@@ -1368,7 +1487,8 @@ const searchCategories = async (req, res, next) => {
         count: cached.length,
         requestId,
         timestamp: new Date().toISOString(),
-        responseTime: `${Date.now() - startTime}ms`
+        responseTime: `${Date.now() - startTime}ms`,
+        cached: true
       });
     }
 
@@ -1414,6 +1534,7 @@ const searchCategories = async (req, res, next) => {
       popular: result.popular || false
     }));
 
+    // Cache search results for 5 minutes
     await cache.set(cacheKey, safeResults, 300);
 
     res.json({
@@ -1423,11 +1544,15 @@ const searchCategories = async (req, res, next) => {
       count: safeResults.length,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cached: false
     });
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { query: req.query.query, error: error.message });
+    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { 
+      query: req.query.query, 
+      error: error.message 
+    });
     next(error);
   }
 };

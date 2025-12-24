@@ -7,6 +7,7 @@ const {
   deleteCloudinaryImages
 } = require('../middleware/upload.middleware.js');
 const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
+const cache = require('../utils/cache.js'); // Import the cache utility
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
@@ -35,6 +36,7 @@ const sanitizeGigInput = (data) => {
   
   return sanitized;
 };
+
 const uploadGigImages = async (files, gigId) => {
   if (!files || !Array.isArray(files) || files.length === 0) {
     return [];
@@ -79,6 +81,7 @@ const uploadGigThumbnail = async (file, gigId) => {
     uploadedAt: new Date()
   };
 };
+
 const buildSecureGigQuery = (queryParams, userRole, userId) => {
   const {
     search,
@@ -257,10 +260,29 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
 
   return filter;
 };
+
 const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:GIG] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
 
+// Helper function to generate cache key
+const generateCacheKey = (prefix, params) => {
+  const key = `${prefix}:${JSON.stringify(params)}`;
+  return crypto.createHash('md5').update(key).digest('hex');
+};
+
+// Helper function to invalidate related cache
+const invalidateGigCache = async (gigId) => {
+  try {
+    // Invalidate all cache related to this gig
+    await cache.del(`gig:*${gigId}*`);
+    await cache.del('gigs:*');
+    await cache.del('gig_stats:*');
+    console.log(`Cache invalidated for gig: ${gigId}`);
+  } catch (err) {
+    console.warn('Error invalidating cache:', err.message);
+  }
+};
 
 // Create Gig
 const createGig = async (req, res, next) => {
@@ -415,6 +437,9 @@ const createGig = async (req, res, next) => {
 
     const gig = await Gig.create(gigData);
 
+    // Invalidate cache after creating a new gig
+    await invalidateGigCache(gig._id);
+
     logAudit('CREATE', 'GIG', gig._id, req.user._id, {
       title: gig.title,
       category: gig.projectCategory,
@@ -524,7 +549,7 @@ const getGigs = async (req, res, next) => {
       includeCreator = true,
       includeAssignee = true,
       lean = true,
-      cache = false
+      cache: useCache = 'true'
     } = req.query;
 
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
@@ -640,10 +665,41 @@ const getGigs = async (req, res, next) => {
       maxTimeMS: 5000
     };
 
-    const [gigs, total] = await Promise.all([
-      Gig.find(filter, null, queryOptions),
-      Gig.countDocuments(filter)
-    ]);
+    // Generate cache key
+    const cacheKey = generateCacheKey('gigs', {
+      filter,
+      page: pageNum,
+      limit: limitNum,
+      sort: sortObj,
+      skip,
+      populate: populateOptions,
+      userRole
+    });
+
+    let gigs, total;
+    const shouldUseCache = useCache === 'true' && pageNum === 1 && !search && !q;
+
+    if (shouldUseCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        gigs = cached.gigs;
+        total = cached.total;
+        console.log(`Cache hit for key: ${cacheKey}`);
+      }
+    }
+
+    if (!gigs || !total) {
+      [gigs, total] = await Promise.all([
+        Gig.find(filter, null, queryOptions),
+        Gig.countDocuments(filter)
+      ]);
+
+      if (shouldUseCache) {
+        // Cache for 5 minutes
+        await cache.set(cacheKey, { gigs, total }, 300);
+        console.log(`Cache set for key: ${cacheKey}`);
+      }
+    }
 
     const safeGigs = gigs.map(gig => {
       if (lean) {
@@ -714,7 +770,7 @@ const getGigs = async (req, res, next) => {
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
       'X-Response-Time': `${Date.now() - startTime}ms`,
-      'Cache-Control': cache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
+      'Cache-Control': shouldUseCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
     });
 
     const responseTime = Date.now() - startTime;
@@ -734,7 +790,8 @@ const getGigs = async (req, res, next) => {
       },
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${responseTime}ms`,
+      cached: shouldUseCache && gigs !== undefined
     });
 
   } catch (error) {
@@ -859,7 +916,7 @@ const getGigById = async (req, res, next) => {
   
   try {
     const { id } = req.params;
-    const { fields, populate = true } = req.query;
+    const { fields, populate = true, cache: useCache = 'true' } = req.query;
 
     if (!id) {
       return res.status(400).json({
@@ -942,9 +999,36 @@ const getGigById = async (req, res, next) => {
       ];
     }
 
-    const gig = await Gig.findOne(query)
-      .select(Object.keys(selectFields).length > 0 ? selectFields : null)
-      .populate(populateOptions);
+    // Generate cache key
+    const cacheKey = generateCacheKey('gig', {
+      id,
+      fields,
+      populate: populateOptions,
+      userRole,
+      userId
+    });
+
+    let gig;
+    const shouldUseCache = useCache === 'true' && userRole === 'guest';
+
+    if (shouldUseCache) {
+      gig = await cache.get(cacheKey);
+      if (gig) {
+        console.log(`Cache hit for gig: ${id}`);
+      }
+    }
+
+    if (!gig) {
+      gig = await Gig.findOne(query)
+        .select(Object.keys(selectFields).length > 0 ? selectFields : null)
+        .populate(populateOptions);
+
+      if (shouldUseCache && gig) {
+        // Cache for 10 minutes for public gigs
+        await cache.set(cacheKey, gig, 600);
+        console.log(`Cache set for gig: ${id}`);
+      }
+    }
 
     if (!gig) {
       return res.status(404).json({
@@ -1025,7 +1109,8 @@ const getGigById = async (req, res, next) => {
       data: safeGig,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${responseTime}ms`,
+      cached: shouldUseCache && gig !== undefined
     });
 
   } catch (error) {
@@ -1268,6 +1353,9 @@ const updateGig = async (req, res, next) => {
       });
     }
 
+    // Invalidate cache after update
+    await invalidateGigCache(id);
+
     logAudit('UPDATE', 'GIG', updatedGig._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
       oldVersion: currentVersion || gig.version,
@@ -1316,6 +1404,7 @@ const updateGig = async (req, res, next) => {
     next(error);
   }
 };
+
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -1409,6 +1498,9 @@ const uploadImages = async (req, res, next) => {
     gig.lastUpdatedBy = req.user._id;
     gig.version += 1;
     await gig.save();
+
+    // Invalidate cache after image upload
+    await invalidateGigCache(id);
 
     logAudit('UPLOAD_IMAGES', 'GIG', id, req.user._id, {
       imagesAdded: uploadedImages.length,
@@ -1509,6 +1601,9 @@ const removeImage = async (req, res, next) => {
     // Delete image from Cloudinary
     await deleteCloudinaryImages([imageToRemove]);
 
+    // Invalidate cache after image removal
+    await invalidateGigCache(id);
+
     logAudit('REMOVE_IMAGE', 'GIG', id, req.user._id, {
       imagePublicId: publicId,
       remainingImages: gig.images.length
@@ -1596,6 +1691,9 @@ const setThumbnail = async (req, res, next) => {
     gig.lastUpdatedBy = req.user._id;
     gig.version += 1;
     await gig.save();
+
+    // Invalidate cache after thumbnail change
+    await invalidateGigCache(id);
 
     logAudit('SET_THUMBNAIL', 'GIG', id, req.user._id, {
       thumbnail: image.url
@@ -1714,6 +1812,9 @@ const uploadThumbnail = async (req, res, next) => {
     gig.version += 1;
     await gig.save();
 
+    // Invalidate cache after thumbnail upload
+    await invalidateGigCache(id);
+
     logAudit('UPLOAD_THUMBNAIL', 'GIG', id, req.user._id, {
       thumbnail: uploadedImage.url
     });
@@ -1821,12 +1922,7 @@ const deleteGig = async (req, res, next) => {
       if (gig.status === 'open') {
         await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
       }
-      if (force === 'true') {
-        // Delete bids, messages, reviews associated with this gig
-        await Bid.deleteMany({ gig: id });
-        await Message.deleteMany({ gig: id });
-        // Add other associated models as needed
-      }
+      // Removed Bid and Message deletion as requested
       
       result = await Gig.deleteOne({ _id: id });
       
@@ -1868,6 +1964,9 @@ const deleteGig = async (req, res, next) => {
         title: gig.title || 'Unknown',
         createdBy: gig.createdBy
       });
+      
+      // Invalidate cache after deletion
+      await invalidateGigCache(id);
       
       const responseTime = Date.now() - startTime;
       
@@ -1962,6 +2061,9 @@ const restoreGig = async (req, res, next) => {
     gig.lastUpdatedBy = req.user._id;
     await gig.save();
 
+    // Invalidate cache after restoration
+    await invalidateGigCache(id);
+
     logAudit('RESTORE', 'GIG', id, req.user._id);
 
     const responseTime = Date.now() - startTime;
@@ -2023,101 +2125,125 @@ const getGigStats = async (req, res, next) => {
       };
     }
 
-    const stats = await Gig.aggregate([
-      { $match: filter },
-      {
-        $facet: {
-          overview: [
-            {
-              $group: {
-                _id: null,
-                totalGigs: { $sum: 1 },
-                openGigs: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
-                inProgressGigs: { $sum: { $cond: [{ $eq: ['$status', 'in_progress'] }, 1, 0] } },
-                completedGigs: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
-                cancelledGigs: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
-                assignedGigs: { $sum: { $cond: [{ $eq: ['$status', 'assigned'] }, 1, 0] } },
-                closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
-                totalBudget: { $sum: '$budget' },
-                avgBudget: { $avg: '$budget' },
-              }
-            }
-          ],
-          byCategory: [
-            { $match: { status: 'open' } },
-            {
-              $group: {
-                _id: '$projectCategory',
-                count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' },
-                maxBudget: { $max: '$budget' },
-                minBudget: { $min: '$budget' }
-              }
-            },
-            { $sort: { count: -1 } },
-            { $limit: 10 }
-          ],
-          byStatus: [
-            {
-              $group: {
-                _id: '$status',
-                count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' }
-              }
-            },
-            { $sort: { count: -1 } }
-          ],
-          byUrgency: [
-            {
-              $group: {
-                _id: '$urgency',
-                count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' }
-              }
-            },
-            { $sort: { count: -1 } }
-          ],
-          topGigs: [
-            { $match: { status: 'open' } },
-            { $sort: { budget: -1 } },
-            { $limit: 10 },
-            {
-              $project: {
-                title: 1,
-                budget: 1,
-                slug: 1,
-                projectCategory: 1
-              }
-            }
-          ],
-          growth: [
-            {
-              $group: {
-                _id: {
-                  year: { $year: '$createdAt' },
-                  month: { $month: '$createdAt' }
-                },
-                count: { $sum: 1 }
-              }
-            },
-            { $sort: { '_id.year': -1, '_id.month': -1 } },
-            { $limit: 12 }
-          ],
-          budgetDistribution: [
-            {
-              $bucket: {
-                groupBy: "$budget",
-                boundaries: [0, 100, 500, 1000, 5000, 10000, 50000, 100000],
-                default: "100000+",
-                output: {
-                  count: { $sum: 1 },
+    // Generate cache key for stats
+    const cacheKey = generateCacheKey('gig_stats', {
+      userId: req.user._id,
+      role: req.user.role
+    });
+
+    let stats;
+    const shouldUseCache = true; // Always cache stats for 5 minutes
+
+    if (shouldUseCache) {
+      stats = await cache.get(cacheKey);
+      if (stats) {
+        console.log(`Cache hit for stats: ${cacheKey}`);
+      }
+    }
+
+    if (!stats) {
+      stats = await Gig.aggregate([
+        { $match: filter },
+        {
+          $facet: {
+            overview: [
+              {
+                $group: {
+                  _id: null,
+                  totalGigs: { $sum: 1 },
+                  openGigs: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
+                  inProgressGigs: { $sum: { $cond: [{ $eq: ['$status', 'in_progress'] }, 1, 0] } },
+                  completedGigs: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+                  cancelledGigs: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
+                  assignedGigs: { $sum: { $cond: [{ $eq: ['$status', 'assigned'] }, 1, 0] } },
+                  closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
+                  totalBudget: { $sum: '$budget' },
+                  avgBudget: { $avg: '$budget' },
                 }
               }
-            }
-          ],
+            ],
+            byCategory: [
+              { $match: { status: 'open' } },
+              {
+                $group: {
+                  _id: '$projectCategory',
+                  count: { $sum: 1 },
+                  avgBudget: { $avg: '$budget' },
+                  maxBudget: { $max: '$budget' },
+                  minBudget: { $min: '$budget' }
+                }
+              },
+              { $sort: { count: -1 } },
+              { $limit: 10 }
+            ],
+            byStatus: [
+              {
+                $group: {
+                  _id: '$status',
+                  count: { $sum: 1 },
+                  avgBudget: { $avg: '$budget' }
+                }
+              },
+              { $sort: { count: -1 } }
+            ],
+            byUrgency: [
+              {
+                $group: {
+                  _id: '$urgency',
+                  count: { $sum: 1 },
+                  avgBudget: { $avg: '$budget' }
+                }
+              },
+              { $sort: { count: -1 } }
+            ],
+            topGigs: [
+              { $match: { status: 'open' } },
+              { $sort: { budget: -1 } },
+              { $limit: 10 },
+              {
+                $project: {
+                  title: 1,
+                  budget: 1,
+                  slug: 1,
+                  projectCategory: 1
+                }
+              }
+            ],
+            growth: [
+              {
+                $group: {
+                  _id: {
+                    year: { $year: '$createdAt' },
+                    month: { $month: '$createdAt' }
+                  },
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { '_id.year': -1, '_id.month': -1 } },
+              { $limit: 12 }
+            ],
+            budgetDistribution: [
+              {
+                $bucket: {
+                  groupBy: "$budget",
+                  boundaries: [0, 100, 500, 1000, 5000, 10000, 50000, 100000],
+                  default: "100000+",
+                  output: {
+                    count: { $sum: 1 },
+                  }
+                }
+              }
+            ],
+          }
         }
+      ]);
+
+      if (shouldUseCache) {
+        // Cache stats for 5 minutes
+        await cache.set(cacheKey, stats, 300);
+        console.log(`Cache set for stats: ${cacheKey}`);
       }
-    ]);
+    }
 
     const sanitizedStats = stats[0] || {
       overview: [{
@@ -2161,7 +2287,8 @@ const getGigStats = async (req, res, next) => {
       requestId,
       timestamp: new Date().toISOString(),
       generatedAt: new Date(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${responseTime}ms`,
+      cached: shouldUseCache && stats !== undefined
     });
 
   } catch (error) {
