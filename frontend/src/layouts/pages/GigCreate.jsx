@@ -2526,11 +2526,11 @@ useEffect(() => {
                           {gigLoading || isSubmitting ? (
                             <>
                               <Loader2 className="mr-2 animate-spin" size={20} />
-                              Creating Project...
+                              Creating Gig...
                             </>
                           ) : (
                             <>
-                              Create Project
+                              Create Gig
                               <ChevronRight className="ml-2" size={20} />
                             </>
                           )}
