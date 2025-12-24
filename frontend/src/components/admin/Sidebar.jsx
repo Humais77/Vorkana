@@ -11,7 +11,6 @@ import {
   FiSettings,
   FiBarChart2,
   FiLogOut,
-  FiMenu,
   FiX
 } from 'react-icons/fi';
 
@@ -40,21 +39,22 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
       {/* Mobile overlay */}
       {isMobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-20"
+          className="lg:hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-40"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-30
+        fixed lg:static inset-y-0 left-0 z-50
         w-64 bg-white border-r border-gray-200
         transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
         lg:translate-x-0 transition-transform duration-300 ease-in-out
         flex flex-col h-full shadow-lg lg:shadow-none
+        lg:z-30
       `}>
         {/* Logo & Toggle */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg"></div>
             <div>
@@ -116,8 +116,8 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
           </ul>
         </nav>
 
-        {/* Logout & User */}
-        <div className="p-4 border-t border-gray-100">
+        {/* Logout & User - Make this sticky too */}
+        <div className="p-4 border-t border-gray-100 sticky bottom-0 bg-white z-10">
           <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 mb-4">
             <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
               A
