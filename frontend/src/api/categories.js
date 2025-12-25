@@ -117,9 +117,6 @@ const CategorySchema = z.object({
     .regex(/^[a-f\d]{24}$/i, 'Invalid category ID')
     .optional()
     .nullable(),
-  icon: z.string()
-    .max(50, 'Icon name too long')
-    .optional(),
 });
 const createCancellableRequest = () => {
   const source = axios.CancelToken.source();
@@ -165,7 +162,6 @@ export const categoriesAPI = {
         _id: category._id || category.id,
         name: category.name || 'Unnamed Category',
         description: category.description || '',
-        icon: category.icon || '📁',
         slug: category.slug || (category.name ? category.name.toLowerCase().replace(/\s+/g, '-') : ''),
         parentCategory: category.parentCategory || null,
         level: category.level || 0,
@@ -230,14 +226,12 @@ export const categoriesAPI = {
           _id: category._id || category.id,
           name: category.name || 'Unnamed Category',
           description: category.description || '',
-          icon: category.icon || '📁',
           slug: category.slug || (category.name ? category.name.toLowerCase().replace(/\s+/g, '-') : ''),
           parentCategory: category.parentCategory || null,
           children: children.map(child => ({
             _id: child._id || child.id,
             name: child.name || 'Unnamed Subcategory',
             slug: child.slug || (child.name ? child.name.toLowerCase().replace(/\s+/g, '-') : ''),
-            icon: child.icon || '📂',
             parentCategory: category._id || category.id
           })),
           level: category.level || 0,
@@ -413,7 +407,6 @@ const getMockCategories = (parentCategory = null) => {
       _id: '1',
       name: 'Web Development',
       description: 'Website and web application development',
-      icon: 'fa-code',
       slug: 'web-development',
       parentCategory: null,
       children: [
@@ -421,14 +414,12 @@ const getMockCategories = (parentCategory = null) => {
           _id: '1a',
           name: 'Frontend Development',
           slug: 'frontend-development',
-          icon: 'fa-browser',
           parentCategory: '1'
         },
         {
           _id: '1b',
           name: 'Backend Development',
           slug: 'backend-development',
-          icon: 'fa-server',
           parentCategory: '1'
         }
       ],
@@ -444,7 +435,6 @@ const getMockCategories = (parentCategory = null) => {
       _id: '2',
       name: 'Graphic Design',
       description: 'Logo, banner, and graphic design services',
-      icon: 'fa-paint-brush',
       slug: 'graphic-design',
       parentCategory: null,
       children: [
@@ -452,14 +442,12 @@ const getMockCategories = (parentCategory = null) => {
           _id: '2a',
           name: 'Logo Design',
           slug: 'logo-design',
-          icon: 'fa-pen-nib',
           parentCategory: '2'
         },
         {
           _id: '2b',
           name: 'UI/UX Design',
           slug: 'ui-ux-design',
-          icon: 'fa-palette',
           parentCategory: '2'
         }
       ],
@@ -475,7 +463,6 @@ const getMockCategories = (parentCategory = null) => {
       _id: '3',
       name: 'Digital Marketing',
       description: 'Online marketing and advertising services',
-      icon: 'fa-bullhorn',
       slug: 'digital-marketing',
       parentCategory: null,
       children: [
@@ -483,7 +470,6 @@ const getMockCategories = (parentCategory = null) => {
           _id: '3a',
           name: 'Social Media Marketing',
           slug: 'social-media-marketing',
-          icon: 'fa-hashtag',
           parentCategory: '3'
         }
       ],
@@ -532,7 +518,6 @@ const getMockCategoryById = (id) => {
     _id: id,
     name: 'Mock Category',
     description: 'Mock category for development',
-    icon: 'fa-folder',
     slug: 'mock-category',
     parentCategory: null,
     children: [],

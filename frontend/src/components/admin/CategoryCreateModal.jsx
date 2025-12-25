@@ -7,7 +7,6 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false }) => 
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    icon: 'fa-folder',
     parentCategory: '',
     featured: false,
     popular: false,
@@ -125,7 +124,6 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false }) => 
     setFormData({
       name: '',
       description: '',
-      icon: 'fa-folder',
       parentCategory: '',
       featured: false,
       popular: false,

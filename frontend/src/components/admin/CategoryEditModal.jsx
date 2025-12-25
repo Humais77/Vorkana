@@ -33,7 +33,6 @@ const validationRules = {
 const initialFormData = {
   name: '',
   description: '',
-  icon: '📁',
   parentCategory: '',
   featured: false,
   popular: false,
@@ -65,7 +64,6 @@ const CategoryEditModal = memo(({
       const data = {
         name: category.name || '',
         description: category.description || '',
-        icon: category.icon || '📁',
         parentCategory: category.parentCategory?._id || category.parentCategory || '',
         featured: Boolean(category.featured),
         popular: Boolean(category.popular),

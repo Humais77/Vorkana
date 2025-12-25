@@ -64,7 +64,6 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
     updatedAfter,
     updatedBefore,
     createdBy,
-    hasImage,
     hasParent,
     ids,
     excludeIds,
@@ -144,10 +143,6 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
 
   // Boolean filters
   if (level !== undefined) filter.level = parseInt(level) || 0;
-  
-  if (hasImage === 'true' || hasImage === true) {
-    filter.image = { $exists: true, $ne: '' };
-  }
   
   if (hasParent === 'true' || hasParent === true) {
     filter.parentCategory = { $exists: true, $ne: null };
@@ -329,7 +324,7 @@ const getCategories = async (req, res, next) => {
       search, q, name, slug, parentCategory, featured, popular, isActive, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
-      hasImage, hasParent, ids, excludeIds,
+       hasParent, ids, excludeIds,
       sort = 'createdAt', order = 'desc', page = 1, limit = 10, offset,
       fields, excludeFields, populate = true, populateFields = 'name',
       showAll = false, includeSubcategories = false, includeCounts = false,
@@ -344,7 +339,7 @@ const getCategories = async (req, res, next) => {
       isActive: showAllFlag ? isActive : undefined, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
-      hasImage, hasParent, ids, excludeIds, showAll: showAllFlag
+      hasParent, ids, excludeIds, showAll: showAllFlag
     }, req.user?.role, req.user?._id);
 
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -394,13 +389,13 @@ const getCategories = async (req, res, next) => {
     if (populate === 'true') {
       populateOptions.push({
         path: 'parentCategory',
-        select: 'name slug icon',
+        select: 'name slug ',
         match: { isActive: true }
       });
       if (includeSubcategories === 'true') {
         populateOptions.push({
           path: 'subcategories',
-          select: 'name slug icon servicesCount gigsCount featured popular',
+          select: 'name slug servicesCount gigsCount featured popular',
           match: { isActive: true },
           options: { sort: { order: 1, name: 1 }, limit: 20 }
         });
@@ -562,13 +557,13 @@ const getCategoryById = async (req, res, next) => {
     if (populate === 'true') {
       populateOptions.push({ 
         path: 'parentCategory', 
-        select: 'name slug icon', 
+        select: 'name slug ', 
         match: { isActive: true } 
       });
       if (includeSubcategories === 'true') {
         populateOptions.push({
           path: 'subcategories',
-          select: 'name slug icon servicesCount gigsCount featured popular',
+          select: 'name slug servicesCount gigsCount featured popular',
           match: { isActive: true },
           options: { sort: { order: 1, name: 1 } }
         });
@@ -1378,7 +1373,7 @@ const exportCategories = async (req, res, next) => {
     // Security: Format response based on requested format
     if (format === 'csv') {
       const headers = [
-        'ID', 'Name', 'Slug', 'Description', 'Icon', 'Image', 
+        'ID', 'Name', 'Slug', 'Description', 
         'Parent Category', 'Featured', 'Popular', 'Order', 'Level',
         'Services Count', 'Gigs Count', 'Active', 'Created At', 'Updated At'
       ];
@@ -1388,8 +1383,6 @@ const exportCategories = async (req, res, next) => {
         `"${(cat.name || '').replace(/"/g, '""')}"`,
         cat.slug || '',
         `"${(cat.description || '').replace(/"/g, '""')}"`,
-        cat.icon || '',
-        cat.image || '',
         cat.parentCategory?.name || '',
         cat.featured ? 'Yes' : 'No',
         cat.popular ? 'Yes' : 'No',
@@ -1506,7 +1499,7 @@ const searchCategories = async (req, res, next) => {
         ],
         isActive: true
       })
-      .select('name slug icon description servicesCount gigsCount')
+      .select('name slug description servicesCount gigsCount')
       .limit(searchLimit)
       .lean();
     } else {
@@ -1517,7 +1510,7 @@ const searchCategories = async (req, res, next) => {
         ],
         isActive: true
       })
-      .select('name slug icon description servicesCount gigsCount featured popular')
+      .select('name slug description servicesCount gigsCount featured popular')
       .limit(searchLimit)
       .lean();
     }
@@ -1526,7 +1519,6 @@ const searchCategories = async (req, res, next) => {
       _id: result._id,
       name: result.name,
       slug: result.slug,
-      icon: result.icon,
       description: result.description ? result.description.substring(0, 100) + '...' : '',
       servicesCount: result.servicesCount || 0,
       gigsCount: result.gigsCount || 0,

@@ -341,7 +341,6 @@ const CategoriesManagement = () => {
       const duplicateData = {
         name: `${category.name} (Copy)`,
         description: category.description,
-        icon: category.icon,
         parentCategory: category.parentCategory?._id || category.parentCategory || '',
         featured: category.featured,
         popular: category.popular,

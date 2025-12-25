@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 const slugify = require('slugify');
 const Service = require('./services.model');
 const Gig = require('./gig.model');
-const { validateImagePath } = require('../middleware/validators/category.validator');
 
 const categorySchema = new mongoose.Schema({
   name: {
@@ -31,36 +30,7 @@ const categorySchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Description cannot exceed 1000 characters'],
   },
-  icon: {
-    type: String,
-    trim: true,
-    maxlength: [50, 'Icon cannot exceed 50 characters'],
-    default: 'fa-folder',
-    validate: {
-      validator: function(v) {
-        if (!v) return true;
-        return /^[a-zA-Z0-9\-_]+$/.test(v);
-      },
-      message: 'Icon can only contain letters, numbers, hyphens and underscores'
-    }
-  },
-  image: {
-    type: String,
-    trim: true,
-   validate: {
-  validator: function(v) {
-    if (!v) return true;
-    
-    // Basic pattern check
-    const validPattern = /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
-    if (!validPattern.test(v)) return false;
-    
-    // Advanced path traversal check
-    return validateImagePath(v);
-  },
-  message: 'Invalid image path - security violation detected'
-}
-  },
+  
   parentCategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
@@ -106,7 +76,7 @@ const categorySchema = new mongoose.Schema({
   metaTitle: {
     type: String,
     trim: true,
-    maxlength: [60, 'Meta title cannot exceed 60 characters'],
+    maxlength: [100, 'Meta title cannot exceed 60 characters'],
   },
   metaDescription: {
     type: String,

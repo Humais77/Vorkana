@@ -129,51 +129,6 @@ const descriptionValidation = Joi.string()
   .max(1000)
   .custom((value) => sanitizeInput(value, { allowHtml: true }), 'XSS prevention')
   .optional();
-const validateImagePath = (path) => {
-  if (!path) return true;
-
-  // Allow uppercase hex and dashes, 20-64 chars before extension
-  const validPattern = /^\/uploads\/[a-fA-F0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i;
-  if (!validPattern.test(path)) return false;
-
-  // Block obvious traversal attempts (including encoded ones)
-  const dangerousPatterns = [
-    /\.\.\//g,     // ../
-    /\.\.\\/g,     // ..\
-    /\/\//g,       // //
-    /\\\\/g,       // \\
-    /^\/*\.\.\//g,  // leading ../
-    /^[a-zA-Z]:[\\\/]/i, // C:\
-    /%2e%2e/i,     // encoded ..
-    /%2e\./i,      // encoded ./
-    /\0/g,         // null byte
-    /[\|<>\*\?\[\]\{\}]/g
-  ];
-
-  let decoded = path;
-  for (let i = 0; i < 5; i++) {
-    const newDecoded = decodeURIComponent(decoded);
-    if (newDecoded === decoded) break;
-    decoded = newDecoded;
-  }
-
-  const toCheck = [path, decoded];
-  return !toCheck.some(p => dangerousPatterns.some(re => re.test(p)));
-};
-const imageValidation = Joi.string()
-  .pattern(/^\/uploads\/[a-fA-F0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i)
-  .custom((value, helpers) => {
-    if (!validateImagePath(value)) {
-      return helpers.error('any.invalid');
-    }
-    return value;
-  })
-  .optional()
-  .messages({
-    'string.pattern.base': 'Invalid image URL format',
-    'any.invalid': 'Invalid image path - security violation detected'
-  });
-
 const metaKeywordsValidation = Joi.array()
   .items(
     Joi.string()
@@ -195,16 +150,7 @@ const createSchema = Joi.object({
   
   description: descriptionValidation,
   
-  icon: Joi.string()
-    .max(50)
-    .pattern(/^[a-zA-Z0-9\-_]+$/)
-    .optional()
-    .messages({
-      'string.pattern.base': 'Icon can only contain letters, numbers, hyphens and underscores'
-    }),
-  
-  image: imageValidation,
-  
+
   parentCategory: objectId
     .optional()
     .allow(null)
@@ -228,7 +174,7 @@ const createSchema = Joi.object({
     }),
   
   metaTitle: Joi.string()
-    .max(60)
+    .max(100)
     .custom((value) => sanitizeInput(value), 'XSS prevention')
     .optional(),
   
@@ -254,13 +200,7 @@ const updateSchema = Joi.object({
   
   description: descriptionValidation,
   
-  icon: Joi.string()
-    .max(50)
-    .pattern(/^[a-zA-Z0-9\-_]+$/)
-    .optional(),
-  
-  image: imageValidation,
-  
+
   parentCategory: objectId
     .optional()
     .allow(null),
@@ -276,7 +216,7 @@ const updateSchema = Joi.object({
     .optional(),
   
   metaTitle: Joi.string()
-    .max(60)
+    .max(100)
     .custom((value) => sanitizeInput(value), 'XSS prevention')
     .optional(),
   
@@ -372,7 +312,6 @@ const querySchema = Joi.object({
   updatedAfter: Joi.date().iso(),
   updatedBefore: Joi.date().iso(),
   createdBy: objectId,
-  hasImage: Joi.boolean(),
   hasParent: Joi.boolean(),
   deleted: Joi.boolean(),
   
@@ -600,5 +539,5 @@ module.exports = {
   validateBulk,
   validateQuery,
   objectId,
-  validateImagePath 
+   
 };
