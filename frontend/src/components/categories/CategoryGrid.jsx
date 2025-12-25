@@ -112,7 +112,6 @@ const CategoryGrid = () => {
         const transformedCategories = fetchedCategories.map(category => ({
           id: category._id || category.id,
           name: category.name || 'Unnamed Category',
-          icon: getCategoryIcon(category.name),
           slug: category.slug || 
                 (category.name ? category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'category'),
           description: category.description || '',

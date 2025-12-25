@@ -41,21 +41,63 @@ axiosInstance.interceptors.response.use(
 );
 
 export const servicesAPI = {
-  getAll: async (filters = {}) => {
-    try {
-      const queryString = new URLSearchParams(filters).toString();
-      const response = await axiosInstance.get(`/api/services${queryString ? '?' + queryString : ''}`);
-      
-      if (response.data && response.data.success) {
-        return response.data.data || [];
+  // In services.js - Update getAll method to return empty array instead of mock data
+getAll: async (filters = {}) => {
+  try {
+    // Clean filters
+    const cleanFilters = {};
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && 
+          filters[key] !== null && 
+          filters[key] !== '' && 
+          filters[key] !== 'undefined') {
+        cleanFilters[key] = filters[key];
       }
-      
-      return response.data || [];
-      
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch services');
+    });
+
+    console.log('Fetching REAL services with filters:', cleanFilters);
+    
+    const queryString = new URLSearchParams(cleanFilters).toString();
+    const response = await axiosInstance.get(`/api/services${queryString ? '?' + queryString : ''}`);
+    
+    console.log('API Response status:', response.status);
+    
+    // Handle response - RETURN ONLY REAL DATA
+    if (response.data) {
+      // Case 1: New format { success: true, data: [...] }
+      if (response.data.success && response.data.data !== undefined) {
+        const data = response.data.data;
+        return Array.isArray(data) ? data : [];
+      }
+      // Case 2: Direct array response
+      else if (Array.isArray(response.data)) {
+        return response.data;
+      }
+      // Case 3: Data property with array
+      else if (response.data.data && Array.isArray(response.data.data)) {
+        return response.data.data;
+      }
+      // Case 4: Services property with array
+      else if (response.data.services && Array.isArray(response.data.services)) {
+        return response.data.services;
+      }
+      // Case 5: Empty or unexpected response
+      else {
+        console.warn('Unexpected response format, returning empty array');
+        return [];
+      }
     }
-  },
+    
+    console.warn('No data in response, returning empty array');
+    return [];
+    
+  } catch (error) {
+    console.error('Services API getAll error:', error.message);
+    
+    // Return empty array on error - NO MOCK DATA
+    return [];
+  }
+},
   
   getMyServices: async (filters = {}) => {
   try {
@@ -131,7 +173,27 @@ export const servicesAPI = {
       throw new Error(errorMessage);
     }
   },
-  
+  // In services.js - Add to servicesAPI object
+getByCategory: async (categoryIdentifier, params = {}) => {
+  try {
+    const response = await axiosInstance.get(`/api/services/category/${encodeURIComponent(categoryIdentifier)}`, {
+      params: {
+        isActive: true,
+        status: 'published',
+        ...params
+      }
+    });
+    
+    if (response.data && response.data.success) {
+      return response.data.data || [];
+    }
+    
+    return response.data || [];
+    
+  } catch (error) {
+    throw new Error(error.response?.data?.message || 'Failed to fetch category services');
+  }
+},
   create: async (serviceData, files = null) => {
     try {
      let response;
