@@ -12,99 +12,55 @@ export const useCategories = (options = {}) => {
   
   return useQuery({
     queryKey: ['categories'],
-    queryFn: async ({ signal }) => {
+    queryFn: async () => {
       try {
-        // Pass cancellation signal
-        const parentCategories = await categoriesAPI.getAll({
-          parentCategory: null,
-          includeSubcategories: true
-        }, signal);
-        
-        return parentCategories;
+        const categories = await categoriesAPI.getAll({
+          includeSubcategories: false, // Don't load subcategories here
+        });
+        return categories;
       } catch (error) {
-        if (error.cancelled) {
-          throw error; // Re-throw cancellation
-        }
         console.error('Error fetching categories:', error);
         throw error;
       }
     },
-    
-    // Smart caching based on user activity
-    staleTime: () => {
-      const isUserActive = document.visibilityState === 'visible';
-      return isUserActive ? 2 * 60 * 1000 : 10 * 60 * 1000;
-    },
-    
-    gcTime: 30 * 60 * 1000, // 30 minutes
-    
-    // Optimistic updates
-    structuralSharing: (oldData, newData) => {
-      // Only update if data actually changed
-      if (JSON.stringify(oldData) === JSON.stringify(newData)) {
-        return oldData;
-      }
-      return newData;
-    },
-    
-    // Background refresh
-    refetchOnWindowFocus: () => {
-      const timeSinceLastFetch = Date.now() - (lastFetched || 0);
-      return timeSinceLastFetch > 5 * 60 * 1000; // Refresh if older than 5 minutes
-    },
-    
-    refetchOnMount: false, // Use cache on mount
-    refetchOnReconnect: true,
-    
-    // Initial data with timestamp check
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     initialData: () => {
       if (categories.length > 0 && lastFetched) {
-        const isStale = Date.now() - lastFetched > 10 * 60 * 1000;
+        const isStale = Date.now() - lastFetched > 5 * 60 * 1000;
         return isStale ? undefined : categories;
       }
       return undefined;
     },
-    
-    // Optimistic updates for mutations
     onSuccess: (data) => {
       if (data && Array.isArray(data)) {
         setCategories(data);
-        
-        // Prefetch related data
-        if (data.length > 0) {
-          data.forEach(category => {
-            if (category.children && category.children.length > 0) {
-              // Prefetch child category details
-              queryClient.prefetchQuery({
-                queryKey: ['category', category._id, 'children'],
-                queryFn: () => Promise.resolve(category.children),
-                staleTime: 5 * 60 * 1000
-              });
-            }
-          });
-        }
       }
     },
-    
-    // Error boundaries
-    throwOnError: true,
-    retry: (failureCount, error) => {
-      // Don't retry on 4xx errors (except 429)
-      if (error.response) {
-        const status = error.response.status;
-        if (status >= 400 && status < 500 && status !== 429) {
-          return false;
-        }
-      }
-      return failureCount < 2;
-    },
-    
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-    
     ...options,
   });
 };
-
+export const useCategoriesWithSubcategories = (options = {}) => {
+  return useQuery({
+    queryKey: ['categories', 'with-subcategories'],
+    queryFn: async () => {
+      try {
+        const categories = await categoriesAPI.getAll({
+          includeSubcategories: true,
+          limit: 100,
+        });
+        return categories;
+      } catch (error) {
+        console.error('Error fetching categories with subcategories:', error);
+        throw error;
+      }
+    },
+    staleTime: 10 * 60 * 1000,
+    ...options,
+  });
+};
 /**
  * Hook to get a single category by ID
  */

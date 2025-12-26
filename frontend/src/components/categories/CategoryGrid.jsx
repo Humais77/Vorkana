@@ -7,57 +7,60 @@ import {
   Users, Camera, Smartphone, Search, 
   Globe, Database, Layers, BarChart,
   Headphones, ShoppingBag, Gamepad2,
-  BookOpen, Heart, Home, Zap
+  BookOpen, Heart, Home, Zap,
+  ChevronDown, ChevronRight
 } from "lucide-react";
 import { categoriesAPI } from "../../api/categories";
+import { subcategoriesAPI } from "../../api/subcategories";
 
-// Icon mapping based on category names
-const getCategoryIcon = (categoryName) => {
-  const name = categoryName.toLowerCase();
+// Icon mapping based on category/subcategory names
+const getCategoryIcon = (name) => {
+  const lowerName = name.toLowerCase();
   
-  if (name.includes('programming') || name.includes('tech') || name.includes('code')) {
+  if (lowerName.includes('programming') || lowerName.includes('tech') || lowerName.includes('code')) {
     return <Code2 className="w-5 h-5" />;
   }
-  if (name.includes('graphic') || name.includes('design') || name.includes('logo') || name.includes('brand') || name.includes('art') || name.includes('illustration')) {
+  if (lowerName.includes('graphic') || lowerName.includes('design') || lowerName.includes('logo') || 
+      lowerName.includes('brand') || lowerName.includes('art') || lowerName.includes('illustration')) {
     return <Palette className="w-5 h-5" />;
   }
-  if (name.includes('digital') && name.includes('marketing')) {
+  if (lowerName.includes('digital') && lowerName.includes('marketing')) {
     return <TrendingUp className="w-5 h-5" />;
   }
-  if (name.includes('ai') || name.includes('artificial')) {
+  if (lowerName.includes('ai') || lowerName.includes('artificial')) {
     return <Cpu className="w-5 h-5" />;
   }
-  if (name.includes('business')) {
+  if (lowerName.includes('business')) {
     return <Briefcase className="w-5 h-5" />;
   }
-  if (name.includes('it') || name.includes('consulting')) {
+  if (lowerName.includes('it') || lowerName.includes('consulting')) {
     return <Users className="w-5 h-5" />;
   }
-  if (name.includes('photo')) {
+  if (lowerName.includes('photo')) {
     return <Camera className="w-5 h-5" />;
   }
-  if (name.includes('web') || name.includes('app')) {
+  if (lowerName.includes('web') || lowerName.includes('app')) {
     return <Globe className="w-5 h-5" />;
   }
-  if (name.includes('writing') || name.includes('content')) {
+  if (lowerName.includes('writing') || lowerName.includes('content')) {
     return <FileText className="w-5 h-5" />;
   }
-  if (name.includes('video') || name.includes('film')) {
+  if (lowerName.includes('video') || lowerName.includes('film')) {
     return <Film className="w-5 h-5" />;
   }
-  if (name.includes('music') || name.includes('audio')) {
+  if (lowerName.includes('music') || lowerName.includes('audio')) {
     return <Music className="w-5 h-5" />;
   }
-  if (name.includes('data') || name.includes('analytics')) {
+  if (lowerName.includes('data') || lowerName.includes('analytics')) {
     return <Database className="w-5 h-5" />;
   }
-  if (name.includes('seo') || name.includes('search')) {
+  if (lowerName.includes('seo') || lowerName.includes('search')) {
     return <Search className="w-5 h-5" />;
   }
-  if (name.includes('mobile') || name.includes('phone')) {
+  if (lowerName.includes('mobile') || lowerName.includes('phone')) {
     return <Smartphone className="w-5 h-5" />;
   }
-  if (name.includes('social') || name.includes('media')) {
+  if (lowerName.includes('social') || lowerName.includes('media')) {
     return <Users className="w-5 h-5" />;
   }
   
@@ -74,7 +77,7 @@ const getCategoryIcon = (categoryName) => {
   };
   
   for (const [key, icon] of Object.entries(iconMap)) {
-    if (name.includes(key)) {
+    if (lowerName.includes(key)) {
       return icon;
     }
   }
@@ -85,12 +88,14 @@ const getCategoryIcon = (categoryName) => {
 
 const CategoryGrid = () => {
   const [categories, setCategories] = useState([]);
+  const [subcategoriesMap, setSubcategoriesMap] = useState({});
+  const [expandedCategory, setExpandedCategory] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch categories on component mount
+  // Fetch categories and subcategories on component mount
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchData = async () => {
       try {
         setIsLoading(true);
         setError(null);
@@ -101,14 +106,14 @@ const CategoryGrid = () => {
         const fetchedCategories = await categoriesAPI.getAll({
           parentCategory: null, // Only get top-level categories
           includeSubcategories: false,
-          limit: 20, // Fetch up to 20 categories for lg display
+          limit: 20,
           sortBy: 'name',
           order: 'asc'
         });
         
-        console.log('Fetched categories:', fetchedCategories);
+        console.log('Fetched categories:', fetchedCategories.length);
         
-        // Transform API data to match your component's expected structure
+        // Transform API data
         const transformedCategories = fetchedCategories.map(category => ({
           id: category._id || category.id,
           name: category.name || 'Unnamed Category',
@@ -118,107 +123,70 @@ const CategoryGrid = () => {
           parentCategory: category.parentCategory || null,
           level: category.level || 0,
           isActive: category.isActive !== false,
-          servicesCount: category.servicesCount || 0
+          servicesCount: category.servicesCount || 0,
+          icon: getCategoryIcon(category.name || '')
         }));
         
         setCategories(transformedCategories);
-        
-        // If no categories from API, use fallback
-        if (transformedCategories.length === 0) {
-          console.warn('No categories returned from API, using fallback');
-          useFallbackCategories();
-        }
-        
       } catch (err) {
-        console.error('Error fetching categories:', err);
+        console.error('Error fetching data:', err);
         setError(err.message);
-        // Use fallback categories on error
-        useFallbackCategories();
       } finally {
         setIsLoading(false);
       }
     };
     
-    fetchCategories();
+    fetchData();
   }, []);
 
-  // Fallback function if API fails
-  const useFallbackCategories = () => {
-    const fallbackCategories = [
-      { 
-        id: '1', 
-        name: "Programming & Tech", 
-        icon: <Code2 className="w-5 h-5" />,
-        slug: 'programming-tech'
-      },
-      { 
-        id: '2', 
-        name: "Graphic & Design", 
-        icon: <Palette className="w-5 h-5" />,
-        slug: 'graphic-design'
-      },
-      { 
-        id: '3', 
-        name: "Digital Marketing", 
-        icon: <TrendingUp className="w-5 h-5" />,
-        slug: 'digital-marketing'
-      },
-      { 
-        id: '4', 
-        name: "AI Services", 
-        icon: <Cpu className="w-5 h-5" />,
-        slug: 'ai-services'
-      },
-      { 
-        id: '5', 
-        name: "Business Services", 
-        icon: <Briefcase className="w-5 h-5" />,
-        slug: 'business-services'
-      },
-      { 
-        id: '6', 
-        name: "IT & Consulting", 
-        icon: <Users className="w-5 h-5" />,
-        slug: 'it-consulting'
-      },
-      { 
-        id: '7', 
-        name: "Photography", 
-        icon: <Camera className="w-5 h-5" />,
-        slug: 'photography'
-      },
-      { 
-        id: '8', 
-        name: "Writing & Translation", 
-        icon: <FileText className="w-5 h-5" />,
-        slug: 'writing-translation'
-      },
-      { 
-        id: '9', 
-        name: "Video & Animation", 
-        icon: <Film className="w-5 h-5" />,
-        slug: 'video-animation'
-      },
-      { 
-        id: '10', 
-        name: "Music & Audio", 
-        icon: <Music className="w-5 h-5" />,
-        slug: 'music-audio'
-      },
-      { 
-        id: '11', 
-        name: "Web Development", 
-        icon: <Globe className="w-5 h-5" />,
-        slug: 'web-development'
-      },
-      { 
-        id: '12', 
-        name: "Mobile Development", 
-        icon: <Smartphone className="w-5 h-5" />,
-        slug: 'mobile-development'
-      },
-    ];
-    setCategories(fallbackCategories);
+  // Load subcategories for categories
+  const loadSubcategories = async (categoriesList) => {
+    try {
+      const subcategoriesPromises = categoriesList.map(async (category) => {
+        try {
+          const result = await subcategoriesAPI.getByCategory(category.id);
+          return {
+            categoryId: category.id,
+            subcategories: result.subcategories || []
+          };
+        } catch (error) {
+          console.error(`Error loading subcategories for category ${category.id}:`, error);
+          return {
+            categoryId: category.id,
+            subcategories: []
+          };
+        }
+      });
+      
+      const results = await Promise.all(subcategoriesPromises);
+      
+      // Create map of categoryId -> subcategories
+      const map = {};
+      results.forEach(result => {
+        map[result.categoryId] = result.subcategories.map(sub => ({
+          id: sub._id || sub.id,
+          name: sub.name || 'Unnamed Subcategory',
+          slug: sub.slug || 
+                (sub.name ? sub.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'subcategory'),
+          category: sub.category || result.categoryId,
+          servicesCount: sub.servicesCount || 0,
+          icon: getCategoryIcon(sub.name || '')
+        }));
+      });
+      
+      setSubcategoriesMap(map);
+    } catch (error) {
+      console.error('Error loading subcategories:', error);
+    }
+  };
+
+  // Toggle category expansion
+  const toggleCategory = (categoryId) => {
+    if (expandedCategory === categoryId) {
+      setExpandedCategory(null);
+    } else {
+      setExpandedCategory(categoryId);
+    }
   };
 
   // Loading state
@@ -269,19 +237,34 @@ const CategoryGrid = () => {
               Failed to load categories. Showing sample categories instead.
             </p>
           </div>
-          <CategoryGridView categories={categories} />
+          <CategoryGridView 
+            categories={categories} 
+            subcategoriesMap={subcategoriesMap}
+            expandedCategory={expandedCategory}
+            toggleCategory={toggleCategory}
+          />
         </div>
       </section>
     );
   }
 
   return (
-    <CategoryGridView categories={categories} />
+    <CategoryGridView 
+      categories={categories} 
+      subcategoriesMap={subcategoriesMap}
+      expandedCategory={expandedCategory}
+      toggleCategory={toggleCategory}
+    />
   );
 };
 
 // Separate view component
-const CategoryGridView = ({ categories }) => {
+const CategoryGridView = ({ 
+  categories, 
+  subcategoriesMap, 
+  expandedCategory, 
+  toggleCategory 
+}) => {
   const [showAll, setShowAll] = useState(false);
   
   if (categories.length === 0) {
@@ -316,58 +299,174 @@ const CategoryGridView = ({ categories }) => {
         <div className="relative">
           {/* For lg screens: 10 categories in one row */}
           <div className="hidden lg:flex justify-center gap-5">
-            {categories.slice(0, 10).map((cat) => (
-              <Link
-                key={cat.id}
-                to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug}`}
-                className="flex flex-col items-center justify-center
-                  w-28 h-34       
-                  bg-white rounded-lg shadow-sm
-                  hover:shadow-md transition-all duration-200
-                  border border-gray-100 hover:border-blue-100
-                  group p-3"
-              >
-                <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
-                  {cat.icon}
+            {categories.slice(0, 10).map((cat) => {
+              const subcategories = subcategoriesMap[cat.id] || [];
+              const hasSubcategories = subcategories.length > 0;
+              const isExpanded = expandedCategory === cat.id;
+              
+              return (
+                <div 
+                  key={cat.id}
+                  className="flex flex-col items-center relative"
+                >
+                  {/* Main Category Card */}
+                  <Link
+                    to={`/categories/${cat.slug || cat.id}`}
+                    className="flex flex-col items-center justify-center
+                      w-28 h-34       
+                      bg-white rounded-lg shadow-sm
+                      hover:shadow-md transition-all duration-200
+                      border border-gray-100 hover:border-blue-100
+                      group p-3 relative z-10"
+                  >
+                    <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+                      {cat.icon}
+                    </div>
+                    <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2">
+                      {cat.name}
+                    </span>
+                    
+                    {/* Expand indicator */}
+                    {hasSubcategories && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleCategory(cat.id);
+                        }}
+                        className="absolute top-2 right-2 text-gray-400 hover:text-blue-600 transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+                    
+                    {cat.servicesCount > 0 && (
+                      <span className="text-xs text-gray-500 mt-2">
+                        {cat.servicesCount} services
+                      </span>
+                    )}
+                  </Link>
+                  
+                  {/* Subcategories Dropdown */}
+                  {hasSubcategories && isExpanded && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-20">
+                      <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-60 overflow-y-auto">
+                        {subcategories.slice(0, 8).map((subcat) => (
+                          <Link
+                            key={subcat.id}
+                            to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
+                            className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded transition-colors"
+                          >
+                            <div className="text-gray-600">
+                              {subcat.icon}
+                            </div>
+                            <div className="flex-1">
+                              <span className="text-sm text-gray-800">{subcat.name}</span>
+                              {subcat.servicesCount > 0 && (
+                                <span className="text-xs text-gray-500 ml-2">
+                                  ({subcat.servicesCount})
+                                </span>
+                              )}
+                            </div>
+                          </Link>
+                        ))}
+                        
+                        {subcategories.length > 8 && (
+                          <Link
+                            to={`/categories/${cat.slug || cat.id}`}
+                            className="text-center text-sm text-blue-600 hover:text-blue-700 p-2 block border-t border-gray-100"
+                          >
+                            View all {subcategories.length} subcategories →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1">
-                  {cat.name}
-                </span>
-                {cat.servicesCount > 0 && (
-                  <span className="text-xs text-gray-500 mt-2">
-                    {cat.servicesCount} services
-                  </span>
-                )}
-              </Link>
-            ))}
+              );
+            })}
           </div>
 
           {/* For md/sm screens: 4 per row with show more text button */}
           <div className="lg:hidden">
             <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
-              {displayCategories.map((cat) => (
-                <Link
-                  key={cat.id}
-                  to={`/categories/${cat.id}?name=${encodeURIComponent(cat.name)}&slug=${cat.slug}`}
-                  className="flex flex-col items-center justify-center
-                    bg-white rounded-lg shadow-sm
-                    hover:shadow-md transition-all duration-200
-                    border border-gray-100 hover:border-blue-100
-                    group p-3 h-full min-h-[120px]"
-                >
-                  <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
-                    {cat.icon}
+              {displayCategories.map((cat) => {
+                const subcategories = subcategoriesMap[cat.id] || [];
+                const hasSubcategories = subcategories.length > 0;
+                const isExpanded = expandedCategory === cat.id;
+                
+                return (
+                  <div 
+                    key={cat.id}
+                    className="relative"
+                  >
+                    {/* Main Category Card */}
+                    <Link
+                      to={`/categories/${cat.slug || cat.id}`}
+                      className="flex flex-col items-center justify-center
+                        bg-white rounded-lg shadow-sm
+                        hover:shadow-md transition-all duration-200
+                        border border-gray-100 hover:border-blue-100
+                        group p-3 h-full min-h-[120px] relative"
+                    >
+                      <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+                        {cat.icon}
+                      </div>
+                      <span className="text-xs font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2">
+                        {cat.name}
+                      </span>
+                      
+                      {/* Expand indicator for mobile */}
+                      {hasSubcategories && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleCategory(cat.id);
+                          }}
+                          className="absolute top-1 right-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-3 h-3" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
+                      
+                      {cat.servicesCount > 0 && (
+                        <span className="text-xs text-gray-500 mt-1">
+                          {cat.servicesCount}
+                        </span>
+                      )}
+                    </Link>
+                    
+                    {/* Subcategories for mobile (appears below) */}
+                    {hasSubcategories && isExpanded && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
+                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-48 overflow-y-auto">
+                          {subcategories.slice(0, 5).map((subcat) => (
+                            <Link
+                              key={subcat.id}
+                              to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
+                              className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded transition-colors text-sm"
+                            >
+                              <div className="text-gray-600 flex-shrink-0">
+                                {subcat.icon}
+                              </div>
+                              <span className="text-gray-800 truncate">{subcat.name}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1">
-                    {cat.name}
-                  </span>
-                  {cat.servicesCount > 0 && (
-                    <span className="text-xs text-gray-500 mt-1">
-                      {cat.servicesCount}
-                    </span>
-                  )}
-                </Link>
-              ))}
+                );
+              })}
             </div>
             
             {/* Show More text button for md/sm when there are more than 8 categories */}

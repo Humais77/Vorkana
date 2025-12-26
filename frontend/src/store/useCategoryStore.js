@@ -1,4 +1,4 @@
-// store/useCategoryStore.js
+// store/useCategoryStore.js (Updated)
 import { create } from 'zustand';
 
 export const useCategoryStore = create((set, get) => ({
@@ -6,15 +6,22 @@ export const useCategoryStore = create((set, get) => ({
   categories: [],
   popularCategories: [],
   categoriesWithStats: [],
+  categoriesWithSubcategories: [], // NEW: For dropdowns
   lastFetched: null,
   popularLastFetched: null,
   statsLastFetched: null,
+  withSubcategoriesLastFetched: null,
   selectedCategory: null,
   
   // Actions
   setCategories: (categories) => set({ 
     categories,
     lastFetched: Date.now() 
+  }),
+  
+  setCategoriesWithSubcategories: (categoriesWithSubcategories) => set({ 
+    categoriesWithSubcategories,
+    withSubcategoriesLastFetched: Date.now() 
   }),
   
   setPopularCategories: (popularCategories) => set({ 
@@ -35,18 +42,15 @@ export const useCategoryStore = create((set, get) => ({
     selectedCategory: null 
   }),
   
-  clearPopularCategories: () => set({ 
-    popularCategories: [], 
-    popularLastFetched: null 
-  }),
-  
   clearAll: () => set({
     categories: [],
     popularCategories: [],
     categoriesWithStats: [],
+    categoriesWithSubcategories: [],
     lastFetched: null,
     popularLastFetched: null,
     statsLastFetched: null,
+    withSubcategoriesLastFetched: null,
     selectedCategory: null,
   }),
   
@@ -54,6 +58,11 @@ export const useCategoryStore = create((set, get) => ({
   getCategoryById: (id) => {
     const { categories } = get();
     return categories.find(cat => cat._id === id);
+  },
+  
+  getCategoryWithSubcategories: (id) => {
+    const { categoriesWithSubcategories } = get();
+    return categoriesWithSubcategories.find(cat => cat._id === id);
   },
   
   getCategoryByName: (name) => {
@@ -72,13 +81,8 @@ export const useCategoryStore = create((set, get) => ({
     return !lastFetched || Date.now() - lastFetched > 5 * 60 * 1000;
   },
   
-  shouldRefreshPopular: () => {
-    const { popularLastFetched } = get();
-    return !popularLastFetched || Date.now() - popularLastFetched > 10 * 60 * 1000;
-  },
-  
-  shouldRefreshStats: () => {
-    const { statsLastFetched } = get();
-    return !statsLastFetched || Date.now() - statsLastFetched > 30 * 60 * 1000;
+  shouldRefreshWithSubcategories: () => {
+    const { withSubcategoriesLastFetched } = get();
+    return !withSubcategoriesLastFetched || Date.now() - withSubcategoriesLastFetched > 15 * 60 * 1000;
   },
 }));
