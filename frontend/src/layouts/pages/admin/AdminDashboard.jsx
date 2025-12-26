@@ -324,70 +324,10 @@ const AdminDashboard = () => {
               ))}
             </div>
 
-            <div className="mt-6 pt-5 border-t border-gray-100">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Quick Actions</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <Link
-                  to="/admin/security"
-                  className="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-center transition-colors"
-                >
-                  <FiShield className="h-5 w-5 text-gray-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-gray-900">Security</span>
-                </Link>
-                <Link
-                  to="/admin/activity"
-                  className="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-center transition-colors"
-                >
-                  <FiActivity className="h-5 w-5 text-gray-600 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-gray-900">Activity Log</span>
-                </Link>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Recent System Events */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Recent System Events</h2>
-            <p className="text-sm text-gray-600 mt-1">Platform notifications and updates</p>
-          </div>
-          <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
-            View All Events
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {[
-            { type: 'info', message: 'Database backup completed successfully', time: '2 hours ago', icon: <FiDatabase /> },
-            { type: 'success', message: 'New user registration processed', time: '4 hours ago', icon: <FiUserCheck /> },
-            { type: 'warning', message: 'Memory usage above 70% threshold', time: '1 day ago', icon: <FiBarChart2 /> },
-            { type: 'info', message: 'Security scan completed - no threats found', time: '2 days ago', icon: <FiShield /> },
-          ].map((event, index) => (
-            <div key={index} className="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
-              <div className="flex items-center space-x-3">
-                <div className={`p-2 rounded-lg ${
-                  event.type === 'info' ? 'bg-blue-100 text-blue-600' :
-                  event.type === 'success' ? 'bg-green-100 text-green-600' :
-                  event.type === 'warning' ? 'bg-yellow-100 text-yellow-600' :
-                  'bg-gray-100 text-gray-600'
-                }`}>
-                  {event.icon}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{event.message}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{event.time}</p>
-                </div>
-              </div>
-              <button className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
-                <FiEye className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 };
