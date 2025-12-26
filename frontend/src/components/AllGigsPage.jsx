@@ -1,7 +1,7 @@
 // src/pages/AllGigsPage.jsx
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Search, MapPin, Clock, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Filter, ChevronLeft, ChevronRight, Clock, MapPin, DollarSign } from 'lucide-react';
 import { useGigs } from '../hooks/useGigs';
 import CategoryFilter from '../components/CategoryFilter';
 
@@ -11,58 +11,122 @@ const AllGigsPage = () => {
   // State for pagination and filters
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(12);
-  const [searchQuery, setSearchQuery] = useState('');
- const [categoryFilter, setCategoryFilter] = useState(null); // null instead of empty string
-const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of empty string
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [urgencyFilter, setUrgencyFilter] = useState('');
+  const [budgetFilter, setBudgetFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [hasAttachmentsFilter, setHasAttachmentsFilter] = useState('');
+  const [hasMilestonesFilter, setHasMilestonesFilter] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFilters, setShowFilters] = useState(false);
-  
+
+  // Build filter object for the API
+  const buildFilters = () => {
+    const filters = {
+      status: 'open', // Default to open gigs
+      deletedAt: null
+    };
+
+    if (categoryFilter) filters.projectCategory = categoryFilter;
+    if (urgencyFilter) filters.urgency = urgencyFilter;
+    if (statusFilter) filters.status = statusFilter;
+    if (budgetFilter === 'small') {
+      filters.minBudget = 1;
+      filters.maxBudget = 500;
+    } else if (budgetFilter === 'medium') {
+      filters.minBudget = 501;
+      filters.maxBudget = 5000;
+    } else if (budgetFilter === 'large') {
+      filters.minBudget = 5001;
+    }
+    if (hasAttachmentsFilter === 'true') filters.hasAttachments = true;
+    if (hasMilestonesFilter === 'true') filters.hasMilestones = true;
+
+    return filters;
+  };
 
   // Use the useGigs hook with dynamic parameters
- const { data, isLoading, isError, error, refetch } = useGigs({
-  search: searchQuery || undefined,
-  projectCategory: categoryFilter || undefined, // undefined instead of empty string
-  urgency: urgencyFilter || undefined, // undefined instead of empty string
-  status: 'open',
-  page: page,
-  limit: limit,
-  sort: sortBy,
-  order: sortOrder,
-  includeCategory: true,
-  includeClient: true,
-  includeSeller: true,
-  populate: true,
-});
+  const { data: responseData, isLoading, isError, error, refetch } = useGigs({
+    ...buildFilters(),
+    page: page,
+    limit: limit,
+    sort: sortBy,
+    order: sortOrder,
+    includeCategory: true,
+    includeClient: true,
+    includeSeller: true,
+    populate: true,
+  });
 
-  // Extract data from response
-  const gigs = data?.data || [];
-  const pagination = data?.pagination || {};
-  const totalPages = pagination.totalPages || 1;
-  const totalGigs = pagination.total || 0;
+  // Extract data from response - handle different response formats
+  let gigs = [];
+  let pagination = {};
+  let totalPages = 1;
+  let totalGigs = 0;
+
+  if (responseData) {
+    // Handle different response formats
+    if (Array.isArray(responseData)) {
+      // Direct array response
+      gigs = responseData;
+      totalGigs = responseData.length;
+    } else if (responseData.data && Array.isArray(responseData.data)) {
+      // Format: { data: [...], pagination: {...} }
+      gigs = responseData.data;
+      pagination = responseData.pagination || {};
+      totalPages = pagination.totalPages || 1;
+      totalGigs = pagination.total || gigs.length;
+    } else if (responseData.gigs && Array.isArray(responseData.gigs)) {
+      // Format: { gigs: [...], ... }
+      gigs = responseData.gigs;
+      pagination = responseData.pagination || {};
+      totalPages = pagination.totalPages || 1;
+      totalGigs = pagination.total || gigs.length;
+    } else if (responseData.success && responseData.data && Array.isArray(responseData.data)) {
+      // Format: { success: true, data: [...], pagination: {...} }
+      gigs = responseData.data;
+      pagination = responseData.pagination || {};
+      totalPages = pagination.totalPages || 1;
+      totalGigs = pagination.total || gigs.length;
+    }
+  }
 
   // Handle gig click
   const handleGigClick = useCallback((gigId, gigSlug) => {
     navigate(`/gig/${gigSlug || gigId}`);
   }, [navigate]);
 
-  // Handle search
-  const handleSearch = useCallback((e) => {
-    e.preventDefault();
-    setPage(1); // Reset to first page on new search
-    refetch();
-  }, [refetch]);
-
   // Handle filter changes
   const handleCategoryChange = useCallback((categoryId) => {
-  setCategoryFilter(categoryId || null); // Convert empty string to null
-  setPage(1);
-}, []);
+    setCategoryFilter(categoryId || null);
+    setPage(1);
+  }, []);
 
   const handleUrgencyChange = useCallback((urgency) => {
-  setUrgencyFilter(urgency || null); // Convert empty string to null
-  setPage(1);
-}, []);
+    setUrgencyFilter(urgency || '');
+    setPage(1);
+  }, []);
+
+  const handleBudgetChange = useCallback((budgetRange) => {
+    setBudgetFilter(budgetRange || '');
+    setPage(1);
+  }, []);
+
+  const handleStatusChange = useCallback((status) => {
+    setStatusFilter(status || '');
+    setPage(1);
+  }, []);
+
+  const handleAttachmentsChange = useCallback((hasAttachments) => {
+    setHasAttachmentsFilter(hasAttachments || '');
+    setPage(1);
+  }, []);
+
+  const handleMilestonesChange = useCallback((hasMilestones) => {
+    setHasMilestonesFilter(hasMilestones || '');
+    setPage(1);
+  }, []);
 
   const handleSortChange = useCallback((sortField, order = 'desc') => {
     setSortBy(sortField);
@@ -79,9 +143,12 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
 
   // Reset all filters
   const resetFilters = useCallback(() => {
-    setSearchQuery('');
-    setCategoryFilter('');
+    setCategoryFilter(null);
     setUrgencyFilter('');
+    setBudgetFilter('');
+    setStatusFilter('');
+    setHasAttachmentsFilter('');
+    setHasMilestonesFilter('');
     setSortBy('createdAt');
     setSortOrder('desc');
     setPage(1);
@@ -90,7 +157,7 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
   // Auto-refresh when filters change
   useEffect(() => {
     refetch();
-  }, [page, limit, sortBy, sortOrder, categoryFilter, urgencyFilter, refetch]);
+  }, [page, limit, sortBy, sortOrder, categoryFilter, urgencyFilter, budgetFilter, statusFilter, hasAttachmentsFilter, hasMilestonesFilter, refetch]);
 
   if (isLoading) {
     return (
@@ -129,134 +196,258 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
                 All Available Gigs
               </h1>
               <p className="text-gray-600 mt-2">
-                Browse all active gigs from all categories
+                Browse and filter through our collection of professional gigs
               </p>
             </div>
             
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
             >
-              <Filter className="w-4 h-4" />
+              <Filter className="w-5 h-5" />
               {showFilters ? 'Hide Filters' : 'Show Filters'}
             </button>
           </div>
 
-          {/* Search Bar */}
-          <div className="mt-6">
-            <form onSubmit={handleSearch} className="max-w-3xl">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search all gigs by title, description, or skills..."
-                  className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                />
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <button
-                  type="submit"
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors"
-                >
-                  Search
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       </div>
 
       {/* Filters Panel */}
       {showFilters && (
         <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex flex-wrap items-center gap-4">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Category Filter */}
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Category
                 </label>
-                <CategoryFilter
-                  selectedCategory={categoryFilter}
-                  onCategoryChange={handleCategoryChange}
-                  showAllOption={true}
-                />
+                <div className="space-y-2">
+                  <CategoryFilter
+                    selectedCategory={categoryFilter}
+                    onCategoryChange={handleCategoryChange}
+                    showAllOption={true}
+                  />
+                </div>
+              </div>
+
+              {/* Budget Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Budget Range
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { id: '', label: 'All Budgets' },
+                    { id: 'small', label: 'Small ($1 - $500)', desc: 'Small projects' },
+                    { id: 'medium', label: 'Medium ($501 - $5,000)', desc: 'Mid-size projects' },
+                    { id: 'large', label: 'Large ($5,001+)', desc: 'Large projects' }
+                  ].map((budget) => (
+                    <button
+                      key={budget.id}
+                      onClick={() => handleBudgetChange(budget.id)}
+                      className={`w-full px-4 py-3 text-left rounded-lg transition-colors ${
+                        budgetFilter === budget.id 
+                          ? 'bg-green-100 text-green-700 border border-green-300' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        <span className="font-medium">{budget.label}</span>
+                      </div>
+                      {budget.desc && (
+                        <div className="text-xs text-gray-500 mt-1">{budget.desc}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Urgency Filter */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Urgency
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Urgency Level
                 </label>
-                <select
-                  value={urgencyFilter}
-                  onChange={(e) => handleUrgencyChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                >
-                  <option value="">All Urgency</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-
-              {/* Sort Options */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sort By
-                </label>
-                <select
-                  value={`${sortBy}:${sortOrder}`}
-                  onChange={(e) => {
-                    const [field, order] = e.target.value.split(':');
-                    handleSortChange(field, order);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                >
-                  <option value="createdAt:desc">Newest First</option>
-                  <option value="createdAt:asc">Oldest First</option>
-                  <option value="budget:desc">Highest Budget</option>
-                  <option value="budget:asc">Lowest Budget</option>
-                  <option value="deadline:asc">Closest Deadline</option>
-                </select>
-              </div>
-
-              {/* Results Per Page */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Per Page
-                </label>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                >
-                  <option value={12}>12</option>
-                  <option value={24}>24</option>
-                  <option value={36}>36</option>
-                  <option value={48}>48</option>
-                </select>
-              </div>
-
-              {/* Reset Filters */}
-              {(searchQuery || categoryFilter || urgencyFilter || sortBy !== 'createdAt' || sortOrder !== 'desc') && (
-                <div className="self-end">
-                  <button
-                    onClick={resetFilters}
-                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Reset Filters
-                  </button>
+                <div className="space-y-2">
+                  {[
+                    { id: '', label: 'All Urgency' },
+                    { id: 'low', label: 'Low Urgency', color: 'bg-green-100 text-green-800' },
+                    { id: 'medium', label: 'Medium Urgency', color: 'bg-yellow-100 text-yellow-800' },
+                    { id: 'high', label: 'High Urgency', color: 'bg-orange-100 text-orange-800' },
+                    { id: 'urgent', label: 'Urgent', color: 'bg-red-100 text-red-800' }
+                  ].map((urgency) => (
+                    <button
+                      key={urgency.id}
+                      onClick={() => handleUrgencyChange(urgency.id)}
+                      className={`w-full px-4 py-3 text-left rounded-lg transition-colors ${
+                        urgencyFilter === urgency.id 
+                          ? 'bg-green-100 text-green-700 border border-green-300' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      <div className="font-medium">{urgency.label}</div>
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Gig Status
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { id: '', label: 'All Status' },
+                    { id: 'open', label: 'Open'},
+                    { id: 'assigned', label: 'Assigned', desc: 'Freelancer assigned' },
+                    { id: 'in_progress', label: 'In Progress', desc: 'Work ongoing' },
+                    { id: 'completed', label: 'Completed', desc: 'Work finished' }
+                  ].map((status) => (
+                    <button
+                      key={status.id}
+                      onClick={() => handleStatusChange(status.id)}
+                      className={`w-full px-4 py-3 text-left rounded-lg transition-colors ${
+                        statusFilter === status.id 
+                          ? 'bg-green-100 text-green-700 border border-green-300' 
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      <div className="font-medium">{status.label}</div>
+                      {status.desc && (
+                        <div className="text-xs text-gray-500 mt-1">{status.desc}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Additional Filters */}
+              <div className="col-span-1 md:col-span-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Has Attachments Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Has Attachments
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAttachmentsChange('')}
+                        className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                          hasAttachmentsFilter === '' 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        Any
+                      </button>
+                      <button
+                        onClick={() => handleAttachmentsChange('true')}
+                        className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                          hasAttachmentsFilter === 'true' 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        With Attachments
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Has Milestones Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Has Milestones
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleMilestonesChange('')}
+                        className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                          hasMilestonesFilter === '' 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        Any
+                      </button>
+                      <button
+                        onClick={() => handleMilestonesChange('true')}
+                        className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                          hasMilestonesFilter === 'true' 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        With Milestones
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sort and Results Controls */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sort By
+                    </label>
+                    <select
+                      value={`${sortBy}:${sortOrder}`}
+                      onChange={(e) => {
+                        const [field, order] = e.target.value.split(':');
+                        handleSortChange(field, order);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                    >
+                      <option value="createdAt:desc">Newest First</option>
+                      <option value="createdAt:asc">Oldest First</option>
+                      <option value="budget:asc">Budget: Low to High</option>
+                      <option value="budget:desc">Budget: High to Low</option>
+                      <option value="urgency:desc">Most Urgent First</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Results Per Page
+                    </label>
+                    <select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                    >
+                      <option value={12}>12</option>
+                      <option value={24}>24</option>
+                      <option value={36}>36</option>
+                      <option value={48}>48</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Reset Filters */}
+                {(categoryFilter || urgencyFilter || budgetFilter || statusFilter || 
+                  hasAttachmentsFilter || hasMilestonesFilter || sortBy !== 'createdAt' || sortOrder !== 'desc') && (
+                  <div>
+                    <button
+                      onClick={resetFilters}
+                      className="px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                    >
+                      Reset All Filters
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -264,13 +455,20 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="text-sm text-gray-600">
-            Showing <span className="font-semibold">{gigs.length}</span> of{' '}
-            <span className="font-semibold">{totalGigs}</span> active gigs
-            {categoryFilter && ' in selected category'}
-            {searchQuery && ` matching "${searchQuery}"`}
+        {/* Results Summary */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div className="text-gray-600">
+            <span className="font-semibold text-gray-900">{gigs.length}</span> of{' '}
+            <span className="font-semibold text-gray-900">{totalGigs}</span> gigs
+            {categoryFilter && (
+              <> in <span className="font-semibold text-green-600">selected category</span></>
+            )}
+            {urgencyFilter && (
+              <> · <span className="font-semibold text-green-600 capitalize">{urgencyFilter}</span> urgency</>
+            )}
+            {budgetFilter && (
+              <> · <span className="font-semibold text-green-600 capitalize">{budgetFilter}</span> budget</>
+            )}
           </div>
           
           <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -278,7 +476,7 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
           </div>
         </div>
 
-        {/* Gig Listings */}
+        {/* Gigs Grid */}
         {gigs.length > 0 ? (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -349,11 +547,11 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
               No gigs found
             </h3>
             <p className="text-gray-600 mb-6 max-w-md mx-auto">
-              {searchQuery || categoryFilter || urgencyFilter
-                ? 'Try adjusting your filters or search terms'
+              {categoryFilter || urgencyFilter || budgetFilter || statusFilter
+                ? 'Try adjusting your filters to find more gigs'
                 : 'There are currently no active gigs. Check back later!'}
             </p>
-            {(searchQuery || categoryFilter || urgencyFilter) && (
+            {(categoryFilter || urgencyFilter || budgetFilter || statusFilter) && (
               <button
                 onClick={resetFilters}
                 className="px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
@@ -368,14 +566,14 @@ const [urgencyFilter, setUrgencyFilter] = useState(null); // null instead of emp
   );
 };
 
-// GigCard Component (reusing from your existing component)
+// GigCard Component (updated to match service card style)
 const GigCard = ({ gig, onClick }) => {
   const getGigImage = () => {
-    if (gig.attachments && gig.attachments.length > 0) {
-      return gig.attachments[0];
+    if (gig.thumbnail?.url) {
+      return gig.thumbnail.url;
     }
-    if (gig.files && gig.files.length > 0) {
-      return gig.files[0];
+    if (gig.images && gig.images.length > 0 && gig.images[0].url) {
+      return gig.images[0].url;
     }
     
     // Fallback images based on category
@@ -397,10 +595,20 @@ const GigCard = ({ gig, onClick }) => {
   const deliveryTime = gig.timeline ? `${gig.timeline} ${gig.timelineUnit || 'days'}` : 'Custom';
   const categoryName = gig.projectCategory?.name || 'Uncategorized';
 
+  // Urgency color mapping
+  const urgencyColors = {
+    low: 'bg-green-100 text-green-800',
+    medium: 'bg-yellow-100 text-yellow-800',
+    high: 'bg-orange-100 text-orange-800',
+    urgent: 'bg-red-100 text-red-800'
+  };
+
+  const urgencyClass = urgencyColors[gig.urgency] || 'bg-gray-100 text-gray-800';
+
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group"
+      className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer group h-full flex flex-col"
     >
       {/* Gig Image */}
       <div className="relative h-48 overflow-hidden">
@@ -421,10 +629,10 @@ const GigCard = ({ gig, onClick }) => {
         </div>
         
         {/* Urgency Badge */}
-        {gig.urgency === 'high' && (
+        {gig.urgency && (
           <div className="absolute top-3 right-3">
-            <span className="px-2 py-1 bg-red-500 text-white text-xs font-medium rounded">
-              Urgent
+            <span className={`px-2 py-1 text-xs font-medium rounded ${urgencyClass}`}>
+              {gig.urgency.charAt(0).toUpperCase() + gig.urgency.slice(1)}
             </span>
           </div>
         )}
@@ -438,18 +646,18 @@ const GigCard = ({ gig, onClick }) => {
       </div>
 
       {/* Gig Content */}
-      <div className="p-5">
+      <div className="p-5 flex-1 flex flex-col">
         {/* Gig Title */}
         <h3 className="text-lg font-bold text-gray-900 mb-3 group-hover:text-green-600 transition-colors line-clamp-2">
           {gig.title}
         </h3>
 
         {/* Gig Description */}
-        <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+        <p className="text-gray-600 text-sm mb-4 line-clamp-3 flex-1">
           {gig.description || 'No description provided.'}
         </p>
 
-        {/* Gig Info */}
+        {/* Gig Stats */}
         <div className="space-y-3 mb-4">
           {/* Skills */}
           {gig.skillsRequired && gig.skillsRequired.length > 0 && (
@@ -470,40 +678,56 @@ const GigCard = ({ gig, onClick }) => {
             </div>
           )}
 
-          {/* Proposals Count */}
-          {gig.proposals && (
-            <div className="text-sm text-gray-500">
-              {gig.proposals.length} proposal{gig.proposals.length !== 1 ? 's' : ''}
-            </div>
-          )}
+
+          {/* Delivery Time */}
+          <div className="flex items-center gap-1 text-sm text-gray-500">
+            <Clock className="w-4 h-4" />
+            <span>{deliveryTime}</span>
+          </div>
         </div>
 
-        {/* Gig Footer */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 text-sm text-gray-500">
-              <Clock className="w-4 h-4" />
-              <span>{deliveryTime}</span>
-            </div>
-            
-            {gig.country && (
-              <div className="flex items-center gap-1 text-sm text-gray-500">
-                <MapPin className="w-4 h-4" />
-                <span className="truncate max-w-[80px]">{gig.country}</span>
+        {/* Client Info */}
+        {gig.createdBy && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200">
+                {gig.createdBy.picture ? (
+                  <img 
+                    src={gig.createdBy.picture} 
+                    alt={gig.createdBy.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-blue-100 text-blue-800 font-medium">
+                    {gig.createdBy.name?.charAt(0) || 'C'}
+                  </div>
+                )}
               </div>
-            )}
+              <div>
+                <div className="text-sm font-medium text-gray-900">
+                  {gig.createdBy.name || 'Client'}
+                </div>
+                {gig.country && (
+                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                    <MapPin className="w-3 h-3" />
+                    <span>{gig.country}</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onClick();
-            }}
-            className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors text-sm"
-          >
-            View Details
-          </button>
-        </div>
+        )}
+
+        {/* View Details Button */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          className="mt-6 px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors text-sm w-full"
+        >
+          View Gig Details
+        </button>
       </div>
     </div>
   );
