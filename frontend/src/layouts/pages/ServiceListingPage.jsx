@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import PopularServices from "../../components/services/PopularService";
 import {
@@ -27,11 +27,11 @@ const ServiceListingPage = () => {
   const navigate = useNavigate();
   
   // Get query parameters from URL
-  const searchQuery = searchParams.get('q') || '';
+  const searchQuery = searchParams.get('q') || searchParams.get('query') || '';
   const categoryId = searchParams.get('category') || '';
   const minPrice = searchParams.get('minPrice') || '';
   const maxPrice = searchParams.get('maxPrice') || '';
-  const sort = searchParams.get('sort') || 'relevance';
+  const sort = searchParams.get('sort') || 'createdAt';
   const page = searchParams.get('page') || '1';
   
   // Local state
@@ -46,9 +46,10 @@ const ServiceListingPage = () => {
   const [favorites, setFavorites] = useState([]);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchQuery);
   const [apiError, setApiError] = useState(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Helper function to clean query parameters
-  const cleanQueryParams = (params) => {
+  const cleanQueryParams = useCallback((params) => {
     const cleaned = {};
     Object.keys(params).forEach(key => {
       if (params[key] !== undefined && params[key] !== '' && params[key] !== null) {
@@ -56,7 +57,7 @@ const ServiceListingPage = () => {
       }
     });
     return cleaned;
-  };
+  }, []);
 
   // API Hooks with cleaned parameters
   const { 
@@ -65,12 +66,12 @@ const ServiceListingPage = () => {
     error: searchError,
     refetch: refetchSearch 
   } = useSearchServices(
-    debouncedSearchTerm ? cleanQueryParams({
-      query: debouncedSearchTerm.trim(),
+    debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2 ? cleanQueryParams({
+      q: debouncedSearchTerm.trim(),
       category: selectedCategory !== 'All' ? selectedCategory : undefined,
       minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
       maxPrice: priceRange[1] < 10000 ? priceRange[1] : undefined,
-      sort: sortBy !== 'relevance' ? sortBy : undefined,
+      sort: sortBy !== 'createdAt' ? sortBy : undefined,
       limit: 20
     }) : null
   );
@@ -86,12 +87,12 @@ const ServiceListingPage = () => {
     error: servicesError
   } = useServices(
     cleanQueryParams({
+      page: parseInt(page),
+      limit: 12,
+      sort: sortBy,
       category: selectedCategory !== 'All' ? selectedCategory : undefined,
       minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
       maxPrice: priceRange[1] < 10000 ? priceRange[1] : undefined,
-      sort: sortBy !== 'relevance' ? sortBy : undefined,
-      page: parseInt(page),
-      limit: 12
     })
   );
 
@@ -110,52 +111,121 @@ const ServiceListingPage = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      // Reset to page 1 when search changes
+      if (searchTerm !== searchQuery) {
+        setSearchParams(prev => {
+          if (searchTerm.trim()) {
+            prev.set('q', searchTerm.trim());
+          } else {
+            prev.delete('q');
+          }
+          prev.set('page', '1');
+          return prev;
+        });
+      }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, searchQuery, setSearchParams]);
 
-  // Update URL when filters change
+  // Update URL when filters change (excluding debounced search)
   useEffect(() => {
+    if (isInitialLoad) {
+      setIsInitialLoad(false);
+      return;
+    }
+
     const params = new URLSearchParams();
     
+    // Always set page first
+    if (page !== '1') params.set('page', page);
+    
+    // Set search term if present
     if (debouncedSearchTerm.trim()) params.set('q', debouncedSearchTerm.trim());
+    
+    // Set other filters
     if (selectedCategory && selectedCategory !== 'All') params.set('category', selectedCategory);
     if (priceRange[0] > 0) params.set('minPrice', priceRange[0]);
     if (priceRange[1] < 10000) params.set('maxPrice', priceRange[1]);
-    if (sortBy !== 'relevance') params.set('sort', sortBy);
-    if (page !== '1') params.set('page', page);
+    if (sortBy !== 'createdAt') params.set('sort', sortBy);
     
+    // Update URL
     setSearchParams(params, { replace: true });
-  }, [debouncedSearchTerm, selectedCategory, priceRange, sortBy, page, setSearchParams]);
+  }, [selectedCategory, priceRange, sortBy, page, debouncedSearchTerm, setSearchParams, isInitialLoad]);
 
   // Handle search
-  const handleSearch = (e) => {
+  const handleSearch = useCallback((e) => {
     e?.preventDefault();
-    if (searchTerm.trim()) {
-      setDebouncedSearchTerm(searchTerm.trim());
+    const trimmedTerm = searchTerm.trim();
+    
+    if (trimmedTerm && trimmedTerm.length >= 2) {
+      setDebouncedSearchTerm(trimmedTerm);
+    } else if (!trimmedTerm) {
+      // Clear search
+      setDebouncedSearchTerm('');
+      setSearchTerm('');
+      setSearchParams(prev => {
+        prev.delete('q');
+        prev.set('page', '1');
+        return prev;
+      });
     }
-  };
+  }, [searchTerm, setSearchParams]);
 
   // Handle category change
-  const handleCategoryChange = (categoryId) => {
+  const handleCategoryChange = useCallback((categoryId) => {
     setSelectedCategory(categoryId);
-  };
+    // Reset to page 1 when category changes
+    setSearchParams(prev => {
+      if (categoryId !== 'All') {
+        prev.set('category', categoryId);
+      } else {
+        prev.delete('category');
+      }
+      prev.set('page', '1');
+      return prev;
+    });
+  }, [setSearchParams]);
 
   // Handle price range change
-  const handlePriceRangeChange = (index, value) => {
+  const handlePriceRangeChange = useCallback((index, value) => {
     const newRange = [...priceRange];
     newRange[index] = parseInt(value) || 0;
     setPriceRange(newRange);
-  };
+    
+    // Reset to page 1 when price changes
+    setSearchParams(prev => {
+      if (newRange[0] > 0) {
+        prev.set('minPrice', newRange[0]);
+      } else {
+        prev.delete('minPrice');
+      }
+      if (newRange[1] < 10000) {
+        prev.set('maxPrice', newRange[1]);
+      } else {
+        prev.delete('maxPrice');
+      }
+      prev.set('page', '1');
+      return prev;
+    });
+  }, [priceRange, setSearchParams]);
 
   // Handle sort change
-  const handleSortChange = (e) => {
+  const handleSortChange = useCallback((e) => {
     setSortBy(e.target.value);
-  };
+    setSearchParams(prev => {
+      if (e.target.value !== 'createdAt') {
+        prev.set('sort', e.target.value);
+      } else {
+        prev.delete('sort');
+      }
+      prev.set('page', '1');
+      return prev;
+    });
+  }, [setSearchParams]);
 
   // Handle like
-  const handleLike = async (serviceId, e) => {
+  const handleLike = useCallback(async (serviceId, e) => {
     e.stopPropagation();
     try {
       await toggleLike({ serviceId, action: 'toggle' });
@@ -167,57 +237,73 @@ const ServiceListingPage = () => {
     } catch (error) {
       toast.error('Failed to update favorites');
     }
-  };
+  }, [toggleLike]);
 
   // Handle view details
-  const handleViewDetails = (serviceId, slug) => {
+  const handleViewDetails = useCallback((serviceId, slug) => {
     navigate(`/services/${slug || serviceId}`);
-  };
+  }, [navigate]);
 
   // Reset filters
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setSearchTerm('');
     setDebouncedSearchTerm('');
     setSelectedCategory('All');
     setPriceRange([0, 10000]);
-    setSortBy('relevance');
-    setSearchParams({});
+    setSortBy('createdAt');
+    setSearchParams({ page: '1' });
     setApiError(null);
-  };
+    setIsInitialLoad(true);
+  }, [setSearchParams]);
 
   // Determine which data to show
-  const services = debouncedSearchTerm ? 
-    (searchData?.data || searchData || []) : 
-    (allServicesData?.data || allServicesData || []);
-  
-  const isLoading = debouncedSearchTerm ? isSearching : isLoadingServices;
-  const totalServices = debouncedSearchTerm ? 
-    (searchData?.pagination?.total || services.length) : 
-    (allServicesData?.pagination?.total || services.length);
+  const services = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      // Show search results
+      return searchData?.data || searchData || [];
+    } else {
+      // Show all services
+      return allServicesData?.data || allServicesData || [];
+    }
+  }, [debouncedSearchTerm, searchData, allServicesData]);
+
+  const isLoading = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      return isSearching;
+    } else {
+      return isLoadingServices;
+    }
+  }, [debouncedSearchTerm, isSearching, isLoadingServices]);
+
+  const totalServices = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      return searchData?.pagination?.total || services.length || 0;
+    } else {
+      return allServicesData?.pagination?.total || services.length || 0;
+    }
+  }, [debouncedSearchTerm, searchData, allServicesData, services]);
 
   // Extract categories from API response
-  const categories = [
+  const categories = useMemo(() => [
     { _id: 'All', name: 'All Categories', icon: '📦' },
     ...(categoriesData?.map(cat => ({ 
       _id: cat._id, 
       name: cat.name,
       icon: cat.icon || '📁'
     })) || [])
-  ];
+  ], [categoriesData]);
 
   // Sort options
-  const sortOptions = [
-    { value: 'relevance', label: 'Most Relevant' },
+  const sortOptions = useMemo(() => [
+    { value: 'createdAt', label: 'Newest First' },
     { value: 'price_asc', label: 'Price: Low to High' },
     { value: 'price_desc', label: 'Price: High to Low' },
     { value: 'rating', label: 'Highest Rated' },
-    { value: 'delivery', label: 'Fastest Delivery' },
-    { value: 'orders', label: 'Most Orders' },
-    { value: 'newest', label: 'Newest First' }
-  ];
+    { value: 'delivery', label: 'Fastest Delivery' }
+  ], []);
 
   // Get service thumbnail - prioritizing database thumbnail
-  const getServiceThumbnail = (service) => {
+  const getServiceThumbnail = useCallback((service) => {
     // First priority: Service thumbnail from database
     if (service.thumbnail?.url) {
       return service.thumbnail.url;
@@ -246,10 +332,10 @@ const ServiceListingPage = () => {
       // Default generic service image
       return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     }
-  };
+  }, []);
 
   // Get seller information from service
-  const getUserInfo = (service) => {
+  const getUserInfo = useCallback((service) => {
     if (service.createdBy && typeof service.createdBy === 'object') {
       return {
         username: service.createdBy.name || 'Service Provider',
@@ -275,17 +361,17 @@ const ServiceListingPage = () => {
       verified: false,
       level: 'Basic'
     };
-  };
+  }, []);
 
   // Get current category name for SEO
-  const getCurrentCategoryName = () => {
+  const getCurrentCategoryName = useCallback(() => {
     if (selectedCategory === 'All' || !selectedCategory) return null;
     const category = categories.find(cat => cat._id === selectedCategory);
     return category?.name || null;
-  };
+  }, [selectedCategory, categories]);
 
-  // Generate SEO title
-  const getSeoTitle = () => {
+  // Memoized SEO functions
+  const seoTitle = useMemo(() => {
     const categoryName = getCurrentCategoryName();
     const baseTitle = "Browse Freelance Services | Vorkana Marketplace";
     
@@ -298,10 +384,9 @@ const ServiceListingPage = () => {
     }
     
     return baseTitle;
-  };
+  }, [debouncedSearchTerm, getCurrentCategoryName]);
 
-  // Generate SEO description
-  const getSeoDescription = () => {
+  const seoDescription = useMemo(() => {
     const categoryName = getCurrentCategoryName();
     const baseDesc = "Discover thousands of professional freelance services. Find experts in design, development, writing, marketing, and more. Get quality work delivered fast.";
     
@@ -314,10 +399,9 @@ const ServiceListingPage = () => {
     }
     
     return baseDesc;
-  };
+  }, [debouncedSearchTerm, getCurrentCategoryName, totalServices]);
 
-  // Generate keywords
-  const getSeoKeywords = () => {
+  const seoKeywords = useMemo(() => {
     const categoryName = getCurrentCategoryName();
     const baseKeywords = ["freelance services", "hire freelancers", "online services", "freelance marketplace", "professional services"];
     
@@ -329,11 +413,37 @@ const ServiceListingPage = () => {
       return [...baseKeywords, debouncedSearchTerm.toLowerCase(), `${debouncedSearchTerm.toLowerCase()} services`];
     }
     
-    return baseKeywords.join(", ");
-  };
+    return baseKeywords;
+  }, [debouncedSearchTerm, getCurrentCategoryName]);
 
-  // Generate structured data for service listings
-  const generateServiceListingsStructuredData = () => {
+  // Generate breadcrumb items
+  const breadcrumbItems = useMemo(() => {
+    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const breadcrumbItems = [
+      { name: "Home", url: "/" },
+      { name: "Services", url: "/services" }
+    ];
+
+    const categoryName = getCurrentCategoryName();
+    if (categoryName) {
+      breadcrumbItems.push({
+        name: categoryName,
+        url: `/services?category=${selectedCategory}`
+      });
+    }
+
+    if (debouncedSearchTerm) {
+      breadcrumbItems.push({
+        name: `Search: ${debouncedSearchTerm}`,
+        url: `/services?q=${encodeURIComponent(debouncedSearchTerm)}`
+      });
+    }
+
+    return breadcrumbItems;
+  }, [debouncedSearchTerm, selectedCategory, getCurrentCategoryName]);
+
+  // Generate structured data
+  const structuredData = useMemo(() => {
     const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
     const currentUrl = typeof window !== 'undefined' ? window.location.href : websiteUrl;
     
@@ -367,16 +477,16 @@ const ServiceListingPage = () => {
     return {
       "@context": "https://schema.org",
       "@type": "ItemList",
-      "name": getSeoTitle(),
-      "description": getSeoDescription(),
+      "name": seoTitle,
+      "description": seoDescription,
       "url": currentUrl,
       "numberOfItems": totalServices,
       "itemListElement": structuredServices,
       "mainEntity": {
         "@type": "WebPage",
         "@id": currentUrl,
-        "name": getSeoTitle(),
-        "description": getSeoDescription(),
+        "name": seoTitle,
+        "description": seoDescription,
         "breadcrumb": {
           "@type": "BreadcrumbList",
           "itemListElement": [
@@ -396,50 +506,34 @@ const ServiceListingPage = () => {
         }
       }
     };
-  };
+  }, [services, seoTitle, seoDescription, totalServices, getUserInfo]);
 
-  // Generate breadcrumb items
-  const generateBreadcrumbItems = () => {
-    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    const breadcrumbItems = [
-      { name: "Home", url: "/" },
-      { name: "Services", url: "/services" }
-    ];
-
-    const categoryName = getCurrentCategoryName();
-    if (categoryName) {
-      breadcrumbItems.push({
-        name: categoryName,
-        url: `/services?category=${selectedCategory}`
-      });
-    }
-
-    if (debouncedSearchTerm) {
-      breadcrumbItems.push({
-        name: `Search: ${debouncedSearchTerm}`,
-        url: `/services?q=${encodeURIComponent(debouncedSearchTerm)}`
-      });
-    }
-
-    return breadcrumbItems;
-  };
+  // Pagination functions
+  const handlePageChange = useCallback((newPage) => {
+    setSearchParams(prev => {
+      prev.set('page', newPage.toString());
+      return prev;
+    });
+    // Scroll to top when page changes
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setSearchParams]);
 
   return (
     <SeoWrapper
-      title={getSeoTitle()}
-      description={getSeoDescription()}
-      keywords={getSeoKeywords()}
+      title={seoTitle}
+      description={seoDescription}
+      keywords={seoKeywords.join(", ")}
       canonical={`/services${window.location.search}`}
-      ogTitle={getSeoTitle()}
-      ogDescription={getSeoDescription()}
+      ogTitle={seoTitle}
+      ogDescription={seoDescription}
       ogImage="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
       twitterCard="summary_large_image"
       twitterSite="@vorkana"
       robots="index, follow"
       lang="en"
-      breadcrumb={generateBreadcrumbItems()}
-      structuredData={generateServiceListingsStructuredData()}
+      breadcrumb={breadcrumbItems}
+      structuredData={structuredData}
     >
       <div className="min-h-screen bg-gray-50">
         {/* Hero Section */}
@@ -461,11 +555,12 @@ const ServiceListingPage = () => {
                     <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
                     <input
                       type="text"
-                      placeholder="What service are you looking for?"
+                      placeholder="What service are you looking for? (min. 2 characters)"
                       className="w-full pl-12 pr-24 py-4 rounded-xl text-gray-900 text-lg focus:outline-none focus:ring-4 focus:ring-blue-300 shadow-lg"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       aria-label="Search for services"
+                      minLength={2}
                     />
                     <button 
                       type="submit"
@@ -483,22 +578,24 @@ const ServiceListingPage = () => {
                 </form>
                 
                 {/* Quick Categories */}
-                <div className="flex flex-wrap justify-center gap-3 mt-6" role="navigation" aria-label="Quick categories">
-                  {!isLoadingCategories && categories.slice(1, 7).map(category => (
-                    <button
-                      key={category._id}
-                      onClick={() => handleCategoryChange(category._id)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                        selectedCategory === category._id
-                          ? "bg-white text-blue-600"
-                          : "bg-white/20 hover:bg-white/30 text-white"
-                      }`}
-                      aria-label={`Browse ${category.name} services`}
-                    >
-                      {category.icon} {category.name}
-                    </button>
-                  ))}
-                </div>
+                {!isLoadingCategories && categories.length > 1 && (
+                  <div className="flex flex-wrap justify-center gap-3 mt-6" role="navigation" aria-label="Quick categories">
+                    {categories.slice(1, 7).map(category => (
+                      <button
+                        key={category._id}
+                        onClick={() => handleCategoryChange(category._id)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                          selectedCategory === category._id
+                            ? "bg-white text-blue-600"
+                            : "bg-white/20 hover:bg-white/30 text-white"
+                        }`}
+                        aria-label={`Browse ${category.name} services`}
+                      >
+                        {category.icon} {category.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -519,7 +616,7 @@ const ServiceListingPage = () => {
               <button
                 onClick={() => {
                   setApiError(null);
-                  if (debouncedSearchTerm) {
+                  if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
                     refetchSearch();
                   }
                 }}
@@ -564,14 +661,16 @@ const ServiceListingPage = () => {
               
               <div className="flex items-center gap-4">
                 <span className="text-gray-600">
-                  {totalServices} services found
+                  {totalServices} {debouncedSearchTerm ? 'results' : 'services'} found
                 </span>
-                <button
-                  onClick={resetFilters}
-                  className="px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  Reset Filters
-                </button>
+                {(searchTerm || selectedCategory !== 'All' || priceRange[0] > 0 || priceRange[1] < 10000 || sortBy !== 'createdAt') && (
+                  <button
+                    onClick={resetFilters}
+                    className="px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
+                    Reset Filters
+                  </button>
+                )}
               </div>
             </div>
 
@@ -646,7 +745,9 @@ const ServiceListingPage = () => {
             <div className="flex justify-center items-center py-20">
               <div className="text-center">
                 <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-                <p className="text-gray-600">Loading services...</p>
+                <p className="text-gray-600">
+                  {debouncedSearchTerm ? 'Searching services...' : 'Loading services...'}
+                </p>
               </div>
             </div>
           )}
@@ -795,11 +896,7 @@ const ServiceListingPage = () => {
               {totalServices > 12 && (
                 <nav className="flex justify-center items-center gap-4 mb-12" aria-label="Services pagination">
                   <button
-                    onClick={() => setSearchParams(prev => {
-                      const newPage = Math.max(1, parseInt(page) - 1);
-                      prev.set('page', newPage.toString());
-                      return prev;
-                    })}
+                    onClick={() => handlePageChange(Math.max(1, parseInt(page) - 1))}
                     disabled={parseInt(page) === 1}
                     className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                       parseInt(page) === 1
@@ -816,10 +913,7 @@ const ServiceListingPage = () => {
                     {[1, 2, 3].map(num => (
                       <button
                         key={num}
-                        onClick={() => setSearchParams(prev => {
-                          prev.set('page', num.toString());
-                          return prev;
-                        })}
+                        onClick={() => handlePageChange(num)}
                         className={`w-10 h-10 rounded-lg ${
                           parseInt(page) === num
                             ? 'bg-blue-600 text-white'
@@ -835,11 +929,7 @@ const ServiceListingPage = () => {
                   </div>
                   
                   <button
-                    onClick={() => setSearchParams(prev => {
-                      const newPage = parseInt(page) + 1;
-                      prev.set('page', newPage.toString());
-                      return prev;
-                    })}
+                    onClick={() => handlePageChange(parseInt(page) + 1)}
                     disabled={services.length < 12}
                     className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                       services.length < 12
@@ -863,19 +953,25 @@ const ServiceListingPage = () => {
                 <Search className="w-12 h-12 text-gray-400" />
               </div>
               <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                {searchTerm ? 'No services found' : 'No services available'}
+                {debouncedSearchTerm ? 'No services found' : 'No services available'}
               </h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                {searchTerm
-                  ? `No services found for "${searchTerm}". Try adjusting your search or filter criteria.`
+                {debouncedSearchTerm
+                  ? `No services found for "${debouncedSearchTerm}". Try adjusting your search or filter criteria.`
                   : 'There are currently no services available. Check back soon!'}
               </p>
-              <button
-                onClick={resetFilters}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                {searchTerm ? 'Clear Search' : 'Browse All Services'}
-              </button>
+              {debouncedSearchTerm && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setDebouncedSearchTerm('');
+                    setSearchParams({ page: '1' });
+                  }}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Clear Search
+                </button>
+              )}
             </div>
           )}
 

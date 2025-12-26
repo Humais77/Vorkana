@@ -41,10 +41,9 @@ axiosInstance.interceptors.response.use(
 );
 
 export const servicesAPI = {
-  // In services.js - Update getAll method to return empty array instead of mock data
 getAll: async (filters = {}) => {
   try {
-    // Clean filters
+    // Clean filters - remove undefined/null/empty values
     const cleanFilters = {};
     Object.keys(filters).forEach(key => {
       if (filters[key] !== undefined && 
@@ -55,47 +54,78 @@ getAll: async (filters = {}) => {
       }
     });
 
-    console.log('Fetching REAL services with filters:', cleanFilters);
+    console.log('Fetching services with filters:', cleanFilters);
     
+    // Build query string
     const queryString = new URLSearchParams(cleanFilters).toString();
-    const response = await axiosInstance.get(`/api/services${queryString ? '?' + queryString : ''}`);
+    const url = `/api/services${queryString ? '?' + queryString : ''}`;
+    
+    console.log('API URL:', url);
+    
+    const response = await axiosInstance.get(url);
     
     console.log('API Response status:', response.status);
+    console.log('API Response data structure:', {
+      hasData: !!response.data,
+      hasDataData: !!response.data?.data,
+      isArray: Array.isArray(response.data?.data),
+      dataType: typeof response.data?.data,
+      keys: Object.keys(response.data || {})
+    });
     
-    // Handle response - RETURN ONLY REAL DATA
+    // Handle response - return the full response object
     if (response.data) {
-      // Case 1: New format { success: true, data: [...] }
-      if (response.data.success && response.data.data !== undefined) {
-        const data = response.data.data;
-        return Array.isArray(data) ? data : [];
+      // Ensure data is always an array
+      let dataArray = [];
+      
+      if (response.data.data && Array.isArray(response.data.data)) {
+        dataArray = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        dataArray = response.data;
       }
-      // Case 2: Direct array response
-      else if (Array.isArray(response.data)) {
-        return response.data;
-      }
-      // Case 3: Data property with array
-      else if (response.data.data && Array.isArray(response.data.data)) {
-        return response.data.data;
-      }
-      // Case 4: Services property with array
-      else if (response.data.services && Array.isArray(response.data.services)) {
-        return response.data.services;
-      }
-      // Case 5: Empty or unexpected response
-      else {
-        console.warn('Unexpected response format, returning empty array');
-        return [];
-      }
+      
+      // Return consistent structure
+      return {
+        success: true,
+        data: dataArray,
+        pagination: response.data.pagination || {
+          page: filters.page || 1,
+          limit: filters.limit || 12,
+          total: dataArray.length,
+          totalPages: Math.ceil(dataArray.length / (filters.limit || 12))
+        },
+        ...response.data
+      };
     }
     
-    console.warn('No data in response, returning empty array');
-    return [];
+    console.warn('No data in response');
+    return {
+      success: true,
+      data: [],
+      pagination: {
+        page: filters.page || 1,
+        limit: filters.limit || 12,
+        total: 0,
+        totalPages: 0
+      }
+    };
     
   } catch (error) {
     console.error('Services API getAll error:', error.message);
+    console.error('Error response:', error.response?.data);
     
-    // Return empty array on error - NO MOCK DATA
-    return [];
+    // Return empty data structure on error
+    return {
+      success: false,
+      data: [],
+      pagination: {
+        page: filters.page || 1,
+        limit: filters.limit || 12,
+        total: 0,
+        totalPages: 0
+      },
+      error: error.message
+    };
   }
 },
   
@@ -147,6 +177,30 @@ getAll: async (filters = {}) => {
     throw new Error(errorMessage);
   }
 },
+getAllActive: async (params = {}) => {
+    try {
+      const response = await axiosInstance.get('/api/services/all-active', { params });
+      
+      if (response.data && response.data.success) {
+        return response.data;
+      }
+      
+      return {
+        success: false,
+        data: [],
+        pagination: {}
+      };
+      
+    } catch (error) {
+      console.error('Get all active services error:', error);
+      return {
+        success: false,
+        data: [],
+        pagination: {},
+        error: error.message
+      };
+    }
+  },
   getById: async (identifier) => {
     try {
       const response = await axiosInstance.get(`/api/services/${identifier}`);
@@ -375,21 +429,69 @@ getByCategory: async (categoryIdentifier, params = {}) => {
   },
   
   search: async (searchParams) => {
-    try {
-      const queryString = new URLSearchParams(searchParams).toString();
-      const response = await axiosInstance.get(`/api/services/search${queryString ? '?' + queryString : ''}`);
-      
-      if (response.data && response.data.success) {
-        return response.data.results || response.data.data || [];
-      }
-      
-      return response.data || [];
-      
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to search services');
+  try {
+    // Ensure query parameter is named correctly
+    const params = {};
+    
+    // Map query to q if needed
+    if (searchParams.query) {
+      params.q = searchParams.query;
     }
-  },
-  
+    if (searchParams.q) {
+      params.q = searchParams.q;
+    }
+    
+    // Add other parameters
+    if (searchParams.category) params.category = searchParams.category;
+    if (searchParams.minPrice) params.minPrice = searchParams.minPrice;
+    if (searchParams.maxPrice) params.maxPrice = searchParams.maxPrice;
+    if (searchParams.sort) params.sort = searchParams.sort;
+    if (searchParams.limit) params.limit = searchParams.limit;
+    
+    const queryString = new URLSearchParams(params).toString();
+    
+    console.log('Search API call:', `/api/services/search${queryString ? '?' + queryString : ''}`);
+    
+    const response = await axiosInstance.get(`/api/services/search${queryString ? '?' + queryString : ''}`);
+    
+    console.log('Search response:', response.data);
+    
+    // Handle different response structures
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        data: response.data.results || response.data.data || [],
+        pagination: response.data.pagination || {
+          total: (response.data.results || response.data.data || []).length
+        },
+        ...response.data
+      };
+    }
+    
+    return {
+      success: true,
+      data: response.data || [],
+      pagination: {
+        total: (response.data || []).length
+      }
+    };
+    
+  } catch (error) {
+    console.error('Search services error:', error);
+    console.error('Error details:', error.response?.data);
+    
+    let errorMessage = 'Failed to search services';
+    if (error.response) {
+      if (error.response.status === 400) {
+        errorMessage = error.response.data?.message || 'Invalid search query';
+      } else {
+        errorMessage = error.response.data?.message || errorMessage;
+      }
+    }
+    
+    throw new Error(errorMessage);
+  }
+},
   getSimilar: async (serviceId, params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();

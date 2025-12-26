@@ -25,14 +25,20 @@ export const useMyServices = (filters = {}) => {
 export const useServices = (filters = {}) => {
   return useQuery({
     queryKey: ['services', filters],
-    queryFn: () => servicesAPI.getAll(filters),
+    queryFn: async () => {
+      try {
+        const result = await servicesAPI.getAll(filters);
+        return result;
+      } catch (error) {
+        throw error;
+      }
+    },
     refetchOnWindowFocus: false,
     onError: (error) => {
       toast.error(error.message || 'Failed to load services');
     },
   });
 };
-
 export const useService = (identifier) => {
   return useQuery({
     queryKey: ['service', identifier],
