@@ -96,21 +96,6 @@ const subcategorySchema = new mongoose.Schema({
     max: [1000, 'Order cannot exceed 1000'],
     index: true,
   },
-  
-  icon: {
-    type: String,
-    default: '📁',
-  },
-  
-  image: {
-    url: String,
-    public_id: String,
-    width: Number,
-    height: Number,
-    size: Number,
-    format: String,
-  },
-  
   // Status & audit
   isActive: {
     type: Boolean,

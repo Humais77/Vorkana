@@ -6,7 +6,8 @@ const {
   validateCreate, 
   validateUpdate, 
   validateBulk, 
-  validateQuery 
+  validateQuery ,
+  validateSubcategory 
 } = require('../middleware/validators/category.validator.js');
 
 // Rate limiting for admin operations
@@ -50,33 +51,54 @@ const bulkOperationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-// ==========================================
-// CRITICAL: Order routes from MOST specific to LEAST specific
-// ==========================================
-
-// 1. STATIC ROUTES (Most specific)
-router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
-router.get('/stats', protect, adminOnly, adminLimiter, controller.getCategoryStats);
-router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories); // Move BEFORE :id
-
-// 2. PUBLIC ROUTES
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 
-// 3. PARAMETERIZED ROUTES (Less specific - comes last)
+// Get subcategories by category
+router.get('/:categoryId/subcategories', 
+  publicLimiter, 
+  optionalAuth, 
+  controller.getSubcategoriesByCategory
+);
+
+// Search categories
+router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
+
+// Get category by ID or slug
 router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
 
 // ==========================================
 // ADMIN PROTECTED ROUTES
 // ==========================================
 
-// Static admin routes
+// Create category
 router.post('/', protect, adminOnly, adminLimiter, validateCreate, controller.createCategory);
+
+// Create subcategory
+router.post('/subcategories', 
+  protect, 
+  adminOnly, 
+  adminLimiter, 
+  validateSubcategory, // Use subcategory validator
+  controller.createSubcategory
+);
+
+// Bulk operations
 router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
-// Parameterized admin routes
+// Update category
 router.put('/:id', protect, adminOnly, adminLimiter, validateUpdate, controller.updateCategory);
+
+// Delete category
 router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategory);
+
+// Restore category
 router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restoreCategory);
+
+// ==========================================
+// STATS AND EXPORTS (Admin only)
+// ==========================================
+
+router.get('/stats', protect, adminOnly, adminLimiter, controller.getCategoryStats);
+router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
 
 module.exports = router;

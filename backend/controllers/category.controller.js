@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Category = require('../models/category.model.js');
+const Subcategory = require('../models/subcategory.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
@@ -357,26 +358,46 @@ const getCategories = async (req, res, next) => {
 
   try {
     const {
-      search, q, name, slug, parentCategory, featured, popular, isActive, level,
+      search, q, name, slug, parentCategory, isSubcategory,
+      onlyCategories, onlySubcategories, featured, popular, isActive, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
-       hasParent, ids, excludeIds,
+      hasParent, ids, excludeIds,
       sort = 'createdAt', order = 'desc', page = 1, limit = 10, offset,
       fields, excludeFields, populate = true, populateFields = 'name',
       showAll = false, includeSubcategories = false, includeCounts = false,
+      includeServicesCount = false, includeGigsCount = false, // Add these
       cache: useCacheParam = false
     } = req.query;
 
     const showAllFlag = showAll === 'true' && req.user?.role === 'admin';
     const useCache = useCacheParam === 'true';
 
+    // Build secure query with subcategory support
     const filter = buildSecureCategoryQuery({
-      search: search || q, name, slug, parentCategory, featured, popular,
+      search: search || q, name, slug, parentCategory, isSubcategory,
+      onlyCategories, onlySubcategories, featured, popular,
       isActive: showAllFlag ? isActive : undefined, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
       hasParent, ids, excludeIds, showAll: showAllFlag
     }, req.user?.role, req.user?._id);
+
+    // Handle onlyCategories and onlySubcategories filters
+    if (onlyCategories === 'true') {
+      filter.isSubcategory = false;
+      filter.parentCategory = { $in: [null, undefined] };
+    }
+    
+    if (onlySubcategories === 'true') {
+      filter.isSubcategory = true;
+      filter.parentCategory = { $exists: true, $ne: null };
+    }
+
+    // If isSubcategory is explicitly set, use it
+    if (isSubcategory !== undefined) {
+      filter.isSubcategory = isSubcategory === 'true';
+    }
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -387,20 +408,24 @@ const getCategories = async (req, res, next) => {
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    // Generate better cache key
+    // Generate cache key with all relevant parameters
     const cacheKey = generateCacheKey('categories', {
-      filter, 
+      filter: JSON.stringify(filter), // Stringify for consistent key
       page: pageNum, 
       limit: limitNum, 
       sort: sortField, 
       order: sortOrder,
       populate: populate === 'true', 
       includeSubcategories: includeSubcategories === 'true',
-      includeCounts: includeCounts === 'true', 
+      includeCounts: includeCounts === 'true',
+      includeServicesCount: includeServicesCount === 'true',
+      includeGigsCount: includeGigsCount === 'true',
       showAll: showAllFlag,
-      userRole: req.user?.role
+      userRole: req.user?.role,
+      timestamp: Math.floor(Date.now() / 60000) // Cache key changes every minute
     });
 
+    // Cache handling
     if (useCache) {
       const cachedResult = await cache.get(cacheKey);
       if (cachedResult) {
@@ -421,26 +446,62 @@ const getCategories = async (req, res, next) => {
       }
     }
 
+    // Build populate options
     let populateOptions = [];
     if (populate === 'true') {
+      // Always populate parentCategory for hierarchy
       populateOptions.push({
         path: 'parentCategory',
-        select: 'name slug ',
+        select: 'name slug icon isSubcategory level',
         match: { isActive: true }
       });
-      if (includeSubcategories === 'true') {
+      
+      // Handle subcategories based on includeSubcategories flag
+      if (includeSubcategories === 'true' && filter.isSubcategory !== true) {
+        // Only include subcategories if we're querying main categories
         populateOptions.push({
           path: 'subcategories',
-          select: 'name slug servicesCount gigsCount featured popular',
-          match: { isActive: true },
-          options: { sort: { order: 1, name: 1 }, limit: 20 }
+          select: 'name slug description icon order servicesCount gigsCount featured popular isActive',
+          match: { isActive: true, deletedAt: null },
+          options: { 
+            sort: { order: 1, name: 1 }, 
+            limit: 50, // Increased limit for subcategories
+            skip: 0 
+          }
         });
       }
     }
 
+    // Build select fields
+    let selectFields = '-__v -createdBy -deletedAt -deletedBy -version -lastUpdatedBy';
+    
+    // Add specific fields if requested
+    if (fields) {
+      const fieldArray = fields.split(',').map(f => f.trim());
+      const validFields = fieldArray.filter(field => 
+        !['__v', 'createdBy', 'deletedAt', 'deletedBy', 'version', 'lastUpdatedBy'].includes(field)
+      );
+      if (validFields.length > 0) {
+        selectFields = validFields.join(' ');
+      }
+    }
+    
+    // Exclude specific fields if requested
+    if (excludeFields) {
+      const excludeArray = excludeFields.split(',').map(f => f.trim());
+      const excludeSelect = excludeArray
+        .filter(field => !selectFields.includes(`-${field}`))
+        .map(field => `-${field}`)
+        .join(' ');
+      if (excludeSelect) {
+        selectFields += ` ${excludeSelect}`;
+      }
+    }
+
+    // Execute queries in parallel
     const [categories, total] = await Promise.all([
       Category.find(filter)
-        .select('-__v -createdBy -deletedAt -deletedBy -version -lastUpdatedBy')
+        .select(selectFields)
         .sort(sortObj)
         .skip(skip)
         .limit(limitNum)
@@ -449,6 +510,80 @@ const getCategories = async (req, res, next) => {
       Category.countDocuments(filter)
     ]);
 
+    // Process categories to add dynamic counts if needed
+    let processedCategories = categories;
+    
+    // Add dynamic counts for services and gigs if requested
+    if ((includeServicesCount === 'true' || includeGigsCount === 'true') && categories.length > 0) {
+      const categoryIds = categories.map(cat => cat._id);
+      
+      // Get counts in parallel
+      const countPromises = [];
+      
+      if (includeServicesCount === 'true') {
+        countPromises.push(
+          Service.aggregate([
+            { $match: { 
+              category: { $in: categoryIds },
+              status: 'active',
+              isActive: true,
+              deletedAt: null
+            }},
+            { $group: {
+              _id: '$category',
+              count: { $sum: 1 }
+            }}
+          ])
+        );
+      }
+      
+      if (includeGigsCount === 'true') {
+        countPromises.push(
+          Gig.aggregate([
+            { $match: { 
+              category: { $in: categoryIds },
+              isActive: true,
+              deletedAt: null
+            }},
+            { $group: {
+              _id: '$category',
+              count: { $sum: 1 }
+            }}
+          ])
+        );
+      }
+      
+      const [serviceCounts = [], gigCounts = []] = await Promise.all(countPromises);
+      
+      // Create lookup maps
+      const serviceCountMap = serviceCounts.reduce((map, item) => {
+        map[item._id.toString()] = item.count;
+        return map;
+      }, {});
+      
+      const gigCountMap = gigCounts.reduce((map, item) => {
+        map[item._id.toString()] = item.count;
+        return map;
+      }, {});
+      
+      // Add counts to categories
+      processedCategories = categories.map(category => {
+        const catId = category._id.toString();
+        const updatedCategory = { ...category };
+        
+        if (includeServicesCount === 'true') {
+          updatedCategory.servicesCount = serviceCountMap[catId] || 0;
+        }
+        
+        if (includeGigsCount === 'true') {
+          updatedCategory.gigsCount = gigCountMap[catId] || 0;
+        }
+        
+        return updatedCategory;
+      });
+    }
+
+    // Get additional counts if requested
     let counts = undefined;
     if (includeCounts === 'true') {
       const countStats = await Category.aggregate([
@@ -456,23 +591,37 @@ const getCategories = async (req, res, next) => {
         {
           $group: {
             _id: null,
+            total: { $sum: 1 },
             active: { $sum: { $cond: ['$isActive', 1, 0] } },
             featured: { $sum: { $cond: ['$featured', 1, 0] } },
             popular: { $sum: { $cond: ['$popular', 1, 0] } },
-            withParent: { $sum: { $cond: [{ $ne: ['$parentCategory', null] }, 1, 0] } }
+            categories: { $sum: { $cond: [{ $eq: ['$isSubcategory', false] }, 1, 0] } },
+            subcategories: { $sum: { $cond: [{ $eq: ['$isSubcategory', true] }, 1, 0] } },
+            withParent: { $sum: { $cond: [{ $ne: ['$parentCategory', null] }, 1, 0] } },
+            withoutParent: { $sum: { $cond: [{ $eq: ['$parentCategory', null] }, 1, 0] } }
           }
         }
       ]);
-      counts = countStats[0] || { active: 0, featured: 0, popular: 0, withParent: 0 };
+      counts = countStats[0] || { 
+        total: 0, 
+        active: 0, 
+        featured: 0, 
+        popular: 0, 
+        categories: 0, 
+        subcategories: 0,
+        withParent: 0,
+        withoutParent: 0
+      };
     }
 
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
+    // Build response data
     const responseData = {
       success: true,
-      data: categories,
+      data: processedCategories,
       pagination: { 
         page: pageNum, 
         limit: limitNum, 
@@ -489,40 +638,299 @@ const getCategories = async (req, res, next) => {
       responseTime: `${Date.now() - startTime}ms`
     };
 
+    // Cache the response if enabled
     if (useCache) {
-      await cache.set(cacheKey, responseData, 300); // Cache for 5 minutes
-      console.log('Cache MISS → stored:', cacheKey);
+      // Only cache successful responses with data
+      if (responseData.success) {
+        const cacheDuration = pageNum === 1 ? 300 : 180; // Cache first page longer (5 min vs 3 min)
+        await cache.set(cacheKey, responseData, cacheDuration);
+        console.log('Cache MISS → stored:', cacheKey);
+      }
       res.set('X-Cache', 'MISS');
     } else {
       res.set('X-Cache', 'BYPASSED');
     }
 
+    // Set response headers
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
-      'X-Response-Time': responseData.responseTime,
-      'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
+      'X-Response-Time': `${Date.now() - startTime}ms`,
+      'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate',
+      'X-Filter-Type': filter.isSubcategory !== undefined 
+        ? (filter.isSubcategory ? 'subcategories-only' : 'categories-only')
+        : 'all-categories'
     });
 
     res.json(responseData);
 
   } catch (error) {
+    const responseTime = Date.now() - startTime;
+    
+    // Handle specific error types
     if (error.name === 'MongoError' || (error.name === 'MongooseError' && error.message.includes('timed out'))) {
       return res.status(408).json({ 
         success: false, 
-        message: 'Query timeout', 
-        code: 'QUERY_TIMEOUT', 
-        requestId 
+        message: 'Query timeout - try with fewer filters or smaller page size', 
+        code: 'QUERY_TIMEOUT',
+        suggestion: 'Try reducing the number of filters or setting a lower limit',
+        requestId,
+        responseTime: `${responseTime}ms`
       });
     }
-    logAudit('ERROR', 'CATEGORY', 'GET_LIST', req.user?._id, { error: error.message });
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid filter parameter', 
+        code: 'INVALID_FILTER',
+        details: error.message,
+        requestId,
+        responseTime: `${responseTime}ms`
+      });
+    }
+    
+    console.error('Error in getCategories:', error.message);
+    logAudit('ERROR', 'CATEGORY', 'GET_LIST', req.user?._id, { 
+      error: error.message,
+      responseTime,
+      queryParams: req.query 
+    });
+    
     next(error);
   }
 };
+const getSubcategoriesByCategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
 
+  try {
+    const { categoryId } = req.params;
+    const { 
+      activeOnly = true, 
+      includeServicesCount = false,
+      includeGigsCount = false,
+      sort = 'order',
+      order = 'asc'
+    } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_CATEGORY_ID',
+        requestId
+      });
+    }
+
+    // Check if category exists
+    const category = await Category.findOne({
+      _id: categoryId,
+      isActive: true,
+      deletedAt: null
+    });
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Build filter for subcategories
+    const filter = {
+      category: categoryId,
+      deletedAt: null
+    };
+
+    if (activeOnly === 'true' || activeOnly === true) {
+      filter.isActive = true;
+    }
+
+    // Sort options
+    const sortOptions = { [sort]: order === 'desc' ? -1 : 1 };
+    if (sort === 'order') {
+      sortOptions.name = 1; // Secondary sort by name
+    }
+
+    // Get subcategories
+    const subcategories = await Subcategory.find(filter)
+      .select('name slug description icon order servicesCount gigsCount isActive')
+      .sort(sortOptions)
+      .lean();
+
+    // Add counts if requested
+    if (includeServicesCount === 'true' || includeGigsCount === 'true') {
+      for (const subcategory of subcategories) {
+        if (includeServicesCount) {
+          const serviceCount = await Service.countDocuments({
+            subcategory: subcategory._id,
+            isActive: true,
+            status: 'active'
+          });
+          subcategory.servicesCount = serviceCount;
+        }
+        
+        if (includeGigsCount) {
+          const gigCount = await Gig.countDocuments({
+            subcategory: subcategory._id,
+            isActive: true
+          });
+          subcategory.gigsCount = gigCount;
+        }
+      }
+    }
+
+    const responseTime = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      data: subcategories,
+      category: {
+        _id: category._id,
+        name: category.name,
+        slug: category.slug
+      },
+      count: subcategories.length,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    console.error('Get subcategories by category error:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategories',
+      code: 'SUBCATEGORIES_FETCH_ERROR',
+      requestId
+    });
+    
+    logAudit('ERROR', 'SUBCATEGORY', 'GET_BY_CATEGORY', req.user?._id, { 
+      error: error.message 
+    });
+  }
+};
+const createSubcategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+
+  try {
+    // Admin only
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const { name, category, description, order = 0, icon = '📁' } = req.body;
+
+    // Validate parent category
+    const parentCategory = await Category.findOne({
+      _id: category,
+      isActive: true,
+      deletedAt: null,
+      isSubcategory: false // Can't nest subcategories
+    });
+
+    if (!parentCategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parent category not found or invalid',
+        code: 'PARENT_CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check for duplicate subcategory name in same category
+    const existingSubcategory = await Subcategory.findOne({
+      name: name.trim(),
+      category: category,
+      isActive: true,
+      deletedAt: null
+    });
+
+    if (existingSubcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this name already exists in this category',
+        code: 'DUPLICATE_SUBCATEGORY',
+        requestId
+      });
+    }
+
+    // Create subcategory
+    const subcategory = await Subcategory.create({
+      name: name.trim(),
+      category,
+      description: description?.trim() || '',
+      order,
+      icon,
+      createdBy: req.user._id,
+      isActive: true
+    });
+
+    // Invalidate caches
+    await invalidateCategoryCache();
+    await cache.del(`subcategories:category:${category}`);
+
+    // Audit log
+    logAudit('CREATE', 'SUBCATEGORY', subcategory._id, req.user._id, {
+      name: subcategory.name,
+      category: parentCategory.name
+    });
+
+    const responseTime = Date.now() - startTime;
+
+    res.status(201).json({
+      success: true,
+      data: subcategory,
+      message: 'Subcategory created successfully',
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    console.error('Create subcategory error:', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this slug already exists',
+        code: 'DUPLICATE_SLUG',
+        requestId
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create subcategory',
+      code: 'SUBCATEGORY_CREATE_ERROR',
+      requestId
+    });
+  }
+};
 // Get Category by ID or Slug with Security
 const getCategoryById = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -1751,4 +2159,6 @@ module.exports = {
   bulkUpdateCategories,
   exportCategories,
   searchCategories,
+  getSubcategoriesByCategory,
+  createSubcategory,
 };

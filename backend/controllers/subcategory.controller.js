@@ -41,7 +41,7 @@ const createSubcategory = async (req, res, next) => {
       });
     }
 
-    const { name, category, description, order = 0, metaTitle, metaDescription, metaKeywords, icon = '📁' } = req.body;
+    const { name, category, description, order = 0, metaTitle, metaDescription, metaKeywords } = req.body;
 
     // Validate parent category exists and is active
     const parentCategory = await Category.findOne({
@@ -84,7 +84,6 @@ const createSubcategory = async (req, res, next) => {
       metaTitle: metaTitle?.trim(),
       metaDescription: metaDescription?.trim(),
       metaKeywords: Array.isArray(metaKeywords) ? metaKeywords.map(k => k.trim()) : [],
-      icon,
       createdBy: req.user._id,
       isActive: true
     });
@@ -213,7 +212,7 @@ const getSubcategories = async (req, res, next) => {
         .limit(limitNum);
 
       if (populate === 'true' || populate === true) {
-        query.populate('category', 'name slug icon');
+        query.populate('category', 'name slug');
         query.populate('createdBy', 'name email');
       }
 
@@ -280,7 +279,7 @@ const getSubcategoryById = async (req, res, next) => {
       }).select('-__v -deletedAt -deletedBy -version');
 
       if (populate === 'true' || populate === true) {
-        query.populate('category', 'name slug icon');
+        query.populate('category', 'name slug');
         query.populate('createdBy', 'name email');
       }
 
@@ -349,7 +348,7 @@ const getSubcategoriesByCategory = async (req, res, next) => {
       }
 
       const subcategories = await Subcategory.find(filter)
-        .select('name slug description icon order servicesCount gigsCount isActive')
+        .select('name slug description order servicesCount gigsCount isActive')
         .sort({ order: 1, name: 1 })
         .lean();
 

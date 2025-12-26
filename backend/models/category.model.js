@@ -50,6 +50,15 @@ const categorySchema = new mongoose.Schema({
       message: 'Invalid parent category or circular reference detected'
     }
   },
+   isSubcategory: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  allowSubcategories: {
+    type: Boolean,
+    default: true,
+  },
   featured: {
     type: Boolean,
     default: false,
@@ -251,39 +260,64 @@ categorySchema.pre('save', async function () {
 
   if (this.isModified('parentCategory') || this.isNew) {
     if (this.parentCategory) {
-  const visited = new Set();
-  let currentId = this.parentCategory;
-  let iterationCount = 0;
-  const MAX_HIERARCHY_DEPTH = 100; // Safety limit
+      // Prevent self-reference
+      if (this._id && this.parentCategory.equals(this._id)) {
+        throw new Error('Category cannot be its own parent');
+      }
 
-  while (currentId && iterationCount < MAX_HIERARCHY_DEPTH) {
-    iterationCount++;
-    const idStr = currentId.toString();
-    
-    if (visited.has(idStr)) {
-      throw new Error(`Circular reference detected in category hierarchy at depth ${iterationCount}`);
-    }
-    
-    visited.add(idStr);
+      // Check parent exists and is not a subcategory
+      const parent = await this.constructor.findById(this.parentCategory);
+      if (!parent) {
+        throw new Error('Parent category not found');
+      }
+      
+      // If parent is a subcategory, it cannot have children
+      if (parent.isSubcategory) {
+        throw new Error('Subcategories cannot have child categories');
+      }
+      
+      // Check for circular reference using graph lookup
+      const visited = new Set();
+      let currentId = this.parentCategory;
+      let iterationCount = 0;
+      const MAX_HIERARCHY_DEPTH = 10;
 
-    const cat = await this.constructor.findById(currentId).select('parentCategory');
-    if (!cat) {
-      throw new Error(`Parent category ${currentId} not found`);
+      while (currentId && iterationCount < MAX_HIERARCHY_DEPTH) {
+        iterationCount++;
+        const idStr = currentId.toString();
+        
+        if (visited.has(idStr)) {
+          throw new Error(`Circular reference detected in category hierarchy`);
+        }
+        
+        visited.add(idStr);
+        
+        const cat = await this.constructor.findById(currentId).select('parentCategory');
+        if (!cat || !cat.parentCategory) break;
+        
+        // Check if we're trying to create a loop back to this category
+        if (this._id && cat.parentCategory.equals(this._id)) {
+          throw new Error('Circular reference detected: category would be parent of its own parent');
+        }
+        
+        currentId = cat.parentCategory;
+      }
+      
+      if (iterationCount >= MAX_HIERARCHY_DEPTH) {
+        throw new Error('Category hierarchy too deep');
+      }
+      
+      // Set level based on parent
+      const parentLevel = parent.level || 0;
+      this.level = parentLevel + 1;
+      
+      // If parent is subcategory, this should also be marked as subcategory
+      if (parent.isSubcategory) {
+        this.isSubcategory = true;
+      }
+    } else {
+      this.level = 0;
     }
-    
-    if (!cat.parentCategory) break;
-    
-    if (this._id && cat.parentCategory.equals(this._id)) {
-      throw new Error('Circular reference detected: category would be parent of its own parent');
-    }
-    
-    currentId = cat.parentCategory;
-  }
-  
-  if (iterationCount >= MAX_HIERARCHY_DEPTH) {
-    throw new Error('Category hierarchy too deep or circular reference suspected');
-  }
-}
   }
 
   if (this.parentCategory) {

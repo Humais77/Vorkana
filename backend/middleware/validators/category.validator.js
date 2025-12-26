@@ -79,6 +79,39 @@ Joi.extend((joi) => ({
     return { value };
   }
 }));
+const subcategoryValidation = Joi.object({
+  name: Joi.string()
+    .min(2)
+    .max(50)
+    .required()
+    .messages({
+      'string.empty': 'Subcategory name is required',
+      'string.min': 'Subcategory name must be at least 2 characters',
+      'string.max': 'Subcategory name cannot exceed 50 characters',
+    }),
+  
+  category: objectId
+    .required()
+    .messages({
+      'any.required': 'Parent category is required',
+      'any.invalid': 'Invalid parent category ID',
+    }),
+  
+  description: Joi.string()
+    .allow('')
+    .max(500)
+    .optional(),
+  
+  order: Joi.number()
+    .integer()
+    .min(0)
+    .max(1000)
+    .default(0),
+  
+  icon: Joi.string()
+    .max(20)
+    .default('📁'),
+});
 // Common validation rules
 const nameValidation = Joi.string()
   .min(2)
@@ -149,15 +182,18 @@ const createSchema = Joi.object({
   name: nameValidation.required(),
   
   description: descriptionValidation,
+  isSubcategory: Joi.boolean()
+    .default(false)
+    .optional(),
   
-
-  parentCategory: objectId
-    .optional()
-    .allow(null)
-    .messages({
-      'any.invalid': 'Invalid parent category ID'
+  // Make parentCategory optional but validate subcategory structure
+  parentCategory: Joi.alternatives().conditional('isSubcategory', {
+    is: true,
+    then: objectId.required().messages({
+      'any.required': 'Parent category is required for subcategories',
     }),
-  
+    otherwise: objectId.optional().allow(null)
+  }),
   featured: Joi.boolean().optional().default(false),
   
   popular: Joi.boolean().optional().default(false),
@@ -528,16 +564,50 @@ const validateQuery = (req, res, next) => {
     });
   }
 };
-
+const validateSubcategory = (req, res, next) => {
+  try {
+    const { error, value } = subcategoryValidation.validate(req.body, { 
+      abortEarly: false,
+      allowUnknown: false 
+    });
+    
+    if (error) {
+      const messages = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        type: detail.type
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory validation failed',
+        errors: messages,
+        code: 'SUBCATEGORY_VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    req.body = value;
+    next();
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Validation server error',
+      code: 'VALIDATION_SERVER_ERROR'
+    });
+  }
+};
 module.exports = {
   createSchema,
   updateSchema,
   bulkSchema,
   querySchema,
+  subcategoryValidation,
   validateCreate,
   validateUpdate,
   validateBulk,
   validateQuery,
+  validateSubcategory,
   objectId,
    
 };
