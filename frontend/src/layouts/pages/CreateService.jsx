@@ -1,35 +1,47 @@
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Save,
-  Eye,
   Upload,
-  Plus,
-  Trash2,
+  Globe,
+  Phone,
+  Mail,
+  User,
   DollarSign,
   Calendar,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Star,
-  Tag,
-  Package,
-  HelpCircle,
-  CheckSquare,
-  X,
-  Zap,
-  Loader2,
-  ChevronDown,
-  Shield,
-  Target,
-  Users,
-  Briefcase,
   FileText,
-  Type,
-  Layers,
+  MessageSquare,
+  ChevronRight,
+  Loader2,
+  X,
+  CheckCircle,
+  Info,
+  Shield,
+  Lightbulb,
+  Target,
+  Clock,
+  FileCheck,
+  LogIn,
+  AlertCircle,
   Sparkles,
-  Image as ImageIcon
+  Briefcase,
+  Users,
+  Star,
+  Save,
+  ChevronDown,
+  ArrowRight,
+  Type,
+  Package,
+  Layers,
+  Lock,
+  Tag,
+  CheckSquare,
+  HelpCircle,
+  Zap,
+  Plus,
+  Trash2,
+  ArrowLeft,
+  Eye,
+  Layers as LayersIcon
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
@@ -37,16 +49,45 @@ import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isProfileCompleteEnough } from '../../utils/profileUtils';
 import { SeoWrapper } from '../../components/SeoWrapper';
-import { generateCreateServiceStructuredData, generateServiceCreationStructuredData } from '../../utils/seoStructuredData';
-import { ImageUploadPlaceholder, ValidationPlaceholder } from './components/LoadingPlaceholder.jsx';
 
-// Lazy load heavy components
-const ImageUploadPreview = lazy(() => import('../../components/ImageUploadPreview'));
-const ValidationSummary = lazy(() => import('../../components/ValidationSummary'));
-
-// Cache for form data
-const formDataCache = new Map();
-const CACHE_KEY = 'create-service-form';
+// Structured Data for Service Creation
+const serviceCreationStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Create a Service on Vorkana",
+  "description": "List your freelance services and start earning on Vorkana. Create a detailed service listing with our step-by-step form to attract clients worldwide.",
+  "url": typeof window !== 'undefined' ? `${window.location.origin}/create-service` : '/create-service',
+  "breadcrumb": {
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": typeof window !== 'undefined' ? window.location.origin : '/'
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Create Service",
+        "item": typeof window !== 'undefined' ? `${window.location.origin}/create-service` : '/create-service'
+      }
+    ]
+  },
+  "potentialAction": {
+    "@type": "CreateAction",
+    "name": "Create Freelance Service",
+    "description": "Create a new freelance service listing to attract clients",
+    "target": {
+      "@type": "EntryPoint",
+      "urlTemplate": `${window.location.origin}/create-service`,
+      "actionPlatform": [
+        "http://schema.org/DesktopWebPlatform",
+        "http://schema.org/MobileWebPlatform"
+      ]
+    }
+  }
+};
 
 const CreateService = () => {
   const navigate = useNavigate();
@@ -60,54 +101,46 @@ const CreateService = () => {
     refetch: refetchCategories 
   } = useCategories();
   
-  const { user: currentUser } = useAuthStore();
+  const { user: currentUser, isAuthenticated } = useAuthStore();
   
   // Form state with all fields from service model
-  const [formData, setFormData] = useState(() => {
-    // Try to load from cache
-    const cachedData = formDataCache.get(CACHE_KEY);
-    if (cachedData) {
-      return cachedData;
-    }
-    
-    return {
-      // Basic Information
-      title: '',
-      description: '',
-      shortDescription: '',
-      category: '',
-      subcategory: '',
-      userLevel: 'new',
+  const [formData, setFormData] = useState({
+    // Basic Information
+    title: '',
+    description: '',
+    shortDescription: '',
+    category: '',
+    subcategory: '',
+    userLevel: 'new',
 
-      // Pricing & Delivery
-      price: '',
-      currency: 'USD',
-      deliveryTime: '',
-      deliveryTimeUnit: 'days',
-      revisions: 1,
+    // Pricing & Delivery
+    price: '',
+    currency: 'USD',
+    deliveryTime: '',
+    deliveryTimeUnit: 'days',
+    revisions: 1,
 
-      // Arrays
-      tags: [],
-      features: [],
-      requirements: [],
-      faqs: [],
-      packages: [],
-      searchKeywords: [],
+    // Arrays
+    tags: [],
+    features: [],
+    requirements: [],
+    faqs: [],
+    packages: [],
+    searchKeywords: [],
 
-      // Metadata
-      metaTitle: '',
-      metaDescription: '',
-      gigType: 'basic',
+    // Metadata
+    metaTitle: '',
+    metaDescription: '',
+    gigType: 'basic',
 
-      // Status
-      status: 'draft',
+    // Status
+    status: 'draft',
 
-      // Optional fields with defaults
-      sellerLevel: 'new',
-      isFeatured: false,
-      isRecommended: false,
-      isPopular: false,
-    };
+    // Optional fields with defaults
+    sellerLevel: 'new',
+    isFeatured: false,
+    isRecommended: false,
+    isPopular: false,
   });
 
   // Component states
@@ -144,37 +177,30 @@ const CreateService = () => {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [thumbnailFile, setThumbnailFile] = useState(null);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [showMessaging, setShowMessaging] = useState(false);
+  const [activeStep, setActiveStep] = useState(1);
+  const [errors, setErrors] = useState({});
+  const [success, setSuccess] = useState(false);
+  const [createdServiceId, setCreatedServiceId] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLoginMessage, setShowLoginMessage] = useState(true);
+  const [completedFields, setCompletedFields] = useState({
+    title: false,
+    category: false,
+    subcategory: false,
+    price: false,
+    deliveryTime: false,
+    description: false,
+    shortDescription: false
+  });
 
-  // Cache form data on unmount
-  useEffect(() => {
-    return () => {
-      formDataCache.set(CACHE_KEY, formData);
-    };
-  }, [formData]);
-
-  // Memoize expensive computations
-  const selectedCategory = useMemo(() => {
-    if (!formData.category || !categoriesData || !Array.isArray(categoriesData)) return null;
-    return categoriesData.find(cat => cat._id === formData.category);
-  }, [formData.category, categoriesData]);
-
-  const selectedSubcategory = useMemo(() => {
-    if (!formData.subcategory) return null;
-    return subcategories.find(s => s._id === formData.subcategory);
-  }, [formData.subcategory, subcategories]);
-
-  // Completion percentage memoized
-  const completionPercentage = useMemo(() => {
-    const fields = ['title', 'description', 'category', 'price', 'deliveryTime'];
-    const completed = fields.filter(f => {
-      if (f === 'price' || f === 'deliveryTime') {
-        return formData[f] && !isNaN(parseFloat(formData[f])) && parseFloat(formData[f]) > 0;
-      }
-      return formData[f] && formData[f].toString().trim().length > 0;
-    }).length;
-    return Math.round((completed / fields.length) * 100);
-  }, [formData]);
+  // Steps definition
+  const steps = [
+    { number: 1, title: "Service Basics", icon: Briefcase },
+    { number: 2, title: "Pricing & Delivery", icon: DollarSign },
+    { number: 3, title: "Details & Features", icon: FileText },
+    { number: 4, title: "Images & FAQ", icon: Upload },
+    { number: 5, title: "Complete", icon: CheckCircle },
+  ];
 
   useEffect(() => {
     if (!isProfileCompleteEnough(currentUser, 70)) {
@@ -186,36 +212,92 @@ const CreateService = () => {
   // Update subcategories when category changes
   useEffect(() => {
     if (formData.category && categoriesData && Array.isArray(categoriesData)) {
-      // Find the selected category
-      const category = selectedCategory;
+      const category = categoriesData.find(cat => cat._id === formData.category);
       
       if (category) {
-        // If categories have subcategories field
         const subs = category.children || category.subcategories || [];
         setSubcategories(subs);
         
-        // Reset subcategory if parent category changes and subcategory is not valid
         if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
           setFormData(prev => ({ ...prev, subcategory: '' }));
+          setCompletedFields(prev => ({ ...prev, subcategory: false }));
         }
       } else {
         setSubcategories([]);
         setFormData(prev => ({ ...prev, subcategory: '' }));
+        setCompletedFields(prev => ({ ...prev, subcategory: false }));
       }
     } else {
       setSubcategories([]);
       setFormData(prev => ({ ...prev, subcategory: '' }));
+      setCompletedFields(prev => ({ ...prev, subcategory: false }));
     }
-  }, [formData.category, categoriesData, selectedCategory]);
+  }, [formData.category, categoriesData]);
 
-  // Memoized handlers
+  // Handle successful service creation
+  useEffect(() => {
+    if (createServiceMutation.isSuccess && createServiceMutation.data) {
+      const serviceId = createServiceMutation.data.data?._id || createServiceMutation.data.service?._id || createServiceMutation.data._id;
+
+      if (serviceId) {
+        setCreatedServiceId(serviceId);
+        setSuccess(true);
+        setActiveStep(5);
+
+        toast.success(createServiceMutation.data.message || "Service created successfully!");
+
+        const timer = setTimeout(() => {
+          navigate(`/service/${serviceId}`);
+        }, 3000);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
+
   const handleInputChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
+    
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
-  }, []);
+    
+    // Update completed status based on validation
+    const isValid = validateField(name, type === 'checkbox' ? checked : value);
+    setCompletedFields(prev => ({
+      ...prev,
+      [name]: isValid
+    }));
+    
+    // Clear error for this field
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: "" }));
+    }
+  }, [errors]);
+
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'title':
+        return value && value.trim().length >= 5;
+      case 'description':
+        return value && value.trim().length >= 50;
+      case 'shortDescription':
+        return value && value.trim().length >= 20;
+      case 'category':
+        return !!value;
+      case 'subcategory':
+        return !!value;
+      case 'price':
+        const priceNum = parseFloat(value);
+        return !isNaN(priceNum) && priceNum >= 1 && priceNum <= 100000;
+      case 'deliveryTime':
+        const deliveryNum = parseInt(value);
+        return !isNaN(deliveryNum) && deliveryNum >= 1 && deliveryNum <= 365;
+      default:
+        return !!value;
+    }
+  };
 
   // Tag Management
   const handleAddTag = useCallback(() => {
@@ -396,78 +478,6 @@ const CreateService = () => {
     toast.success('Package removed');
   }, []);
 
-  // Validation - memoized
-  const validateForm = useCallback(() => {
-    const errors = [];
-
-    // Title validation
-    if (!formData.title.trim()) {
-      errors.push('Service title is required');
-    } else if (formData.title.trim().length < 5) {
-      errors.push('Title must be at least 5 characters');
-    }
-
-    // Description validation
-    if (!formData.description.trim()) {
-      errors.push('Description is required');
-    } else if (formData.description.trim().length < 50) {
-      errors.push('Description must be at least 50 characters');
-    }
-
-    // Category validation
-    if (!formData.category) {
-      errors.push('Category is required');
-    } else if (categoriesData && Array.isArray(categoriesData)) {
-      const categoryExists = categoriesData.some(cat => cat._id === formData.category);
-      if (!categoryExists) {
-        errors.push('Invalid category selected. Please refresh and try again.');
-      }
-    }
-
-    // Subcategory validation
-    if (!formData.subcategory) {
-      errors.push('Subcategory is required');
-    } else if (subcategories && Array.isArray(subcategories)) {
-      const subcategoryExists = subcategories.some(sub => sub._id === formData.subcategory);
-      if (!subcategoryExists) {
-        errors.push('Invalid subcategory selected. Please select a valid subcategory.');
-      }
-    }
-
-    // Short description validation
-    if (!formData.shortDescription || !formData.shortDescription.trim()) {
-      errors.push('Short description is required');
-    } else if (formData.shortDescription.trim().length < 20) {
-      errors.push('Short description must be at least 20 characters');
-    }
-
-    // Price validation
-    const priceNum = parseFloat(formData.price);
-    if (!formData.price || formData.price === '') {
-      errors.push('Price is required');
-    } else if (isNaN(priceNum)) {
-      errors.push('Price must be a valid number');
-    } else if (priceNum < 1) {
-      errors.push('Price must be at least $1');
-    } else if (priceNum > 100000) {
-      errors.push('Price cannot exceed $100,000');
-    }
-
-    // Delivery time validation
-    const deliveryNum = parseInt(formData.deliveryTime);
-    if (!formData.deliveryTime || formData.deliveryTime === '') {
-      errors.push('Delivery time is required');
-    } else if (isNaN(deliveryNum)) {
-      errors.push('Delivery time must be a valid number');
-    } else if (deliveryNum < 1) {
-      errors.push('Delivery time must be at least 1');
-    } else if (deliveryNum > 365) {
-      errors.push('Delivery time cannot exceed 365 days');
-    }
-
-    return errors;
-  }, [formData, categoriesData, subcategories]);
-
   const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
     
@@ -496,7 +506,6 @@ const CreateService = () => {
     setUploadingImages(true);
     
     try {
-      // Create preview URLs for immediate display
       const previewImages = newFiles.map(file => ({
         file,
         preview: URL.createObjectURL(file),
@@ -506,7 +515,6 @@ const CreateService = () => {
       }));
       
       setUploadedImages(prev => [...prev, ...previewImages]);
-      
       toast.success(`${newFiles.length} image(s) added successfully`);
     } catch (error) {
       console.error('Error uploading images:', error);
@@ -519,7 +527,6 @@ const CreateService = () => {
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
     
-    // Validate file
     if (file.size > 2 * 1024 * 1024) {
       toast.error('Thumbnail exceeds 2MB limit');
       return;
@@ -544,7 +551,7 @@ const CreateService = () => {
 
   const removeImage = useCallback((index) => {
     const image = uploadedImages[index];
-    URL.revokeObjectURL(image.preview); // Clean up memory
+    URL.revokeObjectURL(image.preview);
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
     toast.success('Image removed');
   }, [uploadedImages]);
@@ -583,115 +590,168 @@ const CreateService = () => {
     handleAddPackage
   ]);
 
-  // Submit Handler
+  const validateStep = useCallback((step) => {
+    const newErrors = {};
+
+    if (step === 1) {
+      if (!formData.title || formData.title.trim().length < 5) {
+        newErrors.title = "Service title must be at least 5 characters.";
+      }
+
+      if (!formData.category) {
+        newErrors.category = "Please select a category.";
+      }
+
+      if (!formData.subcategory) {
+        newErrors.subcategory = "Please select a subcategory.";
+      }
+
+      if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
+        newErrors.shortDescription = "Short description must be at least 20 characters.";
+      }
+
+      if (!formData.description || formData.description.trim().length < 50) {
+        newErrors.description = "Description must be at least 50 characters.";
+      }
+    }
+
+    if (step === 2) {
+      const priceNum = parseFloat(formData.price);
+      if (!formData.price || isNaN(priceNum) || priceNum < 1 || priceNum > 100000) {
+        newErrors.price = "Price must be between $1 and $100,000.";
+      }
+
+      const deliveryNum = parseInt(formData.deliveryTime);
+      if (!formData.deliveryTime || isNaN(deliveryNum) || deliveryNum < 1 || deliveryNum > 365) {
+        newErrors.deliveryTime = "Delivery time must be between 1 and 365 days.";
+      }
+    }
+
+    if (step === 3) {
+      // Additional validations can be added here
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [formData]);
+
+  const nextStep = useCallback(() => {
+    if (validateStep(activeStep)) {
+      setActiveStep(prev => Math.min(prev + 1, 5));
+    }
+  }, [activeStep, validateStep]);
+
+  const prevStep = useCallback(() => {
+    setActiveStep(prev => Math.max(prev - 1, 1));
+  }, []);
+
   const handleSubmit = useCallback(async (e, status = 'draft') => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    // Check if user is logged in
-    const token = localStorage.getItem('token') || localStorage.getItem('userToken');
-
-    if (!token) {
-      toast.error('Please login to create a service');
-      navigate('/login');
-      return;
-    }
-
-    // Check categories are loaded
-    if (categoryLoading) {
-      toast.error('Categories are still loading. Please wait...');
-      return;
-    }
-
-    if (categoryError) {
-      toast.error('Failed to load categories. Please refresh the page.');
-      return;
-    }
-
-    // Client-side validation
-    const validationErrors = validateForm();
-
-    if (validationErrors.length > 0) {
-      validationErrors.forEach(error => {
-        toast.error(error);
-      });
-      
-      if (validationErrors.length > 1) {
-        toast.error(`Please fix ${validationErrors.length} errors before submitting`);
+    // Validate all steps
+    let hasError = false;
+    for (let step = 1; step <= 4; step++) {
+      if (!validateStep(step)) {
+        setActiveStep(step);
+        hasError = true;
+        break;
       }
+    }
+
+    if (hasError) {
+      setIsSubmitting(false);
       return;
     }
-
-    // Prepare data with proper type conversion
-    const serviceData = {
-      title: formData.title.trim(),
-      description: formData.description.trim(),
-      shortDescription: formData.shortDescription.trim(),
-      category: formData.category,
-      subcategory: formData.subcategory,
-      price: parseFloat(formData.price),
-      currency: formData.currency,
-      deliveryTime: parseInt(formData.deliveryTime),
-      deliveryTimeUnit: formData.deliveryTimeUnit,
-      revisions: parseInt(formData.revisions) || 1,
-      gigType: formData.gigType,
-      status: status,
-      userLevel: formData.userLevel,
-      isFeatured: formData.isFeatured,
-      isRecommended: formData.isRecommended,
-      isPopular: formData.isPopular,
-    };
-
-    const submitFormData = new FormData();
-
-    // Append required fields
-    submitFormData.append('title', serviceData.title);
-    submitFormData.append('description', serviceData.description);
-    submitFormData.append('shortDescription', serviceData.shortDescription);
-    submitFormData.append('category', serviceData.category);
-    submitFormData.append('subcategory', serviceData.subcategory);
-    submitFormData.append('price', serviceData.price);
-    submitFormData.append('currency', serviceData.currency);
-    submitFormData.append('deliveryTime', serviceData.deliveryTime);
-    submitFormData.append('deliveryTimeUnit', serviceData.deliveryTimeUnit);
-    submitFormData.append('revisions', serviceData.revisions);
-    submitFormData.append('gigType', serviceData.gigType);
-    submitFormData.append('status', status);
-    submitFormData.append('userLevel', serviceData.userLevel);
-
-    // Append optional fields
-    if (serviceData.metaTitle) submitFormData.append('metaTitle', serviceData.metaTitle);
-    if (serviceData.metaDescription) submitFormData.append('metaDescription', serviceData.metaDescription);
-
-    // Arrays – stringify complex ones
-    if (formData.tags?.length > 0) submitFormData.append('tags', JSON.stringify(formData.tags));
-    if (formData.searchKeywords?.length > 0) submitFormData.append('searchKeywords', JSON.stringify(formData.searchKeywords));
-    if (formData.features?.length > 0) submitFormData.append('features', JSON.stringify(formData.features));
-    if (formData.requirements?.length > 0) submitFormData.append('requirements', JSON.stringify(formData.requirements));
-    if (formData.faqs?.length > 0) submitFormData.append('faqs', JSON.stringify(formData.faqs));
-    if (formData.packages?.length > 0) submitFormData.append('packages', JSON.stringify(formData.packages));
-
-    // Booleans
-    submitFormData.append('isFeatured', serviceData.isFeatured);
-    submitFormData.append('isRecommended', serviceData.isRecommended);
-    submitFormData.append('isPopular', serviceData.isPopular);
-
-    // Images
-    if (thumbnailFile) {
-      submitFormData.append('thumbnail', thumbnailFile.file);
-    }
-    
-    uploadedImages.forEach((img) => {
-      submitFormData.append('images', img.file);
-    });
 
     try {
+      const token = localStorage.getItem('token') || localStorage.getItem('userToken');
+
+      if (!token) {
+        toast.error('Please login to create a service');
+        navigate('/login');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (categoryLoading) {
+        toast.error('Categories are still loading. Please wait...');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (categoryError) {
+        toast.error('Failed to load categories. Please refresh the page.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const serviceData = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        shortDescription: formData.shortDescription.trim(),
+        category: formData.category,
+        subcategory: formData.subcategory,
+        price: parseFloat(formData.price),
+        currency: formData.currency,
+        deliveryTime: parseInt(formData.deliveryTime),
+        deliveryTimeUnit: formData.deliveryTimeUnit,
+        revisions: parseInt(formData.revisions) || 1,
+        gigType: formData.gigType,
+        status: status,
+        userLevel: formData.userLevel,
+        isFeatured: formData.isFeatured,
+        isRecommended: formData.isRecommended,
+        isPopular: formData.isPopular,
+      };
+
+      const submitFormData = new FormData();
+
+      // Append required fields
+      submitFormData.append('title', serviceData.title);
+      submitFormData.append('description', serviceData.description);
+      submitFormData.append('shortDescription', serviceData.shortDescription);
+      submitFormData.append('category', serviceData.category);
+      submitFormData.append('subcategory', serviceData.subcategory);
+      submitFormData.append('price', serviceData.price);
+      submitFormData.append('currency', serviceData.currency);
+      submitFormData.append('deliveryTime', serviceData.deliveryTime);
+      submitFormData.append('deliveryTimeUnit', serviceData.deliveryTimeUnit);
+      submitFormData.append('revisions', serviceData.revisions);
+      submitFormData.append('gigType', serviceData.gigType);
+      submitFormData.append('status', status);
+      submitFormData.append('userLevel', serviceData.userLevel);
+
+      // Append optional fields
+      if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
+      if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
+
+      // Arrays
+      if (formData.tags?.length > 0) submitFormData.append('tags', JSON.stringify(formData.tags));
+      if (formData.searchKeywords?.length > 0) submitFormData.append('searchKeywords', JSON.stringify(formData.searchKeywords));
+      if (formData.features?.length > 0) submitFormData.append('features', JSON.stringify(formData.features));
+      if (formData.requirements?.length > 0) submitFormData.append('requirements', JSON.stringify(formData.requirements));
+      if (formData.faqs?.length > 0) submitFormData.append('faqs', JSON.stringify(formData.faqs));
+      if (formData.packages?.length > 0) submitFormData.append('packages', JSON.stringify(formData.packages));
+
+      // Booleans
+      submitFormData.append('isFeatured', serviceData.isFeatured);
+      submitFormData.append('isRecommended', serviceData.isRecommended);
+      submitFormData.append('isPopular', serviceData.isPopular);
+
+      // Images
+      if (thumbnailFile) {
+        submitFormData.append('thumbnail', thumbnailFile.file);
+      }
+      
+      uploadedImages.forEach((img) => {
+        submitFormData.append('images', img.file);
+      });
+
       await createServiceMutation.mutateAsync({
         serviceData: serviceData,
         files: submitFormData
       });
-      
-      // Clear cache on successful submission
-      formDataCache.delete(CACHE_KEY);
       
     } catch (error) {
       if (error.message.includes('Category not found') || error.message.includes('Invalid category')) {
@@ -702,10 +762,12 @@ const CreateService = () => {
       } else {
         toast.error(error.message || 'Failed to create service');
       }
+    } finally {
+      setIsSubmitting(false);
     }
   }, [
     formData, 
-    validateForm, 
+    validateStep, 
     categoryLoading, 
     categoryError, 
     navigate, 
@@ -715,1517 +777,1133 @@ const CreateService = () => {
     refetchCategories
   ]);
 
-  // Fill test data (for development only) - memoized
-  const fillTestData = useCallback(() => {
-    if (process.env.NODE_ENV !== 'development') return;
-    
-    // Check if we have categories loaded
-    if (!categoriesData || categoriesData.length === 0) {
-      toast.error('Please wait for categories to load first');
-      return;
-    }
-    
-    // Get a category that has subcategories
-    const categoryWithSubs = categoriesData.find(cat => 
-      (cat.children && cat.children.length > 0) || 
-      (cat.subcategories && cat.subcategories.length > 0)
-    );
-    
-    if (!categoryWithSubs) {
-      toast.error('No categories with subcategories found');
-      return;
-    }
-    
-    const subs = categoryWithSubs.children || categoryWithSubs.subcategories || [];
-    const firstSubcategory = subs.length > 0 ? subs[0]._id : '';
-    
-    if (!firstSubcategory) {
-      toast.error('Selected category has no subcategories');
-      return;
-    }
-    
-    setFormData({
-      title: "Professional Web Development Service",
-      description: "I will create a responsive, modern website using React.js, Node.js, and MongoDB. This includes complete frontend and backend development, database design, API integration, and deployment. I ensure clean code, proper documentation, and SEO optimization. I've built over 50 websites for clients worldwide and specialize in e-commerce, SaaS applications, and custom web solutions.",
-      shortDescription: "Professional website development with modern technologies including React, Node.js, and MongoDB. Responsive design, SEO optimized, and fast loading.",
-      category: categoryWithSubs._id,
-      subcategory: firstSubcategory,
-      price: "499",
-      currency: "USD",
-      deliveryTime: "14",
-      deliveryTimeUnit: "days",
-      revisions: 3,
-      tags: ["web-development", "react", "nodejs", "mongodb", "fullstack"],
-      searchKeywords: ["website", "web app", "responsive design", "ecommerce"],
-      features: [
-        {
-          title: "Responsive Design",
-          description: "Works perfectly on all devices (mobile, tablet, desktop)",
-          included: true
-        },
-        {
-          title: "SEO Optimization",
-          description: "Search engine friendly with meta tags and sitemap",
-          included: true
-        },
-        {
-          title: "Fast Loading",
-          description: "Optimized for speed and performance",
-          included: true
-        }
-      ],
-      requirements: [
-        {
-          question: "What is your project about?",
-          type: "text",
-          required: true,
-          options: []
-        }
-      ],
-      faqs: [
-        {
-          question: "What technologies do you use?",
-          answer: "I use modern technologies including React.js, Node.js, MongoDB, and various CSS frameworks."
-        },
-        {
-          question: "Do you provide maintenance after delivery?",
-          answer: "Yes, I offer 30 days of free support and maintenance after project delivery."
-        }
-      ],
-      packages: [
-        {
-          name: "Basic",
-          description: "Simple website with basic features",
-          price: 299,
-          deliveryTime: 7,
-          revisions: 2,
-          features: ["Responsive Design", "Contact Form", "Basic SEO"],
-          popular: false
-        },
-        {
-          name: "Premium",
-          description: "Advanced website with all features",
-          price: 799,
-          deliveryTime: 21,
-          revisions: 5,
-          features: ["Everything in Basic", "E-commerce", "Admin Panel", "API Integration"],
-          popular: true
-        }
-      ],
-      metaTitle: "Professional Web Development - React & Node.js Expert",
-      metaDescription: "Hire me for professional web development using modern technologies. Get a responsive, fast, and SEO-friendly website.",
-      gigType: "premium",
-      status: "draft",
-      userLevel: "intermediate",
-      isFeatured: false,
-      isRecommended: false,
-      isPopular: false
+  // Get category name for display
+  const getCategoryName = () => {
+    if (!formData.category || !categoriesData || !Array.isArray(categoriesData)) return "";
+    const category = categoriesData.find(c => c._id === formData.category);
+    return category?.name || "";
+  };
+
+  // Get subcategory name for display
+  const getSubcategoryName = () => {
+    if (!formData.subcategory) return "";
+    const subcategory = subcategories.find(s => s._id === formData.subcategory);
+    return subcategory?.name || "";
+  };
+
+  const formatPrice = (price) => {
+    const num = parseFloat(price);
+    return isNaN(num) ? "0" : num.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     });
-    
-    toast.success("Test data filled. Please review and submit.");
-  }, [categoriesData]);
-
-  // Memoized JSX components
-  const QuickStats = useMemo(() => (
-    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-8 border border-blue-100">
-      <div className="flex flex-wrap gap-6">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-            <Target className="w-4 h-4 text-blue-600" />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Required Fields</p>
-            <p className="font-semibold text-gray-900">5</p>
-          </div>
-        </div>
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Completion</p>
-            <p className="font-semibold text-gray-900">{completionPercentage}%</p>
-          </div>
-        </div>
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
-            <Shield className="w-4 h-4 text-amber-600" />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Security</p>
-            <p className="font-semibold text-gray-900">Verified</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  ), [completionPercentage]);
-
-  const ActionButtons = useMemo(() => (
-    <div className="flex flex-col sm:flex-row gap-4 pt-8">
-      <button
-        type="button"
-        onClick={() => navigate('/profile')}
-        disabled={createServiceMutation.isPending}
-        className="px-8 py-4 text-gray-700 font-medium border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Cancel
-      </button>
-
-      <div className="flex flex-col sm:flex-row gap-4 flex-1">
-        <button
-          type="submit"
-          disabled={createServiceMutation.isPending || categoryLoading}
-          className="flex-1 px-8 py-4 bg-gray-600 text-white font-medium rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-        >
-          {createServiceMutation.isPending ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="w-5 h-5 mr-2" />
-              Save as Draft
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={(e) => handleSubmit(e, 'active')}
-          disabled={createServiceMutation.isPending || categoryLoading}
-          className="flex-1 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-        >
-          {createServiceMutation.isPending ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Publishing...
-            </>
-          ) : (
-            <>
-              <Zap className="w-5 h-5 mr-2" />
-              Publish Service
-            </>
-          )}
-        </button>
-      </div>
-    </div>
-  ), [createServiceMutation.isPending, categoryLoading, navigate, handleSubmit]);
+  };
 
   return (
     <SeoWrapper
-      title="Create Service - List Your Freelance Skills | Vorkana"
-      description="Easily create and publish your freelance service on Vorkana. Complete step-by-step form with categories, pricing, packages, and SEO optimization. Start earning today!"
+      title="Create a Service on Vorkana | List Your Freelance Skills"
+      description="List your freelance services and start earning on Vorkana. Create a detailed service listing with our step-by-step form to attract clients worldwide."
       keywords="create freelance service, list services, sell skills online, freelance marketplace, service creation, gig setup, service listing"
-      canonical="/create-service"
-      ogTitle="Create Your Service on Vorkana Marketplace"
-      ogDescription="Turn your skills into income. Create a professional service listing and reach clients worldwide."
-      structuredData={generateCreateServiceStructuredData(categoriesData || [])}
-      breadcrumb={[
-        { name: "Home", url: "/" },
-        { name: "Dashboard", url: "/dashboard" },
-        { name: "Create Service", url: "/create-service" }
-      ]}
+      canonical={`${window.location.origin}/create-service`}
+      structuredData={serviceCreationStructuredData}
     >
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8">
-        <div className="max-w-6xl mx-auto px-4">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <button
-                  onClick={() => navigate('/profile')}
-                  className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
-                >
-                  <ArrowLeft className="w-5 h-5 mr-2" />
-                  Back to Profile
-                </button>
-                <h1 className="text-3xl font-bold text-gray-900">Create New Service</h1>
-                <p className="text-gray-600 mt-2">Fill in the details to create your service listing</p>
-              </div>
-              {process.env.NODE_ENV === 'development' && (
-                <button
-                  type="button"
-                  onClick={fillTestData}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-                >
-                  Fill Test Data
-                </button>
-              )}
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
+        {/* Top Info Section */}
+        <div className="max-w-6xl mx-auto mb-8 md:mb-12">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 md:p-8 shadow-lg border border-blue-100">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8">
+              <div className="md:w-2/3">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                    <Briefcase className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
+                      Create Your Service
+                    </h1>
+                    <p className="text-blue-700 font-medium text-sm md:text-base">
+                      Start earning with your skills
+                    </p>
+                  </div>
+                </div>
 
-            {QuickStats}
+                <p className="text-gray-600 mb-6 text-sm md:text-base">
+                  Fill out this form to list your service. Our platform will showcase your skills to clients
+                  worldwide. The more details you provide, the better your chances of getting hired.
+                </p>
+
+                <div className="flex flex-wrap gap-4 md:gap-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                      <Users className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-800 text-sm md:text-base">50K+ Clients</div>
+                      <div className="text-xs md:text-sm text-gray-500">Looking for services</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                      <Star className="w-4 h-4 md:w-5 md:h-5 text-yellow-500 fill-yellow-500" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-800 text-sm md:text-base">4.8/5 Rating</div>
+                      <div className="text-xs md:text-sm text-gray-500">Service provider satisfaction</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                      <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-800 text-sm md:text-base">No Fees</div>
+                      <div className="text-xs md:text-sm text-gray-500">Listing is completely free</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:w-1/3 w-full">
+                <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
+                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
+                    <Info className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
+                    Quick Tips
+                  </h3>
+                  <ul className="space-y-2 md:space-y-3 text-xs md:text-sm text-gray-600">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <span>Be specific about your service offerings</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <span>Set competitive pricing for better visibility</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <span>Add high-quality images for better appeal</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <span>Detailed descriptions increase conversions</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-6xl mx-auto">
+          {/* Progress Steps */}
+          <div className="mb-8 md:mb-10 px-2">
+            <div className="flex justify-between items-center">
+              {steps.map((step, index) => {
+                const Icon = step.icon;
+                const isActive = activeStep >= step.number;
+                const isCompleted = activeStep > step.number;
+
+                return (
+                  <React.Fragment key={step.number}>
+                    <div className="flex flex-col items-center relative z-10">
+                      <div className={`
+                        w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center
+                        ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}
+                        ${isCompleted ? 'bg-green-500 text-white' : ''}
+                        transition-all duration-300
+                        shadow-lg
+                      `}>
+                        {isCompleted ? (
+                          <CheckCircle size={18} />
+                        ) : (
+                          <Icon size={18} />
+                        )}
+                      </div>
+                      <span className="mt-2 text-xs md:text-sm font-medium text-gray-700 text-center max-w-[80px]">
+                        {step.title}
+                      </span>
+                    </div>
+                    {index < steps.length - 1 && (
+                      <div className="flex-1 h-1 bg-gray-200 mx-1 md:mx-2 relative">
+                        <div
+                          className={`absolute top-0 left-0 h-full bg-blue-600 transition-all duration-300 ${isCompleted ? 'w-full' : 'w-0'
+                            }`}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
 
-          <form onSubmit={(e) => handleSubmit(e, 'draft')} className="space-y-8">
-            {/* Section 1: Basic Information */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <Briefcase className="w-6 h-6 mr-2 text-blue-600" />
-                Basic Information
-              </h2>
-              
-              <Suspense  fallback={<ImageUploadPlaceholder />}>
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                    <Upload className="w-6 h-6 mr-2 text-blue-600" />
-                    Service Images
-                  </h2>
+          {/* Main Content */}
+          <div className="flex flex-col lg:flex-row gap-6 md:gap-8">
+            {/* Left Panel - Information */}
+            <div className="lg:w-2/5">
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
+                <div className="mb-6 md:mb-8">
+                  <div className="flex items-center mb-4">
+                    <Info className="mr-3" size={20} />
+                    <h2 className="text-xl md:text-2xl font-bold">
+                      {activeStep < 5 ? `Step ${activeStep}: ${steps[activeStep - 1]?.title}` : "Complete Your Service"}
+                    </h2>
+                  </div>
+                  <p className="text-blue-100 text-sm md:text-base">
+                    {activeStep === 1 && "Define your service basics including title, category, and description."}
+                    {activeStep === 2 && "Set your pricing, delivery time, and service packages."}
+                    {activeStep === 3 && "Add features, requirements, and additional details."}
+                    {activeStep === 4 && "Upload images and add frequently asked questions."}
+                    {activeStep === 5 && "Your service is ready to be published! Review your information before submitting."}
+                  </p>
+                </div>
 
-                  <div className="space-y-8">
-                    {/* Image Upload */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
-                      <div className="space-y-4">
-                        {/* Upload Area */}
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
-                          <input
-                            type="file"
-                            id="image-upload"
-                            multiple
-                            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                            onChange={(e) => handleImageUpload(e.target.files)}
-                            className="hidden"
-                            disabled={uploadingImages || createServiceMutation.isPending}
-                          />
-                          <label htmlFor="image-upload" className="cursor-pointer">
-                            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                            <h4 className="text-lg font-medium text-gray-900 mb-2">
-                              Upload Service Images
-                            </h4>
-                            <p className="text-gray-600 mb-4">
-                              Drag & drop images or click to browse
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
-                            </p>
-                          </label>
+                {/* Current Step Info */}
+                {activeStep < 5 && (
+                  <div className="space-y-4 md:space-y-6">
+                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 md:p-5">
+                      <h3 className="font-bold text-lg mb-3 flex items-center">
+                        <Lightbulb className="mr-2" size={18} />
+                        Information entered:
+                      </h3>
+                      <ul className="space-y-2 text-sm">
+                        {activeStep >= 1 && completedFields.title && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Title:</span>
+                            <span className="font-medium truncate max-w-[150px]">
+                              {formData.title}
+                            </span>
+                          </li>
+                        )}
+                        {activeStep >= 1 && completedFields.category && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Category:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {getCategoryName()}
+                            </span>
+                          </li>
+                        )}
+                        {activeStep >= 1 && completedFields.subcategory && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Subcategory:</span>
+                            <span className="font-medium truncate max-w-[120px]">
+                              {getSubcategoryName()}
+                            </span>
+                          </li>
+                        )}
+                        {activeStep >= 2 && completedFields.price && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Price:</span>
+                            <span className="font-medium">${formatPrice(formData.price)}</span>
+                          </li>
+                        )}
+                        {activeStep >= 2 && completedFields.deliveryTime && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Delivery Time:</span>
+                            <span className="font-medium">{formData.deliveryTime} {formData.deliveryTimeUnit}</span>
+                          </li>
+                        )}
+                        {activeStep >= 1 && completedFields.shortDescription && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Short Desc:</span>
+                            <span className="font-medium">{formData.shortDescription.length} chars</span>
+                          </li>
+                        )}
+                        {activeStep >= 1 && completedFields.description && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Description:</span>
+                            <span className="font-medium">{formData.description.length} chars</span>
+                          </li>
+                        )}
+                        {activeStep >= 3 && formData.tags.length > 0 && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Tags:</span>
+                            <span className="font-medium">{formData.tags.length} added</span>
+                          </li>
+                        )}
+                        {activeStep >= 3 && formData.features.length > 0 && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Features:</span>
+                            <span className="font-medium">{formData.features.length} added</span>
+                          </li>
+                        )}
+                        {activeStep >= 4 && uploadedImages.length > 0 && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Images:</span>
+                            <span className="font-medium">{uploadedImages.length} uploaded</span>
+                          </li>
+                        )}
+                        {activeStep >= 4 && thumbnailFile && (
+                          <li className="flex justify-between">
+                            <span className="text-blue-100">Thumbnail:</span>
+                            <span className="font-medium">Uploaded</span>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Success Message */}
+                {activeStep === 5 && (
+                  <div className="text-center py-6 md:py-8">
+                    <CheckCircle className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 md:mb-6 text-blue-300" />
+                    <h3 className="text-xl md:text-2xl font-bold mb-4">Service Created Successfully!</h3>
+                    <div className="text-blue-100 mb-6 text-sm md:text-base">
+                      Your service is now live and visible to thousands of potential clients.
+                      {createdServiceId && (
+                        <div className="mt-4 text-xs md:text-sm bg-white/10 rounded-lg p-2">
+                          Service ID: <span className="font-mono">{createdServiceId}</span>
                         </div>
-
-                        {/* Image Preview Grid */}
-                        {uploadedImages.length > 0 && (
-                          <div>
-                            <div className="flex justify-between items-center mb-4">
-                              <h4 className="font-medium text-gray-900">
-                                Selected Images ({uploadedImages.length}/10)
-                              </h4>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-                                  setUploadedImages([]);
-                                }}
-                                className="text-sm text-red-600 hover:text-red-700"
-                                disabled={createServiceMutation.isPending}
-                              >
-                                Remove All
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                              {uploadedImages.map((image, index) => (
-                                <div key={index} className="relative group">
-                                  <img
-                                    src={image.preview}
-                                    alt={`Preview ${index + 1}`}
-                                    className="w-full h-32 object-cover rounded-lg"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => removeImage(index)}
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    disabled={createServiceMutation.isPending}
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
-                                    {image.name.substring(0, 20)}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
+                    <div className="bg-white/10 rounded-xl p-4">
+                      <h4 className="font-bold mb-2">What happens next?</h4>
+                      <ul className="text-sm space-y-1 text-left pl-4">
+                        <li>• Clients will start discovering your service</li>
+                        <li>• You'll receive notifications for new orders</li>
+                        <li>• Manage your services from your dashboard</li>
+                        <li>• Build your reputation with client reviews</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
-                    {/* Thumbnail Upload */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
-                      <div className="space-y-4">
-                        <p className="text-gray-600 text-sm">
-                          The thumbnail is the main image displayed in service listings. 
-                          It should be eye-catching and representative of your service.
-                        </p>
+            {/* Right Panel - Form */}
+            <div className="lg:w-3/5">
+              <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                {/* Success Screen */}
+                {activeStep === 5 ? (
+                  <div className="p-8 md:p-12 text-center">
+                    <div className="w-20 h-20 md:w-24 md:h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <CheckCircle className="w-10 h-10 md:w-12 md:h-12 text-blue-600" />
+                    </div>
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+                      Service Created Successfully!
+                    </h2>
+                    <p className="text-gray-600 text-base md:text-lg mb-8">
+                      Your service is now live. Redirecting to your service page...
+                    </p>
+                    <div className="w-20 h-1 bg-blue-600 rounded-full mx-auto animate-pulse"></div>
+                    <div className="mt-8">
+                      <button
+                        onClick={() => navigate(`/service/${createdServiceId}`)}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                        aria-label="View your newly created service"
+                      >
+                        Go to Service Now
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={(e) => handleSubmit(e, 'draft')} className="p-6 md:p-8" aria-label="Service creation form">
+                    {/* Display API errors */}
+                    {createServiceMutation.error && (
+                      <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                        <p className="text-red-600 font-medium">{createServiceMutation.error.message}</p>
+                      </div>
+                    )}
 
-                        {thumbnailFile ? (
-                          <div className="flex items-start gap-4">
-                            <div className="relative">
-                              <img
-                                src={thumbnailFile.preview}
-                                alt="Thumbnail preview"
-                                className="w-32 h-32 object-cover rounded-lg"
-                              />
-                              <button
-                                type="button"
-                                onClick={removeThumbnail}
-                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                                disabled={createServiceMutation.isPending}
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <div>
-                              <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
-                              <p className="text-gray-500 text-sm">
-                                {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB • {thumbnailFile.type}
-                              </p>
-                              <p className="text-gray-500 text-sm mt-2">
-                                This image will be used as the service thumbnail.
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
-                            <input
-                              type="file"
-                              id="thumbnail-upload"
-                              accept="image/jpeg,image/jpg,image/png,image/webp"
-                              onChange={(e) => handleThumbnailUpload(e.target.files[0])}
-                              className="hidden"
-                              disabled={uploadingThumbnail || createServiceMutation.isPending}
-                            />
-                            <label htmlFor="thumbnail-upload" className="cursor-pointer">
-                              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                              <h4 className="text-lg font-medium text-gray-900 mb-1">
-                                Upload Thumbnail
-                              </h4>
-                              <p className="text-gray-600 text-sm mb-2">
-                                Recommended: 800×600 pixels, max 2MB
-                              </p>
-                              <p className="text-gray-500 text-xs">
-                                Click to browse or drag & drop
-                              </p>
+                    {/* Step 1: Service Basics */}
+                    {activeStep === 1 && (
+                      <div className="space-y-6">
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
+                          <Briefcase className="mr-3 text-blue-600" size={20} />
+                          Service Basics
+                        </h2>
+
+                        <div className="space-y-6">
+                          {/* Service Title */}
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                              <Type className="mr-2" size={14} />
+                              Service Title <span className="text-red-500">*</span>
                             </label>
+                            <input
+                              type="text"
+                              name="title"
+                              value={formData.title}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                              placeholder="e.g., Professional Web Development Service"
+                              required
+                              aria-required="true"
+                              aria-describedby="title-help"
+                            />
+                            <div className="flex justify-between mt-2">
+                              <p id="title-help" className="text-xs text-gray-500">
+                                Minimum 5 characters required
+                              </p>
+                              <span className={`text-xs ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
+                                {formData.title.length}/200
+                              </span>
+                            </div>
+                            {errors.title && (
+                              <p className="mt-2 text-sm text-red-600" role="alert">{errors.title}</p>
+                            )}
                           </div>
-                        )}
 
-                        {/* Tip */}
-                        {uploadedImages.length > 0 && !thumbnailFile && (
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                            <p className="text-sm text-blue-700">
-                              <strong>Tip:</strong> You can also select a thumbnail from your uploaded images 
-                              after creating the service.
-                            </p>
+                          {/* Category Selection */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                                <LayersIcon className="mr-2" size={14} />
+                                Category <span className="text-red-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <select
+                                  name="category"
+                                  value={formData.category}
+                                  onChange={handleInputChange}
+                                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                                  required
+                                  aria-required="true"
+                                  disabled={categoryLoading || createServiceMutation.isPending}
+                                >
+                                  <option value="">Select a category</option>
+                                  {categoryLoading ? (
+                                    <option value="" disabled>Loading categories...</option>
+                                  ) : categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0 ? (
+                                    categoriesData.map(category => (
+                                      <option key={category._id} value={category._id}>
+                                        {category.name}
+                                      </option>
+                                    ))
+                                  ) : (
+                                    <option value="" disabled>No categories available</option>
+                                  )}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                  <ChevronDown className="h-4 w-4" />
+                                </div>
+                              </div>
+                              {errors.category && (
+                                <p className="mt-2 text-sm text-red-600" role="alert">{errors.category}</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                                <Layers className="mr-2" size={14} />
+                                Subcategory <span className="text-red-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <select
+                                  name="subcategory"
+                                  value={formData.subcategory}
+                                  onChange={handleInputChange}
+                                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                                  required
+                                  aria-required="true"
+                                  disabled={!formData.category || subcategories.length === 0 || createServiceMutation.isPending}
+                                >
+                                  <option value="">Select a subcategory</option>
+                                  {!formData.category ? (
+                                    <option value="" disabled>Select a category first</option>
+                                  ) : subcategories.length === 0 ? (
+                                    <option value="" disabled>No subcategories available</option>
+                                  ) : (
+                                    subcategories.map(subcategory => (
+                                      <option key={subcategory._id} value={subcategory._id}>
+                                        {subcategory.name}
+                                      </option>
+                                    ))
+                                  )}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                  <ChevronDown className="h-4 w-4" />
+                                </div>
+                              </div>
+                              {errors.subcategory && (
+                                <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Suspense>
 
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Service Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="title"
-                    value={formData.title}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Professional Web Development"
-                    required
-                  />
-                  <div className="flex justify-between mt-2">
-                    <p className="text-xs text-gray-500">
-                      Minimum 5 characters required
-                    </p>
-                    <span className={`text-xs ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formData.title.length}/200
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Category <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <select
-                        name="category"
-                        value={formData.category}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
-                        required
-                        disabled={categoryLoading || createServiceMutation.isPending}
-                      >
-                        <option value="">Select a category</option>
-                        {categoryLoading ? (
-                          <option value="" disabled>Loading categories...</option>
-                        ) : categoryError ? (
-                          <option value="" disabled>Failed to load categories</option>
-                        ) : categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0 ? (
-                          categoriesData.map(category => (
-                            <option key={category._id} value={category._id}>
-                              {category.name}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No categories available</option>
-                        )}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                        <ChevronDown className="h-4 w-4" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Subcategory <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <select
-                        name="subcategory"
-                        value={formData.subcategory}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none pr-10"
-                        required
-                        disabled={!formData.category || subcategories.length === 0 || createServiceMutation.isPending}
-                      >
-                        <option value="">Select a subcategory</option>
-                        {!formData.category ? (
-                          <option value="" disabled>Select a category first</option>
-                        ) : subcategories.length === 0 ? (
-                          <option value="" disabled>No subcategories available for this category</option>
-                        ) : (
-                          subcategories.map(subcategory => (
-                            <option key={subcategory._id} value={subcategory._id}>
-                              {subcategory.name}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                        <ChevronDown className="h-4 w-4" />
-                      </div>
-                    </div>
-                    {!formData.category && (
-                      <p className="text-xs text-amber-600 mt-2">
-                        Please select a category first
-                      </p>
-                    )}
-                    {formData.category && subcategories.length === 0 && (
-                      <p className="text-xs text-amber-600 mt-2">
-                        No subcategories available for this category
-                      </p>
-                    )}
-                    {formData.subcategory && (
-                      <p className="text-xs text-green-600 mt-2">
-                        Selected: <span className="font-medium">{selectedSubcategory?.name || ''}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Gig Type
-                    </label>
-                    <select
-                      name="gigType"
-                      value={formData.gigType}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      disabled={createServiceMutation.isPending}
-                    >
-                      <option value="basic">Basic</option>
-                      <option value="standard">Standard</option>
-                      <option value="premium">Premium</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Experience Level
-                    </label>
-                    <select
-                      name="userLevel"
-                      value={formData.userLevel || 'new'}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      disabled={createServiceMutation.isPending}
-                    >
-                      <option value="new">Beginner</option>
-                      <option value="intermediate">Intermediate</option>
-                      <option value="expert">Expert</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Short Description <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="shortDescription"
-                    value={formData.shortDescription}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    rows="3"
-                    placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
-                    maxLength="250"
-                    required
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <div className="flex justify-between mt-2">
-                    <p className="text-xs text-gray-500">
-                      Required - Minimum 20 characters
-                    </p>
-                    <span className={`text-xs font-medium ${formData.shortDescription.length < 20 ? 'text-red-600' : 'text-green-600'}`}>
-                      {formData.shortDescription.length}/250
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Description <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    rows="6"
-                    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
-                    required
-                    disabled={createServiceMutation.isPending}
-                  />
-                  <div className="flex justify-between mt-2">
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        Minimum 50 characters required
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Maximum 5000 characters allowed
-                      </p>
-                    </div>
-                    <span className={`text-xs font-medium ${formData.description.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
-                      {formData.description.length}/5000
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 2: Pricing & Delivery */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <DollarSign className="w-6 h-6 mr-2 text-green-600" />
-                Pricing & Delivery
-              </h2>
-
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Price <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <DollarSign className="h-5 w-5 text-gray-400" />
-                      </div>
-                      <input
-                        type="number"
-                        name="price"
-                        value={formData.price}
-                        onChange={handleInputChange}
-                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
-                        required
-                        min="1"
-                        max="100000"
-                        step="0.01"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-                    <div className="flex justify-between mt-2">
-                      <p className="text-xs text-gray-500">Minimum $1, maximum $100,000</p>
-                      {formData.price && (
-                        <span className="text-xs text-green-600">
-                          ${parseFloat(formData.price).toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Currency
-                    </label>
-                    <select
-                      name="currency"
-                      value={formData.currency}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      disabled={createServiceMutation.isPending}
-                    >
-                      <option value="USD">USD ($)</option>
-                      <option value="EUR">EUR (€)</option>
-                      <option value="GBP">GBP (£)</option>
-                      <option value="CAD">CAD (C$)</option>
-                      <option value="AUD">AUD (A$)</option>
-                      <option value="INR">INR (₹)</option>
-                      <option value="PKR">PKR (₨)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Delivery Time <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex gap-3">
-                      <input
-                        type="number"
-                        name="deliveryTime"
-                        value={formData.deliveryTime}
-                        onChange={handleInputChange}
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="e.g., 7"
-                        required
-                        min="1"
-                        max="365"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <select
-                        name="deliveryTimeUnit"
-                        value={formData.deliveryTimeUnit}
-                        onChange={handleInputChange}
-                        className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        disabled={createServiceMutation.isPending}
-                      >
-                        <option value="days">Days</option>
-                        <option value="hours">Hours</option>
-                        <option value="weeks">Weeks</option>
-                      </select>
-                    </div>
-                    <div className="flex justify-between mt-2">
-                      <p className="text-xs text-gray-500">Minimum 1 day, maximum 365 days</p>
-                      {formData.deliveryTime && (
-                        <span className="text-xs text-green-600">
-                          {formData.deliveryTime} {formData.deliveryTimeUnit}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Revisions Included
-                    </label>
-                    <input
-                      type="number"
-                      name="revisions"
-                      value={formData.revisions}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Number of revisions"
-                      min="0"
-                      max="99"
-                      disabled={createServiceMutation.isPending}
-                    />
-                    <p className="text-xs text-gray-500 mt-2">0-99 revisions included</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 3: Tags & Keywords */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <Tag className="w-6 h-6 mr-2 text-purple-600" />
-                Tags & Keywords
-              </h2>
-
-              <div className="space-y-8">
-                {/* Tags */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                    <Tag className="w-5 h-5 mr-2" />
-                    Service Tags
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={newTag}
-                        onChange={(e) => setNewTag(e.target.value)}
-                        onKeyPress={(e) => handleKeyPress(e, 'tag')}
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Add a tag (e.g., web development, design)"
-                        maxLength="30"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddTag}
-                        disabled={createServiceMutation.isPending}
-                        className="px-6 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Tags help customers find your service. Maximum 20 tags.
-                    </p>
-
-                    {formData.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {formData.tags.map((tag, index) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-3 py-1.5 rounded-full bg-purple-100 text-purple-800 text-sm"
-                          >
-                            {tag}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveTag(tag)}
-                              disabled={createServiceMutation.isPending}
-                              className="ml-2 text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Search Keywords */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                    <Eye className="w-5 h-5 mr-2" />
-                    Search Keywords
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={newKeyword}
-                        onChange={(e) => setNewKeyword(e.target.value)}
-                        onKeyPress={(e) => handleKeyPress(e, 'keyword')}
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Add search keyword (e.g., web design, logo design)"
-                        maxLength="30"
-                        disabled={createServiceMutation.isPending}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddKeyword}
-                        disabled={createServiceMutation.isPending}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Keywords improve search visibility. Maximum 20 keywords.
-                    </p>
-
-                    {formData.searchKeywords.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {formData.searchKeywords.map((keyword, index) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-sm"
-                          >
-                            {keyword}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveKeyword(keyword)}
-                              disabled={createServiceMutation.isPending}
-                              className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 4: Features */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <CheckSquare className="w-6 h-6 mr-2 text-green-600" />
-                Service Features
-              </h2>
-
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Feature Title
-                      </label>
-                      <input
-                        type="text"
-                        value={newFeature.title}
-                        onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
-                        onKeyPress={(e) => handleKeyPress(e, 'feature')}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="e.g., Responsive Design"
-                        maxLength="100"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Description
-                      </label>
-                      <input
-                        type="text"
-                        value={newFeature.description}
-                        onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Brief description"
-                        maxLength="200"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-
-                    <div className="flex items-end">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={newFeature.included}
-                          onChange={(e) => setNewFeature(prev => ({ ...prev, included: e.target.checked }))}
-                          className="h-4 w-4 text-blue-600 rounded"
-                          disabled={createServiceMutation.isPending}
-                        />
-                        <span className="ml-2 text-sm text-gray-700">Included in service</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleAddFeature}
-                    disabled={createServiceMutation.isPending}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add Feature
-                  </button>
-                </div>
-
-                {formData.features.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-gray-800">Added Features</h3>
-                    {formData.features.map((feature, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
-                        <div className="flex items-center">
-                          <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-green-500' : 'text-gray-400'}`} />
+                          {/* Short Description */}
                           <div>
-                            <h4 className="font-medium text-gray-900">{feature.title}</h4>
-                            {feature.description && (
-                              <p className="text-sm text-gray-600">{feature.description}</p>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Short Description <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                              name="shortDescription"
+                              value={formData.shortDescription}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                              rows="3"
+                              placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
+                              required
+                              aria-required="true"
+                              aria-describedby="short-desc-help"
+                            />
+                            <div className="flex justify-between mt-2">
+                              <p id="short-desc-help" className="text-xs text-gray-500">
+                                Required - Minimum 20 characters
+                              </p>
+                              <span className={`text-xs font-medium ${formData.shortDescription.length < 20 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formData.shortDescription.length}/250
+                              </span>
+                            </div>
+                            {errors.shortDescription && (
+                              <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
+                            )}
+                          </div>
+
+                          {/* Full Description */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Full Description <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                              name="description"
+                              value={formData.description}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                              rows="6"
+                              placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
+                              required
+                              aria-required="true"
+                              aria-describedby="desc-help"
+                            />
+                            <div className="flex justify-between mt-2">
+                              <div>
+                                <p id="desc-help" className="text-xs text-gray-500">
+                                  Minimum 50 characters required
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  Maximum 5000 characters allowed
+                                </p>
+                              </div>
+                              <span className={`text-xs font-medium ${formData.description.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formData.description.length}/5000
+                              </span>
+                            </div>
+                            {errors.description && (
+                              <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
                             )}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFeature(index)}
-                          disabled={createServiceMutation.isPending}
-                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+                    )}
 
-            {/* Section 5: Requirements */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <FileText className="w-6 h-6 mr-2 text-orange-600" />
-                Client Requirements
-              </h2>
+                    {/* Step 2: Pricing & Delivery */}
+                    {activeStep === 2 && (
+                      <div className="space-y-6">
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
+                          <DollarSign className="mr-3 text-blue-600" size={20} />
+                          Pricing & Delivery
+                        </h2>
 
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Question *
-                      </label>
-                      <input
-                        type="text"
-                        value={newRequirement.question}
-                        onChange={(e) => setNewRequirement(prev => ({ ...prev, question: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="What information do you need from the client?"
-                        maxLength="200"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
+                        <div className="space-y-6">
+                          {/* Price */}
+                          <div>
+                            <label className=" text-sm font-medium text-gray-700 mb-2 flex items-center">
+                              <DollarSign className="mr-2" size={14} />
+                              Price (USD) <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                              <input
+                                type="number"
+                                name="price"
+                                value={formData.price}
+                                onChange={handleInputChange}
+                                className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+                                placeholder="Enter your price"
+                                min="1"
+                                max="100000"
+                                step="0.01"
+                                required
+                                aria-required="true"
+                                aria-describedby="price-help"
+                              />
+                            </div>
+                            <div className="flex justify-between mt-2">
+                              <p id="price-help" className="text-xs text-gray-500">
+                                Minimum $1, maximum $100,000
+                              </p>
+                              {formData.price && (
+                                <span className="text-sm font-semibold text-blue-600">
+                                  ${formatPrice(formData.price)}
+                                </span>
+                              )}
+                            </div>
+                            {errors.price && (
+                              <p className="mt-2 text-sm text-red-600" role="alert">{errors.price}</p>
+                            )}
+                          </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Input Type
-                        </label>
-                        <select
-                          value={newRequirement.type}
-                          onChange={(e) => setNewRequirement(prev => ({ ...prev, type: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          disabled={createServiceMutation.isPending}
-                        >
-                          <option value="text">Text</option>
-                          <option value="file">File Upload</option>
-                          <option value="choice">Single Choice</option>
-                          <option value="multiple">Multiple Choice</option>
-                        </select>
-                      </div>
+                          {/* Currency */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Currency
+                            </label>
+                            <select
+                              name="currency"
+                              value={formData.currency}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
+                              aria-label="Select currency"
+                            >
+                              <option value="USD">USD - US Dollar</option>
+                              <option value="EUR">EUR - Euro</option>
+                              <option value="GBP">GBP - British Pound</option>
+                              <option value="CAD">CAD - Canadian Dollar</option>
+                              <option value="AUD">AUD - Australian Dollar</option>
+                              <option value="INR">INR - Indian Rupee</option>
+                              <option value="PKR">PKR - Pakistani Rupee</option>
+                            </select>
+                          </div>
 
-                      <div className="flex items-end">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={newRequirement.required}
-                            onChange={(e) => setNewRequirement(prev => ({ ...prev, required: e.target.checked }))}
-                            className="h-4 w-4 text-blue-600 rounded"
-                            disabled={createServiceMutation.isPending}
-                          />
-                          <span className="ml-2 text-sm text-gray-700">Required field</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {(newRequirement.type === 'choice' || newRequirement.type === 'multiple') && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Options
-                        </label>
-                        <div className="flex gap-2 mb-2">
-                          <input
-                            type="text"
-                            value={newRequirementOption}
-                            onChange={(e) => setNewRequirementOption(e.target.value)}
-                            onKeyPress={(e) => handleKeyPress(e, 'requirementOption')}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Add an option"
-                            disabled={createServiceMutation.isPending}
-                          />
-                          <button
-                            type="button"
-                            onClick={handleAddRequirementOption}
-                            disabled={createServiceMutation.isPending}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Add
-                          </button>
-                        </div>
-
-                        {newRequirement.options.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {newRequirement.options.map((option, index) => (
-                              <span
-                                key={index}
-                                className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm"
+                          {/* Delivery Time */}
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                              <Calendar className="mr-2" size={14} />
+                              Delivery Time <span className="text-red-500">*</span>
+                            </label>
+                            <div className="flex gap-3">
+                              <input
+                                type="number"
+                                name="deliveryTime"
+                                value={formData.deliveryTime}
+                                onChange={handleInputChange}
+                                className="flex-1 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+                                placeholder="e.g., 7"
+                                required
+                                min="1"
+                                max="365"
+                                aria-required="true"
+                                aria-describedby="delivery-help"
+                              />
+                              <select
+                                name="deliveryTimeUnit"
+                                value={formData.deliveryTimeUnit}
+                                onChange={handleInputChange}
+                                className="p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
+                                aria-label="Select delivery time unit"
                               >
-                                {option}
+                                <option value="days">Days</option>
+                                <option value="weeks">Weeks</option>
+                                <option value="hours">Hours</option>
+                              </select>
+                            </div>
+                            <div className="flex justify-between mt-2">
+                              <p id="delivery-help" className="text-xs text-gray-500">
+                                Minimum 1 day, maximum 365 days
+                              </p>
+                              {formData.deliveryTime && (
+                                <span className="text-sm font-semibold text-blue-600">
+                                  {formData.deliveryTime} {formData.deliveryTimeUnit}
+                                </span>
+                              )}
+                            </div>
+                            {errors.deliveryTime && (
+                              <p className="mt-2 text-sm text-red-600" role="alert">{errors.deliveryTime}</p>
+                            )}
+                          </div>
+
+                          {/* Revisions */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Revisions Included
+                            </label>
+                            <input
+                              type="number"
+                              name="revisions"
+                              value={formData.revisions}
+                              onChange={handleInputChange}
+                              className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                              placeholder="Number of revisions"
+                              min="0"
+                              max="99"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">0-99 revisions included</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 3: Details & Features */}
+                    {activeStep === 3 && (
+                      <div className="space-y-6">
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
+                          <FileText className="mr-3 text-blue-600" size={20} />
+                          Details & Features
+                        </h2>
+
+                        <div className="space-y-8">
+                          {/* Tags */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                              <Tag className="w-5 h-5 mr-2" />
+                              Service Tags
+                            </h3>
+                            <div className="space-y-4">
+                              <div className="flex gap-3">
+                                <input
+                                  type="text"
+                                  value={newTag}
+                                  onChange={(e) => setNewTag(e.target.value)}
+                                  onKeyPress={(e) => handleKeyPress(e, 'tag')}
+                                  className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
+                                  placeholder="Add a tag (e.g., web development, design)"
+                                  maxLength="30"
+                                />
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveRequirementOption(option)}
-                                  disabled={createServiceMutation.isPending}
-                                  className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                  onClick={handleAddTag}
+                                  className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <Plus className="w-4 h-4" />
                                 </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Tags help customers find your service. Maximum 20 tags.
+                              </p>
 
-                    <button
-                      type="button"
-                      onClick={handleAddRequirement}
-                      disabled={createServiceMutation.isPending}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Add Requirement
-                    </button>
-                  </div>
-                </div>
-
-                {formData.requirements.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-gray-800">Added Requirements</h3>
-                    {formData.requirements.map((req, index) => (
-                      <div key={index} className="p-3 bg-gray-50 rounded-lg border">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="font-medium text-gray-900">{req.question}</h4>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-xs px-2 py-1 bg-gray-200 rounded">
-                                {req.type}
-                              </span>
-                              {req.required && (
-                                <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">
-                                  Required
-                                </span>
+                              {formData.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {formData.tags.map((tag, index) => (
+                                    <span
+                                      key={index}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-sm"
+                                    >
+                                      {tag}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveTag(tag)}
+                                        className="ml-2 text-blue-600 hover:text-blue-800"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRequirement(index)}
-                            disabled={createServiceMutation.isPending}
-                            className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
 
-                        {req.options.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-sm text-gray-600 mb-1">Options:</p>
-                            <div className="flex flex-wrap gap-1">
-                              {req.options.map((option, optIndex) => (
-                                <span
-                                  key={optIndex}
-                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded"
+                          {/* Search Keywords */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                              <Eye className="w-5 h-5 mr-2" />
+                              Search Keywords
+                            </h3>
+                            <div className="space-y-4">
+                              <div className="flex gap-3">
+                                <input
+                                  type="text"
+                                  value={newKeyword}
+                                  onChange={(e) => setNewKeyword(e.target.value)}
+                                  onKeyPress={(e) => handleKeyPress(e, 'keyword')}
+                                  className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
+                                  placeholder="Add search keyword"
+                                  maxLength="30"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddKeyword}
+                                  className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                                 >
-                                  {option}
-                                </span>
-                              ))}
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Keywords improve search visibility. Maximum 20 keywords.
+                              </p>
+
+                              {formData.searchKeywords.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {formData.searchKeywords.map((keyword, index) => (
+                                    <span
+                                      key={index}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-sm"
+                                    >
+                                      {keyword}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveKeyword(keyword)}
+                                        className="ml-2 text-blue-600 hover:text-blue-800"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* Section 6: FAQs */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <HelpCircle className="w-6 h-6 mr-2 text-indigo-600" />
-                Frequently Asked Questions
-              </h2>
+                          {/* Features */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                              <CheckSquare className="w-5 h-5 mr-2" />
+                              Service Features
+                            </h3>
+                            <div className="space-y-4">
+                              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      Feature Title
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newFeature.title}
+                                      onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
+                                      onKeyPress={(e) => handleKeyPress(e, 'feature')}
+                                      className="w-full p-3 border border-gray-300 rounded-lg"
+                                      placeholder="e.g., Responsive Design"
+                                      maxLength="100"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      Description
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newFeature.description}
+                                      onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
+                                      className="w-full p-3 border border-gray-300 rounded-lg"
+                                      placeholder="Brief description"
+                                      maxLength="200"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <label className="flex items-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={newFeature.included}
+                                      onChange={(e) => setNewFeature(prev => ({ ...prev, included: e.target.checked }))}
+                                      className="h-4 w-4 text-blue-600 rounded"
+                                    />
+                                    <span className="ml-2 text-sm text-gray-700">Included in service</span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={handleAddFeature}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                  >
+                                    Add Feature
+                                  </button>
+                                </div>
+                              </div>
 
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Question *
-                      </label>
-                      <input
-                        type="text"
-                        value={newFAQ.question}
-                        onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Common question from clients"
-                        maxLength="200"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Answer *
-                      </label>
-                      <textarea
-                        value={newFAQ.answer}
-                        onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                        rows="3"
-                        placeholder="Your answer to the question"
-                        maxLength="500"
-                        disabled={createServiceMutation.isPending}
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAddFAQ}
-                      disabled={createServiceMutation.isPending}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Add FAQ
-                    </button>
-                  </div>
-                </div>
-
-                {formData.faqs.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-gray-800">Added FAQs</h3>
-                    {formData.faqs.map((faq, index) => (
-                      <div key={index} className="p-4 bg-gray-50 rounded-lg border">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-gray-900">{faq.question}</h4>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFAQ(index)}
-                            disabled={createServiceMutation.isPending}
-                            className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                              {formData.features.length > 0 && (
+                                <div className="space-y-3">
+                                  {formData.features.map((feature, index) => (
+                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                                      <div className="flex items-center">
+                                        <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-green-500' : 'text-gray-400'}`} />
+                                        <div>
+                                          <h4 className="font-medium text-gray-900">{feature.title}</h4>
+                                          {feature.description && (
+                                            <p className="text-sm text-gray-600">{feature.description}</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveFeature(index)}
+                                        className="text-red-500 hover:text-red-700"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-gray-600">{faq.answer}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+                    )}
 
-            {/* Section 7: Packages */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-                <Package className="w-6 h-6 mr-2 text-amber-600" />
-                Service Packages
-              </h2>
+                    {/* Step 4: Images & FAQ */}
+                    {activeStep === 4 && (
+                      <div className="space-y-6">
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
+                          <Upload className="mr-3 text-blue-600" size={20} />
+                          Images & FAQ
+                        </h2>
 
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Package Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={newPackage.name}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, name: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="e.g., Basic, Standard, Premium"
-                          maxLength="50"
-                          disabled={createServiceMutation.isPending}
-                        />
+                        <div className="space-y-8">
+                          {/* Image Upload */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Service Images</h3>
+                            <div className="space-y-4">
+                              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
+                                <input
+                                  type="file"
+                                  id="image-upload"
+                                  multiple
+                                  accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                                  onChange={(e) => handleImageUpload(e.target.files)}
+                                  className="hidden"
+                                  disabled={uploadingImages || createServiceMutation.isPending}
+                                />
+                                <label htmlFor="image-upload" className="cursor-pointer">
+                                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                  <h4 className="text-lg font-medium text-gray-900 mb-2">
+                                    Upload Service Images
+                                  </h4>
+                                  <p className="text-gray-600 mb-4">
+                                    Drag & drop images or click to browse
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
+                                  </p>
+                                </label>
+                              </div>
+
+                              {uploadedImages.length > 0 && (
+                                <div>
+                                  <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-medium text-gray-900">
+                                      Selected Images ({uploadedImages.length}/10)
+                                    </h4>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                                        setUploadedImages([]);
+                                      }}
+                                      className="text-sm text-red-600 hover:text-red-700"
+                                    >
+                                      Remove All
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                    {uploadedImages.map((image, index) => (
+                                      <div key={index} className="relative group">
+                                        <img
+                                          src={image.preview}
+                                          alt={`Service image preview ${index + 1}`}
+                                          className="w-full h-32 object-cover rounded-lg"
+                                          loading="lazy"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => removeImage(index)}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                          <X className="w-4 h-4" />
+                                        </button>
+                                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                                          {image.name.substring(0, 20)}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Thumbnail Upload */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+                            <div className="space-y-4">
+                              <p className="text-gray-600 text-sm">
+                                The thumbnail is the main image displayed in service listings.
+                              </p>
+
+                              {thumbnailFile ? (
+                                <div className="flex items-start gap-4">
+                                  <div className="relative">
+                                    <img
+                                      src={thumbnailFile.preview}
+                                      alt="Service thumbnail preview"
+                                      className="w-32 h-32 object-cover rounded-lg"
+                                      loading="lazy"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={removeThumbnail}
+                                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                                    <p className="text-gray-500 text-sm">
+                                      {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                                  <input
+                                    type="file"
+                                    id="thumbnail-upload"
+                                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                                    onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                                    className="hidden"
+                                    disabled={uploadingThumbnail || createServiceMutation.isPending}
+                                  />
+                                  <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                                    <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                                    <h4 className="text-lg font-medium text-gray-900 mb-1">
+                                      Upload Thumbnail
+                                    </h4>
+                                    <p className="text-gray-600 text-sm mb-2">
+                                      Recommended: 800×600 pixels, max 2MB
+                                    </p>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* FAQs */}
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                              <HelpCircle className="w-5 h-5 mr-2" />
+                              Frequently Asked Questions
+                            </h3>
+                            <div className="space-y-4">
+                              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <div className="space-y-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      Question
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newFAQ.question}
+                                      onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
+                                      className="w-full p-3 border border-gray-300 rounded-lg"
+                                      placeholder="Common question from clients"
+                                      maxLength="200"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      Answer
+                                    </label>
+                                    <textarea
+                                      value={newFAQ.answer}
+                                      onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
+                                      className="w-full p-3 border border-gray-300 rounded-lg"
+                                      rows="3"
+                                      placeholder="Your answer to the question"
+                                      maxLength="500"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleAddFAQ}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                  >
+                                    Add FAQ
+                                  </button>
+                                </div>
+                              </div>
+
+                              {formData.faqs.length > 0 && (
+                                <div className="space-y-3">
+                                  {formData.faqs.map((faq, index) => (
+                                    <div key={index} className="p-4 bg-gray-50 rounded-lg border">
+                                      <div className="flex justify-between items-start mb-2">
+                                        <h4 className="font-medium text-gray-900">{faq.question}</h4>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveFAQ(index)}
+                                          className="text-red-500 hover:text-red-700"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                      <p className="text-gray-600">{faq.answer}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Description
-                        </label>
-                        <input
-                          type="text"
-                          value={newPackage.description}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, description: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Brief package description"
-                          maxLength="500"
-                          disabled={createServiceMutation.isPending}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Price *
-                        </label>
-                        <input
-                          type="number"
-                          value={newPackage.price}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, price: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="0.00"
-                          min="1"
-                          step="0.01"
-                          disabled={createServiceMutation.isPending}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Delivery Time *
-                        </label>
-                        <input
-                          type="number"
-                          value={newPackage.deliveryTime}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, deliveryTime: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Days"
-                          min="1"
-                          disabled={createServiceMutation.isPending}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Revisions
-                        </label>
-                        <input
-                          type="number"
-                          value={newPackage.revisions}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, revisions: parseInt(e.target.value) || 0 }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="0"
-                          min="0"
-                          disabled={createServiceMutation.isPending}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Package Features
-                      </label>
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={newPackageFeature}
-                          onChange={(e) => setNewPackageFeature(e.target.value)}
-                          onKeyPress={(e) => handleKeyPress(e, 'packageFeature')}
-                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Add a feature"
-                          maxLength="100"
-                          disabled={createServiceMutation.isPending}
-                        />
+                    {/* Navigation Buttons */}
+                    <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
+                      {activeStep > 1 && activeStep < 5 && (
                         <button
                           type="button"
-                          onClick={handleAddPackageFeature}
+                          onClick={prevStep}
+                          className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                           disabled={createServiceMutation.isPending}
-                          className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          aria-label="Go back to previous step"
                         >
-                          Add
+                          <ArrowLeft className="mr-2" size={20} />
+                          Back
                         </button>
-                      </div>
-
-                      {newPackage.features.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {newPackage.features.map((feature, index) => (
-                            <span
-                              key={index}
-                              className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm"
-                            >
-                              {feature}
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePackageFeature(feature)}
-                                disabled={createServiceMutation.isPending}
-                                className="ml-2 text-amber-600 hover:text-amber-800 disabled:opacity-50"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
                       )}
-                    </div>
 
-                    <div className="flex items-center">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={newPackage.popular}
-                          onChange={(e) => setNewPackage(prev => ({ ...prev, popular: e.target.checked }))}
-                          className="h-4 w-4 text-blue-600 rounded"
+                      {activeStep < 4 ? (
+                        <button
+                          type="button"
+                          onClick={nextStep}
+                          className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
                           disabled={createServiceMutation.isPending}
-                        />
-                        <span className="ml-2 text-sm text-gray-700">Mark as Popular Package</span>
-                      </label>
-                    </div>
+                          aria-label="Continue to next step"
+                        >
+                          Save & Continue
+                          <ChevronRight className="ml-2" size={20} />
+                        </button>
+                      ) : activeStep === 4 ? (
+                        <div className="flex flex-col sm:flex-row gap-4 w-full">
+                          <button
+                            type="submit"
+                            disabled={createServiceMutation.isPending || categoryLoading || isSubmitting}
+                            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Save service as draft"
+                          >
+                            {createServiceMutation.isPending || isSubmitting ? (
+                              <>
+                                <Loader2 className="mr-2 animate-spin" size={20} />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="mr-2" size={20} />
+                                Save as Draft
+                              </>
+                            )}
+                          </button>
 
-                    <button
-                      type="button"
-                      onClick={handleAddPackage}
-                      disabled={createServiceMutation.isPending}
-                      className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Add Package
-                    </button>
-                  </div>
-                </div>
-
-                {formData.packages.length > 0 && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Added Packages</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {formData.packages.map((pkg, index) => (
-                        <div key={index} className="border rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
-                          <div className="flex justify-between items-start mb-3">
-                            <div>
-                              <h4 className="font-bold text-lg text-gray-900">{pkg.name}</h4>
-                              {pkg.popular && (
-                                <span className="inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded mt-1">
-                                  Most Popular
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePackage(index)}
-                              disabled={createServiceMutation.isPending}
-                              className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          {pkg.description && (
-                            <p className="text-gray-600 text-sm mb-3">{pkg.description}</p>
-                          )}
-
-                          <div className="space-y-2 mb-3">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Price:</span>
-                              <span className="font-semibold">${pkg.price}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Delivery:</span>
-                              <span>{pkg.deliveryTime} days</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Revisions:</span>
-                              <span>{pkg.revisions}</span>
-                            </div>
-                          </div>
-
-                          {pkg.features && pkg.features.length > 0 && (
-                            <div>
-                              <h5 className="text-sm font-medium text-gray-700 mb-1">Features:</h5>
-                              <ul className="space-y-1">
-                                {pkg.features.slice(0, 3).map((feature, featIndex) => (
-                                  <li key={featIndex} className="text-xs text-gray-600 flex items-center">
-                                    <CheckCircle className="w-3 h-3 text-green-500 mr-1" />
-                                    {feature}
-                                  </li>
-                                ))}
-                                {pkg.features.length > 3 && (
-                                  <li className="text-xs text-gray-500">
-                                    +{pkg.features.length - 3} more features
-                                  </li>
-                                )}
-                              </ul>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => handleSubmit(e, 'active')}
+                            disabled={createServiceMutation.isPending || categoryLoading || isSubmitting}
+                            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Publish service"
+                          >
+                            {createServiceMutation.isPending || isSubmitting ? (
+                              <>
+                                <Loader2 className="mr-2 animate-spin" size={20} />
+                                Publishing...
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="mr-2" size={20} />
+                                Publish Service
+                              </>
+                            )}
+                          </button>
                         </div>
-                      ))}
+                      ) : null}
                     </div>
-                  </div>
+                  </form>
                 )}
               </div>
             </div>
-
-            {/* Validation Summary */}
-            <Suspense fallback={<ValidationPlaceholder />}>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-yellow-800 mb-4 flex items-center">
-                  <AlertCircle className="w-5 h-5 mr-2" />
-                  Before You Submit
-                </h3>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    {formData.title.length >= 5 ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-                      Title: {formData.title.length >= 5 ? '✓ Valid' : `Needs ${5 - formData.title.length} more characters`}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.description.length >= 50 ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.description.length >= 50 ? 'text-green-600' : 'text-red-600'}`}>
-                      Description: {formData.description.length >= 50 ? '✓ Valid' : `Needs ${50 - formData.description.length} more characters`}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.shortDescription && formData.shortDescription.length >= 20 ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.shortDescription && formData.shortDescription.length >= 20 ? 'text-green-600' : 'text-red-600'}`}>
-                      Short Description: {formData.shortDescription && formData.shortDescription.length >= 20 ? '✓ Valid' : `Needs ${20 - (formData.shortDescription?.length || 0)} more characters`}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.category ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.category ? 'text-green-600' : 'text-red-600'}`}>
-                      Category: {formData.category ? '✓ Selected' : 'Required'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.subcategory ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.subcategory ? 'text-green-600' : 'text-red-600'}`}>
-                      Subcategory: {formData.subcategory ? '✓ Selected' : 'Required'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.price && parseFloat(formData.price) >= 1 ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.price && parseFloat(formData.price) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-                      Price: {formData.price && parseFloat(formData.price) >= 1 ? '✓ Valid' : 'Required ($1 minimum)'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center">
-                    {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? (
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                    )}
-                    <span className={`text-sm ${formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-                      Delivery Time: {formData.deliveryTime && parseInt(formData.deliveryTime) >= 1 ? '✓ Valid' : 'Required (1 day minimum)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </Suspense>
-
-            {ActionButtons}
-          </form>
+          </div>
         </div>
       </div>
     </SeoWrapper>

@@ -218,9 +218,11 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
 
   // Search with sanitization
   if (search) {
-    const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+  const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} }).trim();
+  if (sanitizedSearch.length >= 2) {
     filter.$text = { $search: sanitizedSearch };
   }
+}
 
   if (title) filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
   if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
@@ -898,23 +900,23 @@ const getServices = async (req, res, next) => {
     });
 
     const response = {
-      success: true,
-      data: safeServices,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasNext,
-        hasPrev,
-        nextPage: hasNext ? pageNum + 1 : null,
-        prevPage: hasPrev ? pageNum - 1 : null,
-      },
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`,
-      cached: (useCache && pageNum <= 3 && !search && !q && services !== undefined)
-    };
+  success: true,
+  data: safeServices || [], // Always ensure array
+  pagination: {
+    page: pageNum,
+    limit: limitNum,
+    total: total || 0,
+    totalPages: totalPages || 0,
+    hasNext: hasNext || false,
+    hasPrev: hasPrev || false,
+    nextPage: hasNext ? pageNum + 1 : null,
+    prevPage: hasPrev ? pageNum - 1 : null,
+  },
+  requestId,
+  timestamp: new Date().toISOString(),
+  responseTime: `${responseTime}ms`,
+  cached: (useCache && pageNum <= 3 && !search && !q && services !== undefined)
+};
 
     if (includeStats && stats.length > 0) {
       response.stats = stats[0];
@@ -2138,18 +2140,34 @@ const exportServices = async (req, res, next) => {
   }
 };
 
-// Search Services
+// Update the searchServices function at the beginning:
 const searchServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
-    const { query, category, minPrice, maxPrice, sort = 'relevance', limit = 20, cache: useCacheParam = 'true' } = req.query;
+    // Accept both 'query' and 'q' parameters for better compatibility
+    const { 
+      query: searchQuery, 
+      q, 
+      category, 
+      minPrice, 
+      maxPrice, 
+      sort = 'relevance', 
+      limit = 20, 
+      cache: useCacheParam = 'true' 
+    } = req.query;
 
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query is required',
-        code: 'MISSING_QUERY',
-        requestId
+    // Use either 'query' or 'q' parameter
+    const query = searchQuery || q;
+
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      return res.status(200).json({
+        success: true,
+        query: '',
+        results: [],
+        count: 0,
+        requestId,
+        timestamp: new Date().toISOString(),
+        message: 'No search query provided'
       });
     }
 
@@ -2159,11 +2177,14 @@ const searchServices = async (req, res, next) => {
     }).trim();
 
     if (sanitizedQuery.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query must be at least 2 characters',
-        code: 'QUERY_TOO_SHORT',
-        requestId
+      return res.status(200).json({
+        success: true,
+        query: sanitizedQuery,
+        results: [],
+        count: 0,
+        requestId,
+        timestamp: new Date().toISOString(),
+        message: 'Search query must be at least 2 characters'
       });
     }
 
@@ -2198,64 +2219,91 @@ const searchServices = async (req, res, next) => {
         isActive: true
       };
 
-      if (category && mongoose.Types.ObjectId.isValid(category)) {
+      // Add category filter if provided
+      if (category && category !== 'All' && mongoose.Types.ObjectId.isValid(category)) {
         filter.category = category;
       }
 
+      // Price range filter
       if (minPrice || maxPrice) {
         filter.price = {};
         if (minPrice) filter.price.$gte = parseFloat(minPrice);
         if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
       }
 
+      // Sort options
       const sortOptions = {
         relevance: { score: { $meta: 'textScore' } },
         price_asc: { price: 1 },
         price_desc: { price: -1 },
         rating: { rating: -1 },
         delivery: { deliveryTime: 1 },
-        newest: { createdAt: -1 }
+        newest: { createdAt: -1 },
+        orders: { ordersCount: -1 }
       };
 
       const sortObj = sortOptions[sort] || sortOptions.relevance;
 
-      const results = await Service.find(filter, { 
+      // Build query with text score
+      const findQuery = Service.find(filter, { 
         score: { $meta: 'textScore' } 
-      })
-      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy category')
-      .populate('createdBy', 'name picture')
-      .populate('category', 'name slug')
-      .sort(sortObj)
-      .limit(searchLimit)
-      .lean();
+      });
 
-      safeResults = results.map(result => ({
-        _id: result._id,
-        title: result.title,
-        slug: result.slug,
-        description: result.description ? result.description.substring(0, 150) + '...' : '',
-        price: result.price,
-        currency: result.currency || 'USD',
-        rating: result.rating || 0,
-        reviewsCount: result.reviewsCount || 0,
-        deliveryTime: result.deliveryTime,
-        deliveryTimeUnit: result.deliveryTimeUnit,
-        revisions: result.revisions || 0,
-        views: result.views || 0,
-        thumbnail: result.thumbnail,
-        createdBy: {
-          _id: result.createdBy?._id,
-          name: result.createdBy?.name,
-          picture: result.createdBy?.picture
-        },
-        category: {
-          _id: result.category?._id,
-          name: result.category?.name,
-          slug: result.category?.slug
-        },
-        score: result.score || 0
-      }));
+      // Apply text search only if we have search query
+      if (sanitizedQuery.length > 0) {
+        findQuery.select('+score');
+      }
 
+      const results = await findQuery
+        .select('title slug shortDescription description price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images createdBy category tags')
+        .populate('createdBy', 'name picture')
+        .populate('category', 'name slug icon')
+        .sort(sortObj)
+        .limit(searchLimit)
+        .lean();
+
+      // Format results
+      safeResults = results.map(result => {
+        const service = {
+          _id: result._id,
+          title: result.title,
+          slug: result.slug,
+          shortDescription: result.shortDescription || '',
+          description: result.description ? result.description.substring(0, 150) + '...' : '',
+          price: result.price,
+          currency: result.currency || 'USD',
+          rating: result.rating || 0,
+          reviewsCount: result.reviewsCount || 0,
+          deliveryTime: result.deliveryTime,
+          deliveryTimeUnit: result.deliveryTimeUnit,
+          revisions: result.revisions || 0,
+          views: result.views || 0,
+          likes: result.likes || 0,
+          thumbnail: result.thumbnail,
+          images: result.images || [],
+          tags: result.tags || [],
+          score: result.score || 0,
+          createdBy: {
+            _id: result.createdBy?._id,
+            name: result.createdBy?.name || 'Unknown',
+            picture: result.createdBy?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'
+          },
+          category: {
+            _id: result.category?._id,
+            name: result.category?.name || 'Uncategorized',
+            slug: result.category?.slug,
+            icon: result.category?.icon
+          }
+        };
+        
+        // Add computed fields
+        service.hasImages = service.images && service.images.length > 0;
+        service.priceFormatted = `${service.currency} ${service.price?.toFixed(2) || '0.00'}`;
+        
+        return service;
+      });
+
+      // Get related categories
       const categoryIds = [...new Set(safeResults.map(r => r.category?._id).filter(Boolean))];
       relatedCategories = await Category.find({ 
         _id: { $in: categoryIds },
@@ -2281,11 +2329,23 @@ const searchServices = async (req, res, next) => {
     });
 
   } catch (error) {
+    console.error('[SEARCH SERVICES ERROR]', error);
+    
+    // Return empty results on error instead of 500
+    res.status(200).json({
+      success: true,
+      query: req.query.query || req.query.q || '',
+      results: [],
+      count: 0,
+      requestId,
+      timestamp: new Date().toISOString(),
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+    
     logAudit('ERROR', 'SERVICE', 'SEARCH', req.user?._id, { 
       query: req.query.query,
       error: error.message 
     });
-    next(error);
   }
 };
 
@@ -3206,7 +3266,117 @@ const getMyServices = async (req, res, next) => {
     next(error);
   }
 };
+// Update getAllActiveServices function:
+const getAllActiveServices = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    const {
+      page = 1,
+      limit = 12,
+      sort = 'createdAt',
+      order = 'desc',
+      search = '',
+      minPrice,
+      maxPrice,
+      minRating,
+      maxRating,
+      cache: useCacheParam = 'true'
+    } = req.query;
 
+    // Simple filter for active services only
+    const filter = {
+      status: 'active',
+      isActive: true
+    };
+
+    // Apply search if provided
+    if (search && search.trim().length >= 2) {
+      const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
+      filter.$text = { $search: sanitizedSearch };
+    }
+
+    // Price range
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = parseFloat(minPrice);
+      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    }
+
+    // Rating range
+    if (minRating || maxRating) {
+      filter.rating = {};
+      if (minRating) filter.rating.$gte = parseFloat(minRating);
+      if (maxRating) filter.rating.$lte = parseFloat(maxRating);
+    }
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const sortOptions = {
+      createdAt: -1,
+      rating: -1,
+      views: -1,
+      likes: -1
+    };
+
+    const [services, total] = await Promise.all([
+      Service.find(filter)
+        .select('title slug shortDescription description price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category createdBy tags status')
+        .populate('category', 'name slug icon')
+        .populate('createdBy', 'name picture')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Service.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: services.map(service => ({
+        ...service,
+        hasImages: service.images && service.images.length > 0,
+        priceFormatted: `${service.currency || 'USD'} ${service.price || '0.00'}`
+      })),
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${Date.now() - startTime}ms`
+    });
+
+  } catch (error) {
+    console.error('Get all active services error:', error);
+    
+    // Return empty array on error
+    res.json({
+      success: true,
+      data: [],
+      pagination: {
+        page: 1,
+        limit: 12,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${Date.now() - startTime}ms`
+    });
+  }
+};
 // Get Admin Services
 const getAdminServices = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -3894,6 +4064,7 @@ module.exports = {
   getServices,
   getMyServices,
   getServiceById,
+  getAllActiveServices,
   getAdminServices,
   updateService,
   deleteService,

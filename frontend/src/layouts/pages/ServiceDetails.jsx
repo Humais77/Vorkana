@@ -53,7 +53,20 @@ import {
   DollarSign as DollarSignIcon,
   Target as TargetIcon,
   FileQuestion,
-  CheckSquare
+  CheckSquare,
+  Search,
+  Crown,
+  TrendingUp as TrendingUpIcon,
+  FileWarning,
+  ShieldOff,
+  Clock8,
+  Calendar as CalendarIcon,
+  Hash as HashIcon,
+  TrendingDown,
+  EyeOff,
+  Zap as ZapIcon,
+  CalendarCheck,
+  CalendarX
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -84,12 +97,19 @@ const ServiceDetails = () => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [imageViewMode, setImageViewMode] = useState('thumbnail');
   const [showMessaging, setShowMessaging] = useState(false);
+  const [expandedSection, setExpandedSection] = useState({
+    meta: false,
+    packages: false,
+    features: false,
+    requirements: false,
+    faqs: false
+  });
 
   // Update view count when service loads
   useEffect(() => {
     if (service) {
       // Simulate view count (in real app, call increment views API)
-      setViewCount(Math.floor(Math.random() * 500) + 100);
+      setViewCount(service.views || Math.floor(Math.random() * 500) + 100);
       
       // Set first package as default selection
       if (service.packages && service.packages.length > 0) {
@@ -401,7 +421,8 @@ const ServiceDetails = () => {
         width: service.thumbnail.width,
         height: service.thumbnail.height,
         size: service.thumbnail.size,
-        format: service.thumbnail.format
+        format: service.thumbnail.format,
+        uploadedAt: service.thumbnail.uploadedAt
       };
     }
     
@@ -414,7 +435,8 @@ const ServiceDetails = () => {
         width: service.images[0].width,
         height: service.images[0].height,
         size: service.images[0].size,
-        format: service.images[0].format
+        format: service.images[0].format,
+        uploadedAt: service.images[0].uploadedAt
       };
     }
     
@@ -443,7 +465,8 @@ const ServiceDetails = () => {
             width: img.width,
             height: img.height,
             size: img.size,
-            format: img.format
+            format: img.format,
+            uploadedAt: img.uploadedAt
           });
         }
       });
@@ -496,61 +519,40 @@ const ServiceDetails = () => {
     return null;
   };
 
-  // Helper function to check if field is required and has value
-  const isFieldComplete = (fieldName, value) => {
-    const requiredFields = {
-      'title': { minLength: 5, required: true },
-      'description': { minLength: 50, required: true },
-      'shortDescription': { minLength: 20, required: true },
-      'category': { required: true },
-      'subcategory': { required: true },
-      'price': { minValue: 1, required: true },
-      'deliveryTime': { minValue: 1, required: true },
-      'currency': { required: true },
-      'deliveryTimeUnit': { required: true },
-      'revisions': { required: true }
-    };
-
-    const fieldConfig = requiredFields[fieldName];
-    if (!fieldConfig) return { complete: true, message: '' };
-
-    if (!value && fieldConfig.required) {
-      return { complete: false, message: 'Required field is missing' };
-    }
-
-    if (fieldConfig.minLength && value && value.length < fieldConfig.minLength) {
-      return { 
-        complete: false, 
-        message: `Minimum ${fieldConfig.minLength} characters required` 
-      };
-    }
-
-    if (fieldConfig.minValue && value && parseFloat(value) < fieldConfig.minValue) {
-      return { 
-        complete: false, 
-        message: `Minimum value is ${fieldConfig.minValue}` 
-      };
-    }
-
-    return { complete: true, message: '' };
+  // Toggle section expansion
+  const toggleSection = (section) => {
+    setExpandedSection(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
   };
 
-  // Render required field indicator
-  const renderRequiredIndicator = (fieldName, value) => {
-    const { complete, message } = isFieldComplete(fieldName, value);
-    
-    return (
-      <div className="flex items-center gap-1 mt-1">
-        <span className={`text-xs ${complete ? 'text-green-600' : 'text-red-600'}`}>
-          {complete ? (
-            <CheckCircle className="inline h-3 w-3 mr-1" />
-          ) : (
-            <AlertTriangle className="inline h-3 w-3 mr-1" />
-          )}
-          {complete ? 'Complete' : message}
-        </span>
-      </div>
-    );
+  // Format date
+  const formatDate = (date) => {
+    if (!date) return 'Not set';
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Check if service is expired
+  const isExpired = () => {
+    if (!service.expiresAt) return false;
+    return new Date(service.expiresAt) < new Date();
+  };
+
+  // Check if service is recommended
+  const isRecommended = () => {
+    return service.isRecommended || false;
+  };
+
+  // Check if service is popular
+  const isPopular = () => {
+    return service.isPopular || false;
   };
 
   if (loading) {
@@ -730,7 +732,6 @@ const ServiceDetails = () => {
                       itemProp="name"
                     >
                       {service.title}
-                      {renderRequiredIndicator('title', service.title)}
                     </h1>
                     <div className="flex flex-wrap items-center gap-3">
                       <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(service.status)}`}>
@@ -742,9 +743,15 @@ const ServiceDetails = () => {
                           FEATURED
                         </span>
                       )}
-                      {service.isPopular && (
+                      {isRecommended() && (
+                        <span className="px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                          <Crown className="inline h-4 w-4 mr-1" />
+                          RECOMMENDED
+                        </span>
+                      )}
+                      {isPopular() && (
                         <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800 border border-orange-200">
-                          <TrendingUp className="inline h-4 w-4 mr-1" />
+                          <TrendingUpIcon className="inline h-4 w-4 mr-1" />
                           POPULAR
                         </span>
                       )}
@@ -908,75 +915,6 @@ const ServiceDetails = () => {
                   </div>
                 )}
 
-                {/* Required Fields Summary Card */}
-                <div className="mb-8 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
-                  <h2 className="text-xl font-bold text-amber-800 mb-4 flex items-center gap-2">
-                    <Info className="h-5 w-5" />
-                    Required Service Information
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('title', service.title).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('title', service.title).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Service Title</h4>
-                        <p className="text-xs text-gray-500">Minimum 5 characters</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('description', service.description).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('description', service.description).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Description</h4>
-                        <p className="text-xs text-gray-500">Minimum 50 characters</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('shortDescription', service.shortDescription).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('shortDescription', service.shortDescription).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Short Description</h4>
-                        <p className="text-xs text-gray-500">Minimum 20 characters</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('category', service.category).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('category', service.category).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Category</h4>
-                        <p className="text-xs text-gray-500">Main service category</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('subcategory', service.subcategory).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('subcategory', service.subcategory).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Subcategory</h4>
-                        <p className="text-xs text-gray-500">Required subcategory</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-amber-100">
-                      <div className={`p-2 rounded-full ${isFieldComplete('price', service.price).complete ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {isFieldComplete('price', service.price).complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">Price</h4>
-                        <p className="text-xs text-gray-500">Minimum $1</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Service Images Section */}
                 <div className="mb-8">
                   {/* View Mode Toggle */}
@@ -1038,6 +976,11 @@ const ServiceDetails = () => {
                             {thumbnailImage.format && ` • ${thumbnailImage.format.toUpperCase()}`}
                           </div>
                         )}
+                        {thumbnailImage.uploadedAt && (
+                          <div className="absolute bottom-4 right-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                            Uploaded: {new Date(thumbnailImage.uploadedAt).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
                       
                       {/* Thumbnail Info */}
@@ -1050,8 +993,8 @@ const ServiceDetails = () => {
                             </p>
                           </div>
                           <div className="text-sm text-gray-600">
-                            {thumbnailImage.uploadedAt && (
-                              <span>Uploaded: {new Date(thumbnailImage.uploadedAt).toLocaleDateString()}</span>
+                            {thumbnailImage.public_id && (
+                              <span>ID: {thumbnailImage.public_id.substring(0, 20)}...</span>
                             )}
                           </div>
                         </div>
@@ -1120,6 +1063,11 @@ const ServiceDetails = () => {
                                 {galleryImages[activeImage].format && ` • ${galleryImages[activeImage].format.toUpperCase()}`}
                               </div>
                             )}
+                            {galleryImages[activeImage]?.uploadedAt && (
+                              <div className="absolute bottom-4 right-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                                Uploaded: {new Date(galleryImages[activeImage].uploadedAt).toLocaleDateString()}
+                              </div>
+                            )}
                           </div>
 
                           {/* Gallery Thumbnails */}
@@ -1184,10 +1132,7 @@ const ServiceDetails = () => {
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">Category</h3>
-                          <div className="text-sm text-gray-600 flex items-center gap-1">
-                            <Info className="h-3 w-3" />
-                            Required field
-                          </div>
+                          <div className="text-sm text-gray-600">Service classification</div>
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -1200,8 +1145,6 @@ const ServiceDetails = () => {
                           <span className="font-medium text-gray-900">{subcategoryName || 'Not set'}</span>
                         </div>
                       </div>
-                      {renderRequiredIndicator('category', service.category)}
-                      {renderRequiredIndicator('subcategory', service.subcategory)}
                     </div>
 
                     {/* Pricing Information */}
@@ -1212,10 +1155,7 @@ const ServiceDetails = () => {
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">Pricing</h3>
-                          <div className="text-sm text-gray-600 flex items-center gap-1">
-                            <Info className="h-3 w-3" />
-                            Required fields
-                          </div>
+                          <div className="text-sm text-gray-600">Service cost details</div>
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -1234,8 +1174,6 @@ const ServiceDetails = () => {
                           <span className="font-medium text-gray-900">{service.revisions || 0} included</span>
                         </div>
                       </div>
-                      {renderRequiredIndicator('price', service.price)}
-                      {renderRequiredIndicator('currency', service.currency)}
                     </div>
 
                     {/* Delivery Information */}
@@ -1246,10 +1184,7 @@ const ServiceDetails = () => {
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">Delivery</h3>
-                          <div className="text-sm text-gray-600 flex items-center gap-1">
-                            <Info className="h-3 w-3" />
-                            Required fields
-                          </div>
+                          <div className="text-sm text-gray-600">Timeline details</div>
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -1264,8 +1199,6 @@ const ServiceDetails = () => {
                           <span className="font-medium text-gray-900">{service.deliveryTimeUnit || 'days'}</span>
                         </div>
                       </div>
-                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
-                      {renderRequiredIndicator('deliveryTimeUnit', service.deliveryTimeUnit)}
                     </div>
                   </div>
                 </div>
@@ -1298,7 +1231,6 @@ const ServiceDetails = () => {
                       <p className="text-sm text-gray-500">
                         Base price for this service
                       </p>
-                      {renderRequiredIndicator('price', service.price)}
                       {service.packages && service.packages.length > 0 && (
                         <div className="mt-3 text-xs text-gray-600">
                           <span className="inline-block px-2 py-1 bg-white rounded border">
@@ -1326,7 +1258,6 @@ const ServiceDetails = () => {
                       <p className="text-sm text-gray-500 mb-2">
                         Average delivery time
                       </p>
-                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
                       {service.revisions && (
                         <div className="text-xs text-gray-600">
                           {service.revisions} revision{service.revisions !== 1 ? 's' : ''} included
@@ -1336,18 +1267,12 @@ const ServiceDetails = () => {
                   </div>
                 </div>
 
-                {/* Description Section with Required Indicator */}
+                {/* Description Section */}
                 <div className="mb-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                      <FileText className="h-6 w-6 text-emerald-600" />
-                      Service Description
-                    </h2>
-                    <div className="flex items-center gap-2">
-                      {renderRequiredIndicator('description', service.description)}
-                      {renderRequiredIndicator('shortDescription', service.shortDescription)}
-                    </div>
-                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <FileText className="h-6 w-6 text-emerald-600" />
+                    Service Description
+                  </h2>
                   <div className="prose max-w-none" itemProp="description">
                     <div className="bg-gray-50 rounded-xl p-6">
                       <p className="text-gray-700 whitespace-pre-line leading-relaxed">
@@ -1366,15 +1291,106 @@ const ServiceDetails = () => {
                   </div>
                 </div>
 
-                {/* Features */}
+                {/* Packages Section */}
+                {service.packages && service.packages.length > 0 && (
+                  <div className="mb-8">
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <Package className="h-6 w-6 text-emerald-600" />
+                        Service Packages
+                      </h2>
+                      <button
+                        onClick={() => toggleSection('packages')}
+                        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                      >
+                        {expandedSection.packages ? 'Show Less' : 'Show All'}
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      {(expandedSection.packages ? service.packages : service.packages.slice(0, 3)).map((pkg, index) => (
+                        <div key={index} className={`p-6 bg-white border rounded-xl transition-all hover:border-emerald-200 ${
+                          pkg.popular ? 'border-2 border-emerald-300 bg-emerald-50' : 'border-gray-200'
+                        }`}>
+                          <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className="text-xl font-bold text-gray-900">{pkg.name}</h3>
+                                {pkg.popular && (
+                                  <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full font-medium">
+                                    Most Popular
+                                  </span>
+                                )}
+                              </div>
+                              {pkg.description && (
+                                <p className="text-gray-600">{pkg.description}</p>
+                              )}
+                            </div>
+                            <div className="mt-2 md:mt-0 text-right">
+                              <div className="text-2xl font-bold text-emerald-600">
+                                {formatPrice(pkg.price, service.currency)}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                Delivery: {pkg.deliveryTime} {service.deliveryTimeUnit}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {pkg.features && pkg.features.length > 0 && (
+                            <div className="mt-4">
+                              <h4 className="font-medium text-gray-900 mb-2">Package Includes:</h4>
+                              <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {pkg.features.map((feature, featureIndex) => (
+                                  <li key={featureIndex} className="flex items-center text-sm text-gray-600">
+                                    <CheckCircle className="h-4 w-4 text-emerald-500 mr-2" />
+                                    {feature}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200">
+                            <div className="text-sm text-gray-600">
+                              {pkg.revisions > 0 ? `${pkg.revisions} revision${pkg.revisions !== 1 ? 's' : ''} included` : 'No revisions included'}
+                            </div>
+                            <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                              Select Package
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {service.packages.length > 3 && !expandedSection.packages && (
+                        <div className="text-center">
+                          <button
+                            onClick={() => toggleSection('packages')}
+                            className="text-emerald-600 hover:text-emerald-700 font-medium"
+                          >
+                            + {service.packages.length - 3} more packages
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Features Section */}
                 {service.features && service.features.length > 0 && (
                   <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                      <CheckSquare className="h-6 w-6 text-emerald-600" />
-                      What's Included
-                    </h2>
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <CheckSquare className="h-6 w-6 text-emerald-600" />
+                        What's Included
+                      </h2>
+                      <button
+                        onClick={() => toggleSection('features')}
+                        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                      >
+                        {expandedSection.features ? 'Show Less' : 'Show All'}
+                      </button>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {service.features.map((feature, index) => (
+                      {(expandedSection.features ? service.features : service.features.slice(0, 6)).map((feature, index) => (
                         <div key={index} className="flex items-start p-4 bg-white border border-gray-200 rounded-xl hover:border-emerald-200 transition-colors">
                           <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mr-3 mt-1 ${
                             feature.included ? 'bg-emerald-100' : 'bg-gray-100'
@@ -1394,23 +1410,41 @@ const ServiceDetails = () => {
                         </div>
                       ))}
                     </div>
+                    {service.features.length > 6 && !expandedSection.features && (
+                      <div className="text-center mt-4">
+                        <button
+                          onClick={() => toggleSection('features')}
+                          className="text-emerald-600 hover:text-emerald-700 font-medium"
+                        >
+                          + {service.features.length - 6} more features
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Requirements */}
+                {/* Requirements Section */}
                 {service.requirements && service.requirements.length > 0 && (
                   <div className="mb-8">
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex justify-between items-center mb-6">
                       <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <FileQuestion className="h-6 w-6 text-emerald-600" />
                         Client Requirements
                       </h2>
-                      <span className="text-sm text-gray-500">
-                        {service.requirements.filter(req => req.required).length} required field(s)
-                      </span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm text-gray-500">
+                          {service.requirements.filter(req => req.required).length} required field(s)
+                        </span>
+                        <button
+                          onClick={() => toggleSection('requirements')}
+                          className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                        >
+                          {expandedSection.requirements ? 'Show Less' : 'Show All'}
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-4">
-                      {service.requirements.map((req, index) => (
+                      {(expandedSection.requirements ? service.requirements : service.requirements.slice(0, 3)).map((req, index) => (
                         <div key={index} className="p-4 bg-gray-50 rounded-xl">
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center">
@@ -1450,28 +1484,56 @@ const ServiceDetails = () => {
                         </div>
                       ))}
                     </div>
+                    {service.requirements.length > 3 && !expandedSection.requirements && (
+                      <div className="text-center mt-4">
+                        <button
+                          onClick={() => toggleSection('requirements')}
+                          className="text-emerald-600 hover:text-emerald-700 font-medium"
+                        >
+                          + {service.requirements.length - 3} more requirements
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* FAQs */}
+                {/* FAQs Section */}
                 {service.faqs && service.faqs.length > 0 && (
                   <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                      <MessageCircle className="h-6 w-6 text-emerald-600" />
-                      Frequently Asked Questions
-                    </h2>
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <MessageCircle className="h-6 w-6 text-emerald-600" />
+                        Frequently Asked Questions
+                      </h2>
+                      <button
+                        onClick={() => toggleSection('faqs')}
+                        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                      >
+                        {expandedSection.faqs ? 'Show Less' : 'Show All'}
+                      </button>
+                    </div>
                     <div className="space-y-4">
-                      {service.faqs.map((faq, index) => (
+                      {(expandedSection.faqs ? service.faqs : service.faqs.slice(0, 3)).map((faq, index) => (
                         <div key={index} className="p-4 bg-white border border-gray-200 rounded-xl">
                           <h3 className="font-semibold text-gray-900 mb-2">{faq.question}</h3>
                           <p className="text-gray-600">{faq.answer}</p>
                         </div>
                       ))}
                     </div>
+                    {service.faqs.length > 3 && !expandedSection.faqs && (
+                      <div className="text-center mt-4">
+                        <button
+                          onClick={() => toggleSection('faqs')}
+                          className="text-emerald-600 hover:text-emerald-700 font-medium"
+                        >
+                          + {service.faqs.length - 3} more FAQs
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Tags */}
+                {/* Tags Section */}
                 {service.tags && service.tags.length > 0 && (
                   <div className="mb-8">
                     <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
@@ -1491,16 +1553,173 @@ const ServiceDetails = () => {
                   </div>
                 )}
 
+                {/* Search Keywords */}
+                {service.searchKeywords && service.searchKeywords.length > 0 && (
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                      <Search className="h-6 w-6 text-emerald-600" />
+                      Search Keywords
+                    </h2>
+                    <div className="flex flex-wrap gap-2">
+                      {service.searchKeywords.map((keyword, index) => (
+                        <span
+                          key={index}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm"
+                        >
+                          {keyword}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Meta Information (Collapsible) */}
+                <div className="mb-8">
+                  <button
+                    onClick={() => toggleSection('meta')}
+                    className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Info className="h-5 w-5 text-gray-600" />
+                      <h2 className="text-xl font-bold text-gray-900">
+                        Service Meta Information
+                      </h2>
+                    </div>
+                    <ChevronRight className={`h-5 w-5 text-gray-600 transition-transform ${expandedSection.meta ? 'rotate-90' : ''}`} />
+                  </button>
+                  
+                  {expandedSection.meta && (
+                    <div className="mt-4 p-6 bg-white border border-gray-200 rounded-xl">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Meta Titles & Descriptions */}
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-3">SEO Information</h3>
+                          <div className="space-y-3">
+                            {service.metaTitle && (
+                              <div>
+                                <h4 className="text-sm text-gray-600 mb-1">Meta Title</h4>
+                                <p className="text-gray-900">{service.metaTitle}</p>
+                              </div>
+                            )}
+                            {service.metaDescription && (
+                              <div>
+                                <h4 className="text-sm text-gray-600 mb-1">Meta Description</h4>
+                                <p className="text-gray-900">{service.metaDescription}</p>
+                              </div>
+                            )}
+                            {service.slug && (
+                              <div>
+                                <h4 className="text-sm text-gray-600 mb-1">URL Slug</h4>
+                                <p className="text-gray-900 font-mono">{service.slug}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Technical Information */}
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-3">Technical Details</h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Service ID:</span>
+                              <span className="font-mono text-gray-900">{service._id}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Version:</span>
+                              <span className="text-gray-900">{service.version || 1}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Active Status:</span>
+                              <span className={`font-medium ${service.isActive ? 'text-green-600' : 'text-red-600'}`}>
+                                {service.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                            {service.isDeleted && (
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-600">Deleted:</span>
+                                <span className="text-red-600 font-medium">Yes</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Dates Information */}
+                        <div>
+                          <h3 className="font-semibold text-gray-900 mb-3">Dates</h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Created:</span>
+                              <span className="text-gray-900">{formatDate(service.createdAt)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Updated:</span>
+                              <span className="text-gray-900">{formatDate(service.updatedAt)}</span>
+                            </div>
+                            {service.publishedAt && (
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-600">Published:</span>
+                                <span className="text-gray-900">{formatDate(service.publishedAt)}</span>
+                              </div>
+                            )}
+                            {service.expiresAt && (
+                              <div className="flex justify-between">
+                                <span className="text-sm text-gray-600">Expires:</span>
+                                <span className={`font-medium ${isExpired() ? 'text-red-600' : 'text-gray-900'}`}>
+                                  {formatDate(service.expiresAt)}
+                                  {isExpired() && ' (Expired)'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Last Updated Information */}
+                        {service.lastUpdatedBy && (
+                          <div>
+                            <h3 className="font-semibold text-gray-900 mb-3">Last Updated By</h3>
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-gray-600" />
+                                <span className="text-gray-900">User ID: {service.lastUpdatedBy}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Deletion Information */}
+                        {(service.deletedAt || service.deletedBy) && (
+                          <div className="md:col-span-2 p-4 bg-red-50 rounded-lg border border-red-200">
+                            <h3 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                              <AlertTriangle className="h-5 w-5" />
+                              Deletion Information
+                            </h3>
+                            <div className="space-y-2">
+                              {service.deletedAt && (
+                                <div className="flex justify-between">
+                                  <span className="text-sm text-red-700">Deleted At:</span>
+                                  <span className="text-red-900">{formatDate(service.deletedAt)}</span>
+                                </div>
+                              )}
+                              {service.deletedBy && (
+                                <div className="flex justify-between">
+                                  <span className="text-sm text-red-700">Deleted By:</span>
+                                  <span className="text-red-900">User ID: {service.deletedBy}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Last Updated */}
                 <div className="pt-6 border-t border-gray-200">
                   <div className="flex flex-wrap justify-between items-center gap-4">
                     <div>
                       <p className="text-sm text-gray-500">
-                        Posted {timeAgo} • Last updated: {new Date(service.updatedAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
+                        Posted {timeAgo} • Last updated: {formatDate(service.updatedAt)}
                       </p>
                       <p className="text-xs text-gray-400 mt-1">
                         Service ID: {service._id}
@@ -1594,9 +1813,6 @@ const ServiceDetails = () => {
                       <div className="flex items-center justify-between text-sm text-gray-600">
                         <span>Currency: {service.currency}</span>
                       </div>
-                      <div className="mt-2">
-                        {renderRequiredIndicator('price', service.price)}
-                      </div>
                     </div>
                     
                     {service.packages && service.packages.length > 0 ? (
@@ -1605,7 +1821,13 @@ const ServiceDetails = () => {
                           <Package className="inline h-4 w-4 mr-1" />
                           {service.packages.length} packages available
                         </p>
-                        <button className="text-blue-600 hover:text-blue-700 font-medium text-sm">
+                        <button 
+                          onClick={() => {
+                            const packagesSection = document.querySelector('[data-section="packages"]');
+                            packagesSection?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                        >
                           View Packages
                         </button>
                       </div>
@@ -1622,14 +1844,11 @@ const ServiceDetails = () => {
                         <span className="text-gray-600">Delivery Time</span>
                         <span className="font-semibold">{service.deliveryTime} {service.deliveryTimeUnit}</span>
                       </div>
-                      {renderRequiredIndicator('deliveryTime', service.deliveryTime)}
                       
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-600">Revisions</span>
                         <span className="font-semibold">{service.revisions || 0} included</span>
                       </div>
-                      
-                      {renderRequiredIndicator('revisions', service.revisions)}
                       
                       {service.deliveryTime && (
                         <div className="text-xs text-gray-500 mt-2">
@@ -1648,13 +1867,11 @@ const ServiceDetails = () => {
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="text-sm font-medium text-gray-600">Main Category</h4>
-                          <span className="text-xs text-emerald-600 font-medium">Required</span>
                         </div>
                         <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
                           <Package className="h-5 w-5 text-emerald-600 mr-3" />
                           <div>
                             <span className="font-semibold text-gray-900 block">{categoryName}</span>
-                            {renderRequiredIndicator('category', service.category)}
                             {service.categoryDetails?.description && (
                               <p className="text-xs text-gray-500 mt-1">{service.categoryDetails.description}</p>
                             )}
@@ -1667,13 +1884,11 @@ const ServiceDetails = () => {
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="text-sm font-medium text-gray-600">Subcategory</h4>
-                          <span className="text-xs text-emerald-600 font-medium">Required</span>
                         </div>
                         <div className="flex items-center p-3 bg-blue-50 rounded-lg">
                           <Layers className="h-5 w-5 text-blue-600 mr-3" />
                           <div>
                             <span className="font-semibold text-gray-900">{subcategoryName}</span>
-                            {renderRequiredIndicator('subcategory', service.subcategory)}
                           </div>
                         </div>
                       </div>

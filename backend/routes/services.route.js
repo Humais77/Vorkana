@@ -262,7 +262,7 @@ router.put('/:id',
   validateUpdate, 
   controller.updateService
 );
-
+router.get('/all-active', protect, controller.getAllActiveServices);
 // Delete my service
 router.delete('/:id', 
   protect, 
