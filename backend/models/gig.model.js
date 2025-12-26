@@ -58,21 +58,22 @@ const gigSchema = new mongoose.Schema({
       message: 'Invalid category'
     }
   },
-  subcategory: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    index: true,
-    validate: {
-      validator: async function(v) {
-        if (!v) return true;
-        const Category = mongoose.model('Category');
-        const subcategory = await Category.findById(v);
-        return subcategory && subcategory.parentCategory && 
-               subcategory.parentCategory.equals(this.projectCategory);
-      },
-      message: 'Invalid subcategory or does not belong to the selected category'
-    }
-  },
+subcategory: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Category',
+  required: [true, 'Subcategory is required'],
+  index: true,
+  validate: {
+    validator: async function(v) {
+      if (!v) return false; // Must have a value
+      const Category = mongoose.model('Category');
+      const subcategory = await Category.findById(v);
+      return subcategory && subcategory.parentCategory && 
+             subcategory.parentCategory.equals(this.projectCategory);
+    },
+    message: 'Invalid subcategory or does not belong to the selected category'
+  }
+},
   description: {
     type: String,
     required: [true, 'Description is required'],
@@ -227,15 +228,6 @@ const gigSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: [0, 'Deposit cannot be negative'],
-  },
-  deadline: {
-    type: Date,
-    validate: {
-      validator: function(v) {
-        return !v || v > Date.now();
-      },
-      message: 'Deadline must be in the future'
-    }
   },
   completionDate: {
     type: Date,
@@ -522,7 +514,6 @@ gigSchema.index({
 gigSchema.index({ isActive: 1, status: 1 }, { name: 'active_status_idx' });
 gigSchema.index({ visibility: 1, status: 1 }, { name: 'visibility_status_idx' });
 gigSchema.index({ budget: 1, status: 1 }, { name: 'budget_status_idx' });
-gigSchema.index({ deadline: 1 }, { name: 'deadline_idx' });
 
 // Query helpers
 gigSchema.query.active = function() {

@@ -83,8 +83,9 @@ const createSchema = Joi.object({
       'any.invalid': 'Invalid category ID',
     }),
     
-  subcategory: objectId.optional()
+  subcategory: objectId.required()
     .messages({
+      'any.required': 'Subcategory is required',
       'any.invalid': 'Invalid subcategory ID',
     }),
     
@@ -166,10 +167,6 @@ const createSchema = Joi.object({
     
   requirementsDocument: secureDocument.optional(),
     
-  deadline: Joi.date().greater('now').optional()
-    .messages({
-      'date.greater': 'Deadline must be in the future',
-    }),
 }).options({ 
   stripUnknown: true,
   abortEarly: false 
@@ -295,11 +292,7 @@ const updateSchema = Joi.object({
     
   requirementsDocument: secureDocument,
     
-  deadline: Joi.date().greater('now')
-    .messages({
-      'date.greater': 'Deadline must be in the future',
-    }),
-    
+
   version: Joi.number().integer().min(1)
     .messages({
       'number.base': 'Version must be a number',
@@ -316,7 +309,7 @@ const querySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
   offset: Joi.number().integer().min(0),
   
-  sort: Joi.string().valid('budget', 'createdAt', 'updatedAt', 'deadline', 'urgency', 'title').default('createdAt'),
+  sort: Joi.string().valid('budget', 'createdAt', 'updatedAt', 'urgency', 'title').default('createdAt'),
   order: Joi.string().valid('asc', 'desc', '1', '-1').default('desc'),
   sortBy: Joi.string(),
   
@@ -345,8 +338,6 @@ const querySchema = Joi.object({
   createdBefore: Joi.date().iso(),
   updatedAfter: Joi.date().iso(),
   updatedBefore: Joi.date().iso(),
-  deadlineAfter: Joi.date().iso(),
-  deadlineBefore: Joi.date().iso(),
   ids: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   excludeIds: Joi.string().pattern(/^[a-f0-9,]{24,}$/),
   

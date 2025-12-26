@@ -204,55 +204,48 @@ const GigCreate = () => {
     }
   }, [categoriesData, setCategories]);
 
-  // Update subcategories when category changes
-  useEffect(() => {
-    console.log('Category changed:', formData.projectCategory);
-    console.log('Categories data available:', !!categoriesData);
+  // Update the useEffect that updates subcategories
+useEffect(() => {
+  console.log('DEBUG - Category changed:', formData.projectCategory);
+  console.log('DEBUG - Categories data available:', !!categoriesData);
 
-    if (formData.projectCategory && categoriesData) {
-      // Get the current category list (either from store or query)
-      const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-        ? storedCategories
-        : (Array.isArray(categoriesData) ? categoriesData : []);
+  if (formData.projectCategory && categoriesData) {
+    // Get the current category list
+    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+      ? storedCategories
+      : (Array.isArray(categoriesData) ? categoriesData : []);
 
-      console.log('Category list:', categoryList);
+    console.log('Category list:', categoryList);
 
-      // Find the selected category
-      const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
-      console.log('Selected category:', selectedCategory);
+    // Find the selected category
+    const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
+    console.log('Selected category:', selectedCategory);
 
-      if (selectedCategory) {
-        // Get subcategories - check multiple possible locations
-        const subs = selectedCategory.children ||
-          selectedCategory.subcategories ||
-          [];
+    if (selectedCategory) {
+      // Get subcategories
+      const subs = selectedCategory.children ||
+        selectedCategory.subcategories ||
+        [];
 
-        console.log('Found subcategories:', subs);
-        setSubcategories(subs);
+      console.log('Found subcategories:', subs);
+      setSubcategories(subs);
 
-        // Reset subcategory if parent category changes
-        setFormData(prev => ({ 
-          ...prev, 
-          subcategory: "" 
-        }));
-        setCompletedFields(prev => ({
-          ...prev,
-          subcategory: false
-        }));
-      } else {
-        console.log('No selected category found');
-        setSubcategories([]);
-        setFormData(prev => ({ 
-          ...prev, 
-          subcategory: "" 
-        }));
-        setCompletedFields(prev => ({
-          ...prev,
-          subcategory: false
-        }));
+      // Reset subcategory only if it's not valid for the new category
+      if (formData.subcategory) {
+        const currentSubExists = subs.find(s => s._id === formData.subcategory);
+        if (!currentSubExists) {
+          setFormData(prev => ({ 
+            ...prev, 
+            subcategory: "" 
+          }));
+          setCompletedFields(prev => ({
+            ...prev,
+            subcategory: false
+          }));
+        }
       }
     } else {
-      console.log('No project category selected or no categories data');
+      console.log('No selected category found');
       setSubcategories([]);
       setFormData(prev => ({ 
         ...prev, 
@@ -263,7 +256,19 @@ const GigCreate = () => {
         subcategory: false
       }));
     }
-  }, [formData.projectCategory, categoriesData, storedCategories]);
+  } else {
+    console.log('No project category selected or no categories data');
+    setSubcategories([]);
+    setFormData(prev => ({ 
+      ...prev, 
+      subcategory: "" 
+    }));
+    setCompletedFields(prev => ({
+      ...prev,
+      subcategory: false
+    }));
+  }
+}, [formData.projectCategory, categoriesData, storedCategories]);
 useEffect(() => {
     if (!isProfileCompleteEnough(currentUser, 70)) {
       toast.error('Please complete your profile before creating a service');
@@ -438,34 +443,39 @@ useEffect(() => {
     }
   };
 
-  const validateField = (fieldName, value) => {
-    switch (fieldName) {
-      case 'fullName':
-        return value.trim().length >= 3;
-      case 'oauthEmail':
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(value);
-      case 'country':
-        return value.trim().length >= 2;
-      case 'phone':
-        return value.trim().length >= 5;
-      case 'title':
-        return value.trim().length >= 5;
-      case 'projectCategory':
+ const validateField = (fieldName, value) => {
+  switch (fieldName) {
+    case 'fullName':
+      return value.trim().length >= 3;
+    case 'oauthEmail':
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(value);
+    case 'country':
+      return value.trim().length >= 2;
+    case 'phone':
+      return value.trim().length >= 5;
+    case 'title':
+      return value.trim().length >= 5;
+    case 'projectCategory':
+      return !!value;
+    case 'subcategory':
+      // Check if subcategory is required (if there are subcategories available)
+      if (subcategories.length > 0) {
         return !!value;
-      case 'subcategory':
-        return !!value;
-      case 'budget':
-        const budgetNum = parseFloat(value);
-        return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
-      case 'description':
-        return value.trim().length >= 20;
-      case 'timeline':
-        return value.trim().length >= 3;
-      default:
-        return !!value;
-    }
-  };
+      }
+      // If no subcategories exist for this category, it's not required
+      return true;
+    case 'budget':
+      const budgetNum = parseFloat(value);
+      return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
+    case 'description':
+      return value.trim().length >= 20;
+    case 'timeline':
+      return value.trim().length >= 3;
+    default:
+      return !!value;
+  }
+};
 
   const handleLoginChange = (e) => {
     const { name, value } = e.target;
@@ -693,66 +703,66 @@ useEffect(() => {
   };
 
   const validateStep = useCallback((step) => {
-    const newErrors = {};
+  const newErrors = {};
 
-    if (step === 1) {
-      if (!formData.fullName || formData.fullName.trim().length < 3) {
-        newErrors.fullName = "Full name must be at least 3 characters.";
-      }
-
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!formData.oauthEmail || !emailRegex.test(formData.oauthEmail)) {
-        newErrors.oauthEmail = "Please enter a valid email address.";
-      }
-
-      if (!isAuthenticated) {
-        newErrors.auth = "Please sign in to continue.";
-      }
+  if (step === 1) {
+    if (!formData.fullName || formData.fullName.trim().length < 3) {
+      newErrors.fullName = "Full name must be at least 3 characters.";
     }
 
-    if (step === 2) {
-      if (!formData.country || formData.country.trim().length < 2) {
-        newErrors.country = "Country is required.";
-      }
-
-      if (!formData.phone || formData.phone.trim().length < 5) {
-        newErrors.phone = "Phone number is required.";
-      }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!formData.oauthEmail || !emailRegex.test(formData.oauthEmail)) {
+      newErrors.oauthEmail = "Please enter a valid email address.";
     }
 
-    if (step === 3) {
-      if (!formData.title || formData.title.trim().length < 5) {
-        newErrors.title = "Title must be at least 5 characters.";
-      }
+    if (!isAuthenticated) {
+      newErrors.auth = "Please sign in to continue.";
+    }
+  }
 
-      if (!formData.projectCategory) {
-        newErrors.projectCategory = "Please select a project category.";
-      }
-
-      // Check if subcategory is required (if there are subcategories available)
-      if (subcategories.length > 0 && !formData.subcategory) {
-        newErrors.subcategory = "Please select a subcategory.";
-      }
-
-      const budgetNum = parseFloat(formData.budget);
-      if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
-        newErrors.budget = "Budget must be between $5 and $100,000.";
-      }
+  if (step === 2) {
+    if (!formData.country || formData.country.trim().length < 2) {
+      newErrors.country = "Country is required.";
     }
 
-    if (step === 4) {
-      if (!formData.description || formData.description.trim().length < 20) {
-        newErrors.description = "Description must be at least 20 characters.";
-      }
+    if (!formData.phone || formData.phone.trim().length < 5) {
+      newErrors.phone = "Phone number is required.";
+    }
+  }
 
-      if (!formData.timeline || formData.timeline.trim().length < 3) {
-        newErrors.timeline = "Timeline is required.";
-      }
+  if (step === 3) {
+    if (!formData.title || formData.title.trim().length < 5) {
+      newErrors.title = "Title must be at least 5 characters.";
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [formData, isAuthenticated, subcategories]);
+    if (!formData.projectCategory) {
+      newErrors.projectCategory = "Please select a project category.";
+    }
+
+    // Check if subcategory is required (if there are subcategories available)
+    if (subcategories.length > 0 && !formData.subcategory) {
+      newErrors.subcategory = "Please select a subcategory.";
+    }
+
+    const budgetNum = parseFloat(formData.budget);
+    if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
+      newErrors.budget = "Budget must be between $5 and $100,000.";
+    }
+  }
+
+  if (step === 4) {
+    if (!formData.description || formData.description.trim().length < 20) {
+      newErrors.description = "Description must be at least 20 characters.";
+    }
+
+    if (!formData.timeline || formData.timeline.trim().length < 3) {
+      newErrors.timeline = "Timeline is required.";
+    }
+  }
+
+  setErrors(newErrors);
+  return Object.keys(newErrors).length === 0;
+}, [formData, isAuthenticated, subcategories]);
 
   const nextStep = useCallback(() => {
     if (validateStep(activeStep)) {
@@ -813,7 +823,9 @@ useEffect(() => {
         visibility: formData.visibility,
         status: status
       };
-
+ if (subcategories.length > 0 && !gigData.subcategory) {
+      throw new Error('Subcategory is required for this category');
+    }
       // Append all data to FormData
       Object.keys(gigData).forEach(key => {
         if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
@@ -869,6 +881,13 @@ useEffect(() => {
       createGig(formDataObj);
 
     } catch (error) {
+      if (error.message.includes('subcategory') || error.message.includes('Subcategory')) {
+      setErrors(prev => ({
+        ...prev,
+        subcategory: error.message
+      }));
+      setActiveStep(3); // Go back to step 3 where subcategory is selected
+    }
       console.error("Error in handleSubmit:", error);
       toast.error("Failed to prepare gig data. Please try again.");
       setErrors(prev => ({
@@ -878,7 +897,7 @@ useEffect(() => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig]);
+  }, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig,subcategories]);
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
@@ -1768,42 +1787,44 @@ useEffect(() => {
                             </div>
 
                             {/* Subcategory - Now Mandatory */}
-                            {subcategories.length > 0 && (
-                              <div>
-                                <label htmlFor="subcategory" className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
-                                  <Layers className="mr-2" size={14} />
-                                  Subcategory *
-                                </label>
-                                <div className="relative">
-                                  <select
-                                    id="subcategory"
-                                    name="subcategory"
-                                    value={formData.subcategory}
-                                    onChange={handleInputChange}
-                                    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                                    disabled={!formData.projectCategory || gigLoading}
-                                    required={subcategories.length > 0}
-                                    aria-required="true"
-                                  >
-                                    <option value="">Select a subcategory</option>
-                                    {subcategories.map((subcategory) => (
-                                      <option key={subcategory._id} value={subcategory._id}>
-                                        {subcategory.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                    <ChevronDown className="h-4 w-4" />
-                                  </div>
-                                </div>
-                                <p className="mt-2 text-xs text-gray-500">
-                                  Please select a subcategory for better project matching
-                                </p>
-                                {errors.subcategory && (
-                                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
-                                )}
-                              </div>
-                            )}
+{subcategories.length > 0 && (
+  <div>
+    <label htmlFor="subcategory" className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+      <Layers className="mr-2" size={14} />
+      Subcategory {subcategories.length > 0 && '*'}
+    </label>
+    <div className="relative">
+      <select
+        id="subcategory"
+        name="subcategory"
+        value={formData.subcategory}
+        onChange={handleInputChange}
+        className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+        disabled={!formData.projectCategory || gigLoading}
+        required={subcategories.length > 0}
+        aria-required={subcategories.length > 0}
+      >
+        <option value="">{subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories available'}</option>
+        {subcategories.map((subcategory) => (
+          <option key={subcategory._id} value={subcategory._id}>
+            {subcategory.name}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+        <ChevronDown className="h-4 w-4" />
+      </div>
+    </div>
+    <p className="mt-2 text-xs text-gray-500">
+      {subcategories.length > 0 
+        ? 'Please select a subcategory for better project matching'
+        : 'No subcategories available for this category'}
+    </p>
+    {errors.subcategory && (
+      <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
+    )}
+  </div>
+)}
 
                             {/* Budget */}
                             <div>

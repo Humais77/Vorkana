@@ -107,8 +107,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     createdBefore,
     updatedAfter,
     updatedBefore,
-    deadlineAfter,
-    deadlineBefore,
     ids,
     excludeIds,
     showAll = false,
@@ -238,8 +236,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
   addDateFilter('createdAt', createdBefore, '$lte');
   addDateFilter('updatedAt', updatedAfter, '$gte');
   addDateFilter('updatedAt', updatedBefore, '$lte');
-  addDateFilter('deadline', deadlineAfter, '$gte');
-  addDateFilter('deadline', deadlineBefore, '$lte');
 
   // ID array filters
   if (ids) {
@@ -300,7 +296,14 @@ const createGig = async (req, res, next) => {
     }
 
     const sanitizedData = sanitizeGigInput(req.body);
-    
+     if (!sanitizedData.subcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory is required',
+        code: 'SUBCATEGORY_REQUIRED',
+        requestId
+      });
+    }    
     if (!mongoose.Types.ObjectId.isValid(sanitizedData.projectCategory)) {
       return res.status(400).json({
         success: false,
@@ -322,7 +325,19 @@ const createGig = async (req, res, next) => {
         requestId
       });
     }
-
+const subcategory = await Category.findOne({ 
+      _id: sanitizedData.subcategory,
+      parentCategory: sanitizedData.projectCategory 
+    });
+    
+    if (!subcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory not found or does not belong to the selected category',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
     // Validate subcategory if provided
     if (sanitizedData.subcategory) {
       const subcategory = await Category.findOne({ 
@@ -529,8 +544,6 @@ const getGigs = async (req, res, next) => {
       createdBefore,
       updatedAfter,
       updatedBefore,
-      deadlineAfter,
-      deadlineBefore,
       ids,
       excludeIds,
       sort = 'createdAt',
@@ -578,8 +591,6 @@ const getGigs = async (req, res, next) => {
       createdBefore,
       updatedAfter,
       updatedBefore,
-      deadlineAfter,
-      deadlineBefore,
       ids,
       excludeIds,
       showAll: showAllFlag
@@ -593,7 +604,7 @@ const getGigs = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['budget', 'createdAt', 'updatedAt', 'deadline', 'urgency', 'title'];
+    const allowedSortFields = ['budget', 'createdAt', 'updatedAt','urgency', 'title'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
@@ -1079,7 +1090,7 @@ const getGigById = async (req, res, next) => {
     delete safeGig.deletedBy;
     delete safeGig.version;
 
-    ['createdAt', 'updatedAt', 'deadline'].forEach(dateField => {
+    ['createdAt', 'updatedAt'].forEach(dateField => {
       if (safeGig[dateField]) {
         try {
           if (safeGig[dateField] instanceof Date) {
@@ -1187,7 +1198,15 @@ const updateGig = async (req, res, next) => {
     }
 
     const sanitizedData = sanitizeGigInput(req.body);
-    
+    if (sanitizedData.subcategory !== undefined && 
+        (sanitizedData.subcategory === '' || sanitizedData.subcategory === null)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory is required',
+        code: 'SUBCATEGORY_REQUIRED',
+        requestId
+      });
+    }
     // Handle empty assignedTo - set to null instead of empty string
     if (sanitizedData.assignedTo === '' || sanitizedData.assignedTo === null) {
       sanitizedData.assignedTo = null;
@@ -1198,10 +1217,7 @@ const updateGig = async (req, res, next) => {
       sanitizedData.subcategory = null;
     }
     
-    // Handle empty deadline
-    if (sanitizedData.deadline === '' || sanitizedData.deadline === null) {
-      sanitizedData.deadline = null;
-    }
+   
     
     if (!isAdmin) {
       delete sanitizedData.status;
@@ -1229,8 +1245,7 @@ const updateGig = async (req, res, next) => {
         });
       }
     }
-
-    if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
+if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
       const subcategory = await Category.findOne({ 
         _id: sanitizedData.subcategory,
         parentCategory: sanitizedData.projectCategory || gig.projectCategory 
@@ -1241,6 +1256,16 @@ const updateGig = async (req, res, next) => {
           success: false,
           message: 'Subcategory not found or does not belong to the category',
           code: 'SUBCATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
+    } else if (sanitizedData.subcategory === undefined) {
+      // If subcategory is not being updated, ensure it exists
+      if (!gig.subcategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory is required',
+          code: 'SUBCATEGORY_REQUIRED',
           requestId
         });
       }
@@ -2365,7 +2390,7 @@ const exportGigs = async (req, res, next) => {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
         'Category', 'Status', 'Urgency', 'Visibility', 'Created By',
-        'Assigned To', 'Created At', 'Updated At', 'Deadline',
+        'Assigned To', 'Created At', 'Updated At',
         'Skills Required', 'Deliverables'
       ];
 
@@ -2384,7 +2409,6 @@ const exportGigs = async (req, res, next) => {
         gig.assignedTo?.name || '',
         new Date(gig.createdAt).toISOString(),
         new Date(gig.updatedAt).toISOString(),
-        gig.deadline ? new Date(gig.deadline).toISOString() : '',
         `"${(gig.skillsRequired || []).join(', ').replace(/"/g, '""')}"`,
         `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`
       ]);
