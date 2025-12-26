@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const Service = require('../models/services.model.js');
 const Category = require('../models/category.model.js');
-const User = require('../models/user.model.js');
+const Subcategory = require('../models/subcategory.model.js');
 const { sanitizeHtml } = require('../utils/sanitize.js');
 const { 
   processUploadToCloudinary, 
@@ -380,12 +380,11 @@ const createService = async (req, res, next) => {
     }
 
     // Verify subcategory belongs to category
-    const subcategory = await Category.findOne({ 
-      _id: sanitizedData.subcategory, 
-      isActive: true,
-      parentCategory: sanitizedData.category 
-    });
-    
+    const subcategory = await Subcategory.findOne({ 
+  _id: sanitizedData.subcategory, 
+  isActive: true,
+  category: sanitizedData.category 
+});
     if (!subcategory) {
       return res.status(400).json({
         success: false,
@@ -1397,11 +1396,11 @@ const updateService = async (req, res, next) => {
     // Only validate subcategory if it's being changed and not null
     if (sanitizedData.subcategory && sanitizedData.subcategory !== (service.subcategory?.toString() || '')) {
       // Validate subcategory belongs to category
-      const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory, 
-        isActive: true,
-        parentCategory: sanitizedData.category || service.category 
-      });
+      const subcategory = await Subcategory.findOne({ 
+  _id: sanitizedData.subcategory, 
+  isActive: true,
+  category: sanitizedData.category || service.category 
+});
       
       if (!subcategory) {
         await cleanupUploadedFiles(uploadedFiles);

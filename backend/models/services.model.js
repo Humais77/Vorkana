@@ -70,15 +70,21 @@ const serviceSchema = new mongoose.Schema({
   },
   // In service.model.js - Update the subcategory field
 subcategory: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    index: true,
-    // REMOVE required: true OR make it conditional
-    required: function() {
-      // Only require subcategory for active services, not for deletion
-      return this.status !== 'suspended' && this.status !== 'deleted';
-    }
-  },
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Subcategory', // Changed from 'Category' to 'Subcategory'
+  index: true,
+  validate: {
+    validator: async function(v) {
+      if (!v) return true;
+      const Subcategory = mongoose.model('Subcategory');
+      const subcategory = await Subcategory.findById(v);
+      return subcategory && subcategory.isActive && 
+             subcategory.category.equals(this.category);
+    },
+    message: 'Invalid or inactive subcategory, or does not belong to the selected category'
+  }
+},
+
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -493,25 +499,27 @@ serviceSchema.pre('save', async function () {
   }
 });
 
-serviceSchema.post('save', async function (doc) {
-  try {
-    const Category = mongoose.model('Category');
-
-    if (doc.isNew && doc.status === 'active') {
-      await Category.incrementServicesCount(doc.category);
-    } else if (this.isModified('status')) {
-      const wasActive = this._originalStatus === 'active';
-      const isNowActive = doc.status === 'active';
-
-      if (wasActive && !isNowActive) {
-        await Category.decrementServicesCount(doc.category);
-      } else if (!wasActive && isNowActive) {
-        await Category.incrementServicesCount(doc.category);
+serviceSchema.pre('save', async function() {
+  // Validate category-subcategory relationship if subcategory exists
+  if (this.subcategory && this.category) {
+    try {
+      const Subcategory = mongoose.model('Subcategory');
+      const subcategory = await Subcategory.findOne({
+        _id: this.subcategory,
+        category: this.category,
+        isActive: true
+      });
+     
+      if (!subcategory) {
+        const error = new Error('Subcategory does not belong to the selected category');
+        error.name = 'ValidationError';
+        throw error;  // Throw instead of calling next(error)
       }
+    } catch (error) {
+      throw error;  // Re-throw any DB errors or the validation error
     }
-  } catch (error) {
-    console.error('Error updating category service count:', error);
   }
+  // No need to call next() in async middleware without parameter
 });
 
 serviceSchema.post('findOneAndDelete', async function (doc) {
