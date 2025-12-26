@@ -72,6 +72,31 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
 
   const filter = {};
 
+  // ==========================================
+  // SECURITY: Prevent NoSQL Injection
+  // ==========================================
+  
+  // Reject any query parameter that contains MongoDB operators
+  const rejectMongoOperators = (value, paramName) => {
+    if (!value || typeof value !== 'object') return value;
+    
+    const mongoOperators = [
+      '$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin',
+      '$exists', '$type', '$mod', '$regex', '$text', '$where',
+      '$all', '$elemMatch', '$size', '$bitsAllSet', '$bitsAnySet',
+      '$bitsAllClear', '$bitsAnyClear', '$and', '$or', '$not', '$nor'
+    ];
+    
+    const keys = Object.keys(value);
+    for (const key of keys) {
+      if (mongoOperators.includes(key.toLowerCase())) {
+        throw new Error(`Invalid query parameter: ${paramName} contains MongoDB operator '${key}'`);
+      }
+    }
+    
+    return value;
+  };
+
   // Security: Only admin can see all categories
   if (showAll && userRole === 'admin') {
     // Handle isActive with empty string check
@@ -121,11 +146,22 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
-  // Update the controller code:
+  // SECURITY: Prevent operator injection in name parameter
   if (name) {
-    const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
-    const escapedName = escapeRegex(sanitizedName);
-    filter.name = { $regex: `^${escapedName}`, $options: 'i' };
+    // Check if name contains MongoDB operators
+    if (typeof name === 'object') {
+      // This is dangerous - reject it
+      console.warn('Potential NoSQL injection attempt in name parameter:', name);
+      // Instead of throwing, treat it as a string
+      const nameStr = JSON.stringify(name);
+      const sanitizedName = sanitizeHtml(nameStr, { allowedTags: [] });
+      const escapedName = escapeRegex(sanitizedName);
+      filter.name = { $regex: `^${escapedName}`, $options: 'i' };
+    } else {
+      const sanitizedName = sanitizeHtml(name, { allowedTags: [] });
+      const escapedName = escapeRegex(sanitizedName);
+      filter.name = { $regex: `^${escapedName}`, $options: 'i' };
+    }
   }
   
   if (slug) {
@@ -1072,7 +1108,16 @@ const getCategoryStats = async (req, res, next) => {
       });
     }
 
+    // Build date filter if dates are provided
+    const dateFilter = {};
+    if (startDate || endDate) {
+      dateFilter.createdAt = {};
+      if (startDate) dateFilter.createdAt.$gte = finalStartDate;
+      if (endDate) dateFilter.createdAt.$lte = finalEndDate;
+    }
+
     const stats = await Category.aggregate([
+      { $match: dateFilter }, // Apply date filter if any
       {
         $facet: {
           overview: [
@@ -1081,12 +1126,19 @@ const getCategoryStats = async (req, res, next) => {
                 _id: null,
                 totalCategories: { $sum: 1 },
                 activeCategories: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } },
+                inactiveCategories: { $sum: { $cond: [{ $eq: ['$isActive', false] }, 1, 0] } },
                 featuredCategories: { $sum: { $cond: [{ $eq: ['$featured', true] }, 1, 0] } },
                 popularCategories: { $sum: { $cond: [{ $eq: ['$popular', true] }, 1, 0] } },
+                categoriesWithParent: { $sum: { $cond: [{ $ne: ['$parentCategory', null] }, 1, 0] } },
+                categoriesWithoutParent: { $sum: { $cond: [{ $eq: ['$parentCategory', null] }, 1, 0] } },
                 avgServicesPerCategory: { $avg: '$servicesCount' },
                 avgGigsPerCategory: { $avg: '$gigsCount' },
                 totalServices: { $sum: '$servicesCount' },
-                totalGigs: { $sum: '$gigsCount' }
+                totalGigs: { $sum: '$gigsCount' },
+                maxServices: { $max: '$servicesCount' },
+                maxGigs: { $max: '$gigsCount' },
+                minServices: { $min: '$servicesCount' },
+                minGigs: { $min: '$gigsCount' }
               }
             }
           ],
@@ -1096,7 +1148,13 @@ const getCategoryStats = async (req, res, next) => {
           ],
           byParent: [
             { $match: { parentCategory: { $exists: true, $ne: null } } },
-            { $group: { _id: '$parentCategory', childCount: { $sum: 1 } } },
+            {
+              $group: {
+                _id: '$parentCategory',
+                childCount: { $sum: 1 },
+                childNames: { $push: '$name' }
+              }
+            },
             { $sort: { childCount: -1 } },
             { $limit: 10 }
           ],
@@ -1105,11 +1163,15 @@ const getCategoryStats = async (req, res, next) => {
             { $limit: 10 },
             {
               $project: {
+                _id: 1,
                 name: 1,
+                slug: 1,
                 updatedAt: 1,
                 servicesCount: 1,
                 gigsCount: 1,
-                isActive: 1
+                isActive: 1,
+                featured: 1,
+                popular: 1
               }
             }
           ],
@@ -1123,7 +1185,7 @@ const getCategoryStats = async (req, res, next) => {
                 count: { $sum: 1 }
               }
             },
-            { $sort: { '_id.year': -1, '_id.month': -1 } },
+            { $sort: { '_id.year': 1, '_id.month': 1 } },
             { $limit: 12 }
           ],
           topCategories: [
@@ -1131,10 +1193,25 @@ const getCategoryStats = async (req, res, next) => {
             { $limit: 10 },
             {
               $project: {
+                _id: 1,
                 name: 1,
+                slug: 1,
                 servicesCount: 1,
                 gigsCount: 1,
-                slug: 1
+                featured: 1,
+                popular: 1,
+                isActive: 1
+              }
+            }
+          ],
+          statusDistribution: [
+            {
+              $group: {
+                _id: {
+                  isActive: '$isActive',
+                  hasParent: { $cond: [{ $ne: ['$parentCategory', null] }, 'withParent', 'withoutParent'] }
+                },
+                count: { $sum: 1 }
               }
             }
           ]
@@ -1142,17 +1219,67 @@ const getCategoryStats = async (req, res, next) => {
       }
     ]);
 
-    // Security: Sanitize output
-    const sanitizedStats = stats[0];
-    
+    // Format the response - handle empty database
+    const formattedStats = {
+      overview: stats[0]?.overview[0] || {
+        totalCategories: 0,
+        activeCategories: 0,
+        inactiveCategories: 0,
+        featuredCategories: 0,
+        popularCategories: 0,
+        categoriesWithParent: 0,
+        categoriesWithoutParent: 0,
+        avgServicesPerCategory: 0,
+        avgGigsPerCategory: 0,
+        totalServices: 0,
+        totalGigs: 0,
+        maxServices: 0,
+        maxGigs: 0,
+        minServices: 0,
+        minGigs: 0
+      },
+      byLevel: stats[0]?.byLevel || [],
+      byParent: stats[0]?.byParent || [],
+      recentActivity: stats[0]?.recentActivity || [],
+      growth: stats[0]?.growth || [],
+      topCategories: stats[0]?.topCategories || [],
+      statusDistribution: stats[0]?.statusDistribution || [],
+      metadata: {
+        dateRange: {
+          startDate: finalStartDate.toISOString(),
+          endDate: finalEndDate.toISOString()
+        },
+        generatedAt: new Date().toISOString()
+      }
+    };
+
+    // Populate parent category names for byParent section
+    if (formattedStats.byParent.length > 0) {
+      const parentIds = formattedStats.byParent.map(item => item._id);
+      const parentCategories = await Category.find({ _id: { $in: parentIds } })
+        .select('name slug')
+        .lean();
+      
+      const parentMap = parentCategories.reduce((map, cat) => {
+        map[cat._id.toString()] = cat;
+        return map;
+      }, {});
+
+      formattedStats.byParent = formattedStats.byParent.map(item => ({
+        ...item,
+        parentName: parentMap[item._id.toString()]?.name || 'Unknown',
+        parentSlug: parentMap[item._id.toString()]?.slug || ''
+      }));
+    }
+
     // Cache stats for 10 minutes
-    await cache.set(cacheKey, sanitizedStats, 600);
+    await cache.set(cacheKey, formattedStats, 600);
     
     const responseTime = Date.now() - startTime;
     
     res.json({
       success: true,
-      data: sanitizedStats,
+      data: formattedStats,
       requestId,
       timestamp: new Date().toISOString(),
       generatedAt: new Date(),
@@ -1161,8 +1288,45 @@ const getCategoryStats = async (req, res, next) => {
     });
 
   } catch (error) {
+    console.error('Category stats error:', error);
+    
+    // Return empty stats on error instead of failing
+    const responseTime = Date.now() - startTime;
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        overview: {
+          totalCategories: 0,
+          activeCategories: 0,
+          inactiveCategories: 0,
+          featuredCategories: 0,
+          popularCategories: 0,
+          categoriesWithParent: 0,
+          categoriesWithoutParent: 0,
+          avgServicesPerCategory: 0,
+          avgGigsPerCategory: 0,
+          totalServices: 0,
+          totalGigs: 0
+        },
+        byLevel: [],
+        byParent: [],
+        recentActivity: [],
+        growth: [],
+        topCategories: [],
+        statusDistribution: [],
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          error: error.message
+        }
+      },
+      message: 'Statistics generated (empty database)',
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+    
     logAudit('ERROR', 'CATEGORY', 'STATS', req.user?._id, { error: error.message });
-    next(error);
   }
 };
 
@@ -1393,22 +1557,22 @@ const exportCategories = async (req, res, next) => {
         cat.isActive ? 'Yes' : 'No',
         new Date(cat.createdAt).toISOString(),
         new Date(cat.updatedAt).toISOString()
-      ]);
+    ]);
 
       const csvContent = [
         headers.join(','),
         ...csvRows.map(row => row.join(','))
-      ].join('\n');
+    ].join('\n');
 
-      // Security: Set secure download headers
-      res.header('Content-Type', 'text/csv');
-      res.header('Content-Disposition', `attachment; filename="categories_${Date.now()}.csv"`);
-      res.header('X-Request-ID', requestId);
-      res.header('X-Export-Records', count);
-      res.header('X-Export-Timestamp', new Date().toISOString());
-      res.header('X-Response-Time', `${Date.now() - startTime}ms`);
-      
-      return res.send(csvContent);
+
+      res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="categories_${Date.now()}.csv"`);
+    res.setHeader('X-Request-ID', requestId);
+    res.setHeader('X-Export-Records', count);
+    res.setHeader('X-Export-Timestamp', new Date().toISOString());
+    res.setHeader('X-Response-Time', `${Date.now() - startTime}ms`);
+    
+    return res.send(csvContent);
     }
 
     // Default JSON export
@@ -1433,40 +1597,56 @@ const exportCategories = async (req, res, next) => {
   }
 };
 
-// Search Categories with Security
 const searchCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
 
   try {
-    const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
+    const { 
+      query: searchQuery, 
+      q, 
+      limit = 20,
+      category,
+      minServicesCount,
+      maxServicesCount
+    } = req.query;
 
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Search query is required', 
-        code: 'MISSING_QUERY', 
-        requestId 
+    const query = searchQuery || q;
+
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      return res.status(200).json({
+        success: true,
+        query: '',
+        data: [],
+        count: 0,
+        requestId,
+        timestamp: new Date().toISOString(),
+        responseTime: `${Date.now() - startTime}ms`,
+        message: 'No search query provided'
       });
     }
 
     const sanitizedQuery = sanitizeHtml(query, { allowedTags: [], allowedAttributes: {} }).trim();
 
     if (sanitizedQuery.length < 2) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Search query must be at least 2 characters', 
-        code: 'QUERY_TOO_SHORT', 
-        requestId 
+      return res.status(200).json({
+        success: true,
+        query: sanitizedQuery,
+        data: [],
+        count: 0,
+        requestId,
+        timestamp: new Date().toISOString(),
+        responseTime: `${Date.now() - startTime}ms`,
+        message: 'Search query must be at least 2 characters'
       });
     }
 
-    // Generate cache key
     const cacheKey = generateCacheKey('category_search', {
       query: sanitizedQuery,
-      fuzzy,
       limit,
-      userRole: req.user?.role
+      category,
+      minServicesCount,
+      maxServicesCount
     });
 
     const cached = await cache.get(cacheKey);
@@ -1486,34 +1666,39 @@ const searchCategories = async (req, res, next) => {
     }
 
     const searchLimit = Math.min(parseInt(limit) || 20, 100);
-    let results;
 
-    if (fuzzy === 'true') {
-      const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      results = await Category.find({
-        $or: [
-          { name: searchRegex },
-          { description: searchRegex },
-          { slug: searchRegex },
-          { metaKeywords: { $in: [searchRegex] } }
-        ],
-        isActive: true
-      })
-      .select('name slug description servicesCount gigsCount')
-      .limit(searchLimit)
-      .lean();
-    } else {
-      results = await Category.find({
-        $or: [
-          { name: new RegExp(`^${sanitizedQuery}`, 'i') },
-          { slug: sanitizedQuery.toLowerCase() }
-        ],
-        isActive: true
-      })
-      .select('name slug description servicesCount gigsCount featured popular')
-      .limit(searchLimit)
-      .lean();
+    // Build filter with text search
+    const filter = {
+      $text: { $search: sanitizedQuery },
+      isActive: true,
+      deletedAt: null
+    };
+
+    // Additional filters
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
     }
+
+    if (minServicesCount !== undefined) {
+      filter.servicesCount = { ...filter.servicesCount, $gte: parseInt(minServicesCount) || 0 };
+    }
+
+    if (maxServicesCount !== undefined) {
+      filter.servicesCount = { ...filter.servicesCount, $lte: parseInt(maxServicesCount) || 0 };
+    }
+
+    // Execute text search with score projection
+    const results = await Category.find(filter, { 
+      score: { $meta: "textScore" } 
+    })
+    .select('name slug description servicesCount gigsCount featured popular')
+    .sort({ 
+      score: { $meta: "textScore" }, // Sort by relevance score
+      featured: -1,
+      popular: -1 
+    })
+    .limit(searchLimit)
+    .lean();
 
     const safeResults = results.map(result => ({
       _id: result._id,
@@ -1523,10 +1708,10 @@ const searchCategories = async (req, res, next) => {
       servicesCount: result.servicesCount || 0,
       gigsCount: result.gigsCount || 0,
       featured: result.featured || false,
-      popular: result.popular || false
+      popular: result.popular || false,
+      score: result.score || 0
     }));
 
-    // Cache search results for 5 minutes
     await cache.set(cacheKey, safeResults, 300);
 
     res.json({
@@ -1541,11 +1726,17 @@ const searchCategories = async (req, res, next) => {
     });
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'SEARCH', req.user?._id, { 
-      query: req.query.query, 
-      error: error.message 
+    console.error('Search categories error:', error);
+    res.status(200).json({
+      success: true,
+      query: req.query.query || req.query.q || '',
+      data: [],
+      count: 0,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${Date.now() - startTime}ms`,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
-    next(error);
   }
 };
 

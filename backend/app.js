@@ -35,6 +35,7 @@ const security = require('./middleware/security.js');
 
 const authRoutes = require('./routes/auth.route.js');
 const categoryRoutes = require('./routes/category.route.js');
+const subcategoryRoutes = require('./routes/subcategory.route.js');
 const serviceRoutes = require('./routes/services.route.js');
 const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
@@ -254,6 +255,7 @@ app.use(cacheControl(300));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
 app.use('/api/admin', adminRoutes);
