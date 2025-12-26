@@ -21,11 +21,6 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
     { name: 'Categories', path: '/admin/categories', icon: <FiFolder className="h-5 w-5" /> },
     { name: 'Services', path: '/admin/services', icon: <FiBriefcase className="h-5 w-5" /> },
     { name: 'Gigs', path: '/admin/gigs', icon: <FiGrid className="h-5 w-5" /> },
-    { separator: true },
-    { name: 'Analytics', path: '/admin/analytics', icon: <FiBarChart2 className="h-5 w-5" /> },
-    { name: 'Security', path: '/admin/security', icon: <FiShield className="h-5 w-5" /> },
-    { name: 'Activity Log', path: '/admin/activity', icon: <FiActivity className="h-5 w-5" /> },
-    { name: 'Settings', path: '/admin/settings', icon: <FiSettings className="h-5 w-5" /> },
   ];
 
   const handleLogout = () => {
@@ -36,7 +31,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
 
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile overlay - z-index 40 */}
       {isMobileOpen && (
         <div
           className="lg:hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-40"
@@ -44,14 +39,14 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar - z-index 45 (between overlay and header) */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
+        fixed lg:static inset-y-0 left-0
         w-64 bg-white border-r border-gray-200
         transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
         lg:translate-x-0 transition-transform duration-300 ease-in-out
         flex flex-col h-full shadow-lg lg:shadow-none
-        lg:z-30
+        z-45 lg:z-30
       `}>
         {/* Logo & Toggle */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
@@ -116,7 +111,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
           </ul>
         </nav>
 
-        {/* Logout & User - Make this sticky too */}
+        {/* Logout & User */}
         <div className="p-4 border-t border-gray-100 sticky bottom-0 bg-white z-10">
           <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 mb-4">
             <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">

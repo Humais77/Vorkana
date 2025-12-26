@@ -10,18 +10,46 @@ import MakeItHappen from './MakeItHappen'
 import AuthModal from '../components/AuthModal';
 import HowItWorks from '../components/HowItWorks'
 import LogoMakerBanner from './LogoMakerBanner'
+import { useState } from 'react'
+
 const Home = ({ onSignupClick, onSigninClick }) => {
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('signin'); // ← ADD THIS LINE
+
+  const openAuthModal = (tab = 'signin') => {
+    setActiveTab(tab);
+    setIsAuthModalOpen(true);
+  };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+    // Optional: reset tab when closing
+    // setActiveTab('signin');
+  };
+
   return (
     <div>
-      <Hero />
+      <Hero isAuthModalOpen={isAuthModalOpen} />
+
+      {isAuthModalOpen && (
+        <AuthModal
+          activeTab={activeTab}
+          onSwitchTab={setActiveTab}
+          onClose={closeAuthModal}
+        />
+      )}
+
       <CategoryGrid />
       <HowItWorks/>
       <PopularServices />
       <Testimonials />
       {/* <Stats /> */}
-      <MakeItHappen onSignupClick={onSignupClick} />
+      <MakeItHappen 
+        onSignupClick={() => openAuthModal('signup')} 
+        // or pass openAuthModal directly if needed
+      />
       <LogoMakerBanner/>
-      <CallToAction onSignupClick={onSignupClick} />
+      <CallToAction onSignupClick={() => openAuthModal('signup')} />
       <FAQSection />
     </div>
   );

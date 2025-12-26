@@ -44,10 +44,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   // Quick links with icons
   const quickLinks = [
     { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/all-gigs" },
-    { name: "Popular Services", icon: <TrendingUp className="w-4 h-4" />, path: "/services/popular" },
-    { name: "New Services", icon: <Sparkles className="w-4 h-4" />, path: "/services/new" },
-    { name: "Learn & Tutorials", icon: <BookOpen className="w-4 h-4" />, path: "/learn" },
-    { name: "Community Forum", icon: <MessageSquare className="w-4 h-4" />, path: "/community" }
+    { name: "Browse All Services", icon: <Briefcase className="w-4 h-4" />, path: "/services" },
   ];
 
   useEffect(() => {

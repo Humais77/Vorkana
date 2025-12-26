@@ -26,7 +26,6 @@ import AllGigsPage from './components/AllGigsPage';
 import AboutUsPage from './layouts/AboutUsPage';
 // Admin
 import ProtectedAdminRoute from './ProtectedAdminRoute';
-import AdminLogin from './AdminLogin';
 import AdminLayout from './layouts/pages/admin/AdminLayout';
 import AdminRoutes from './layouts/pages/admin/AdminRoutes';
 import VerifyEmail from './components/VerifyEmail';
@@ -58,6 +57,7 @@ import SearchResults from './layouts/pages/SearchResults';
 import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
 import PublicProfile from './layouts/pages/PublicProfile';
+import AllServicesPage from './components/AllServicesPage';
 
 const App = () => {
   useAuthSync();
@@ -128,6 +128,7 @@ const App = () => {
             <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/services" element={<ServiceListingPage />} />
             <Route path="/all-gigs" element={<AllGigsPage />} />
+            <Route path="/all-services" element={<AllServicesPage />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
 
@@ -156,8 +157,6 @@ const App = () => {
             <Route path="/faq" element={<FaqPage />} />
             <Route path="/search" element={<SearchResults />} />
           </Route>
-
-          <Route path="/admin/login" element={<AdminLogin />} />
 
           <Route path="/admin/*" element={
             <ProtectedAdminRoute>

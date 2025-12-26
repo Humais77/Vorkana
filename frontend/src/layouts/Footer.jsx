@@ -8,9 +8,7 @@ const Footer = () => {
       title: "Discover",
       links: [
         { label: "Browse Services", path: "/services", source: "footer", section: "discover" },
-        { label: "Find Freelancers", path: "/freelancers", source: "footer", section: "discover" },
         { label: "Popular Categories", path: "/categories", source: "footer", section: "discover" },
-        { label: "Top Rated", path: "/top-rated", source: "footer", section: "discover" },
       ]
     },
     company: {
@@ -18,8 +16,6 @@ const Footer = () => {
       links: [
         { label: "About Us", path: "/about", source: "footer", section: "company" },
         { label: "How It Works", path: "/how-it-works", source: "footer", section: "company" },
-        { label: "Careers", path: "/careers", source: "footer", section: "company" },
-        { label: "Blog", path: "/blog", source: "footer", section: "company" },
       ]
     },
     support: {
