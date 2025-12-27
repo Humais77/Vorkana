@@ -111,7 +111,6 @@ const GigListingsPage = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-      // Reset to page 1 when search changes
       if (searchTerm !== searchQuery) {
         setSearchParams(prev => {
           if (searchTerm.trim()) {
@@ -137,13 +136,8 @@ const GigListingsPage = () => {
 
     const params = new URLSearchParams();
     
-    // Always set page first
     if (page !== '1') params.set('page', page);
-    
-    // Set search term if present
     if (debouncedSearchTerm.trim()) params.set('q', debouncedSearchTerm.trim());
-    
-    // Set other filters
     if (selectedCategory && selectedCategory !== 'All') params.set('category', selectedCategory);
     if (selectedStatus && selectedStatus !== 'open') params.set('status', selectedStatus);
     if (budgetRange[0] > 0) params.set('minBudget', budgetRange[0]);
@@ -151,7 +145,6 @@ const GigListingsPage = () => {
     if (selectedUrgency) params.set('urgency', selectedUrgency);
     if (sortBy !== 'createdAt') params.set('sort', sortBy);
     
-    // Update URL
     setSearchParams(params, { replace: true });
   }, [selectedCategory, selectedStatus, budgetRange, selectedUrgency, sortBy, page, debouncedSearchTerm, setSearchParams, isInitialLoad]);
 
@@ -163,7 +156,6 @@ const GigListingsPage = () => {
     if (trimmedTerm && trimmedTerm.length >= 2) {
       setDebouncedSearchTerm(trimmedTerm);
     } else if (!trimmedTerm) {
-      // Clear search
       setDebouncedSearchTerm('');
       setSearchTerm('');
       setSearchParams(prev => {
@@ -256,7 +248,6 @@ const GigListingsPage = () => {
   const handleLike = useCallback(async (gigId, e) => {
     e.stopPropagation();
     try {
-      // This would be your actual like API call
       setFavorites(prev => 
         prev.includes(gigId) 
           ? prev.filter(id => id !== gigId)
@@ -331,22 +322,18 @@ const GigListingsPage = () => {
 
   // Get gig thumbnail
   const getGigThumbnail = useCallback((gig) => {
-    // First priority: Gig thumbnail
     if (gig.thumbnail?.url) {
       return gig.thumbnail.url;
     }
     
-    // Second priority: First image from images array
     if (gig.images && gig.images.length > 0 && gig.images[0]?.url) {
       return gig.images[0].url;
     }
     
-    // Third priority: Attachments
     if (gig.attachments && gig.attachments.length > 0) {
       return gig.attachments[0];
     }
     
-    // Fourth priority: Category-specific default images
     const categoryName = gig.projectCategory?.name?.toLowerCase() || '';
     if (categoryName.includes('design') || categoryName.includes('art')) {
       return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
@@ -355,7 +342,6 @@ const GigListingsPage = () => {
     } else if (categoryName.includes('writing') || categoryName.includes('content')) {
       return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     } else {
-      // Default generic gig image
       return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     }
   }, []);
@@ -370,7 +356,6 @@ const GigListingsPage = () => {
       };
     }
     
-    // Fallback
     return {
       username: 'Client',
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
@@ -441,25 +426,25 @@ const GigListingsPage = () => {
       ogImage="https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
     >
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-white">
         {/* Hero Section */}
-        <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 text-white py-16 px-4">
+        <div className="relative bg-gradient-to-r from-gray-900 to-black text-white py-16 px-4">
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <div className="flex items-center justify-center mb-6">
                 <button
                   onClick={goBack}
-                  className="flex items-center gap-2 text-white/80 hover:text-white transition-colors mr-4"
+                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors mr-4"
                 >
-                  <ArrowLeft className="w-5 h-5" />
+                  <ArrowLeft className="w-4 h-4" />
                   Back
                 </button>
-                <h1 className="text-5xl md:text-6xl font-bold mb-4">
+                <h1 className="text-4xl md:text-5xl font-bold mb-4">
                   Find Your Next Gig
                 </h1>
               </div>
-              <p className="text-xl md:text-2xl text-blue-100 mb-8 max-w-3xl mx-auto">
+              <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
                 Discover freelance projects that match your skills and get paid for your expertise
               </p>
               
@@ -467,11 +452,11 @@ const GigListingsPage = () => {
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
+                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                       type="text"
                       placeholder="Search for gigs by skill or keyword (min. 2 characters)"
-                      className="w-full pl-12 pr-24 py-4 rounded-xl text-gray-900 text-lg focus:outline-none focus:ring-4 focus:ring-blue-300 shadow-lg"
+                      className="w-full pl-12 pr-24 py-3 rounded-lg text-gray-900 text-base focus:outline-none focus:ring-2 focus:ring-gray-800"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       aria-label="Search for gigs"
@@ -479,12 +464,11 @@ const GigListingsPage = () => {
                     />
                     <button 
                       type="submit"
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center min-w-[80px]"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white px-5 py-2 rounded-md hover:bg-black transition-colors flex items-center justify-center min-w-[80px]"
                       disabled={isLoadingGigs}
-                      aria-label="Search button"
                     >
                       {isLoadingGigs ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         'Search'
                       )}
@@ -494,17 +478,16 @@ const GigListingsPage = () => {
                 
                 {/* Quick Categories */}
                 {!isLoadingCategories && categories.length > 1 && (
-                  <div className="flex flex-wrap justify-center gap-3 mt-6" role="navigation" aria-label="Quick categories">
+                  <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
                       <button
                         key={category._id}
                         onClick={() => handleCategoryChange(category._id)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                           selectedCategory === category._id
-                            ? "bg-white text-blue-600"
-                            : "bg-white/20 hover:bg-white/30 text-white"
+                            ? "bg-white text-gray-900"
+                            : "bg-white/10 hover:bg-white/20 text-white"
                         }`}
-                        aria-label={`Browse ${category.name} gigs`}
                       >
                         {category.icon} {category.name}
                       </button>
@@ -520,7 +503,7 @@ const GigListingsPage = () => {
         <div className="max-w-7xl mx-auto px-4 py-8">
           {/* Error Display */}
           {apiError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6" role="alert">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <div className="flex items-center text-red-800">
                 <AlertCircle className="w-5 h-5 mr-2" />
                 <span className="font-medium">Error loading gigs</span>
@@ -533,7 +516,7 @@ const GigListingsPage = () => {
                   setApiError(null);
                   refetchGigs();
                 }}
-                className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm"
+                className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm"
               >
                 Retry
               </button>
@@ -541,27 +524,24 @@ const GigListingsPage = () => {
           )}
 
           {/* Filters and Sorting Bar */}
-          <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                  aria-expanded={showFilters}
-                  aria-controls="filters-section"
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
                 >
-                  <Filter className="w-5 h-5" />
+                  <Filter className="w-4 h-4" />
                   Filters
                   {showFilters && <X className="w-4 h-4" />}
                 </button>
                 
-                <div className="hidden md:flex items-center gap-4">
-                  <span className="text-gray-600">Sort by:</span>
+                <div className="hidden md:flex items-center gap-3">
+                  <span className="text-gray-600 text-sm">Sort by:</span>
                   <select
                     value={sortBy}
                     onChange={handleSortChange}
-                    className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    aria-label="Sort gigs by"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-800 bg-white text-sm"
                   >
                     {sortOptions.map(option => (
                       <option key={option.value} value={option.value}>
@@ -573,13 +553,13 @@ const GigListingsPage = () => {
               </div>
               
               <div className="flex items-center gap-4">
-                <span className="text-gray-600">
+                <span className="text-gray-600 text-sm">
                   {totalGigs} {debouncedSearchTerm ? 'results' : 'gigs'} found
                 </span>
                 {(searchTerm || selectedCategory !== 'All' || budgetRange[0] > 0 || budgetRange[1] < 100000 || selectedUrgency || selectedStatus !== 'open' || sortBy !== 'createdAt') && (
                   <button
                     onClick={resetFilters}
-                    className="px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                    className="px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
                   >
                     Reset Filters
                   </button>
@@ -589,38 +569,32 @@ const GigListingsPage = () => {
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div id="filters-section" className="mt-6 pt-6 border-t grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Budget Range: ${budgetRange[0]} - ${budgetRange[1]}
                   </label>
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100000"
-                        step="100"
-                        value={budgetRange[0]}
-                        onChange={(e) => handleBudgetRangeChange(0, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        aria-label="Minimum budget filter"
-                      />
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100000"
-                        step="100"
-                        value={budgetRange[1]}
-                        onChange={(e) => handleBudgetRangeChange(1, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        aria-label="Maximum budget filter"
-                      />
-                    </div>
+                  <div className="space-y-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100000"
+                      step="100"
+                      value={budgetRange[0]}
+                      onChange={(e) => handleBudgetRangeChange(0, e.target.value)}
+                      className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="100000"
+                      step="100"
+                      value={budgetRange[1]}
+                      onChange={(e) => handleBudgetRangeChange(1, e.target.value)}
+                      className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
+                    />
                   </div>
-                  <div className="flex justify-between text-sm text-gray-500 mt-2">
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
                     <span>$0</span>
                     <span>$100,000</span>
                   </div>
@@ -630,18 +604,16 @@ const GigListingsPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Categories
                   </label>
-                  <div className="max-h-48 overflow-y-auto space-y-1" role="listbox">
+                  <div className="max-h-40 overflow-y-auto space-y-1">
                     {categories.map(category => (
                       <button
                         key={category._id}
                         onClick={() => handleCategoryChange(category._id)}
-                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
                           selectedCategory === category._id
-                            ? "bg-blue-600 text-white"
+                            ? "bg-gray-900 text-white"
                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
-                        role="option"
-                        aria-selected={selectedCategory === category._id}
                       >
                         <span className="mr-2">{category.icon}</span>
                         {category.name}
@@ -659,9 +631,9 @@ const GigListingsPage = () => {
                       <button
                         key={option.value}
                         onClick={() => handleUrgencyChange(option.value)}
-                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
                           selectedUrgency === option.value
-                            ? "bg-blue-600 text-white"
+                            ? "bg-gray-900 text-white"
                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
                       >
@@ -680,9 +652,9 @@ const GigListingsPage = () => {
                       <button
                         key={option.value}
                         onClick={() => handleStatusChange(option.value)}
-                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
                           selectedStatus === option.value
-                            ? "bg-blue-600 text-white"
+                            ? "bg-gray-900 text-white"
                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
                       >
@@ -699,7 +671,7 @@ const GigListingsPage = () => {
           {isLoadingGigs && (
             <div className="flex justify-center items-center py-20">
               <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+                <Loader2 className="w-10 h-10 animate-spin text-gray-900 mx-auto mb-3" />
                 <p className="text-gray-600">
                   {debouncedSearchTerm ? 'Searching gigs...' : 'Loading gigs...'}
                 </p>
@@ -710,7 +682,7 @@ const GigListingsPage = () => {
           {/* Gigs Grid */}
           {!isLoadingGigs && gigs.length > 0 && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
                 {gigs.map((gig) => {
                   const clientInfo = getClientInfo(gig);
                   const thumbnailUrl = getGigThumbnail(gig);
@@ -719,29 +691,28 @@ const GigListingsPage = () => {
                   return (
                     <article
                       key={gig._id}
-                      className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-200 hover:border-blue-300 group cursor-pointer"
+                      className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer"
                       onClick={() => handleViewDetails(gig._id, gig.slug)}
                     >
                       {/* Gig Image */}
-                      <div className="relative h-48 overflow-hidden">
+                      <div className="relative h-40 overflow-hidden">
                         <img
                           src={thumbnailUrl}
                           alt={gig.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             e.target.src = 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
                           }}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                         
                         {/* Favorite Button */}
                         <button
                           onClick={(e) => handleLike(gig._id, e)}
-                          className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors z-10"
-                          aria-label={`Add ${gig.title} to favorites`}
+                          className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors"
                         >
                           <Heart
-                            className={`w-5 h-5 transition-colors ${
+                            className={`w-4 h-4 transition-colors ${
                               favorites.includes(gig._id)
                                 ? "fill-red-500 text-red-500"
                                 : "text-gray-600 hover:text-red-500"
@@ -751,46 +722,29 @@ const GigListingsPage = () => {
                         
                         {/* Urgency Badge */}
                         {gig.urgency === 'high' && (
-                          <div className="absolute top-4 left-4 bg-gradient-to-r from-red-500 to-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold">
+                          <div className="absolute top-3 left-3 bg-gray-900 text-white px-2 py-1 rounded text-xs font-bold">
                             <Zap className="w-3 h-3 inline mr-1" />
                             URGENT
-                          </div>
-                        )}
-                        
-                        {/* Budget Badge */}
-                        <div className="absolute bottom-4 left-4">
-                          <span className="px-3 py-2 bg-white/90 backdrop-blur-sm text-gray-900 font-bold rounded-lg shadow-sm">
-                            ${gig.budget || 'Negotiable'}
-                          </span>
-                        </div>
-                        
-                        {/* No Image Indicator */}
-                        {!gig.thumbnail?.url && !gig.images?.[0]?.url && !gig.attachments?.[0] && (
-                          <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
-                            <div className="text-center">
-                              <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                              <span className="text-gray-500 text-sm">No Image</span>
-                            </div>
                           </div>
                         )}
                       </div>
 
                       {/* Gig Content */}
-                      <div className="p-5">
+                      <div className="p-4">
                         {/* Client Info */}
-                        <div className="flex items-center gap-3 mb-4">
+                        <div className="flex items-center gap-2 mb-3">
                           <img
                             src={clientInfo.avatar}
                             alt={clientInfo.username}
-                            className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+                            className="w-8 h-8 rounded-full object-cover border border-gray-300"
                           />
                           <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-semibold text-gray-900 text-sm">
+                            <div className="flex items-center gap-1">
+                              <h4 className="font-medium text-gray-900 text-sm">
                                 {clientInfo.username}
                               </h4>
                               {clientInfo.verified && (
-                                <CheckCircle className="w-4 h-4 text-blue-500" aria-label="Verified client" />
+                                <CheckCircle className="w-3 h-3 text-gray-600" />
                               )}
                             </div>
                             <span className="text-xs text-gray-500">Client</span>
@@ -798,52 +752,31 @@ const GigListingsPage = () => {
                         </div>
 
                         {/* Gig Title & Description */}
-                        <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[56px]">
+                        <h3 className="font-bold text-gray-900 mb-2 line-clamp-1">
                           {gig.title}
                         </h3>
-                        <p className="text-gray-600 text-sm mb-4 line-clamp-2 min-h-[40px]">
+                        <p className="text-gray-600 text-sm mb-3 line-clamp-2 min-h-[40px]">
                           {gig.description || 'No description provided.'}
                         </p>
 
-                        {/* Skills Required */}
-                        {gig.skillsRequired && gig.skillsRequired.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-4">
-                            {gig.skillsRequired.slice(0, 3).map((skill, index) => (
-                              <span
-                                key={index}
-                                className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded"
-                              >
-                                {skill}
-                              </span>
-                            ))}
-                            {gig.skillsRequired.length > 3 && (
-                              <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
-                                +{gig.skillsRequired.length - 3} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-
                         {/* Gig Details */}
-                        <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+                        <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
                           <div className="flex items-center gap-1">
-                            <Clock className="w-4 h-4" />
+                            <Clock className="w-3 h-3" />
                             <span>{deliveryTime}</span>
                           </div>
-                          {gig.country && (
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-4 h-4" />
-                              <span>{gig.country}</span>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            <span className="font-bold text-gray-900">${gig.budget || 'Negotiable'}</span>
+                          </div>
                         </div>
 
                         {/* Status Badge */}
-                        <div className="mb-4">
+                        <div className="mb-3">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            gig.status === 'open' ? 'bg-green-100 text-green-800' :
-                            gig.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                            gig.status === 'assigned' ? 'bg-purple-100 text-purple-800' :
+                            gig.status === 'open' ? 'bg-gray-100 text-gray-800' :
+                            gig.status === 'in_progress' ? 'bg-blue-50 text-blue-800' :
+                            gig.status === 'assigned' ? 'bg-purple-50 text-purple-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {gig.status?.replace('_', ' ').toUpperCase() || 'OPEN'}
@@ -856,8 +789,7 @@ const GigListingsPage = () => {
                             e.stopPropagation();
                             handleViewDetails(gig._id, gig.slug);
                           }}
-                          className="w-full px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all hover:shadow-lg text-sm"
-                          aria-label={`View details for ${gig.title}`}
+                          className="w-full px-3 py-1.5 bg-gray-900 text-white font-medium rounded-md hover:bg-black transition-colors text-sm"
                         >
                           View Gig Details
                         </button>
@@ -869,33 +801,30 @@ const GigListingsPage = () => {
 
               {/* Pagination */}
               {totalGigs > 12 && (
-                <nav className="flex justify-center items-center gap-4 mb-12" aria-label="Gigs pagination">
+                <nav className="flex justify-center items-center gap-3 mb-8">
                   <button
                     onClick={() => handlePageChange(Math.max(1, parseInt(page) - 1))}
                     disabled={parseInt(page) === 1}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                    className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm ${
                       parseInt(page) === 1
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-900 text-white hover:bg-black'
                     }`}
-                    aria-label="Go to previous page"
                   >
-                    <ChevronDown className="w-4 h-4 rotate-90" />
+                    <ChevronDown className="w-3 h-3 rotate-90" />
                     Previous
                   </button>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {[1, 2, 3].map(num => (
                       <button
                         key={num}
                         onClick={() => handlePageChange(num)}
-                        className={`w-10 h-10 rounded-lg ${
+                        className={`w-8 h-8 rounded-md text-sm ${
                           parseInt(page) === num
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-gray-900 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
-                        aria-label={`Go to page ${num}`}
-                        aria-current={parseInt(page) === num ? 'page' : undefined}
                       >
                         {num}
                       </button>
@@ -906,15 +835,14 @@ const GigListingsPage = () => {
                   <button
                     onClick={() => handlePageChange(parseInt(page) + 1)}
                     disabled={gigs.length < 12}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                    className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm ${
                       gigs.length < 12
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-900 text-white hover:bg-black'
                     }`}
-                    aria-label="Go to next page"
                   >
                     Next
-                    <ChevronDown className="w-4 h-4 -rotate-90" />
+                    <ChevronDown className="w-3 h-3 -rotate-90" />
                   </button>
                 </nav>
               )}
@@ -924,10 +852,10 @@ const GigListingsPage = () => {
           {/* No Results */}
           {!isLoadingGigs && gigs.length === 0 && (
             <div className="text-center py-16">
-              <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                <Search className="w-12 h-12 text-gray-400" />
+              <div className="w-20 h-20 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <Search className="w-10 h-10 text-gray-400" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
                 {debouncedSearchTerm ? 'No gigs found' : 'No gigs available'}
               </h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
@@ -942,7 +870,7 @@ const GigListingsPage = () => {
                     setDebouncedSearchTerm('');
                     setSearchParams({ page: '1' });
                   }}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-5 py-2.5 bg-gray-900 text-white rounded-md hover:bg-black transition-colors"
                 >
                   Clear Search
                 </button>
@@ -951,23 +879,23 @@ const GigListingsPage = () => {
           )}
 
           {/* CTA Section */}
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-center text-white mb-8">
-            <h2 className="text-3xl font-bold mb-4">
+          <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
+            <h2 className="text-2xl font-bold mb-3">
               Ready to find your perfect gig?
             </h2>
-            <p className="text-blue-100 text-lg mb-6 max-w-2xl mx-auto">
+            <p className="text-gray-300 mb-4 max-w-2xl mx-auto">
               Join thousands of freelancers who found their next project here
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
                 onClick={() => navigate('/gigs/create')}
-                className="px-8 py-3 bg-white text-blue-600 font-bold rounded-lg hover:bg-gray-100 transition-colors"
+                className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
                 Post a Gig
               </button>
               <button 
                 onClick={() => navigate('/services')}
-                className="px-8 py-3 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
+                className="px-6 py-2.5 bg-transparent border border-white text-white font-bold rounded-md hover:bg-white/10 transition-colors"
               >
                 Browse Services Instead
               </button>

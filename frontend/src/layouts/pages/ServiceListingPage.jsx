@@ -1,3 +1,4 @@
+// src/pages/ServiceListingPage.jsx
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import PopularServices from "../../components/services/PopularService";
@@ -128,7 +129,7 @@ const ServiceListingPage = () => {
     return () => clearTimeout(timer);
   }, [searchTerm, searchQuery, setSearchParams]);
 
-  // Update URL when filters change (excluding debounced search)
+  // Update URL when filters change
   useEffect(() => {
     if (isInitialLoad) {
       setIsInitialLoad(false);
@@ -137,19 +138,13 @@ const ServiceListingPage = () => {
 
     const params = new URLSearchParams();
     
-    // Always set page first
     if (page !== '1') params.set('page', page);
-    
-    // Set search term if present
     if (debouncedSearchTerm.trim()) params.set('q', debouncedSearchTerm.trim());
-    
-    // Set other filters
     if (selectedCategory && selectedCategory !== 'All') params.set('category', selectedCategory);
     if (priceRange[0] > 0) params.set('minPrice', priceRange[0]);
     if (priceRange[1] < 10000) params.set('maxPrice', priceRange[1]);
     if (sortBy !== 'createdAt') params.set('sort', sortBy);
     
-    // Update URL
     setSearchParams(params, { replace: true });
   }, [selectedCategory, priceRange, sortBy, page, debouncedSearchTerm, setSearchParams, isInitialLoad]);
 
@@ -161,7 +156,6 @@ const ServiceListingPage = () => {
     if (trimmedTerm && trimmedTerm.length >= 2) {
       setDebouncedSearchTerm(trimmedTerm);
     } else if (!trimmedTerm) {
-      // Clear search
       setDebouncedSearchTerm('');
       setSearchTerm('');
       setSearchParams(prev => {
@@ -175,7 +169,6 @@ const ServiceListingPage = () => {
   // Handle category change
   const handleCategoryChange = useCallback((categoryId) => {
     setSelectedCategory(categoryId);
-    // Reset to page 1 when category changes
     setSearchParams(prev => {
       if (categoryId !== 'All') {
         prev.set('category', categoryId);
@@ -193,7 +186,6 @@ const ServiceListingPage = () => {
     newRange[index] = parseInt(value) || 0;
     setPriceRange(newRange);
     
-    // Reset to page 1 when price changes
     setSearchParams(prev => {
       if (newRange[0] > 0) {
         prev.set('minPrice', newRange[0]);
@@ -259,10 +251,8 @@ const ServiceListingPage = () => {
   // Determine which data to show
   const services = useMemo(() => {
     if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
-      // Show search results
       return searchData?.data || searchData || [];
     } else {
-      // Show all services
       return allServicesData?.data || allServicesData || [];
     }
   }, [debouncedSearchTerm, searchData, allServicesData]);
@@ -283,7 +273,7 @@ const ServiceListingPage = () => {
     }
   }, [debouncedSearchTerm, searchData, allServicesData, services]);
 
-  // Extract categories from API response
+  // Extract categories
   const categories = useMemo(() => [
     { _id: 'All', name: 'All Categories', icon: '📦' },
     ...(categoriesData?.map(cat => ({ 
@@ -302,19 +292,16 @@ const ServiceListingPage = () => {
     { value: 'delivery', label: 'Fastest Delivery' }
   ], []);
 
-  // Get service thumbnail - prioritizing database thumbnail
+  // Get service thumbnail
   const getServiceThumbnail = useCallback((service) => {
-    // First priority: Service thumbnail from database
     if (service.thumbnail?.url) {
       return service.thumbnail.url;
     }
     
-    // Second priority: First image from images array
     if (service.images && service.images.length > 0 && service.images[0]?.url) {
       return service.images[0].url;
     }
     
-    // Third priority: Category-specific default images
     const categoryName = service.categoryDetails?.name?.toLowerCase() || '';
     if (categoryName.includes('design') || categoryName.includes('art')) {
       return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
@@ -322,19 +309,12 @@ const ServiceListingPage = () => {
       return 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     } else if (categoryName.includes('writing') || categoryName.includes('content')) {
       return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('marketing') || categoryName.includes('business')) {
-      return 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('video') || categoryName.includes('animation')) {
-      return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('music') || categoryName.includes('audio')) {
-      return 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     } else {
-      // Default generic service image
       return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     }
   }, []);
 
-  // Get seller information from service
+  // Get seller information
   const getUserInfo = useCallback((service) => {
     if (service.createdBy && typeof service.createdBy === 'object') {
       return {
@@ -354,7 +334,6 @@ const ServiceListingPage = () => {
       };
     }
     
-    // Fallback
     return {
       username: 'Service Provider',
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
@@ -370,7 +349,7 @@ const ServiceListingPage = () => {
     return category?.name || null;
   }, [selectedCategory, categories]);
 
-  // Memoized SEO functions
+  // SEO
   const seoTitle = useMemo(() => {
     const categoryName = getCurrentCategoryName();
     const baseTitle = "Browse Freelance Services | Vorkana Marketplace";
@@ -401,120 +380,12 @@ const ServiceListingPage = () => {
     return baseDesc;
   }, [debouncedSearchTerm, getCurrentCategoryName, totalServices]);
 
-  const seoKeywords = useMemo(() => {
-    const categoryName = getCurrentCategoryName();
-    const baseKeywords = ["freelance services", "hire freelancers", "online services", "freelance marketplace", "professional services"];
-    
-    if (categoryName) {
-      return [...baseKeywords, `${categoryName.toLowerCase()} services`, `hire ${categoryName.toLowerCase()} freelancers`, categoryName.toLowerCase()];
-    }
-    
-    if (debouncedSearchTerm) {
-      return [...baseKeywords, debouncedSearchTerm.toLowerCase(), `${debouncedSearchTerm.toLowerCase()} services`];
-    }
-    
-    return baseKeywords;
-  }, [debouncedSearchTerm, getCurrentCategoryName]);
-
-  // Generate breadcrumb items
-  const breadcrumbItems = useMemo(() => {
-    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    const breadcrumbItems = [
-      { name: "Home", url: "/" },
-      { name: "Services", url: "/services" }
-    ];
-
-    const categoryName = getCurrentCategoryName();
-    if (categoryName) {
-      breadcrumbItems.push({
-        name: categoryName,
-        url: `/services?category=${selectedCategory}`
-      });
-    }
-
-    if (debouncedSearchTerm) {
-      breadcrumbItems.push({
-        name: `Search: ${debouncedSearchTerm}`,
-        url: `/services?q=${encodeURIComponent(debouncedSearchTerm)}`
-      });
-    }
-
-    return breadcrumbItems;
-  }, [debouncedSearchTerm, selectedCategory, getCurrentCategoryName]);
-
-  // Generate structured data
-  const structuredData = useMemo(() => {
-    const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : websiteUrl;
-    
-    const structuredServices = services.slice(0, 10).map((service, index) => {
-      const userInfo = getUserInfo(service);
-      
-      return {
-        "@type": "Service",
-        "position": index + 1,
-        "url": `${websiteUrl}/services/${service.slug || service._id}`,
-        "name": service.title,
-        "description": service.shortDescription || service.description?.substring(0, 200) || 'Professional freelance service',
-        "offeredBy": {
-          "@type": "Person",
-          "name": userInfo.username,
-          "image": userInfo.avatar,
-          "url": `${websiteUrl}/profile/${service.createdBy?._id || 'user'}`
-        },
-        "priceSpecification": {
-          "@type": "PriceSpecification",
-          "price": service.price || 0,
-          "priceCurrency": service.currency || "USD"
-        },
-        "areaServed": {
-          "@type": "Country",
-          "name": "Worldwide"
-        }
-      };
-    });
-
-    return {
-      "@context": "https://schema.org",
-      "@type": "ItemList",
-      "name": seoTitle,
-      "description": seoDescription,
-      "url": currentUrl,
-      "numberOfItems": totalServices,
-      "itemListElement": structuredServices,
-      "mainEntity": {
-        "@type": "WebPage",
-        "@id": currentUrl,
-        "name": seoTitle,
-        "description": seoDescription,
-        "breadcrumb": {
-          "@type": "BreadcrumbList",
-          "itemListElement": [
-            {
-              "@type": "ListItem",
-              "position": 1,
-              "name": "Home",
-              "item": websiteUrl
-            },
-            {
-              "@type": "ListItem",
-              "position": 2,
-              "name": "Services",
-              "item": `${websiteUrl}/services`
-            }
-          ]
-        }
-      }
-    };
-  }, [services, seoTitle, seoDescription, totalServices, getUserInfo]);
-
-  // Pagination functions
+  // Pagination
   const handlePageChange = useCallback((newPage) => {
     setSearchParams(prev => {
       prev.set('page', newPage.toString());
       return prev;
     });
-    // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [setSearchParams]);
 
@@ -522,29 +393,23 @@ const ServiceListingPage = () => {
     <SeoWrapper
       title={seoTitle}
       description={seoDescription}
-      keywords={seoKeywords.join(", ")}
+      keywords={["freelance services", "hire freelancers", "online services"]}
       canonical={`/services${window.location.search}`}
       ogTitle={seoTitle}
       ogDescription={seoDescription}
       ogImage="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
-      twitterCard="summary_large_image"
-      twitterSite="@vorkana"
-      robots="index, follow"
-      lang="en"
-      breadcrumb={breadcrumbItems}
-      structuredData={structuredData}
     >
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-white">
         {/* Hero Section */}
-        <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 text-white py-16 px-4">
+        <div className="relative bg-gradient-to-r from-gray-900 to-black text-white py-16 px-4">
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
-              <h1 className="text-5xl md:text-6xl font-bold mb-4">
+              <h1 className="text-4xl md:text-5xl font-bold mb-4">
                 Discover Amazing Services
               </h1>
-              <p className="text-xl md:text-2xl text-blue-100 mb-8 max-w-3xl mx-auto">
+              <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
                 Find the perfect service for your needs from our talented professionals
               </p>
               
@@ -552,11 +417,11 @@ const ServiceListingPage = () => {
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
+                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                       type="text"
                       placeholder="What service are you looking for? (min. 2 characters)"
-                      className="w-full pl-12 pr-24 py-4 rounded-xl text-gray-900 text-lg focus:outline-none focus:ring-4 focus:ring-blue-300 shadow-lg"
+                      className="w-full pl-12 pr-24 py-3 rounded-lg text-gray-900 text-base focus:outline-none focus:ring-2 focus:ring-gray-800"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       aria-label="Search for services"
@@ -564,12 +429,11 @@ const ServiceListingPage = () => {
                     />
                     <button 
                       type="submit"
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center min-w-[80px]"
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white px-5 py-2 rounded-md hover:bg-black transition-colors flex items-center justify-center min-w-[80px]"
                       disabled={isSearching}
-                      aria-label="Search button"
                     >
                       {isSearching ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         'Search'
                       )}
@@ -579,17 +443,16 @@ const ServiceListingPage = () => {
                 
                 {/* Quick Categories */}
                 {!isLoadingCategories && categories.length > 1 && (
-                  <div className="flex flex-wrap justify-center gap-3 mt-6" role="navigation" aria-label="Quick categories">
+                  <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
                       <button
                         key={category._id}
                         onClick={() => handleCategoryChange(category._id)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                           selectedCategory === category._id
-                            ? "bg-white text-blue-600"
-                            : "bg-white/20 hover:bg-white/30 text-white"
+                            ? "bg-white text-gray-900"
+                            : "bg-white/10 hover:bg-white/20 text-white"
                         }`}
-                        aria-label={`Browse ${category.name} services`}
                       >
                         {category.icon} {category.name}
                       </button>
@@ -605,7 +468,7 @@ const ServiceListingPage = () => {
         <div className="max-w-7xl mx-auto px-4 py-8">
           {/* Error Display */}
           {apiError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6" role="alert">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <div className="flex items-center text-red-800">
                 <AlertCircle className="w-5 h-5 mr-2" />
                 <span className="font-medium">Error loading services</span>
@@ -620,7 +483,7 @@ const ServiceListingPage = () => {
                     refetchSearch();
                   }
                 }}
-                className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm"
+                className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm"
               >
                 Retry
               </button>
@@ -628,27 +491,24 @@ const ServiceListingPage = () => {
           )}
 
           {/* Filters and Sorting Bar */}
-          <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                  aria-expanded={showFilters}
-                  aria-controls="filters-section"
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
                 >
-                  <Filter className="w-5 h-5" />
+                  <Filter className="w-4 h-4" />
                   Filters
                   {showFilters && <X className="w-4 h-4" />}
                 </button>
                 
-                <div className="hidden md:flex items-center gap-4">
-                  <span className="text-gray-600">Sort by:</span>
+                <div className="hidden md:flex items-center gap-3">
+                  <span className="text-gray-600 text-sm">Sort by:</span>
                   <select
                     value={sortBy}
                     onChange={handleSortChange}
-                    className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    aria-label="Sort services by"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-800 bg-white text-sm"
                   >
                     {sortOptions.map(option => (
                       <option key={option.value} value={option.value}>
@@ -660,13 +520,13 @@ const ServiceListingPage = () => {
               </div>
               
               <div className="flex items-center gap-4">
-                <span className="text-gray-600">
+                <span className="text-gray-600 text-sm">
                   {totalServices} {debouncedSearchTerm ? 'results' : 'services'} found
                 </span>
                 {(searchTerm || selectedCategory !== 'All' || priceRange[0] > 0 || priceRange[1] < 10000 || sortBy !== 'createdAt') && (
                   <button
                     onClick={resetFilters}
-                    className="px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                    className="px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
                   >
                     Reset Filters
                   </button>
@@ -676,38 +536,32 @@ const ServiceListingPage = () => {
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div id="filters-section" className="mt-6 pt-6 border-t grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Price Range: ${priceRange[0]} - ${priceRange[1]}
                   </label>
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <input
-                        type="range"
-                        min="0"
-                        max="10000"
-                        step="100"
-                        value={priceRange[0]}
-                        onChange={(e) => handlePriceRangeChange(0, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        aria-label="Minimum price filter"
-                      />
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="range"
-                        min="0"
-                        max="10000"
-                        step="100"
-                        value={priceRange[1]}
-                        onChange={(e) => handlePriceRangeChange(1, e.target.value)}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        aria-label="Maximum price filter"
-                      />
-                    </div>
+                  <div className="space-y-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="10000"
+                      step="100"
+                      value={priceRange[0]}
+                      onChange={(e) => handlePriceRangeChange(0, e.target.value)}
+                      className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="10000"
+                      step="100"
+                      value={priceRange[1]}
+                      onChange={(e) => handlePriceRangeChange(1, e.target.value)}
+                      className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
+                    />
                   </div>
-                  <div className="flex justify-between text-sm text-gray-500 mt-2">
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
                     <span>$0</span>
                     <span>$10,000</span>
                   </div>
@@ -717,18 +571,16 @@ const ServiceListingPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Categories
                   </label>
-                  <div className="max-h-48 overflow-y-auto space-y-1" role="listbox">
+                  <div className="max-h-40 overflow-y-auto space-y-1">
                     {categories.map(category => (
                       <button
                         key={category._id}
                         onClick={() => handleCategoryChange(category._id)}
-                        className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
                           selectedCategory === category._id
-                            ? "bg-blue-600 text-white"
+                            ? "bg-gray-900 text-white"
                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
-                        role="option"
-                        aria-selected={selectedCategory === category._id}
                       >
                         <span className="mr-2">{category.icon}</span>
                         {category.name}
@@ -744,7 +596,7 @@ const ServiceListingPage = () => {
           {isLoading && (
             <div className="flex justify-center items-center py-20">
               <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+                <Loader2 className="w-10 h-10 animate-spin text-gray-900 mx-auto mb-3" />
                 <p className="text-gray-600">
                   {debouncedSearchTerm ? 'Searching services...' : 'Loading services...'}
                 </p>
@@ -755,11 +607,7 @@ const ServiceListingPage = () => {
           {/* Services Grid */}
           {!isLoading && services.length > 0 && (
             <>
-              <div 
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12"
-                itemScope
-                itemType="http://schema.org/ItemList"
-              >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
                 {services.map(service => {
                   const userInfo = getUserInfo(service);
                   const thumbnailUrl = getServiceThumbnail(service);
@@ -767,33 +615,28 @@ const ServiceListingPage = () => {
                   return (
                     <article
                       key={service._id}
-                      className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-200 hover:border-blue-300 group cursor-pointer"
+                      className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer"
                       onClick={() => handleViewDetails(service._id, service.slug)}
-                      itemScope
-                      itemType="http://schema.org/Service"
-                      itemProp="itemListElement"
                     >
                       {/* Service Image */}
-                      <div className="relative h-48 overflow-hidden">
+                      <div className="relative h-40 overflow-hidden">
                         <img
                           src={thumbnailUrl}
                           alt={service.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                          itemProp="image"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
                           }}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                         
                         {/* Favorite Button */}
                         <button
                           onClick={(e) => handleLike(service._id, e)}
-                          className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors z-10"
-                          aria-label={`Add ${service.title} to favorites`}
+                          className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors"
                         >
                           <Heart
-                            className={`w-5 h-5 transition-colors ${
+                            className={`w-4 h-4 transition-colors ${
                               favorites.includes(service._id)
                                 ? "fill-red-500 text-red-500"
                                 : "text-gray-600 hover:text-red-500"
@@ -803,76 +646,49 @@ const ServiceListingPage = () => {
                         
                         {/* Featured Badge */}
                         {service.isFeatured && (
-                          <div className="absolute top-4 left-4 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold">
+                          <div className="absolute top-3 left-3 bg-gray-900 text-white px-2 py-1 rounded text-xs font-medium">
                             <Sparkles className="w-3 h-3 inline mr-1" />
                             FEATURED
-                          </div>
-                        )}
-                        
-                        {/* No Image Indicator */}
-                        {!service.thumbnail?.url && !service.images?.[0]?.url && (
-                          <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
-                            <div className="text-center">
-                              <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                              <span className="text-gray-500 text-sm">No Image</span>
-                            </div>
                           </div>
                         )}
                       </div>
 
                       {/* Service Content */}
-                      <div className="p-5">
+                      <div className="p-4">
                         {/* Seller Info */}
-                        <div className="flex items-center gap-3 mb-4" itemProp="provider" itemScope itemType="http://schema.org/Person">
+                        <div className="flex items-center gap-2 mb-3">
                           <img
                             src={userInfo.avatar}
                             alt={userInfo.username}
-                            className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
-                            itemProp="image"
+                            className="w-8 h-8 rounded-full object-cover border border-gray-300"
                           />
                           <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-semibold text-gray-900 text-sm" itemProp="name">
+                            <div className="flex items-center gap-1">
+                              <h4 className="font-medium text-gray-900 text-sm">
                                 {userInfo.username}
                               </h4>
                               {userInfo.verified && (
-                                <CheckCircle className="w-4 h-4 text-blue-500" aria-label="Verified seller" />
+                                <CheckCircle className="w-3 h-3 text-gray-600" />
                               )}
                             </div>
-                            <span className="text-xs text-gray-500 capitalize" itemProp="jobTitle">{userInfo.level}</span>
+                            <span className="text-xs text-gray-500 capitalize">{userInfo.level}</span>
                           </div>
                         </div>
 
                         {/* Service Title & Description */}
-                        <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-1" itemProp="name">
+                        <h3 className="font-bold text-gray-900 mb-2 line-clamp-1">
                           {service.title}
                         </h3>
-                        <p className="text-gray-600 text-sm mb-4 line-clamp-2 min-h-[40px]" itemProp="description">
+                        <p className="text-gray-600 text-sm mb-3 line-clamp-2 min-h-[40px]">
                           {service.shortDescription || service.description || 'No description available'}
                         </p>
 
-                        {/* Tags */}
-                        {service.tags && service.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-4">
-                            {service.tags.slice(0, 3).map(tag => (
-                              <span
-                                key={tag}
-                                className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded"
-                                itemProp="keywords"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
                         {/* Price & CTA */}
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                          <div itemProp="offers" itemScope itemType="http://schema.org/Offer">
-                            <span className="text-xl font-bold text-gray-900" itemProp="price">
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                          <div>
+                            <span className="text-lg font-bold text-gray-900">
                               {service.currency || '$'} {service.price?.toFixed(2) || '0.00'}
                             </span>
-                            <meta itemProp="priceCurrency" content={service.currency || "USD"} />
                             <span className="text-gray-500 text-xs block">Starting from</span>
                           </div>
                           <button
@@ -880,8 +696,7 @@ const ServiceListingPage = () => {
                               e.stopPropagation();
                               handleViewDetails(service._id, service.slug);
                             }}
-                            className="px-4 py-2 bg-gradient-to-r bg-blue-600  text-white font-medium rounded-lg hover:bg-blue-700 transition-all hover:shadow-lg text-sm"
-                            aria-label={`View details for ${service.title}`}
+                            className="px-3 py-1.5 bg-gray-900 text-white font-medium rounded-md hover:bg-black transition-colors text-sm"
                           >
                             View Details
                           </button>
@@ -894,33 +709,30 @@ const ServiceListingPage = () => {
 
               {/* Pagination */}
               {totalServices > 12 && (
-                <nav className="flex justify-center items-center gap-4 mb-12" aria-label="Services pagination">
+                <nav className="flex justify-center items-center gap-3 mb-8">
                   <button
                     onClick={() => handlePageChange(Math.max(1, parseInt(page) - 1))}
                     disabled={parseInt(page) === 1}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                    className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm ${
                       parseInt(page) === 1
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-900 text-white hover:bg-black'
                     }`}
-                    aria-label="Go to previous page"
                   >
-                    <ChevronDown className="w-4 h-4 rotate-90" />
+                    <ChevronDown className="w-3 h-3 rotate-90" />
                     Previous
                   </button>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {[1, 2, 3].map(num => (
                       <button
                         key={num}
                         onClick={() => handlePageChange(num)}
-                        className={`w-10 h-10 rounded-lg ${
+                        className={`w-8 h-8 rounded-md text-sm ${
                           parseInt(page) === num
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-gray-900 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
-                        aria-label={`Go to page ${num}`}
-                        aria-current={parseInt(page) === num ? 'page' : undefined}
                       >
                         {num}
                       </button>
@@ -931,15 +743,14 @@ const ServiceListingPage = () => {
                   <button
                     onClick={() => handlePageChange(parseInt(page) + 1)}
                     disabled={services.length < 12}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                    className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm ${
                       services.length < 12
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-900 text-white hover:bg-black'
                     }`}
-                    aria-label="Go to next page"
                   >
                     Next
-                    <ChevronDown className="w-4 h-4 -rotate-90" />
+                    <ChevronDown className="w-3 h-3 -rotate-90" />
                   </button>
                 </nav>
               )}
@@ -949,10 +760,10 @@ const ServiceListingPage = () => {
           {/* No Results */}
           {!isLoading && services.length === 0 && (
             <div className="text-center py-16">
-              <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                <Search className="w-12 h-12 text-gray-400" />
+              <div className="w-20 h-20 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <Search className="w-10 h-10 text-gray-400" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
                 {debouncedSearchTerm ? 'No services found' : 'No services available'}
               </h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
@@ -967,7 +778,7 @@ const ServiceListingPage = () => {
                     setDebouncedSearchTerm('');
                     setSearchParams({ page: '1' });
                   }}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-5 py-2.5 bg-gray-900 text-white rounded-md hover:bg-black transition-colors"
                 >
                   Clear Search
                 </button>
@@ -976,26 +787,28 @@ const ServiceListingPage = () => {
           )}
 
           {/* Popular Services Section */}
-          <PopularServices />
+          <div className="mb-8">
+            <PopularServices />
+          </div>
 
           {/* CTA Section */}
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-center text-white mb-8">
-            <h2 className="text-3xl font-bold mb-4">
+          <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
+            <h2 className="text-2xl font-bold mb-3">
               Ready to find your perfect service?
             </h2>
-            <p className="text-blue-100 text-lg mb-6 max-w-2xl mx-auto">
+            <p className="text-gray-300 mb-4 max-w-2xl mx-auto">
               Join thousands of satisfied customers who found exactly what they needed
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
                 onClick={() => navigate('/services')}
-                className="px-8 py-3 bg-white text-blue-600 font-bold rounded-lg hover:bg-gray-100 transition-colors"
+                className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
                 Browse All Services
               </button>
               <button 
                 onClick={() => navigate('/services/create')}
-                className="px-8 py-3 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
+                className="px-6 py-2.5 bg-transparent border border-white text-white font-bold rounded-md hover:bg-white/10 transition-colors"
               >
                 Offer Your Service
               </button>
