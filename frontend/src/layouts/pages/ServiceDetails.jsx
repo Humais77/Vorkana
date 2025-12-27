@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Star, 
@@ -75,14 +75,160 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useService } from '../../hooks/useServices';
 import { SeoWrapper } from '../../components/SeoWrapper';
 
+// Static data
+const STATUS_COLORS = {
+  active: 'bg-green-100 text-green-800 border-green-200',
+  draft: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  pending: 'bg-blue-100 text-blue-800 border-blue-200',
+  paused: 'bg-orange-100 text-orange-800 border-orange-200',
+  denied: 'bg-red-100 text-red-800 border-red-200',
+  suspended: 'bg-red-100 text-red-800 border-red-200'
+};
+
+const SAFETY_ITEMS = [
+  { icon: ShieldCheck, title: "Secure Payments", description: "Your payment is protected" },
+  { icon: ThumbsUp, title: "Satisfaction Guarantee", description: "Revisions included" },
+  { icon: Timer, title: "On-time Delivery", description: "Delivery guarantee" },
+  { icon: CheckCircle, title: "Verified Provider", description: "Identity verified" }
+];
+
+// Helper functions
+const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
+  if (!service || !websiteUrl) return null;
+
+  const serviceUrl = `${websiteUrl}/services/${service._id}`;
+  const provider = serviceUser || service.createdBy || service.creatorDetails;
+  
+  const formatStructuredPrice = (price, currency) => {
+    return {
+      "@type": "PriceSpecification",
+      "price": parseFloat(price) || 0,
+      "priceCurrency": currency || "USD"
+    };
+  };
+
+  const offers = [];
+  offers.push({
+    "@type": "Offer",
+    ...formatStructuredPrice(service.price, service.currency),
+    "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+    "itemOffered": {
+      "@type": "Service",
+      "name": service.title,
+      "description": service.shortDescription || service.description?.substring(0, 200),
+      "serviceType": service.category || "Freelance Service",
+      "provider": provider ? {
+        "@type": "Person",
+        "name": provider.name,
+        "url": `${websiteUrl}/profile/${provider._id}`,
+        "image": provider.picture
+      } : undefined,
+      "areaServed": {
+        "@type": "Country",
+        "name": "Worldwide"
+      }
+    },
+    "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  });
+
+  if (service.packages && service.packages.length > 0) {
+    service.packages.forEach((pkg) => {
+      offers.push({
+        "@type": "Offer",
+        ...formatStructuredPrice(pkg.price, service.currency),
+        "name": pkg.name,
+        "description": pkg.description || `Package: ${pkg.name}`,
+        "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      });
+    });
+  }
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "name": service.title,
+    "description": service.description?.substring(0, 300) || service.shortDescription,
+    "url": serviceUrl,
+    "image": service.thumbnail?.url || (service.images?.[0]?.url) || `${websiteUrl}/default-service.jpg`,
+    "offers": offers,
+    "provider": provider ? {
+      "@type": provider.role === 'business' ? "Organization" : "Person",
+      "name": provider.name,
+      "description": provider.bio?.substring(0, 200),
+      "url": `${websiteUrl}/profile/${provider._id}`,
+      "image": provider.picture,
+      "telephone": provider.phone,
+      "email": provider.email,
+      "address": {
+        "@type": "PostalAddress",
+        "addressCountry": provider.country,
+        "addressLocality": provider.city
+      },
+      "aggregateRating": provider.rating ? {
+        "@type": "AggregateRating",
+        "ratingValue": provider.rating,
+        "ratingCount": provider.totalReviews || 0,
+        "bestRating": 5,
+        "worstRating": 1
+      } : undefined
+    } : undefined,
+    "aggregateRating": service.rating ? {
+      "@type": "AggregateRating",
+      "ratingValue": service.rating,
+      "ratingCount": service.reviewsCount || 0,
+      "bestRating": 5,
+      "worstRating": 1
+    } : undefined,
+    "areaServed": {
+      "@type": "Country",
+      "name": "Worldwide"
+    },
+    "serviceType": service.category,
+    "category": service.category,
+    "keywords": service.tags?.join(', '),
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": serviceUrl
+    },
+    "additionalProperty": [
+      {
+        "@type": "PropertyValue",
+        "name": "deliveryTime",
+        "value": `${service.deliveryTime} ${service.deliveryTimeUnit}`
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "revisions",
+        "value": service.revisions || 0
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "status",
+        "value": service.status || 'active'
+      }
+    ]
+  };
+};
+
+const generateBreadcrumbStructuredData = (breadcrumbItems, websiteUrl) => {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": breadcrumbItems.map((item, index) => ({
+      "@type": "ListItem",
+      "position": index + 1,
+      "name": item.name,
+      "item": item.url.startsWith('http') ? item.url : `${websiteUrl}${item.url}`
+    }))
+  };
+};
+
 const ServiceDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   
-  // Zustand store
   const { user, isAuthenticated } = useAuthStore();
-  
-  // TanStack Query hook for service data
   const { 
     data: service, 
     isLoading: loading, 
@@ -108,188 +254,15 @@ const ServiceDetails = () => {
   // Update view count when service loads
   useEffect(() => {
     if (service) {
-      // Simulate view count (in real app, call increment views API)
       setViewCount(service.views || Math.floor(Math.random() * 500) + 100);
-      
-      // Set first package as default selection
       if (service.packages && service.packages.length > 0) {
         setSelectedPackage(service.packages[0]);
       }
     }
   }, [service]);
 
-  // Helper functions for structured data generation
-  const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
-    if (!service || !websiteUrl) return null;
-
-    const serviceUrl = `${websiteUrl}/services/${service._id}`;
-    const provider = serviceUser || service.createdBy || service.creatorDetails;
-    
-    // Format price for structured data
-    const formatStructuredPrice = (price, currency) => {
-      return {
-        "@type": "PriceSpecification",
-        "price": parseFloat(price) || 0,
-        "priceCurrency": currency || "USD"
-      };
-    };
-
-    // Generate offers array
-    const offers = [];
-    
-    // Add base service offer
-    offers.push({
-      "@type": "Offer",
-      ...formatStructuredPrice(service.price, service.currency),
-      "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      "itemOffered": {
-        "@type": "Service",
-        "name": service.title,
-        "description": service.shortDescription || service.description?.substring(0, 200),
-        "serviceType": service.category || "Freelance Service",
-        "provider": provider ? {
-          "@type": "Person",
-          "name": provider.name,
-          "url": `${websiteUrl}/profile/${provider._id}`,
-          "image": provider.picture
-        } : undefined,
-        "areaServed": {
-          "@type": "Country",
-          "name": "Worldwide"
-        }
-      },
-      "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    });
-
-    // Add package offers if available
-    if (service.packages && service.packages.length > 0) {
-      service.packages.forEach((pkg, index) => {
-        offers.push({
-          "@type": "Offer",
-          ...formatStructuredPrice(pkg.price, service.currency),
-          "name": pkg.name,
-          "description": pkg.description || `Package: ${pkg.name}`,
-          "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-          "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-        });
-      });
-    }
-
-    // Main service structured data
-    const structuredData = {
-      "@context": "https://schema.org",
-      "@type": "Service",
-      "name": service.title,
-      "description": service.description?.substring(0, 300) || service.shortDescription,
-      "url": serviceUrl,
-      "image": service.thumbnail?.url || (service.images?.[0]?.url) || `${websiteUrl}/default-service.jpg`,
-      "offers": offers,
-      "provider": provider ? {
-        "@type": provider.role === 'business' ? "Organization" : "Person",
-        "name": provider.name,
-        "description": provider.bio?.substring(0, 200),
-        "url": `${websiteUrl}/profile/${provider._id}`,
-        "image": provider.picture,
-        "telephone": provider.phone,
-        "email": provider.email,
-        "address": {
-          "@type": "PostalAddress",
-          "addressCountry": provider.country,
-          "addressLocality": provider.city
-        },
-        "aggregateRating": provider.rating ? {
-          "@type": "AggregateRating",
-          "ratingValue": provider.rating,
-          "ratingCount": provider.totalReviews || 0,
-          "bestRating": 5,
-          "worstRating": 1
-        } : undefined
-      } : undefined,
-      "aggregateRating": service.rating ? {
-        "@type": "AggregateRating",
-        "ratingValue": service.rating,
-        "ratingCount": service.reviewsCount || 0,
-        "bestRating": 5,
-        "worstRating": 1
-      } : undefined,
-      "areaServed": {
-        "@type": "Country",
-        "name": "Worldwide"
-      },
-      "serviceType": service.category,
-      "category": service.category,
-      "keywords": service.tags?.join(', '),
-      "mainEntityOfPage": {
-        "@type": "WebPage",
-        "@id": serviceUrl
-      },
-      "additionalProperty": [
-        {
-          "@type": "PropertyValue",
-          "name": "deliveryTime",
-          "value": `${service.deliveryTime} ${service.deliveryTimeUnit}`
-        },
-        {
-          "@type": "PropertyValue",
-          "name": "revisions",
-          "value": service.revisions || 0
-        },
-        {
-          "@type": "PropertyValue",
-          "name": "status",
-          "value": service.status || 'active'
-        }
-      ]
-    };
-
-    return structuredData;
-  };
-
-  const generateBreadcrumbStructuredData = (breadcrumbItems = [], websiteUrl) => {
-    return {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      "itemListElement": breadcrumbItems.map((item, index) => ({
-        "@type": "ListItem",
-        "position": index + 1,
-        "name": item.name,
-        "item": item.url.startsWith('http') ? item.url : `${websiteUrl}${item.url}`
-      }))
-    };
-  };
-
-  const generateReviewStructuredData = (reviews = [], serviceTitle, serviceUrl) => {
-    if (!reviews || reviews.length === 0) return null;
-
-    return {
-      "@context": "https://schema.org",
-      "@type": "Product",
-      "name": serviceTitle,
-      "review": reviews.slice(0, 5).map(review => ({
-        "@type": "Review",
-        "reviewRating": {
-          "@type": "Rating",
-          "ratingValue": review.rating,
-          "bestRating": 5
-        },
-        "author": {
-          "@type": "Person",
-          "name": review.user?.name || "Anonymous"
-        },
-        "datePublished": review.createdAt,
-        "reviewBody": review.comment
-      })),
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length,
-        "reviewCount": reviews.length,
-        "bestRating": 5,
-        "worstRating": 1
-      }
-    };
-  };
-
-  const handleShare = async () => {
+  // Memoized handlers
+  const handleShare = useCallback(async () => {
     const url = window.location.href;
     try {
       await navigator.clipboard.writeText(url);
@@ -297,27 +270,27 @@ const ServiceDetails = () => {
     } catch (err) {
       console.error('Failed to copy:', err);
     }
-  };
+  }, []);
 
-  const handleReport = () => {
+  const handleReport = useCallback(() => {
     toast.info('Report feature coming soon');
-  };
+  }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     refetch();
     toast.success('Refreshing service details...');
-  };
+  }, [refetch]);
 
-  const formatPrice = (price, currency = 'USD') => {
+  const formatPrice = useCallback((price, currency = 'USD') => {
     if (!price) return 'N/A';
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
       minimumFractionDigits: 0,
     }).format(price);
-  };
+  }, []);
 
-  const renderStars = (rating) => {
+  const renderStars = useCallback((rating) => {
     if (!rating) rating = 0;
     return (
       <div className="flex items-center">
@@ -336,23 +309,14 @@ const ServiceDetails = () => {
         <span className="ml-2 font-semibold">{rating.toFixed(1)}</span>
       </div>
     );
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     if (!status) return 'bg-gray-100 text-gray-800 border-gray-200';
-    
-    switch (status.toLowerCase()) {
-      case 'active': return 'bg-green-100 text-green-800 border-green-200';
-      case 'draft': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'pending': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'paused': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'denied': return 'bg-red-100 text-red-800 border-red-200';
-      case 'suspended': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
+    return STATUS_COLORS[status.toLowerCase()] || 'bg-gray-100 text-gray-800 border-gray-200';
+  }, []);
 
-  const calculateTimeAgo = (date) => {
+  const calculateTimeAgo = useCallback((date) => {
     if (!date) return 'N/A';
     try {
       const now = new Date();
@@ -366,10 +330,9 @@ const ServiceDetails = () => {
     } catch (error) {
       return 'N/A';
     }
-  };
+  }, []);
 
-  // Calculate account age
-  const calculateAccountAge = (createdAt) => {
+  const calculateAccountAge = useCallback((createdAt) => {
     if (!createdAt) return '';
     try {
       const created = new Date(createdAt);
@@ -379,10 +342,9 @@ const ServiceDetails = () => {
     } catch (error) {
       return '';
     }
-  };
+  }, []);
 
-  // Calculate age from date of birth
-  const calculateAge = (dateOfBirth) => {
+  const calculateAge = useCallback((dateOfBirth) => {
     if (!dateOfBirth) return null;
     try {
       const today = new Date();
@@ -398,10 +360,9 @@ const ServiceDetails = () => {
     } catch (error) {
       return null;
     }
-  };
+  }, []);
 
-  // Check if user is online
-  const isUserOnline = (lastSeenAt) => {
+  const isUserOnline = useCallback((lastSeenAt) => {
     if (!lastSeenAt) return false;
     try {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -409,10 +370,9 @@ const ServiceDetails = () => {
     } catch (error) {
       return false;
     }
-  };
+  }, []);
 
-  // Get thumbnail image (prioritized)
-  const getThumbnailImage = () => {
+  const getThumbnailImage = useCallback((service) => {
     if (service?.thumbnail?.url) {
       return {
         url: service.thumbnail.url,
@@ -426,7 +386,6 @@ const ServiceDetails = () => {
       };
     }
     
-    // If no thumbnail, use first image
     if (service?.images && service.images.length > 0 && service.images[0]?.url) {
       return {
         url: service.images[0].url,
@@ -440,21 +399,18 @@ const ServiceDetails = () => {
       };
     }
     
-    // Fallback to default image
     return {
       url: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
       type: 'default'
     };
-  };
+  }, []);
 
-  // Get gallery images (excluding thumbnail)
-  const getGalleryImages = () => {
+  const getGalleryImages = useCallback((service) => {
     const images = [];
     
     if (service?.images && service.images.length > 0) {
       service.images.forEach((img, index) => {
         if (img?.url) {
-          // Skip if this is the first image and we have a separate thumbnail
           if (index === 0 && service.thumbnail?.url) {
             return;
           }
@@ -473,62 +429,44 @@ const ServiceDetails = () => {
     }
     
     return images;
-  };
+  }, []);
 
-  // Get all images including thumbnail
-  const getAllImages = () => {
-    const thumbnail = getThumbnailImage();
-    const galleryImages = getGalleryImages();
-    
-    // Combine thumbnail with gallery images
-    return [thumbnail, ...galleryImages];
-  };
-
-  // Get category name safely
-  const getCategoryName = () => {
+  const getCategoryName = useCallback((service) => {
     if (!service) return 'Category';
     
-    // Check if category is an object with name property
     if (service.categoryDetails && typeof service.categoryDetails === 'object' && service.categoryDetails.name) {
       return service.categoryDetails.name;
     }
     
-    // Check if category is a string
     if (typeof service.category === 'string') {
       return service.category;
     }
     
-    // Fallback
     return 'Category';
-  };
+  }, []);
 
-  // Get subcategory name safely
-  const getSubcategoryName = () => {
+  const getSubcategoryName = useCallback((service) => {
     if (!service) return null;
     
-    // Check if subcategory is an object
     if (service.subcategory && typeof service.subcategory === 'object') {
       return service.subcategory.name || null;
     }
     
-    // Check if subcategory is a string
     if (typeof service.subcategory === 'string') {
       return service.subcategory;
     }
     
     return null;
-  };
+  }, []);
 
-  // Toggle section expansion
-  const toggleSection = (section) => {
+  const toggleSection = useCallback((section) => {
     setExpandedSection(prev => ({
       ...prev,
       [section]: !prev[section]
     }));
-  };
+  }, []);
 
-  // Format date
-  const formatDate = (date) => {
+  const formatDate = useCallback((date) => {
     if (!date) return 'Not set';
     return new Date(date).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -537,24 +475,49 @@ const ServiceDetails = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
+  }, []);
 
-  // Check if service is expired
-  const isExpired = () => {
+  const isExpired = useCallback((service) => {
     if (!service.expiresAt) return false;
     return new Date(service.expiresAt) < new Date();
-  };
+  }, []);
 
-  // Check if service is recommended
-  const isRecommended = () => {
-    return service.isRecommended || false;
-  };
+  const isRecommended = useCallback((service) => {
+    return service?.isRecommended || false;
+  }, []);
 
-  // Check if service is popular
-  const isPopular = () => {
-    return service.isPopular || false;
-  };
+  const isPopular = useCallback((service) => {
+    return service?.isPopular || false;
+  }, []);
 
+  // Memoized data
+  const thumbnailImage = useMemo(() => getThumbnailImage(service), [service, getThumbnailImage]);
+  const galleryImages = useMemo(() => getGalleryImages(service), [service, getGalleryImages]);
+  const categoryName = useMemo(() => getCategoryName(service), [service, getCategoryName]);
+  const subcategoryName = useMemo(() => getSubcategoryName(service), [service, getSubcategoryName]);
+  const serviceUser = useMemo(() => service?.createdBy || service?.creatorDetails, [service]);
+  const userAge = useMemo(() => calculateAge(serviceUser?.dateOfBirth), [serviceUser, calculateAge]);
+  const accountAge = useMemo(() => calculateAccountAge(serviceUser?.createdAt), [serviceUser, calculateAccountAge]);
+  const isOnline = useMemo(() => isUserOnline(serviceUser?.lastSeenAt), [serviceUser, isUserOnline]);
+  const timeAgo = useMemo(() => calculateTimeAgo(service?.createdAt), [service, calculateTimeAgo]);
+
+  // Memoized structured data
+  const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const structuredData = useMemo(() => {
+    if (!service || !websiteUrl) return [];
+    
+    const serviceStructuredData = generateServiceStructuredData(service, serviceUser, websiteUrl);
+    const breadcrumbStructuredData = generateBreadcrumbStructuredData([
+      { name: "Home", url: "/" },
+      { name: "Services", url: "/services" },
+      { name: categoryName, url: `/services?category=${service.category}` },
+      { name: service.title, url: `/services/${service._id}` }
+    ], websiteUrl);
+    
+    return [serviceStructuredData, breadcrumbStructuredData].filter(Boolean);
+  }, [service, serviceUser, websiteUrl, categoryName]);
+
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
@@ -580,6 +543,7 @@ const ServiceDetails = () => {
     );
   }
 
+  // Error state
   if (error || !service) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
@@ -611,36 +575,6 @@ const ServiceDetails = () => {
       </div>
     );
   }
-
-  const thumbnailImage = getThumbnailImage();
-  const galleryImages = getGalleryImages();
-  const allImages = getAllImages();
-  const serviceUser = service.createdBy || service.creatorDetails;
-  const userAge = calculateAge(serviceUser?.dateOfBirth);
-  const accountAge = calculateAccountAge(serviceUser?.createdAt);
-  const isOnline = isUserOnline(serviceUser?.lastSeenAt);
-  const timeAgo = calculateTimeAgo(service.createdAt);
-  
-  // Safely get category and subcategory names
-  const categoryName = getCategoryName();
-  const subcategoryName = getSubcategoryName();
-
-  // Generate structured data
-  const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const serviceStructuredData = generateServiceStructuredData(service, serviceUser, websiteUrl);
-  const breadcrumbStructuredData = generateBreadcrumbStructuredData([
-    { name: "Home", url: "/" },
-    { name: "Services", url: "/services" },
-    { name: categoryName, url: `/services?category=${service.category}` },
-    { name: service.title, url: `/services/${service._id}` }
-  ], websiteUrl);
-  const reviewStructuredData = generateReviewStructuredData(
-    service.reviews || [],
-    service.title,
-    `${websiteUrl}/services/${service._id}`
-  );
-
-  const structuredData = [serviceStructuredData, breadcrumbStructuredData, reviewStructuredData].filter(Boolean);
 
   return (
     <SeoWrapper 
@@ -743,13 +677,13 @@ const ServiceDetails = () => {
                           FEATURED
                         </span>
                       )}
-                      {isRecommended() && (
+                      {isRecommended(service) && (
                         <span className="px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800 border border-amber-200">
                           <Crown className="inline h-4 w-4 mr-1" />
                           RECOMMENDED
                         </span>
                       )}
-                      {isPopular() && (
+                      {isPopular(service) && (
                         <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800 border border-orange-200">
                           <TrendingUpIcon className="inline h-4 w-4 mr-1" />
                           POPULAR
@@ -1664,9 +1598,9 @@ const ServiceDetails = () => {
                             {service.expiresAt && (
                               <div className="flex justify-between">
                                 <span className="text-sm text-gray-600">Expires:</span>
-                                <span className={`font-medium ${isExpired() ? 'text-red-600' : 'text-gray-900'}`}>
+                                <span className={`font-medium ${isExpired(service) ? 'text-red-600' : 'text-gray-900'}`}>
                                   {formatDate(service.expiresAt)}
-                                  {isExpired() && ' (Expired)'}
+                                  {isExpired(service) && ' (Expired)'}
                                 </span>
                               </div>
                             )}
@@ -2055,42 +1989,20 @@ const ServiceDetails = () => {
                     Safety & Trust
                   </h3>
                   <div className="space-y-4">
-                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                        <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 text-sm">Secure Payments</h4>
-                        <p className="text-xs text-gray-600">Your payment is protected</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                        <ThumbsUp className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 text-sm">Satisfaction Guarantee</h4>
-                        <p className="text-xs text-gray-600">{service.revisions || 0} revisions included</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                        <Timer className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 text-sm">On-time Delivery</h4>
-                        <p className="text-xs text-gray-600">{service.deliveryTime}-day delivery guarantee</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
-                        <CheckCircle className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 text-sm">Verified Provider</h4>
-                        <p className="text-xs text-gray-600">Identity verified</p>
-                      </div>
-                    </div>
+                    {SAFETY_ITEMS.map((item, index) => {
+                      const Icon = item.icon;
+                      return (
+                        <div key={index} className="flex items-start p-3 bg-gray-50 rounded-lg">
+                          <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                            <Icon className="h-4 w-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-sm">{item.title}</h4>
+                            <p className="text-xs text-gray-600">{item.description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

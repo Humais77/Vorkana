@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaCheck } from 'react-icons/fa';
 import { 
   X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, 
-  Globe, Check, ArrowLeft, AlertCircle, Phone, 
-  Calendar, MapPin, Briefcase, GraduationCap,
-  Globe as LanguageIcon, User, Shield
+  ArrowLeft, AlertCircle
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { 
@@ -63,6 +61,19 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const [showAdvancedFields, setShowAdvancedFields] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Memoized data
+  const benefits = useMemo(() => [
+    {
+      title: "Over 100 categories",
+    },
+    {
+      title: "Quality work done faster",
+    },
+    {
+      title: "Access to talent and businesses across the globe",
+    }
+  ], []);
+
   // Clear errors when switching tabs
   useEffect(() => {
     setErrors({});
@@ -71,62 +82,51 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     setPasswordStrength('');
     setShowAdvancedFields(false);
   }, [activeTab, clearError]);
-useEffect(() => {
-  document.body.style.overflow = 'hidden';
-  return () => {
-    document.body.style.overflow = 'unset';
-  };
-}, []);
-  // Check password strength on change
-  useEffect(() => {
-    if (signupData.password) {
-      const validation = validatePassword(signupData.password);
-      if (!validation.valid) {
-        setPasswordStrength(validation.message);
-      } else {
-        setPasswordStrength('Strong password');
-      }
-    } else {
-      setPasswordStrength('');
-    }
-  }, [signupData.password]);
 
-  const handleSigninChange = (e) => {
+  // Prevent layout shift when modal opens
+  useEffect(() => {
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = 'hidden';
+    document.body.style.paddingRight = `${scrollbarWidth}px`;
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+      document.body.style.paddingRight = '';
+    };
+  }, []);
+
+  const handleSigninChange = useCallback((e) => {
     const { name, value } = e.target;
     setSigninData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
     clearError();
-  };
+  }, [errors, clearError]);
 
-  const handleSignupChange = (e) => {
+  const handleSignupChange = useCallback((e) => {
     const { name, value } = e.target;
     setSignupData(prev => ({ ...prev, [name]: value }));
+    
+    // Validate password on change
+    if (name === 'password' && value) {
+      const validation = validatePassword(value);
+      if (!validation.valid) {
+        setPasswordStrength(validation.message);
+      } else {
+        setPasswordStrength('Strong password');
+      }
+    } else if (name === 'password' && !value) {
+      setPasswordStrength('');
+    }
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
     clearError();
-  };
+  }, [errors, clearError]);
 
-  const handleLanguageAdd = () => {
-    if (currentLanguage.trim() && !signupData.languages.includes(currentLanguage.trim())) {
-      setSignupData(prev => ({
-        ...prev,
-        languages: [...prev.languages, currentLanguage.trim()]
-      }));
-      setCurrentLanguage('');
-    }
-  };
-
-  const handleLanguageRemove = (language) => {
-    setSignupData(prev => ({
-      ...prev,
-      languages: prev.languages.filter(lang => lang !== language)
-    }));
-  };
-
-  const validateSignin = () => {
+  const validateSignin = useCallback(() => {
     const newErrors = {};
     
     if (!signinData.email.trim()) {
@@ -141,9 +141,9 @@ useEffect(() => {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [signinData.email, signinData.password]);
 
-  const validateSignup = () => {
+  const validateSignup = useCallback(() => {
     const newErrors = {};
 
     // Required fields
@@ -184,9 +184,9 @@ useEffect(() => {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [signupData]);
 
-  const handleSigninSubmit = async (e) => {
+  const handleSigninSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!validateSignin()) return;
 
@@ -200,9 +200,9 @@ useEffect(() => {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [validateSignin, loginMutation, signinData, onClose, navigate]);
 
-  const handleSignupSubmit = async (e) => {
+  const handleSignupSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!validateSignup()) return;
 
@@ -233,57 +233,35 @@ useEffect(() => {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [validateSignup, signupData, registerMutation, onClose, navigate]);
 
-  // FIXED: Google OAuth in same tab
-  const handleGoogleAuth = () => {
+  // Google OAuth
+  const handleGoogleAuth = useCallback(() => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    // Redirect in the same window/tab
     window.location.href = `${backendUrl}/api/auth/google`;
-  };
+  }, []);
 
-  const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
+  const togglePasswordVisibility = useCallback(() => {
+    setShowPassword(prev => !prev);
+  }, []);
 
   // Password strength indicator
-  const getPasswordStrengthColor = () => {
+  const getPasswordStrengthColor = useCallback(() => {
     if (!signupData.password) return 'gray';
     const validation = validatePassword(signupData.password);
     return validation.valid ? 'green' : 'red';
-  };
+  }, [signupData.password]);
 
-  // Benefits content
-  const benefits = [
-    {
-      title: "Over 100 categories",
-    },
-    {
-      title: "Quality work done faster",
-    },
-    {
-      title: "Access to talent and businesses across the globe",
-    }
-  ];
-
-  // Password requirements checklist
-  const passwordRequirements = [
+  // Password requirements checklist - memoized
+  const passwordRequirements = useMemo(() => [
     { text: "At least 8 characters", met: signupData.password.length >= 8 },
     { text: "One uppercase letter", met: /[A-Z]/.test(signupData.password) },
     { text: "One lowercase letter", met: /[a-z]/.test(signupData.password) },
     { text: "One number", met: /\d/.test(signupData.password) },
     { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(signupData.password) },
-  ];
+  ], [signupData.password]);
 
-  // Gender options
-  const genderOptions = [
-    { value: '', label: 'Prefer not to say' },
-    { value: 'male', label: 'Male' },
-    { value: 'female', label: 'Female' },
-    { value: 'other', label: 'Other' }
-  ];
-
-  // Render social buttons view
+  // Render social buttons view - NOT memoized, just a regular function
   const renderSocialButtons = () => (
     <div className="space-y-4">
       <button
@@ -295,6 +273,7 @@ useEffect(() => {
           src="https://www.google.com/favicon.ico"
           alt="Google"
           className="w-5 h-5 mr-3"
+          loading="lazy"
         />
         Continue with Google
       </button>
@@ -326,7 +305,7 @@ useEffect(() => {
           className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85 4.41 4.41 0 0 1-2.68-4.04z" />
+            <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85a4.41 4.41 0 0 1-2.68-4.04z" />
           </svg>
           Apple
         </button>
@@ -345,7 +324,7 @@ useEffect(() => {
     </div>
   );
 
-  // Render email form view
+  // Render email form view - NOT memoized, just a regular function
   const renderEmailForm = () => (
     <div className="overflow-y-auto max-h-[500px] pr-2">
       {/* Back Button */}
@@ -608,23 +587,34 @@ useEffect(() => {
     </div>
   );
 
+  // Simplified animations - useMemo for static animations
+  const modalAnimation = useMemo(() => ({
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
+    transition: { duration: 0.15, ease: "easeOut" }
+  }), []);
+
+  const backdropAnimation = useMemo(() => ({
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.15 }
+  }), []);
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
         {/* Backdrop */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          {...backdropAnimation}
           className="absolute inset-0 bg-black/30"
           onClick={onClose}
         />
 
         {/* Modal */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
+          {...modalAnimation}
           className="relative w-full max-w-5xl bg-white rounded-xl shadow-2xl overflow-hidden"
         >
           {/* Close button */}
@@ -720,4 +710,4 @@ useEffect(() => {
   );
 };
 
-export default AuthModal;
+export default React.memo(AuthModal);

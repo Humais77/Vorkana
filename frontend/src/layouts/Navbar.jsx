@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useLogout } from "../hooks/useAuth";
-import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, TrendingUp, Sparkles, FolderKanban, ShoppingBag, MessageSquare, BookOpen, Palette, Code, Megaphone, PenTool } from "lucide-react";
+import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, ShoppingBag } from "lucide-react";
 import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +10,7 @@ import default_pp from '../assets/default_pp-modified.png'
 import SearchComponent from "../components/Search/SearchComponent";
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
-  const [activeDropdown, setActiveDropdown] = useState(null); // 'profile', 'explore', or null
+  const [activeDropdown, setActiveDropdown] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -21,44 +21,30 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   const logoutMutation = useLogout();
 
   const isHomePage = location.pathname === "/";
+  const isAdminUser = isAuthenticated && (user?.role === 'admin' || user?.isAdmin === true);
 
   // Refs for dropdowns
   const profileRef = useRef(null);
   const exploreRef = useRef(null);
 
-  // Check if user is admin
-  const isAdminUser = isAuthenticated && (user?.role === 'admin' || user?.isAdmin === true);
+  // Memoized data
+  const categories = useMemo(() => [
+    { name: "Web Development" },
+    { name: "Graphic Design" },
+    { name: "Digital Marketing" },
+    { name: "Writing & Translation" },
+    { name: "Video & Animation" },
+    { name: "Music & Audio" },
+    { name: "Business" },
+    { name: "Lifestyle" }
+  ], []);
 
-  // Categories with icons
-  const categories = [
-    { name: "Web Development", color: "text-blue-600" },
-    { name: "Graphic Design", color: "text-purple-600" },
-    { name: "Digital Marketing", color: "text-green-600" },
-    { name: "Writing & Translation", color: "text-amber-600" },
-    { name: "Video & Animation", color: "text-red-600" },
-    { name: "Music & Audio", color: "text-pink-600" },
-    { name: "Business", color: "text-indigo-600" },
-    { name: "Lifestyle", color: "text-teal-600" }
-  ];
-
-  // Quick links with icons
-  const quickLinks = [
+  const quickLinks = useMemo(() => [
     { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/all-gigs" },
     { name: "Browse All Services", icon: <Briefcase className="w-4 h-4" />, path: "/services" },
-  ];
+  ], []);
 
-  useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [mobileMenuOpen]);
-
+  // Handle scroll
   useEffect(() => {
     const handleScroll = () => {
       if (!isHomePage) {
@@ -74,14 +60,9 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
         setShowSearch(false);
         setScrolled(false);
       }
-
-      // Close dropdowns when scrolling
-      if (activeDropdown) {
-        setActiveDropdown(null);
-      }
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
 
     if (!isHomePage) {
       setShowSearch(false);
@@ -89,7 +70,24 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     }
 
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHomePage, activeDropdown]);
+  }, [isHomePage]);
+
+  // Handle mobile menu overflow
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = 'hidden';
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    } else {
+      document.body.style.overflow = 'unset';
+      document.body.style.paddingRight = '';
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+      document.body.style.paddingRight = '';
+    };
+  }, [mobileMenuOpen]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -106,19 +104,15 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [activeDropdown]);
 
-  const toggleDropdown = (dropdown) => {
-    if (activeDropdown === dropdown) {
-      setActiveDropdown(null);
-    } else {
-      setActiveDropdown(dropdown);
-    }
-  };
+  const toggleDropdown = useCallback((dropdown) => {
+    setActiveDropdown(prev => prev === dropdown ? null : dropdown);
+  }, []);
 
-  const closeAllDropdowns = () => {
+  const closeAllDropdowns = useCallback(() => {
     setActiveDropdown(null);
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await logoutMutation.mutateAsync();
       closeAllDropdowns();
@@ -127,59 +121,31 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     } catch (error) {
       console.error("Logout failed:", error);
     }
-  };
+  }, [logoutMutation, closeAllDropdowns, navigate]);
 
-  const handleMobileMenuClick = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
+  const handleMobileMenuClick = useCallback(() => {
+    setMobileMenuOpen(prev => !prev);
     closeAllDropdowns();
-  };
+  }, [closeAllDropdowns]);
 
-  const iconRotate = {
-    open: { rotate: 180 },
-    closed: { rotate: 0 }
-  };
+  // Animations - memoized
+  const dropdownAnimation = useMemo(() => ({
+    hidden: { opacity: 0, y: -5 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.1, ease: "easeOut" } },
+    exit: { opacity: 0, y: -5, transition: { duration: 0.1, ease: "easeIn" } }
+  }), []);
 
-  const mobileMenuAnimation = {
+  const mobileMenuAnimation = useMemo(() => ({
     hidden: { x: "-100%" },
-    visible: { x: 0, transition: { duration: 0.3, ease: "easeOut" } },
-    exit: { x: "-100%", transition: { duration: 0.3, ease: "easeIn" } }
-  };
+    visible: { x: 0, transition: { duration: 0.2, ease: "easeOut" } },
+    exit: { x: "-100%", transition: { duration: 0.2, ease: "easeIn" } }
+  }), []);
 
-  const overlayAnimation = {
+  const overlayAnimation = useMemo(() => ({
     hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.3 } },
-    exit: { opacity: 0, transition: { duration: 0.3 } }
-  };
-
-  const dropdownAnimation = {
-    hidden: { opacity: 0, y: -10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } },
-    exit: { opacity: 0, y: -10, transition: { duration: 0.15, ease: "easeIn" } }
-  };
-
-  // Search field animation
-  const searchAnimation = {
-    hidden: { opacity: 0, width: 0, x: -20 },
-    visible: { 
-      opacity: 1, 
-      width: "auto", 
-      x: 0,
-      transition: { 
-        duration: 0.3, 
-        ease: "easeOut",
-        when: "beforeChildren"
-      }
-    },
-    exit: { 
-      opacity: 0, 
-      width: 0, 
-      x: -20,
-      transition: { 
-        duration: 0.2, 
-        ease: "easeIn" 
-      }
-    }
-  };
+    visible: { opacity: 1, transition: { duration: 0.2 } },
+    exit: { opacity: 0, transition: { duration: 0.2 } }
+  }), []);
 
   if (loading) {
     return (
@@ -200,30 +166,25 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             <div className="flex items-center lg:hidden">
               <button
                 onClick={handleMobileMenuClick}
-                className="p-2 text-gray-600 hover:text-black transition-colors duration-200"
+                className="p-2 text-gray-600 hover:text-black transition-colors duration-150"
                 aria-label="Menu"
               >
-                <motion.div
-                  animate={mobileMenuOpen ? "open" : "closed"}
-                  variants={iconRotate}
-                  transition={{ duration: 0.3 }}
-                >
-                  {mobileMenuOpen ? (
-                    <X className="w-6 h-6" />
-                  ) : (
-                    <Menu className="w-6 h-6" />
-                  )}
-                </motion.div>
+                {mobileMenuOpen ? (
+                  <X className="w-6 h-6" />
+                ) : (
+                  <Menu className="w-6 h-6" />
+                )}
               </button>
             </div>
 
-            {/* Desktop: Logo (moved to left) */}
-            <div className="hidden lg:flex items-center shrink-0">
+            {/* Desktop: Logo */}
+            <div className="hidden lg:flex items-center shrink-0 mr-8">
               <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
                 <img
                   src={Logo2}
                   alt="Vorkana Logo"
                   className="h-8 lg:h-10 w-auto"
+                  loading="eager"
                 />
                 <span className="text-xl lg:text-2xl font-black text-black">
                   Vorkana
@@ -231,39 +192,16 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </Link>
             </div>
 
-            {/* Desktop: Search bar (moved to left after logo) */}
-            <div className="hidden lg:flex items-center flex-1 ml-6">
-              <AnimatePresence mode="wait">
-                {showSearch ? (
-                  <motion.div
-                    key="search-field"
-                    initial="hidden"
-                    animate="visible"
-                    exit="exit"
-                    variants={searchAnimation}
-                    className="flex-1 max-w-2xl ml-6" 
-                  >
-                    <SearchComponent 
-                      placeholder="Search for services, freelancers, or categories..."
-                      variant="navbar"
-                      className="w-full"
-                      onFocus={closeAllDropdowns}
-                    />
-                  </motion.div>
-                ) : (
-                  // Static search placeholder when not scrolled
-                  <motion.div 
-                    className="w-full max-w-3xl"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <div className="h-10 flex items-center">
-                      {/* Empty space to maintain layout */}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            {/* Desktop: Search */}
+            <div className="hidden lg:flex items-center ml-6 mr-auto">
+              {showSearch && (
+                <div>
+                  <SearchComponent 
+                    placeholder="What service are you looking for today?"
+                    className="w-[400px] xl:w-[480px]" 
+                  />
+                </div>
+              )}
             </div>
 
             {/* Center: Logo (Mobile only) */}
@@ -273,6 +211,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   src={Logo2}
                   alt="Vorkana Logo"
                   className="h-8 w-auto"
+                  loading="eager"
                 />
                 <span className="text-xl font-black text-black">
                   Vorkana
@@ -280,18 +219,19 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </Link>
             </div>
 
-            {/* Right: Profile/Join Button (Mobile & Desktop) */}
+            {/* Right: Profile/Join Button (Mobile) */}
             <div className="flex items-center lg:hidden">
               {isAuthenticated ? (
                 <button
                   onClick={() => toggleDropdown('profile')}
-                  className="p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
+                  className="p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                   aria-label="Profile menu"
                 >
                   <img
                     src={user?.picture || default_pp}
                     alt="Profile"
                     className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                    loading="lazy"
                     onError={(e) => {
                       e.target.onerror = null;
                       e.target.src = default_pp;
@@ -302,25 +242,25 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 <button
                   onClick={() => {
                     closeAllDropdowns();
-                    if (onSignupClick) onSignupClick();
+                    onSignupClick?.();
                   }}
-                  className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-200 text-sm"
+                  className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm"
                 >
                   Join
                 </button>
               )}
             </div>
 
-            {/* Desktop: Navigation Items (on the right) */}
+            {/* Desktop: Navigation Items */}
             <div className="hidden lg:flex items-center space-x-4">
               <div className="relative" ref={exploreRef}>
                 <button
                   onClick={() => toggleDropdown('explore')}
-                  className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-200"
+                  className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150"
                 >
                   <Globe className="w-5 h-5" />
                   <span className="font-medium">Explore</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
                 </button>
 
                 <AnimatePresence>
@@ -341,7 +281,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                                 key={category.name}
                                 to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
                                 onClick={closeAllDropdowns}
-                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200 group"
+                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150 group"
                               >
                                 <span className="truncate">{category.name}</span>
                               </Link>
@@ -357,7 +297,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                                 key={link.name}
                                 to={link.path}
                                 onClick={closeAllDropdowns}
-                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
+                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150"
                               >
                                 {link.icon}
                                 <span>{link.name}</span>
@@ -373,7 +313,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
               <Link
                 to="/find-work"
-                className="px-4 py-2.5 text-gray-700 hover:text-black font-medium hover:bg-gray-50 rounded-lg transition-all duration-200"
+                className="px-4 py-2.5 text-gray-700 hover:text-black font-medium hover:bg-gray-50 rounded-lg transition-all duration-150"
                 onClick={closeAllDropdowns}
               >
                 Find Work
@@ -381,11 +321,10 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">
-                  {/* ADMIN BUTTON - Only shown if user is admin */}
                   {isAdminUser && (
                     <Link
                       to="/admin"
-                      className="bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-4 py-1.5 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-sm"
+                      className="bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-4 py-1.5 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-150 shadow-sm"
                       onClick={closeAllDropdowns}
                     >
                       Admin
@@ -395,18 +334,19 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="relative" ref={profileRef}>
                     <button
                       onClick={() => toggleDropdown('profile')}
-                      className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-200"
+                      className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                     >
                       <img
                         src={user?.picture || default_pp}
                         alt="Profile"
                         className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                        loading="lazy"
                         onError={(e) => {
                           e.target.onerror = null;
                           e.target.src = default_pp;
                         }}
                       />
-                      <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
                     <AnimatePresence>
@@ -424,8 +364,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <div className="mt-1">
                               <span
                                 className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${isAdminUser
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-green-100 text-green-700'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
                                   }`}
                               >
                                 {isAdminUser ? 'Admin' : 'User'}
@@ -437,7 +377,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <Link
                               to="/profile"
                               onClick={closeAllDropdowns}
-                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
                             >
                               <User className="w-4 h-4" />
                               <span>Profile</span>
@@ -446,7 +386,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             <Link
                               to="/dashboard"
                               onClick={closeAllDropdowns}
-                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
                             >
                               <Package className="w-4 h-4" />
                               <span>Dashboard</span>
@@ -454,7 +394,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
                             <button
                               onClick={handleLogout}
-                              className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                              className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
                             >
                               <LogOut className="w-4 h-4" />
                               <span>Logout</span>
@@ -470,18 +410,18 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <button
                     onClick={() => {
                       closeAllDropdowns();
-                      if (onSigninClick) onSigninClick();
+                      onSigninClick?.();
                     }}
-                    className="text-gray-700 hover:text-black font-medium px-4 py-2.5 transition-colors duration-200"
+                    className="text-gray-700 hover:text-black font-medium px-4 py-2.5 transition-colors duration-150"
                   >
                     Sign In
                   </button>
                   <button
                     onClick={() => {
                       closeAllDropdowns();
-                      if (onSignupClick) onSignupClick();
+                      onSignupClick?.();
                     }}
-                    className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                    className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 shadow-sm hover:shadow-md"
                   >
                     Join Free
                   </button>
@@ -506,12 +446,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-1">
-                        <img src={Logo} alt="Vorkana" className="h-7 w-auto" />
+                        <img src={Logo} alt="Vorkana" className="h-7 w-auto" loading="eager" />
                         <span className="text-2xl font-black text-black">Vorkana</span>
                       </div>
                       <button
                         onClick={() => setMobileMenuOpen(false)}
-                        className="p-2 text-gray-500 hover:text-gray-700 transition-colors duration-200 hover:bg-gray-100 rounded-lg"
+                        className="p-2 text-gray-500 hover:text-gray-700 transition-colors duration-150 hover:bg-gray-100 rounded-lg"
                         aria-label="Close menu"
                       >
                         <X className="w-5 h-5" />
@@ -520,8 +460,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
                     {/* Search in mobile menu */}
                     <div className="mb-6">
-                      <SearchComponent 
-                        placeholder="Search services..."
+                      <SearchComponent
+                        placeholder="What service are you looking for?"
                         variant="full"
                         className="w-full"
                         onFocus={() => setMobileMenuOpen(false)}
@@ -535,6 +475,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                             src={user?.picture || default_pp}
                             alt={user?.name}
                             className="w-10 h-10 rounded-full object-cover border border-gray-300"
+                            loading="lazy"
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.src = default_pp;
@@ -560,7 +501,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <Link
                         to="/"
                         onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-200"
+                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
                       >
                         <Home className="w-5 h-5 text-gray-600" />
                         <span className="font-medium text-gray-800">Home</span>
@@ -569,7 +510,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <Link
                         to="/find-work"
                         onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-200"
+                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
                       >
                         <Briefcase className="w-5 h-5 text-gray-600" />
                         <span className="font-medium text-gray-800">Find Work</span>
@@ -592,7 +533,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                                 key={category.name}
                                 to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
                                 onClick={() => setMobileMenuOpen(false)}
-                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
+                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150"
                               >
                                 <span className="truncate">{category.name}</span>
                               </Link>
@@ -608,7 +549,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                                 key={link.name}
                                 to={link.path}
                                 onClick={() => setMobileMenuOpen(false)}
-                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-200"
+                                className="flex items-center space-x-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150"
                               >
                                 {link.icon}
                                 <span>{link.name}</span>
@@ -625,30 +566,29 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            if (onSigninClick) onSigninClick();
+                            onSigninClick?.();
                           }}
-                          className="w-full py-3.5 text-center border-2 border-gray-200 text-gray-800 font-medium rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+                          className="w-full py-3.5 text-center border-2 border-gray-200 text-gray-800 font-medium rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-150"
                         >
                           Sign In
                         </button>
                         <button
                           onClick={() => {
                             setMobileMenuOpen(false);
-                            if (onSignupClick) onSignupClick();
+                            onSignupClick?.();
                           }}
-                          className="w-full py-3.5 bg-black text-white font-medium rounded-xl text-center hover:bg-gray-800 transition-all duration-200 hover:shadow-lg"
+                          className="w-full py-3.5 bg-black text-white font-medium rounded-xl text-center hover:bg-gray-800 transition-all duration-150 hover:shadow-lg"
                         >
                           Join Free
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-1 mt-8 pt-6 border-t border-gray-100">
-                        {/* Admin Link if user is admin */}
                         {isAdminUser && (
                           <Link
                             to="/admin"
                             onClick={() => setMobileMenuOpen(false)}
-                            className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200 text-red-600 font-medium"
+                            className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-150 text-red-600 font-medium"
                           >
                             <span className="w-5 h-5 flex items-center justify-center">⚙️</span>
                             <span>Admin Panel</span>
@@ -658,7 +598,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <Link
                           to="/profile"
                           onClick={() => setMobileMenuOpen(false)}
-                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200"
+                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-150"
                         >
                           <User className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">Profile</span>
@@ -667,7 +607,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <Link
                           to="/dashboard"
                           onClick={() => setMobileMenuOpen(false)}
-                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200"
+                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-150"
                         >
                           <Package className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">Dashboard</span>
@@ -676,7 +616,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <Link
                           to="/settings"
                           onClick={() => setMobileMenuOpen(false)}
-                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-200"
+                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-150"
                         >
                           <Settings className="w-5 h-5 text-gray-600" />
                           <span className="font-medium text-gray-800">Settings</span>
@@ -684,7 +624,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
                         <button
                           onClick={handleLogout}
-                          className="w-full flex items-center space-x-3 px-3 py-3.5 text-gray-800 hover:bg-gray-50 transition-all duration-200"
+                          className="w-full flex items-center space-x-3 px-3 py-3.5 text-gray-800 hover:bg-gray-50 transition-all duration-150"
                         >
                           <LogOut className="w-5 h-5" />
                           <span className="font-medium">Logout</span>
@@ -711,4 +651,4 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   );
 };
 
-export default Navbar;
+export default React.memo(Navbar);
