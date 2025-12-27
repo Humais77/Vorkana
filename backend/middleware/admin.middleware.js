@@ -20,9 +20,6 @@ const adminDashboardLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Advanced admin verification with multi-factor checks
-// In admin.middleware.js - FIX THE TOKEN EXTRACTION
-// In admin.middleware.js - UPDATED VERIFY ADMIN FUNCTION
 const verifyAdmin = async (req, res, next) => {
   try {
     console.log('[ADMIN VERIFICATION] Starting verification...');
@@ -130,8 +127,6 @@ const verifyAdmin = async (req, res, next) => {
     });
   }
 };
-// In admin.middleware.js - UPDATED requirePermission function
-// In admin.middleware.js - UPDATED requirePermission function
 const requirePermission = (permission) => {
   return (req, res, next) => {
     if (!req.admin) {
@@ -157,10 +152,14 @@ const requirePermission = (permission) => {
       'manage_users': ['admin', 'super_admin'],
       'export_users': ['admin', 'super_admin'],
       
-      // Categories
+      // Categories (includes subcategories)
       'view_categories': ['admin', 'super_admin', 'moderator'],  // ADD THIS
       'manage_categories': ['admin', 'super_admin', 'moderator'],
       'export_categories': ['admin', 'super_admin'],
+      
+      // Subcategories specific permissions
+      'view_subcategories': ['admin', 'super_admin', 'moderator'],
+      'manage_subcategories': ['admin', 'super_admin', 'moderator'],
       
       // Services
       'view_services': ['admin', 'super_admin', 'moderator'],  // ADD THIS
@@ -211,7 +210,6 @@ const requirePermission = (permission) => {
   };
 };
 
-// Audit logging middleware
 const auditLog = (action, resource) => {
   return async (req, res, next) => {
     const originalSend = res.send;

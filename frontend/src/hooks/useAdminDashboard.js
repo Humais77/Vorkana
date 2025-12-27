@@ -16,16 +16,27 @@ export const useAdminDashboard = () => {
         if (response.data.success) {
           const stats = response.data.data;
           
-          // Store in Zustand
+          // Extract subcategory stats from categories or directly from stats
+          const subcategoryStats = stats.categories || {};
+          const subcategories = stats.subcategories || {};
+          
+          // Store in Zustand with subcategory support
           setDashboardStats({
             totalUsers: stats.overview?.totalUsers || 0,
             totalCategories: stats.categories?.totalCategories || 0,
+            totalSubcategories: subcategoryStats.totalSubcategories || 
+                               subcategories.total || 
+                               stats.categories?.totalSubcategories || 0,
             totalServices: stats.services?.totalServices || 0,
             totalGigs: stats.gigs?.totalGigs || 0,
             activeUsers: stats.overview?.activeUsers || 0,
             activeCategories: stats.categories?.activeCategories || 0,
+            activeSubcategories: subcategoryStats.activeSubcategories || 
+                                subcategories.active || 
+                                stats.categories?.activeSubcategories || 0,
             activeServices: stats.services?.activeServices || 0,
-            activeGigs: stats.gigs?.activeGigs || 0
+            activeGigs: stats.gigs?.activeGigs || 0,
+            lastUpdated: new Date().toISOString()
           });
           
           return stats;
@@ -34,7 +45,8 @@ export const useAdminDashboard = () => {
         throw new Error(response.data.message || 'Failed to fetch dashboard stats');
       } catch (error) {
         console.error('Dashboard error:', error);
-        // Return empty stats instead of fake data
+        
+        // Return empty stats with subcategory fields
         const emptyStats = {
           overview: {
             totalUsers: 0,
@@ -42,7 +54,9 @@ export const useAdminDashboard = () => {
           },
           categories: {
             totalCategories: 0,
-            activeCategories: 0
+            activeCategories: 0,
+            totalSubcategories: 0,
+            activeSubcategories: 0
           },
           services: {
             totalServices: 0,
@@ -57,18 +71,21 @@ export const useAdminDashboard = () => {
         setDashboardStats({
           totalUsers: 0,
           totalCategories: 0,
+          totalSubcategories: 0,
           totalServices: 0,
           totalGigs: 0,
           activeUsers: 0,
           activeCategories: 0,
+          activeSubcategories: 0,
           activeServices: 0,
-          activeGigs: 0
+          activeGigs: 0,
+          lastUpdated: new Date().toISOString()
         });
         
         return emptyStats;
       }
     },
-    staleTime: 60000,
+    staleTime: 60000, // 1 minute
     retry: 2,
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to load dashboard');
@@ -827,5 +844,222 @@ export const useServiceStats = () => {
     },
     staleTime: 30000,
     retry: 2
+  });
+};
+
+export const useAdminSubcategories = (params = {}) => {
+  const setSubcategories = useAdminStore((state) => state.setSubcategories);
+
+  return useQuery({
+    queryKey: ['admin', 'subcategories', params],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getSubcategories(params);
+        if (response.data.success) {
+          setSubcategories(response.data);
+          return response.data;
+        }
+        throw new Error(response.data.message || 'Failed to fetch subcategories');
+      } catch (error) {
+        console.error('Subcategories error:', error);
+        throw error;
+      }
+    },
+    staleTime: 60000,
+    retry: 2,
+    keepPreviousData: true,
+    onError: (error) => {
+      if (error.response?.status !== 401) {
+        toast.error('Failed to load subcategories');
+      }
+    }
+  });
+};
+
+export const useCreateSubcategory = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (subcategoryData) => adminAPI.createSubcategory(subcategoryData),
+    onMutate: async (subcategoryData) => {
+      await queryClient.cancelQueries(['admin', 'subcategories']);
+      
+      const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      
+      // Generate a temporary ID for optimistic update
+      const tempId = `temp-${Date.now()}`;
+      const tempSubcategory = {
+        _id: tempId,
+        ...subcategoryData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        __isOptimistic: true
+      };
+      
+      queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: [tempSubcategory, ...old.data]
+        };
+      });
+      
+      return { previousSubcategories, tempId };
+    },
+    onSuccess: (response, variables, context) => {
+      if (response.data.success) {
+        toast.success('Subcategory created successfully');
+        
+        // Remove optimistic entry and add the real one
+        if (context?.tempId) {
+          queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              data: old.data
+                .filter(sub => sub._id !== context.tempId)
+                .concat(response.data?.data || response.data)
+            };
+          });
+        }
+        
+        queryClient.invalidateQueries(['admin', 'subcategories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Creation failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSubcategories) {
+        queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
+      }
+      toast.error(error.response?.data?.message || 'Failed to create subcategory');
+    }
+  });
+};
+
+export const useUpdateSubcategory = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }) => adminAPI.updateSubcategory(id, data),
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries(['admin', 'subcategories']);
+      
+      const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      
+      queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(subcategory => 
+            subcategory._id === id 
+              ? { ...subcategory, ...data, updatedAt: new Date().toISOString() }
+              : subcategory
+          )
+        };
+      });
+      
+      return { previousSubcategories };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Subcategory updated successfully');
+        queryClient.invalidateQueries(['admin', 'subcategories']);
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSubcategories) {
+        queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
+      }
+      toast.error(error.response?.data?.message || 'Failed to update subcategory');
+    }
+  });
+};
+
+export const useDeleteSubcategory = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, options = {} }) => adminAPI.deleteSubcategory(id, options),
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries(['admin', 'subcategories']);
+      
+      const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      
+      queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.filter(subcategory => subcategory._id !== id)
+        };
+      });
+      
+      return { previousSubcategories };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success('Subcategory deleted successfully');
+        queryClient.invalidateQueries(['admin', 'subcategories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Delete failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSubcategories) {
+        queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
+      }
+      toast.error(error.response?.data?.message || 'Failed to delete subcategory');
+    }
+  });
+};
+
+export const useBulkSubcategoryOperations = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ids, operation, data = {} }) => 
+      adminAPI.bulkUpdateSubcategories({ ids, operation, data }),
+    onMutate: async ({ ids, operation, data }) => {
+      await queryClient.cancelQueries(['admin', 'subcategories']);
+      
+      const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      
+      queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(subcategory => 
+            ids.includes(subcategory._id) 
+              ? { 
+                  ...subcategory, 
+                  ...data,
+                  ...(operation === 'activate' ? { isActive: true } : {}),
+                  ...(operation === 'deactivate' ? { isActive: false } : {}),
+                } 
+              : subcategory
+          )
+        };
+      });
+      
+      return { previousSubcategories };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(response.data.message || 'Bulk operation completed');
+        queryClient.invalidateQueries(['admin', 'subcategories']);
+      } else {
+        toast.error(response.data.message || 'Bulk operation failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSubcategories) {
+        queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
+      }
+      toast.error(error.response?.data?.message || 'Bulk operation failed');
+    }
   });
 };

@@ -9,10 +9,12 @@ export const useAdminStore = create(
       dashboardStats: {
         totalUsers: 0,
         totalCategories: 0,
+        totalSubcategories: 0,
         totalServices: 0,
         totalGigs: 0,
         activeUsers: 0,
         activeCategories: 0,
+        activeSubcategories: 0, 
         activeServices: 0,
         activeGigs: 0,
         lastUpdated: null
@@ -29,7 +31,13 @@ export const useAdminStore = create(
       categoriesPagination: null,
       categoriesLastFetched: null,
       categoriesFilters: {},
+      // Subcategories State
+      subcategories: [],
+      subcategoriesPagination: null,
+      subcategoriesLastFetched: null,
+      subcategoriesFilters: {},
       
+      selectedSubcategory: null,
       // Services State - ADD THIS SECTION
       services: [],
       servicesPagination: null,
@@ -172,6 +180,32 @@ export const useAdminStore = create(
         const { servicesLastFetched } = get();
         return !servicesLastFetched || Date.now() - servicesLastFetched > 120000;
       },
+       // Subcategory Actions
+      setSubcategories: (data) => {
+        const subcategories = Array.isArray(data) ? data : data?.data || [];
+        const pagination = data?.pagination || null;
+        set({ 
+          subcategories, 
+          subcategoriesPagination: pagination,
+          subcategoriesLastFetched: Date.now() 
+        });
+      },
+      
+      setSelectedSubcategory: (subcategory) => set({ selectedSubcategory: subcategory }),
+      
+      setSubcategoriesFilters: (filters) => set({ 
+        subcategoriesFilters: { ...get().subcategoriesFilters, ...filters }
+      }),
+      
+      getSubcategoryById: (id) => {
+        const subcategories = get().subcategories;
+        return subcategories.find(subcategory => subcategory._id === id);
+      },
+      
+      shouldRefreshSubcategories: () => {
+        const { subcategoriesLastFetched } = get();
+        return !subcategoriesLastFetched || Date.now() - subcategoriesLastFetched > 120000;
+      },
       
       // Clear methods
       clearSelected: () => set({ 
@@ -200,6 +234,11 @@ export const useAdminStore = create(
         categoriesPagination: null,
         categoriesLastFetched: null,
         categoriesFilters: {},
+        subcategories: [],
+        subcategoriesPagination: null,
+        subcategoriesLastFetched: null,
+        subcategoriesFilters: {},
+        selectedSubcategory: null,
         services: [], // Add this
         servicesPagination: null, // Add this
         servicesLastFetched: null, // Add this

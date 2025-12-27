@@ -1,12 +1,14 @@
 const mongoose = require('mongoose');
 const User = require('../models/user.model.js');
 const Category = require('../models/category.model.js');
+const Subcategory = require('../models/subcategory.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
+const parsePhoneNumberFromString = require("libphonenumber-js").parsePhoneNumberFromString;
 // Add this at the top with your other imports
 const gigController = require('../controllers/gig.controller.js');
 // Security: Generate admin-specific token
@@ -155,6 +157,8 @@ const getDashboardStats = async (req, res) => {
       activeUsers,
       totalCategories,
       activeCategories,
+       totalSubcategories,
+      activeSubcategories,
       totalServices,
       activeServices,
       totalGigs,
@@ -173,7 +177,11 @@ const getDashboardStats = async (req, res) => {
         isActive: true, 
         deletedAt: null 
       }),
-      
+      Subcategory.countDocuments({ deletedAt: null }),
+      Subcategory.countDocuments({ 
+        isActive: true, 
+        deletedAt: null 
+      }),
       // Services - count all services (with proper filter)
       Service.countDocuments({ deletedAt: null }),
       // Services - count active services (check your Service model schema)
@@ -206,8 +214,10 @@ const getDashboardStats = async (req, res) => {
         activeUsers
       },
       categories: {
-        totalCategories,
-        activeCategories
+         totalCategories,
+        activeCategories,
+        totalSubcategories,
+        activeSubcategories
       },
       services: {
         totalServices,
@@ -923,10 +933,14 @@ const validateDateOfBirth = (dob) => {
   return age >= 13 && age <= 120;
 };
 
-// Helper function: validate phone number
 const validatePhoneNumber = (phone) => {
-  if (!phone) return true;
-  return validator.isMobilePhone(phone, 'any', { strictMode: false });
+  if (!phone || phone.trim() === '') return true; // optional
+
+  const phoneNumber = parsePhoneNumberFromString(phone.trim());
+
+  // If it parses at all (has +country code or recognizable format), accept it
+  // This allows placeholders like +1234567890, +15551234567, etc.
+  return !!phoneNumber;
 };
 // Export Users
 const exportUsers = async (req, res) => {
@@ -1399,7 +1413,7 @@ const createGig = async (req, res) => {
       });
     }
 
-    // Validate subcategory if provided
+    // Validate subcategory if provided - UPDATED TO USE SUBCATEGORY MODEL
     if (gigData.subcategory) {
       if (!mongoose.Types.ObjectId.isValid(gigData.subcategory)) {
         return res.status(400).json({
@@ -1410,9 +1424,11 @@ const createGig = async (req, res) => {
         });
       }
       
-      const subcategory = await Category.findOne({
+      // Check if subcategory exists and belongs to the selected category
+      const subcategory = await Subcategory.findOne({
         _id: gigData.subcategory,
-        parentCategory: gigData.projectCategory
+        category: gigData.projectCategory,
+        isActive: true
       });
       
       if (!subcategory) {
@@ -1438,10 +1454,10 @@ const createGig = async (req, res) => {
     // Create gig
     const gig = await Gig.create(gigData);
 
-    // Populate for response
+    // Populate for response - UPDATED TO POPULATE SUBCATEGORY
     const populatedGig = await Gig.findById(gig._id)
       .populate('projectCategory', 'name slug icon')
-      .populate('subcategory', 'name slug')
+      .populate('subcategory', 'name slug icon description') // Updated to Subcategory model
       .populate('createdBy', 'name email picture')
       .lean();
 
@@ -1463,6 +1479,7 @@ const createGig = async (req, res) => {
     await logAdminAction(req.admin._id, 'CREATE_GIG', `gig:${gig._id}`, {
       title: gig.title,
       category: gig.projectCategory,
+      subcategory: gig.subcategory,
       budget: gig.budget,
       ip: req.ip
     });
@@ -1471,6 +1488,13 @@ const createGig = async (req, res) => {
     await Category.findByIdAndUpdate(gig.projectCategory, {
       $inc: { gigsCount: 1 }
     });
+    
+    // Update subcategory gig count if exists
+    if (gig.subcategory) {
+      await Subcategory.findByIdAndUpdate(gig.subcategory, {
+        $inc: { gigsCount: 1 }
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -1512,7 +1536,7 @@ const createGig = async (req, res) => {
   }
 };
 
-// Update Gig (Admin)
+// Update updateGig function
 const updateGig = async (req, res) => {
   const requestId = uuidv4();
   
@@ -1593,6 +1617,55 @@ const updateGig = async (req, res) => {
       });
     }
 
+    // Validate subcategory if changed - UPDATED FOR SUBCATEGORY MODEL
+    if (updates.subcategory !== undefined) {
+      if (updates.subcategory === null || updates.subcategory === '') {
+        // Removing subcategory - decrement old subcategory count if exists
+        if (existingGig.subcategory) {
+          await Subcategory.findByIdAndUpdate(existingGig.subcategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
+      } else if (updates.subcategory !== existingGig.subcategory?.toString()) {
+        // Changing to a new subcategory
+        if (!mongoose.Types.ObjectId.isValid(updates.subcategory)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid subcategory ID',
+            code: 'INVALID_SUBCATEGORY_ID',
+            requestId
+          });
+        }
+        
+        // Check new subcategory exists and belongs to category
+        const subcategory = await Subcategory.findOne({
+          _id: updates.subcategory,
+          category: updates.projectCategory || existingGig.projectCategory,
+          isActive: true
+        });
+        
+        if (!subcategory) {
+          return res.status(400).json({
+            success: false,
+            message: 'Subcategory not found or does not belong to selected category',
+            code: 'SUBCATEGORY_NOT_FOUND',
+            requestId
+          });
+        }
+        
+        // Update subcategory counts
+        if (existingGig.subcategory) {
+          await Subcategory.findByIdAndUpdate(existingGig.subcategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
+        
+        await Subcategory.findByIdAndUpdate(updates.subcategory, {
+          $inc: { gigsCount: 1 }
+        });
+      }
+    }
+
     // Update gig
     const gig = await Gig.findByIdAndUpdate(
       id,
@@ -1600,7 +1673,7 @@ const updateGig = async (req, res) => {
       { new: true, runValidators: true }
     )
     .populate('projectCategory', 'name slug icon')
-    .populate('subcategory', 'name slug')
+    .populate('subcategory', 'name slug icon description') // Updated to Subcategory model
     .populate('createdBy', 'name email picture')
     .lean();
 
@@ -1772,11 +1845,19 @@ const deleteGig = async (req, res) => {
       // Delete from database
       result = await Gig.deleteOne({ _id: gigId });
       
-      // Decrement category count if gig was open
-      if (gig.status === 'open' && gig.projectCategory) {
-        await Category.findByIdAndUpdate(gig.projectCategory, {
-          $inc: { gigsCount: -1 }
-        });
+      // Decrement category and subcategory counts if gig was open
+      if (gig.status === 'open') {
+        if (gig.projectCategory) {
+          await Category.findByIdAndUpdate(gig.projectCategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
+        
+        if (gig.subcategory) {
+          await Subcategory.findByIdAndUpdate(gig.subcategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
       }
       
       console.log('[ADMIN DELETE GIG] Permanent deletion successful:', gigId);
@@ -1794,11 +1875,19 @@ const deleteGig = async (req, res) => {
         { new: true }
       );
       
-      // Decrement category count if gig was open
-      if (gig.status === 'open' && gig.projectCategory) {
-        await Category.findByIdAndUpdate(gig.projectCategory, {
-          $inc: { gigsCount: -1 }
-        });
+      // Decrement category and subcategory counts if gig was open
+      if (gig.status === 'open') {
+        if (gig.projectCategory) {
+          await Category.findByIdAndUpdate(gig.projectCategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
+        
+        if (gig.subcategory) {
+          await Subcategory.findByIdAndUpdate(gig.subcategory, {
+            $inc: { gigsCount: -1 }
+          });
+        }
       }
       
       console.log('[ADMIN DELETE GIG] Soft deletion successful:', gigId);
@@ -2198,7 +2287,839 @@ const getGigStats = async (req, res) => {
     });
   }
 };
+const getSubcategoriesDropdown = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { categoryId } = req.params;
+    const { activeOnly = true } = req.query;
 
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_CATEGORY_ID',
+        requestId
+      });
+    }
+
+    // Build filter
+    const filter = {
+      category: categoryId,
+      deletedAt: null
+    };
+
+    if (activeOnly === 'true' || activeOnly === true) {
+      filter.isActive = true;
+    }
+
+    // Get subcategories
+    const subcategories = await Subcategory.find(filter)
+      .select('name slug description icon order servicesCount gigsCount')
+      .sort({ order: 1, name: 1 })
+      .lean();
+
+    res.json({
+      success: true,
+      data: subcategories,
+      count: subcategories.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[GET SUBCATEGORIES DROPDOWN ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategories',
+      code: 'SUBCATEGORIES_FETCH_ERROR',
+      requestId
+    });
+  }
+};
+const getSubcategories = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search = '',
+      category = '',
+      isActive = '',
+      sortBy = 'order',
+      sortOrder = 'asc'
+    } = req.query;
+
+    // Build filter
+    const filter = { deletedAt: null };
+    
+    if (search) {
+      const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { name: { $regex: sanitizedSearch, $options: 'i' } },
+        { description: { $regex: sanitizedSearch, $options: 'i' } },
+        { slug: { $regex: sanitizedSearch, $options: 'i' } }
+      ];
+    }
+    
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+    
+    if (isActive !== '') {
+      filter.isActive = isActive === 'true';
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort
+    const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'order';
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+    // Execute query
+    const [subcategories, total] = await Promise.all([
+      Subcategory.find(filter)
+        .populate('category', 'name slug')
+        .populate('createdBy', 'name email')
+        .sort({ [sortField]: sortDirection })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Subcategory.countDocuments(filter)
+    ]);
+
+    // Sanitize response
+    const safeSubcategories = subcategories.map(sub => {
+      const safeSub = { ...sub };
+      delete safeSub.__v;
+      delete safeSub.deletedAt;
+      delete safeSub.deletedBy;
+      delete safeSub.version;
+      delete safeSub.lastUpdatedBy;
+      if (safeSub.createdBy) {
+        delete safeSub.createdBy.password;
+        delete safeSub.createdBy.resetPasswordToken;
+        delete safeSub.createdBy.resetPasswordExpires;
+      }
+      return safeSub;
+    });
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: safeSubcategories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[GET SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategories',
+      code: 'SUBCATEGORIES_FETCH_ERROR',
+      requestId
+    });
+  }
+};
+
+// Get Subcategory by ID (Admin)
+const getSubcategoryById = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID',
+        code: 'INVALID_SUBCATEGORY_ID',
+        requestId
+      });
+    }
+
+    const subcategory = await Subcategory.findOne({ _id: id, deletedAt: null })
+      .populate('category', 'name slug description')
+      .populate('createdBy', 'name email')
+      .lean();
+
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Remove sensitive fields
+    delete subcategory.__v;
+    delete subcategory.deletedAt;
+    delete subcategory.deletedBy;
+    delete subcategory.version;
+    delete subcategory.lastUpdatedBy;
+    if (subcategory.createdBy) {
+      delete subcategory.createdBy.password;
+      delete subcategory.createdBy.resetPasswordToken;
+      delete subcategory.createdBy.resetPasswordExpires;
+    }
+
+    res.json({
+      success: true,
+      data: subcategory,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[GET SUBCATEGORY BY ID ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategory',
+      code: 'SUBCATEGORY_FETCH_ERROR',
+      requestId
+    });
+  }
+};
+
+// Create Subcategory (Admin)
+const createSubcategory = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const subcategoryData = {
+      ...req.body,
+      createdBy: req.admin._id,
+      lastUpdatedBy: req.admin._id,
+      version: 1
+    };
+
+    // Validate required fields
+    if (!subcategoryData.name || !subcategoryData.category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name and category are required',
+        code: 'MISSING_REQUIRED_FIELDS',
+        requestId
+      });
+    }
+
+    // Validate category exists
+    if (!mongoose.Types.ObjectId.isValid(subcategoryData.category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_CATEGORY_ID',
+        requestId
+      });
+    }
+
+    const category = await Category.findById(subcategoryData.category);
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check for duplicate name in same category
+    const existingSubcategory = await Subcategory.findOne({
+      name: subcategoryData.name.trim(),
+      category: subcategoryData.category,
+      deletedAt: null
+    });
+
+    if (existingSubcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this name already exists in this category',
+        code: 'DUPLICATE_SUBCATEGORY',
+        requestId
+      });
+    }
+
+    // Create subcategory
+    const subcategory = await Subcategory.create(subcategoryData);
+
+    // Populate for response
+    const populatedSubcategory = await Subcategory.findById(subcategory._id)
+      .populate('category', 'name slug')
+      .lean();
+
+    // Remove sensitive fields
+    delete populatedSubcategory.__v;
+    delete populatedSubcategory.deletedAt;
+    delete populatedSubcategory.deletedBy;
+    delete populatedSubcategory.version;
+    delete populatedSubcategory.lastUpdatedBy;
+
+    // Update category stats
+    await Category.findByIdAndUpdate(subcategoryData.category, {
+      $inc: { servicesCount: 0, gigsCount: 0 } // Initialize counts
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Subcategory created successfully',
+      data: populatedSubcategory,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[CREATE SUBCATEGORY ERROR]', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this slug already exists',
+        code: 'DUPLICATE_SLUG',
+        requestId
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create subcategory',
+      code: 'SUBCATEGORY_CREATE_ERROR',
+      requestId
+    });
+  }
+};
+
+// Update Subcategory (Admin)
+const updateSubcategory = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    console.log('[UPDATE SUBCATEGORY] Request:', { id, updates });
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID',
+        code: 'INVALID_SUBCATEGORY_ID',
+        requestId
+      });
+    }
+
+    // Find existing subcategory
+    const existingSubcategory = await Subcategory.findById(id);
+    if (!existingSubcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check for version conflict
+    if (updates.version && updates.version !== existingSubcategory.version) {
+      return res.status(409).json({
+        success: false,
+        message: 'Subcategory was modified by another user. Please refresh and try again.',
+        code: 'VERSION_CONFLICT',
+        currentVersion: existingSubcategory.version,
+        requestId
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      ...updates,
+      lastUpdatedBy: req.admin._id,
+      $inc: { version: 1 }
+    };
+
+    // Remove version from update data
+    delete updateData.version;
+
+    // If changing category, validate new category
+    if (updates.category && updates.category !== existingSubcategory.category.toString()) {
+      if (!mongoose.Types.ObjectId.isValid(updates.category)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid category ID',
+          code: 'INVALID_CATEGORY_ID',
+          requestId
+        });
+      }
+
+      const newCategory = await Category.findById(updates.category);
+      if (!newCategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category not found',
+          code: 'CATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
+
+      // Check for duplicate name in new category
+      const duplicate = await Subcategory.findOne({
+        name: updates.name || existingSubcategory.name,
+        category: updates.category,
+        _id: { $ne: id },
+        deletedAt: null
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory with this name already exists in the new category',
+          code: 'DUPLICATE_IN_NEW_CATEGORY',
+          requestId
+        });
+      }
+    }
+
+    // If changing name, check for duplicates in same category
+    if (updates.name && updates.name !== existingSubcategory.name) {
+      const duplicate = await Subcategory.findOne({
+        name: updates.name,
+        category: updates.category || existingSubcategory.category,
+        _id: { $ne: id },
+        deletedAt: null
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory with this name already exists',
+          code: 'DUPLICATE_NAME',
+          requestId
+        });
+      }
+    }
+
+    // Update subcategory
+    const subcategory = await Subcategory.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    )
+    .populate('category', 'name slug')
+    .lean();
+
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found during update',
+        code: 'UPDATE_FAILED',
+        requestId
+      });
+    }
+
+    // Remove sensitive fields
+    delete subcategory.__v;
+    delete subcategory.deletedAt;
+    delete subcategory.deletedBy;
+    delete subcategory.version;
+    delete subcategory.lastUpdatedBy;
+
+    res.json({
+      success: true,
+      message: 'Subcategory updated successfully',
+      data: subcategory,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[UPDATE SUBCATEGORY ERROR]', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this slug already exists',
+        code: 'DUPLICATE_SLUG',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update subcategory',
+      code: 'SUBCATEGORY_UPDATE_ERROR',
+      requestId
+    });
+  }
+};
+
+// Delete Subcategory (Admin)
+const deleteSubcategory = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { id } = req.params;
+    const { permanent = 'false', force = 'false' } = req.query;
+
+    console.log('[DELETE SUBCATEGORY] Request:', { id, permanent, force });
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID',
+        code: 'INVALID_SUBCATEGORY_ID',
+        requestId
+      });
+    }
+
+    const subcategory = await Subcategory.findById(id);
+    
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    if (subcategory.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
+    }
+
+    let result;
+    const now = new Date();
+    
+    if (permanent === 'true') {
+      // Check for dependencies if not forcing
+      if (force !== 'true') {
+        if (subcategory.servicesCount > 0 || subcategory.gigsCount > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot delete subcategory with active services or gigs',
+            code: 'DEPENDENCIES_EXIST',
+            requestId
+          });
+        }
+      }
+      
+      // Permanent delete
+      result = await Subcategory.deleteOne({ _id: id });
+      
+      console.log('[DELETE SUBCATEGORY] Permanent deletion successful:', id);
+      
+    } else {
+      // Soft delete
+      result = await Subcategory.findByIdAndUpdate(
+        id,
+        {
+          isActive: false,
+          deletedAt: now,
+          deletedBy: req.admin._id,
+          lastUpdatedBy: req.admin._id
+        },
+        { new: true }
+      );
+      
+      console.log('[DELETE SUBCATEGORY] Soft deletion successful:', id);
+    }
+
+    res.json({
+      success: true,
+      message: permanent === 'true' ? 'Subcategory permanently deleted' : 'Subcategory deleted successfully',
+      data: {
+        _id: subcategory._id,
+        name: subcategory.name,
+        slug: subcategory.slug,
+        isActive: false,
+        deletedAt: now
+      },
+      requestId,
+      timestamp: now.toISOString()
+    });
+
+  } catch (error) {
+    console.error('[DELETE SUBCATEGORY ERROR]', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete subcategory',
+      code: 'DELETE_SUBCATEGORY_ERROR',
+      requestId
+    });
+  }
+};
+
+// Bulk Update Subcategories
+const bulkUpdateSubcategories = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { ids, operation, data = {} } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No subcategories selected',
+        code: 'NO_SUBCATEGORIES_SELECTED',
+        requestId
+      });
+    }
+
+    // Validate IDs
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid subcategory IDs provided',
+        code: 'INVALID_IDS',
+        requestId
+      });
+    }
+
+    let updateData = {};
+    let message = 'Subcategories updated successfully';
+
+    switch (operation) {
+      case 'activate':
+        updateData = { isActive: true };
+        message = 'Subcategories activated successfully';
+        break;
+        
+      case 'deactivate':
+        updateData = { isActive: false };
+        message = 'Subcategories deactivated successfully';
+        break;
+        
+      default:
+        updateData = data;
+    }
+
+    updateData.lastUpdatedBy = req.admin._id;
+    updateData.$inc = { version: 1 };
+
+    // Perform bulk update
+    const result = await Subcategory.updateMany(
+      { _id: { $in: validIds } },
+      { $set: updateData }
+    );
+
+    res.json({
+      success: true,
+      message,
+      modifiedCount: result.modifiedCount,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[BULK UPDATE SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to perform bulk operation',
+      code: 'BULK_OPERATION_ERROR',
+      requestId
+    });
+  }
+};
+
+// Get Subcategory Statistics
+const getSubcategoryStats = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const stats = await Subcategory.aggregate([
+      { $match: { deletedAt: null } },
+      {
+        $facet: {
+          overview: [
+            {
+              $group: {
+                _id: null,
+                totalSubcategories: { $sum: 1 },
+                activeSubcategories: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } },
+                totalServices: { $sum: '$servicesCount' },
+                totalGigs: { $sum: '$gigsCount' },
+                avgServices: { $avg: '$servicesCount' },
+                avgGigs: { $avg: '$gigsCount' }
+              }
+            }
+          ],
+          byCategory: [
+            {
+              $group: {
+                _id: '$category',
+                count: { $sum: 1 },
+                totalServices: { $sum: '$servicesCount' },
+                totalGigs: { $sum: '$gigsCount' }
+              }
+            },
+            { $sort: { count: -1 } },
+            { $limit: 10 }
+          ],
+          growth: [
+            {
+              $group: {
+                _id: {
+                  year: { $year: '$createdAt' },
+                  month: { $month: '$createdAt' }
+                },
+                count: { $sum: 1 }
+              }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1 } },
+            { $limit: 12 }
+          ]
+        }
+      }
+    ]);
+
+    // Get category names for byCategory
+    const byCategory = stats[0]?.byCategory || [];
+    const categoryIds = byCategory.map(item => item._id).filter(id => id);
+    
+    const categories = await Category.find({ _id: { $in: categoryIds } })
+      .select('name slug')
+      .lean();
+    
+    const categoryMap = {};
+    categories.forEach(cat => {
+      categoryMap[cat._id.toString()] = cat;
+    });
+    
+    const byCategoryWithNames = byCategory.map(item => ({
+      ...item,
+      category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        ...stats[0],
+        byCategory: byCategoryWithNames
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[SUBCATEGORY STATS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategory statistics',
+      code: 'SUBCATEGORY_STATS_ERROR',
+      requestId
+    });
+  }
+};
+
+// Export Subcategories
+const exportSubcategories = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { format = 'json' } = req.query;
+
+    // Get subcategories with populated data
+    const subcategories = await Subcategory.find({ deletedAt: null })
+      .populate('category', 'name slug')
+      .populate('createdBy', 'name email')
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version')
+      .lean();
+
+    if (format === 'csv') {
+      const headers = [
+        'ID', 'Name', 'Slug', 'Description', 'Category', 
+        'Order', 'Active', 'Services Count', 'Gigs Count',
+        'Created At', 'Updated At'
+      ];
+
+      const csvRows = subcategories.map(sub => [
+        sub._id,
+        `"${(sub.name || '').replace(/"/g, '""')}"`,
+        sub.slug || '',
+        `"${(sub.description || '').replace(/"/g, '""')}"`,
+        sub.category?.name || '',
+        sub.order || 0,
+        sub.isActive ? 'Yes' : 'No',
+        sub.servicesCount || 0,
+        sub.gigsCount || 0,
+        new Date(sub.createdAt).toISOString(),
+        new Date(sub.updatedAt).toISOString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n');
+
+      res.header('Content-Type', 'text/csv');
+      res.header('Content-Disposition', `attachment; filename="subcategories_export_${Date.now()}.csv"`);
+      res.header('X-Request-ID', requestId);
+      res.header('X-Export-Records', subcategories.length);
+      res.header('X-Export-Timestamp', new Date().toISOString());
+      
+      return res.send(csvContent);
+    }
+
+    res.json({
+      success: true,
+      format: 'json',
+      count: subcategories.length,
+      data: subcategories,
+      exportedAt: new Date().toISOString(),
+      requestId
+    });
+
+  } catch (error) {
+    console.error('[EXPORT SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export subcategories',
+      code: 'EXPORT_ERROR',
+      requestId
+    });
+  }
+};
 module.exports = {
   getDashboardStats,
   getUsers,
@@ -2217,6 +3138,15 @@ module.exports = {
   exportGigs,
   getGigStats,
   generateAdminToken,
-  getSystemHealthHandler, // Add this
-  logAdminAction // Make sure this is exported if used in routes
+  getSystemHealthHandler, 
+  logAdminAction ,
+  getSubcategoriesDropdown,
+   getSubcategories,
+  getSubcategoryById,
+  createSubcategory,
+  updateSubcategory,
+  deleteSubcategory,
+  bulkUpdateSubcategories,
+  getSubcategoryStats,
+  exportSubcategories,
 };

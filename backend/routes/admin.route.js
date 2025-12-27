@@ -11,17 +11,222 @@ const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
 const mongoose = require('mongoose');
 
-// IMPORT MODELS - Add this at the top
+// IMPORT MODELS
 const Category = require('../models/category.model.js');
+const Subcategory = require('../models/subcategory.model.js');
 const User = require('../models/user.model.js');
 
 // Security: Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
 
-// Admin Authentication
-router.post('/login', adminApiLimiter, auditLog('ADMIN_LOGIN', 'auth'), (req, res) => {
-  // Special admin login logic here
-});
+// ============================================
+// SUBCATEGORY MANAGEMENT ROUTES
+// ============================================
+
+// Get all subcategories with pagination and filtering
+router.get('/subcategories', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('manage_categories'),
+  auditLog('VIEW_SUBCATEGORIES', 'categories'),
+  async (req, res, next) => {
+    try {
+      // Create a clean query object for subcategories
+      const cleanQuery = {};
+      
+      // Copy only non-empty parameters
+      for (const [key, value] of Object.entries(req.query)) {
+        // Skip empty strings
+        if (value === '') {
+          continue;
+        }
+        
+        // Parse numeric values
+        if (['page', 'limit', 'order'].includes(key)) {
+          cleanQuery[key] = parseInt(value) || (key === 'page' ? 1 : key === 'limit' ? 20 : 0);
+        }
+        // Parse boolean values
+        else if (['isActive'].includes(key)) {
+          if (value === 'true' || value === true || value === '1') {
+            cleanQuery[key] = true;
+          } else if (value === 'false' || value === false || value === '0') {
+            cleanQuery[key] = false;
+          }
+        }
+        // Keep other values as-is
+        else {
+          cleanQuery[key] = value;
+        }
+      }
+      
+      // Ensure pagination defaults
+      if (!cleanQuery.page) cleanQuery.page = 1;
+      if (!cleanQuery.limit) cleanQuery.limit = 20;
+      
+      // Replace the req.query with clean version
+      req.query = cleanQuery;
+      
+      console.log('[SUBCATEGORIES QUERY] Cleaned query:', cleanQuery);
+      next();
+    } catch (error) {
+      console.error('[SUBCATEGORIES MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.getSubcategories
+);
+
+// Get subcategory by ID - FIXED ROUTE
+router.get('/subcategories/:id', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('manage_categories'),
+  auditLog('VIEW_SUBCATEGORY', 'categories'),
+  async (req, res, next) => {
+    try {
+      console.log('[GET SUBCATEGORY BY ID] Request:', {
+        id: req.params.id,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if it's wrapped in quotes
+      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
+        req.params.id = req.params.id.slice(1, -1);
+        console.log('[GET SUBCATEGORY BY ID] Fixed ID:', req.params.id);
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[GET SUBCATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.getSubcategoryById
+);
+
+// Create subcategory
+router.post('/subcategories', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('CREATE_SUBCATEGORY', 'categories'),
+  async (req, res, next) => {
+    try {
+      console.log('[CREATE SUBCATEGORY] Request body:', req.body);
+      next();
+    } catch (error) {
+      console.error('[CREATE SUBCATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.createSubcategory
+);
+
+// Update subcategory - FIXED ROUTE WITH BODY PARSER
+router.put('/subcategories/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('UPDATE_SUBCATEGORY', 'categories'),
+  // Add JSON body parser middleware specifically for this route
+  express.json({ limit: '10mb' }),
+  async (req, res, next) => {
+    try {
+      console.log('[UPDATE SUBCATEGORY] Incoming request:', {
+        params: req.params,
+        body: req.body,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if it's wrapped in quotes
+      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
+        req.params.id = req.params.id.slice(1, -1);
+        console.log('[UPDATE SUBCATEGORY] Fixed ID:', req.params.id);
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[UPDATE SUBCATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.updateSubcategory
+);
+
+// Delete subcategory (soft or permanent)
+router.delete('/subcategories/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('DELETE_SUBCATEGORY', 'categories'),
+  async (req, res, next) => {
+    try {
+      console.log('[DELETE SUBCATEGORY] Request:', {
+        id: req.params.id,
+        query: req.query,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if needed
+      if (req.params.id === '[object Object]') {
+        if (req.body && req.body.id) {
+          req.params.id = req.body.id;
+        } else if (req.query && req.query.id) {
+          req.params.id = req.query.id;
+        }
+      }
+      
+      // Fix quoted ID
+      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
+        req.params.id = req.params.id.slice(1, -1);
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[DELETE SUBCATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.deleteSubcategory
+);
+
+// Bulk operations on subcategories
+router.post('/subcategories/bulk', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
+  adminController.bulkUpdateSubcategories
+);
+
+// Get subcategory statistics
+router.get('/subcategories/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
+  adminController.getSubcategoryStats
+);
+
+// Export subcategories
+router.get('/subcategories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_SUBCATEGORIES', 'categories'),
+  adminController.exportSubcategories
+);
+
+// Subcategory dropdown for specific category
+router.get('/categories/:categoryId/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('manage_categories'),
+  auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
+  adminController.getSubcategoriesDropdown
+);
+
+// ============================================
+// EXISTING ROUTES (keep these as they are)
+// ============================================
 
 // Dashboard Routes
 router.get('/dashboard', 
@@ -40,7 +245,7 @@ router.get('/users',
   auditLog('VIEW_USERS', 'users'),
   adminController.getUsers
 );
-// Add this route in your admin.route.js file (somewhere after other user routes)
+
 router.post('/users', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -48,6 +253,7 @@ router.post('/users',
   auditLog('CREATE_USER', 'users'),
   adminController.createUser
 );
+
 router.get('/users/export', 
   verifyAdmin, 
   requirePermission('manage_users'),
@@ -55,26 +261,11 @@ router.get('/users/export',
   adminController.exportUsers
 );
 
-// In admin.route.js - Update the PUT /users/:id route
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_users'),
   auditLog('UPDATE_USER', 'users'),
-  async (req, res, next) => {
-    try {
-      console.log('[ADMIN USER UPDATE] Incoming request:', {
-        userId: req.params.id,
-        body: req.body,
-        admin: req.admin?.email,
-        ip: req.ip
-      });
-      next();
-    } catch (error) {
-      console.error('[ADMIN USER UPDATE MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
   adminController.updateUser
 );
 
@@ -85,6 +276,8 @@ router.delete('/users/:id',
   auditLog('DELETE_USER', 'users'),
   adminController.deleteUser
 );
+
+// Category Management Routes
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -92,7 +285,7 @@ router.post('/categories',
   auditLog('CREATE_CATEGORY', 'categories'),
   categoryController.createCategory
 );
-// In admin.route.js - Update the categories route middleware
+
 router.get('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -107,9 +300,8 @@ router.get('/categories',
       for (const [key, value] of Object.entries(req.query)) {
         // Skip empty strings for boolean fields
         if (value === '' && ['featured', 'popular', 'isActive'].includes(key)) {
-  // do NOT add to cleanQuery → effectively removes it
-  continue;
-}
+          continue;
+        }
         
         // Parse numeric values
         if (['page', 'limit', 'sortOrder', 'order', 'level'].includes(key)) {
@@ -122,7 +314,6 @@ router.get('/categories',
           } else if (value === 'false' || value === false || value === '0') {
             cleanQuery[key] = false;
           }
-          // If value is undefined or empty, skip it
         }
         // Keep other values as-is
         else {
@@ -150,6 +341,7 @@ router.get('/categories',
   },
   categoryController.getCategories
 );
+
 router.put('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -157,6 +349,7 @@ router.put('/categories/:id',
   auditLog('UPDATE_CATEGORY', 'categories'),
   categoryController.updateCategory
 );
+
 router.delete('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -164,7 +357,7 @@ router.delete('/categories/:id',
   auditLog('DELETE_CATEGORY', 'categories'),
   categoryController.deleteCategory
 );
-// Admin-specific category endpoints
+
 router.post('/categories/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -181,26 +374,19 @@ router.get('/categories/analytics',
 );
 
 // Service Management
-// In admin.route.js - Add admin service routes
-// Add these routes for admin service management
-
-// Admin Service Routes
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
   requirePermission('manage_services'),
   auditLog('VIEW_SERVICES', 'services'),
   async (req, res, next) => {
-    // Add admin-specific query parameters
     req.query.isAdmin = true;
     req.query.showAll = true;
     req.query.includeInactive = true;
     
-    // Parse numeric values
     if (req.query.page) req.query.page = parseInt(req.query.page);
     if (req.query.limit) req.query.limit = parseInt(req.query.limit);
     
-    // Fix boolean cast issues
     if (req.query.featured === '') delete req.query.featured;
     if (req.query.status === '') delete req.query.status;
     
@@ -209,7 +395,6 @@ router.get('/services',
   serviceController.getAdminServices
 );
 
-// ADD THIS: Admin delete service route
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -217,9 +402,7 @@ router.delete('/services/:id',
   auditLog('DELETE_SERVICE', 'services'),
   async (req, res, next) => {
     try {
-      // Forward to the regular service controller with admin context
       req.isAdmin = true;
-      req.params.id = req.params.id;
       next();
     } catch (error) {
       console.error('[ADMIN DELETE SERVICE ERROR]', error);
@@ -228,9 +411,7 @@ router.delete('/services/:id',
   },
   serviceController.deleteService
 );
-// In admin.route.js - Add a dedicated admin delete route
 
-// ADD THIS: Admin get service by ID route
 router.get('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -238,7 +419,6 @@ router.get('/services/:id',
   auditLog('VIEW_SERVICE', 'services'),
   async (req, res, next) => {
     try {
-      // Forward to the regular service controller with admin context
       req.isAdmin = true;
       next();
     } catch (error) {
@@ -249,7 +429,6 @@ router.get('/services/:id',
   serviceController.getServiceById
 );
 
-// ADD THIS: Admin update service route
 router.put('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -257,7 +436,6 @@ router.put('/services/:id',
   auditLog('UPDATE_SERVICE', 'services'),
   async (req, res, next) => {
     try {
-      // Forward to the regular service controller with admin context
       req.isAdmin = true;
       next();
     } catch (error) {
@@ -283,20 +461,16 @@ router.get('/gigs',
   requirePermission('manage_gigs'),
   auditLog('VIEW_GIGS', 'gigs'),
   async (req, res, next) => {
-    // Add admin-specific query parameters
     req.query.isAdmin = true;
     req.query.showAll = true;
     req.query.includeInactive = true;
     
-    // Parse numeric values
     if (req.query.page) req.query.page = parseInt(req.query.page);
     if (req.query.limit) req.query.limit = parseInt(req.query.limit);
     
-    // Fix boolean cast issues
     if (req.query.status === '') delete req.query.status;
     if (req.query.urgency === '') delete req.query.urgency;
     
-    // Parse budget ranges
     if (req.query.minBudget) req.query.minBudget = parseFloat(req.query.minBudget);
     if (req.query.maxBudget) req.query.maxBudget = parseFloat(req.query.maxBudget);
     
@@ -329,17 +503,14 @@ router.put('/gigs/:id',
   adminController.updateGig
 );
 
-// In admin.route.js - Update the DELETE route
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('DELETE_GIG', 'gigs'),
-  // Add body parser for DELETE requests
   express.json(),
   async (req, res, next) => {
     try {
-      // Log the incoming request for debugging
       console.log('[ADMIN GIG DELETE] Request received:', {
         params: req.params,
         body: req.body,
@@ -347,7 +518,6 @@ router.delete('/gigs/:id',
         admin: req.admin?.email
       });
       
-      // If ID is [object Object], try to get from body or query
       if (req.params.id === '[object Object]') {
         console.log('[ADMIN GIG DELETE] Detected object ID, attempting to fix...');
         
@@ -391,7 +561,7 @@ router.get('/gigs/stats',
   adminController.getGigStats
 );
 
-// Utility endpoints for dropdowns - SIMPLIFIED VERSION
+// Dropdown routes
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -400,15 +570,44 @@ router.get('/categories/dropdown',
       console.log('[CATEGORIES DROPDOWN] Fetching categories...');
       console.log('[CATEGORIES DROPDOWN] Admin user:', req.admin?.email);
       
+      const { includeSubcategories = false } = req.query;
+      
       const categories = await Category.find({ 
         isActive: true,
-        deletedAt: null 
+        deletedAt: null,
+        isSubcategory: false
       })
       .select('name slug icon parentCategory')
       .sort({ name: 1 })
       .lean();
       
       console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
+      
+      if (includeSubcategories === 'true') {
+        const categoryIds = categories.map(cat => cat._id);
+        
+        const subcategories = await Subcategory.find({
+          category: { $in: categoryIds },
+          isActive: true,
+          deletedAt: null
+        })
+        .select('name slug icon category order')
+        .sort({ order: 1, name: 1 })
+        .lean();
+        
+        const subcategoriesByCategory = {};
+        subcategories.forEach(sub => {
+          const catId = sub.category.toString();
+          if (!subcategoriesByCategory[catId]) {
+            subcategoriesByCategory[catId] = [];
+          }
+          subcategoriesByCategory[catId].push(sub);
+        });
+        
+        categories.forEach(category => {
+          category.subcategories = subcategoriesByCategory[category._id.toString()] || [];
+        });
+      }
       
       res.json({
         success: true,
@@ -419,6 +618,48 @@ router.get('/categories/dropdown',
       res.status(500).json({
         success: false,
         message: 'Failed to fetch categories',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+router.get('/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  async (req, res) => {
+    try {
+      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
+      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
+      
+      const { categoryId } = req.query;
+      
+      const filter = {
+        isActive: true,
+        deletedAt: null
+      };
+      
+      if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+        filter.category = categoryId;
+      }
+      
+      const subcategories = await Subcategory.find(filter)
+        .select('name slug icon description category order')
+        .populate('category', 'name slug')
+        .sort({ order: 1, name: 1 })
+        .lean();
+      
+      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
+      
+      res.json({
+        success: true,
+        data: subcategories
+      });
+    } catch (error) {
+      console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch subcategories',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
@@ -474,43 +715,6 @@ router.get('/system/health',
   requirePermission('system_settings'),
   auditLog('VIEW_SYSTEM_HEALTH', 'system'),
   adminController.getSystemHealthHandler
-);
-
-// Real-time updates endpoint for Socket.io
-router.get('/updates', 
-  verifyAdmin, 
-  (req, res) => {
-    // Setup Server-Sent Events for real-time updates
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-    
-    // Send initial data
-    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
-    
-    // Listen for updates from Socket.io
-    const io = req.app.get('io');
-    const sendUpdate = (data) => {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-    
-    // Subscribe to admin events
-    io.on('admin:user_updated', sendUpdate);
-    io.on('admin:category_updated', sendUpdate);
-    io.on('admin:gig_created', sendUpdate);
-    io.on('admin:gig_updated', sendUpdate);
-    io.on('admin:order_created', sendUpdate);
-    
-    // Cleanup on client disconnect
-    req.on('close', () => {
-      io.off('admin:user_updated', sendUpdate);
-      io.off('admin:category_updated', sendUpdate);
-      io.off('admin:gig_created', sendUpdate);
-      io.off('admin:gig_updated', sendUpdate);
-      io.off('admin:order_created', sendUpdate);
-    });
-  }
 );
 
 module.exports = router;

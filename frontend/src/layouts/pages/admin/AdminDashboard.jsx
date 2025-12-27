@@ -23,7 +23,8 @@ import {
   FiMoreVertical,
   FiDatabase,
   FiServer,
-  FiGlobe
+  FiGlobe,
+  FiLayers // Add this icon for subcategories
 } from 'react-icons/fi';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -69,6 +70,18 @@ const AdminDashboard = () => {
       change: '+5%',
       changePositive: true,
       link: '/admin/categories'
+    },
+    {
+     title: 'Subcategories',
+    value: dashboardStats.totalSubcategories || 0,
+    active: dashboardStats.activeSubcategories || 0,
+    icon: <FiLayers className="h-7 w-7" />,
+    color: 'from-teal-500 to-teal-600',
+    bgColor: 'bg-teal-50',
+    borderColor: 'border-teal-100',
+    change: '+8%',
+    changePositive: true,
+    link: '/admin/subcategories'
     },
     {
       title: 'Services',
@@ -119,7 +132,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header - Remove extra padding since it's in layout now */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
@@ -140,8 +153,8 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats Grid - Updated to 5 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {stats.map((stat, index) => (
           <Link
             key={index}
@@ -324,6 +337,38 @@ const AdminDashboard = () => {
               ))}
             </div>
 
+            <div className="mt-8 pt-5 border-t border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Category Distribution</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-gray-600">Categories</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {dashboardStats.totalCategories || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="h-3 w-3 rounded-full bg-teal-500"></div>
+                    <span className="text-sm text-gray-600">Subcategories</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {dashboardStats.totalSubcategories || 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="h-3 w-3 rounded-full bg-purple-500"></div>
+                    <span className="text-sm text-gray-600">Services</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {dashboardStats.totalServices || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

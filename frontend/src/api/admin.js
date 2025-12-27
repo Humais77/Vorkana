@@ -173,6 +173,14 @@ export const adminAPI = {
   // Fix bulk update categories endpoint
   bulkUpdateCategories: ({ ids, operation, data = {} }) => 
     adminApi.post('/api/admin/categories/bulk-action', { ids, operation, data }),
+  getSubcategories: (params) => adminApi.get('/api/admin/subcategories', { params }),
+  getSubcategoryById: (id) => adminApi.get(`/api/admin/subcategories/${id}`),
+  createSubcategory: (data) => adminApi.post('/api/admin/subcategories', data),
+  updateSubcategory: (id, data) => adminApi.put(`/api/admin/subcategories/${id}`, data),
+  deleteSubcategory: (id, params = {}) => adminApi.delete(`/api/admin/subcategories/${id}`, { params }),
+  bulkUpdateSubcategories: ({ ids, operation, data = {} }) => 
+    adminApi.post('/api/admin/subcategories/bulk', { ids, operation, data }),
+  
     
 getServices: (params) => adminApi.get('/api/admin/services', { params }),
   getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`),

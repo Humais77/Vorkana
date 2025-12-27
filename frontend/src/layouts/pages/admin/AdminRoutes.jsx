@@ -6,6 +6,7 @@ import { lazy, Suspense } from 'react';
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const UsersManagement = lazy(() => import('../../../components/admin/UsersManagement'));
 const CategoriesManagement = lazy(() => import('../../../components/admin/CategoriesManagement'));
+const SubcategoriesManagement = lazy(() => import('../../../components/admin/SubcategoriesManagement'));
 const ServicesManagement = lazy(() => import('../../../components/admin/ServicesManagement'));
 const GigsManagement = lazy(() => import('../../../components/admin/GigsManagement'));
 const SecurityPage = lazy(() => import('../../../components/admin/SecurityPage'));
@@ -38,6 +39,11 @@ const AdminRoutes = () => {
       <Route path="categories" element={
         <Suspense fallback={<LoadingSpinner />}>
           <CategoriesManagement />
+        </Suspense>
+      } />
+      <Route path="subcategories" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <SubcategoriesManagement />
         </Suspense>
       } />
       <Route path="services" element={
