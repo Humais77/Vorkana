@@ -11,7 +11,7 @@ import {
   FiSettings,
   FiBarChart2,
   FiLogOut,
-  FiX
+  FiX,FiFolderMinus
 } from 'react-icons/fi';
 
 const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
@@ -19,6 +19,9 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },
     { name: 'Categories', path: '/admin/categories', icon: <FiFolder className="h-5 w-5" /> },
+{
+  name: 'Subcategories',icon: <FiFolderMinus className="h-5 w-5"  />, path: '/admin/subcategories',badge: null
+},
     { name: 'Services', path: '/admin/services', icon: <FiBriefcase className="h-5 w-5" /> },
     { name: 'Gigs', path: '/admin/gigs', icon: <FiGrid className="h-5 w-5" /> },
   ];
@@ -98,6 +101,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
                       ${item.path === '/admin' && 'text-indigo-600'}
                       ${item.path === '/admin/users' && 'text-blue-600'}
                       ${item.path === '/admin/categories' && 'text-green-600'}
+                      ${item.path === '/admin/subcategories' && 'text-green-600'}
                       ${item.path === '/admin/services' && 'text-purple-600'}
                       ${item.path === '/admin/gigs' && 'text-orange-600'}
                     `}>
@@ -113,16 +117,6 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
 
         {/* Logout & User */}
         <div className="p-4 border-t border-gray-100 sticky bottom-0 bg-white z-10">
-          <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 mb-4">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
-              A
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">Admin User</p>
-              <p className="text-xs text-gray-500">Administrator</p>
-            </div>
-          </div>
-          
           <button
             onClick={handleLogout}
             className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors duration-200"
