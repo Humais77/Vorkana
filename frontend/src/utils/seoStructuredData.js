@@ -200,7 +200,31 @@ export const generateProfileStructuredData = (user) => {
     ]
   };
 };
+export const generateServiceListingStructuredData = (services = [], searchQuery = '', totalServices = 0) => {
+  const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
 
+  return {
+    "@context": "https://schema.org", // KEEP THIS
+    "@type": "ItemList",
+    "name": searchQuery ? `Services - ${searchQuery}` : "Browse Freelance Services",
+    "description": "Find professional freelance services across 100+ categories",
+    "url": currentUrl,
+    "numberOfItems": totalServices,
+    "itemListElement": services.slice(0, 10).map((service, index) => ({
+      "@type": "Service",
+      "position": index + 1,
+      "url": `${websiteUrl}/services/${service.slug || service._id}`,
+      "name": service.title,
+      "description": service.shortDescription?.substring(0, 150) || service.description?.substring(0, 150),
+      "offers": {
+        "@type": "Offer",
+        "price": service.price || 0,
+        "priceCurrency": service.currency || "USD"
+      }
+    }))
+  };
+};
 export const generateWebsiteStructuredData = () => {
   const websiteUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
