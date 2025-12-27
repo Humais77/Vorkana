@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unsubscribed - Vorkana</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { background: #ffffff; border-radius: 10px; padding: 30px; }
+        .btn { display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>You're Unsubscribed</h2>
+        <p>Hello,</p>
+        <p>You have been unsubscribed from Vorkana newsletter.</p>
+        
+        {{#if unsubscribeReason}}
+        <p><strong>Reason:</strong> {{unsubscribeReason}}</p>
+        {{/if}}
+        
+        <p>We're sorry to see you go. If this was a mistake or you'd like to resubscribe:</p>
+        <a href="{{resubscribeUrl}}" class="btn">Resubscribe</a>
+        
+        <p>We value your feedback. Please let us know how we can improve:</p>
+        <a href="{{feedbackUrl}}" class="btn" style="background-color: #6b7280;">Give Feedback</a>
+        
+        <div class="footer">
+            <p>© {{year}} Vorkana. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

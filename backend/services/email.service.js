@@ -250,6 +250,59 @@ async sendVerificationEmail(user, token) {
     }
   );
 }
+async sendSubscriptionVerificationEmail(email, verificationUrl) {
+    return this.sendEmail(
+      email,
+      'Verify Your Newsletter Subscription - Vorkana',
+      'verify-email', // You can create a specific template or reuse existing
+      {
+        name: 'Subscriber',
+        verificationUrl,
+        expiresIn: '24 hours',
+        buttonText: 'Verify Subscription'
+      }
+    );
+  }
+  async sendWelcomeNewsletterEmail(email) {
+    return this.sendEmail(
+      email,
+      'Welcome to Vorkana Newsletter! 🎉',
+      'welcome', // Reuse welcome template or create newsletter-welcome
+      {
+        name: 'Subscriber',
+        message: 'Thank you for subscribing to Vorkana newsletter!',
+        dashboardUrl: `${process.env.FRONTEND_URL}/dashboard`,
+        buttonText: 'Browse Services'
+      }
+    );
+  }
+
+  async sendUnsubscribeConfirmationEmail(email, reason = 'No reason provided') {
+    return this.sendEmail(
+      email,
+      'Unsubscribed from Vorkana Newsletter',
+      'unsubscribe-confirm',
+      {
+        name: 'Subscriber',
+        email,
+        unsubscribeReason: reason,
+        resubscribeUrl: `${process.env.FRONTEND_URL}/newsletter/resubscribe`,
+        feedbackUrl: `${process.env.FRONTEND_URL}/feedback`
+      }
+    );
+  }
+
+  async sendNewsletter(email, newsletterData) {
+    return this.sendEmail(
+      email,
+      newsletterData.subject || 'Vorkana Newsletter',
+      'newsletter',
+      {
+        ...newsletterData,
+        unsubscribeUrl: `${process.env.BACKEND_URL}/api/subscribe-email/unsubscribe`
+      }
+    );
+  }
 }
 
 module.exports = new EmailService();
