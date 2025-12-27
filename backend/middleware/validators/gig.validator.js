@@ -303,7 +303,7 @@ const updateSchema = Joi.object({
   abortEarly: false 
 });
 
-// Query schema
+// Query schema - Add subcategory support
 const querySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
@@ -347,6 +347,7 @@ const querySchema = Joi.object({
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   showAll: Joi.boolean(),
   includeCategory: Joi.boolean().default(true),
+  includeSubcategory: Joi.boolean().default(true), // New option
   includeCreator: Joi.boolean().default(true),
   includeAssignee: Joi.boolean().default(true),
   lean: Joi.boolean().default(true),
@@ -356,6 +357,7 @@ const querySchema = Joi.object({
   abortEarly: false,
   convert: true 
 });
+
 
 // Middleware functions
 const validateCreate = (req, res, next) => {

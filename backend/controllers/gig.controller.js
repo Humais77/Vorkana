@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Gig = require('../models/gig.model.js');
 const Category = require('../models/category.model.js');
+const Subcategory = require('../models/subcategory.model.js'); 
 const { 
   processUploadToCloudinary, 
   deleteCloudinaryImages
@@ -313,46 +314,34 @@ const createGig = async (req, res, next) => {
       });
     }
 
-    const category = await Category.findOne({ 
-      _id: sanitizedData.projectCategory 
+     const category = await Category.findOne({ 
+      _id: sanitizedData.projectCategory,
+      isActive: true
     });
     
     if (!category) {
       return res.status(400).json({
         success: false,
-        message: 'Category not found',
+        message: 'Category not found or inactive',
         code: 'CATEGORY_NOT_FOUND',
         requestId
       });
     }
-const subcategory = await Category.findOne({ 
+
+    // Validate subcategory exists, is active, and belongs to the selected category
+    const subcategory = await Subcategory.findOne({ 
       _id: sanitizedData.subcategory,
-      parentCategory: sanitizedData.projectCategory 
+      category: sanitizedData.projectCategory,
+      isActive: true
     });
     
     if (!subcategory) {
       return res.status(400).json({
         success: false,
-        message: 'Subcategory not found or does not belong to the selected category',
+        message: 'Subcategory not found, inactive, or does not belong to the selected category',
         code: 'SUBCATEGORY_NOT_FOUND',
         requestId
       });
-    }
-    // Validate subcategory if provided
-    if (sanitizedData.subcategory) {
-      const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory,
-        parentCategory: sanitizedData.projectCategory 
-      });
-      
-      if (!subcategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory not found or does not belong to the selected category',
-          code: 'SUBCATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
     }
 
     const gigData = {
@@ -458,17 +447,15 @@ const subcategory = await Category.findOne({
     logAudit('CREATE', 'GIG', gig._id, req.user._id, {
       title: gig.title,
       category: gig.projectCategory,
+      subcategory: gig.subcategory,
       budget: gig.budget,
       imagesCount: gig.images.length,
       hasThumbnail: !!gig.thumbnail
     });
-
-    // Populate category info for response
-    await gig.populate([
+     await gig.populate([
       { path: 'projectCategory', select: 'name slug icon' },
-      { path: 'subcategory', select: 'name slug' }
+      { path: 'subcategory', select: 'name slug icon' }
     ]);
-
     const safeGig = gig.toObject();
     delete safeGig.__v;
     delete safeGig.lastUpdatedBy;
@@ -527,6 +514,7 @@ const getGigs = async (req, res, next) => {
       slug,
       projectCategory,
       subcategory,
+      includeSubcategory = true,
       createdBy,
       assignedTo,
       minBudget,
@@ -643,10 +631,10 @@ const getGigs = async (req, res, next) => {
           select: 'name slug icon'
         });
         
-        if (subcategory) {
+        if (includeSubcategory === 'true' || includeSubcategory === true) {
           populateOptions.push({
             path: 'subcategory',
-            select: 'name slug'
+            select: 'name slug icon order'
           });
         }
       }
@@ -826,9 +814,9 @@ const searchGigs = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
-    const { query, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
+    const { q: searchQuery, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
 
-    if (!query || typeof query !== 'string') {
+    if (!searchQuery || typeof searchQuery !== 'string') {
       return res.status(400).json({
         success: false,
         message: 'Search query is required',
@@ -836,8 +824,7 @@ const searchGigs = async (req, res, next) => {
         requestId
       });
     }
-
-    const sanitizedQuery = sanitizeText(query);
+const sanitizedQuery = sanitizeText(searchQuery.trim());
 
     if (sanitizedQuery.length < 2) {
       return res.status(400).json({
@@ -927,7 +914,7 @@ const getGigById = async (req, res, next) => {
   
   try {
     const { id } = req.params;
-    const { fields, populate = true, cache: useCache = 'true' } = req.query;
+    const { fields, populate = true, cache: useCache = 'true' ,includeSubcategory = true} = req.query;
 
     if (!id) {
       return res.status(400).json({
@@ -995,11 +982,6 @@ const getGigById = async (req, res, next) => {
           match: { isActive: true }
         },
         {
-          path: 'subcategory',
-          select: 'name slug',
-          match: { isActive: true }
-        },
-        {
           path: 'createdBy',
           select: 'name email picture role createdAt'
         },
@@ -1008,6 +990,14 @@ const getGigById = async (req, res, next) => {
           select: 'name email picture role'
         }
       ];
+       if (includeSubcategory === 'true' || includeSubcategory === true) {
+        populateOptions.push({
+          path: 'subcategory',
+          select: 'name slug icon',
+          match: { isActive: true }
+        });
+      }
+      
     }
 
     // Generate cache key
@@ -1429,7 +1419,137 @@ if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?
     next(error);
   }
 };
+const getGigsBySubcategory = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    const { subcategoryId } = req.params;
+    const { 
+      page = 1, 
+      limit = 12, 
+      sort = 'createdAt', 
+      order = 'desc',
+      minBudget,
+      maxBudget,
+      minRating
+    } = req.query;
 
+    if (!mongoose.Types.ObjectId.isValid(subcategoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID',
+        code: 'INVALID_SUBCATEGORY_ID',
+        requestId
+      });
+    }
+
+    // Check subcategory exists and is active
+    const subcategory = await Subcategory.findOne({
+      _id: subcategoryId,
+      isActive: true
+    });
+
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Build filter
+    const filter = {
+      subcategory: subcategoryId,
+      status: 'open',
+      isActive: true
+    };
+
+    // Add optional filters
+    if (minBudget || maxBudget) {
+      filter.budget = {};
+      if (minBudget) filter.budget.$gte = parseFloat(minBudget);
+      if (maxBudget) filter.budget.$lte = parseFloat(maxBudget);
+    }
+
+    if (minRating) {
+      filter.rating = { $gte: parseFloat(minRating) };
+    }
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort options
+    const sortOptions = {
+      createdAt: -1,
+      budget: order === 'asc' ? 1 : -1,
+      rating: -1,
+      deliveryTime: 1
+    };
+
+    const [gigs, total] = await Promise.all([
+      Gig.find(filter)
+        .select('title slug description budget currency timeline timelineUnit skillsRequired deliverables images thumbnail createdBy')
+        .populate('projectCategory', 'name slug icon')
+        .populate('subcategory', 'name slug icon')
+        .populate('createdBy', 'name picture')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Gig.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      data: gigs.map(gig => ({
+        ...gig,
+        hasImages: gig.images && gig.images.length > 0,
+        priceFormatted: `${gig.currency || 'USD'} ${gig.budget || '0.00'}`
+      })),
+      subcategory: {
+        _id: subcategory._id,
+        name: subcategory.name,
+        slug: subcategory.slug,
+        icon: subcategory.icon,
+        description: subcategory.description,
+        servicesCount: subcategory.servicesCount,
+        gigsCount: subcategory.gigsCount
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+
+  } catch (error) {
+    console.error('Get gigs by subcategory error:', error);
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch gigs by subcategory',
+      code: 'GIGS_BY_SUBCATEGORY_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+  }
+};
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -2462,5 +2582,6 @@ module.exports = {
   uploadImages,
   removeImage,
   setThumbnail,
-  uploadThumbnail
+  uploadThumbnail,
+  getGigsBySubcategory
 };

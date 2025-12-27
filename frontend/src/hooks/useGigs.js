@@ -14,6 +14,7 @@ export const gigKeys = {
   stats: () => [...gigKeys.all, 'stats'],
   popular: () => [...gigKeys.all, 'popular'],
   search: (params) => [...gigKeys.all, 'search', params],
+  bySubcategory: (subcategoryId, params) => [...gigKeys.all, 'subcategory', subcategoryId, params],
 };
 
 export const extractGigsFromResponse = (response) => {
@@ -50,7 +51,8 @@ export const useMyGigs = (filters = {}) => {
       
       return gigsAPI.getAll({
         ...filters,
-        createdBy: user._id
+        createdBy: user._id,
+        includeSubcategory: true, // Always include subcategory
       });
     },
     enabled: !!user?._id,
@@ -67,7 +69,10 @@ export const useMyGigs = (filters = {}) => {
 export const useGigs = (params = {}) => {
   return useQuery({
     queryKey: ['gigs', params],
-    queryFn: () => gigsAPI.getAll(params),
+    queryFn: () => gigsAPI.getAll({
+      ...params,
+      includeSubcategory: true, // Always include subcategory
+    }),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     retry: 1,
@@ -76,6 +81,19 @@ export const useGigs = (params = {}) => {
       if (error.code !== 'SERVER_ERROR') {
         toast.error('Failed to load gigs');
       }
+    }
+  });
+};
+
+export const useGigsBySubcategory = (subcategoryId, params = {}) => {
+  return useQuery({
+    queryKey: gigKeys.bySubcategory(subcategoryId, params),
+    queryFn: () => gigsAPI.getBySubcategory(subcategoryId, params),
+    enabled: !!subcategoryId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    onError: (error) => {
+      toast.error('Failed to load gigs for this subcategory');
     }
   });
 };
@@ -89,6 +107,7 @@ export const useInfiniteGigs = (queryParams = {}) => {
       gigsAPI.getAll({ 
         ...queryParams, 
         page: pageParam,
+        includeSubcategory: true, // Always include subcategory
         createdBy: queryParams.createdBy === 'me' ? user?._id : queryParams.createdBy
       }),
     initialPageParam: 1,
@@ -116,6 +135,7 @@ export const usePopularGigs = () => {
       status: 'open',
       urgency: 'high',
       includeCategory: true,
+      includeSubcategory: true, // Include subcategory
       includeClient: true
     }),
     staleTime: 5 * 60 * 1000,
@@ -149,7 +169,30 @@ export const useCreateGig = () => {
   const setLastCreatedGigId = useGigStore((state) => state.setLastCreatedGigId);
   
   return useMutation({
-    mutationFn: gigsAPI.create,
+    mutationFn: async (gigData) => {
+      // Validate subcategory is required
+      if (!gigData.subcategory && !(gigData instanceof FormData)) {
+        throw {
+          message: 'Subcategory is required',
+          code: 'SUBCATEGORY_REQUIRED',
+          status: 400
+        };
+      }
+      
+      // If FormData, check for subcategory
+      if (gigData instanceof FormData) {
+        const subcategory = gigData.get('subcategory');
+        if (!subcategory) {
+          throw {
+            message: 'Subcategory is required',
+            code: 'SUBCATEGORY_REQUIRED',
+            status: 400
+          };
+        }
+      }
+      
+      return gigsAPI.create(gigData);
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['gigs'] });
       queryClient.invalidateQueries({ queryKey: ['myGigs'] });
@@ -164,10 +207,12 @@ export const useCreateGig = () => {
     onError: (error) => {
       let errorMessage = error.message || 'Failed to create gig';
       
-      if (error.code === 'CATEGORY_NOT_FOUND') {
+      if (error.code === 'SUBCATEGORY_REQUIRED') {
+        errorMessage = 'Please select a subcategory';
+      } else if (error.code === 'CATEGORY_NOT_FOUND') {
         errorMessage = 'Please select a valid category';
       } else if (error.code === 'SUBCATEGORY_NOT_FOUND') {
-        errorMessage = 'Please select a valid subcategory or leave it empty';
+        errorMessage = 'Please select a valid subcategory';
       } else if (error.code === 'AUTH_REQUIRED') {
         errorMessage = 'Please sign in to create a gig';
       }
@@ -182,6 +227,15 @@ export const useUpdateGig = () => {
   
   return useMutation({
     mutationFn: async ({ id, data, files = null }) => {
+      // Validate subcategory is required if provided
+      if (data && !(data instanceof FormData) && data.subcategory === '') {
+        throw {
+          message: 'Subcategory is required',
+          code: 'SUBCATEGORY_REQUIRED',
+          status: 400
+        };
+      }
+      
       // If there are files, use FormData
       if (files) {
         const formData = new FormData();
@@ -222,7 +276,9 @@ export const useUpdateGig = () => {
       toast.success(data.message || 'Gig updated successfully!');
     },
     onError: (error) => {
-      if (error.code === 'VERSION_CONFLICT') {
+      if (error.code === 'SUBCATEGORY_REQUIRED') {
+        toast.error('Please select a subcategory');
+      } else if (error.code === 'VERSION_CONFLICT') {
         toast.error('This gig was modified by another user. Please refresh and try again.');
       } else {
         toast.error(error.data?.message || error.message || 'Failed to update gig');
@@ -417,7 +473,6 @@ export const useSearchGigs = (searchParams = {}) => {
   });
 };
 
-
 export const useExportGigs = () => {
   return useMutation({
     mutationFn: (params) => gigsAPI.exportGigs(params),
@@ -488,6 +543,7 @@ export const useToggleGigSelection = () => {
     },
   });
 };
+
 export const useUploadGigImages = () => {
   const queryClient = useQueryClient();
   
@@ -561,5 +617,25 @@ export const useUploadGigThumbnail = () => {
     onError: (error) => {
       toast.error(error.message || 'Failed to upload thumbnail');
     },
+  });
+};
+
+// New hook for gigs by subcategory with infinite scroll
+export const useInfiniteGigsBySubcategory = (subcategoryId, params = {}) => {
+  return useInfiniteQuery({
+    queryKey: gigKeys.bySubcategory(subcategoryId, params),
+    queryFn: ({ pageParam = 1 }) => 
+      gigsAPI.getBySubcategory(subcategoryId, { ...params, page: pageParam }),
+    enabled: !!subcategoryId,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const pagination = lastPage.pagination;
+      if (pagination?.hasNext) {
+        return pagination.page + 1;
+      }
+      return undefined;
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };

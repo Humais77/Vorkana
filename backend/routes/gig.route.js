@@ -17,7 +17,8 @@ const {
   uploadImages,
   removeImage,
   setThumbnail,
-  uploadThumbnail
+  uploadThumbnail,
+  getGigsBySubcategory
 } = require('../controllers/gig.controller.js');
 
 const { 
@@ -179,8 +180,15 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Public routes
 router.get('/', optionalAuth, validateQuery, getGigs);
+
+// New route: Get gigs by subcategory
+router.get('/subcategory/:subcategoryId', 
+  optionalAuth, 
+  validateQuery, 
+  getGigsBySubcategory
+);
+
 router.get('/search', optionalAuth, validateQuery, searchGigs);
 router.get('/:id', optionalAuth, getGigById);
 

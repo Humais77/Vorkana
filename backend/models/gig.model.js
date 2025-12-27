@@ -52,28 +52,41 @@ const gigSchema = new mongoose.Schema({
     validate: {
       validator: async function(v) {
         const Category = mongoose.model('Category');
-        const category = await Category.findById(v);
+        const category = await Category.findOne({ 
+          _id: v, 
+          isActive: true,
+          isSubcategory: false // Must be main category, not a subcategory
+        });
         return category;
       },
-      message: 'Invalid category'
+      message: 'Invalid or inactive category'
     }
   },
-subcategory: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Category',
-  required: [true, 'Subcategory is required'],
-  index: true,
-  validate: {
-    validator: async function(v) {
-      if (!v) return false; // Must have a value
-      const Category = mongoose.model('Category');
-      const subcategory = await Category.findById(v);
-      return subcategory && subcategory.parentCategory && 
-             subcategory.parentCategory.equals(this.projectCategory);
-    },
-    message: 'Invalid subcategory or does not belong to the selected category'
-  }
-},
+  subcategory: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subcategory', // Updated reference
+    index: true,
+    validate: {
+      validator: async function(v) {
+        if (!v) return false;
+        const Subcategory = mongoose.model('Subcategory');
+        const subcategory = await Subcategory.findOne({ 
+          _id: v, 
+          isActive: true 
+        });
+        
+        if (!subcategory) return false;
+        
+        // Verify subcategory belongs to the selected category
+        if (this.projectCategory && subcategory.category.toString() !== this.projectCategory.toString()) {
+          return false;
+        }
+        
+        return true;
+      },
+      message: 'Invalid or inactive subcategory, or does not belong to the selected category'
+    }
+  },
   description: {
     type: String,
     required: [true, 'Description is required'],
@@ -110,7 +123,7 @@ subcategory: {
     default: 'Email',
   },
   
-  // Updated Images section similar to service model
+  // Images section
   images: [{
     url: {
       type: String,
@@ -299,9 +312,9 @@ subcategory: {
       validator: async function(v) {
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user;
+        return user && user.isActive;
       },
-      message: 'Invalid user'
+      message: 'Invalid or inactive user'
     }
   },
   isActive: {
@@ -317,9 +330,9 @@ subcategory: {
         if (!v) return true;
         const User = mongoose.model('User');
         const user = await User.findById(v);
-        return user;
+        return user && user.isActive;
       },
-      message: 'Invalid user'
+      message: 'Invalid or inactive user'
     }
   },
   version: {
@@ -377,8 +390,9 @@ gigSchema.virtual('category', {
   justOne: true,
 });
 
+// Updated: Use Subcategory model for subcategoryDetails
 gigSchema.virtual('subcategoryDetails', {
-  ref: 'Category',
+  ref: 'Subcategory',
   localField: 'subcategory',
   foreignField: '_id',
   justOne: true,
@@ -438,6 +452,23 @@ gigSchema.pre('save', async function () {
     this.slug = slug;
   }
 
+  // Validate subcategory belongs to category if both are being set
+  if (this.isModified('projectCategory') || this.isModified('subcategory')) {
+    if (this.subcategory && this.projectCategory) {
+      const Subcategory = mongoose.model('Subcategory');
+      const subcategory = await Subcategory.findById(this.subcategory);
+      
+      if (!subcategory) {
+        throw new Error('Subcategory not found');
+      }
+      
+      // Check if subcategory belongs to the selected category
+      if (subcategory.category.toString() !== this.projectCategory.toString()) {
+        throw new Error('Subcategory does not belong to the selected category');
+      }
+    }
+  }
+
   // Expiry logic
   if (this.isModified('status') && this.status === 'open' && !this.expiresAt) {
     const expiry = new Date();
@@ -468,30 +499,67 @@ gigSchema.pre('save', async function () {
   }
 });
 
-// FIXED post-save
+// Post-save middleware - update category and subcategory counts
 gigSchema.post('save', async function (doc) {
   try {
     const Category = mongoose.model('Category');
+    const Subcategory = mongoose.model('Subcategory');
 
     if (doc.isNew && doc.status === 'open') {
+      // Increment category count
       await Category.incrementGigsCount(doc.projectCategory);
+      
+      // Increment subcategory count if exists
+      if (doc.subcategory) {
+        await Subcategory.incrementGigsCount(doc.subcategory);
+      }
     } else if (this.isModified('status')) {
       const wasOpen = this._originalStatus === 'open';
       const isNowOpen = doc.status === 'open';
 
       if (wasOpen && !isNowOpen) {
+        // Decrement category count
         await Category.decrementGigsCount(doc.projectCategory);
+        
+        // Decrement subcategory count if exists
+        if (doc.subcategory) {
+          await Subcategory.decrementGigsCount(doc.subcategory);
+        }
       } else if (!wasOpen && isNowOpen) {
+        // Increment category count
         await Category.incrementGigsCount(doc.projectCategory);
+        
+        // Increment subcategory count if exists
+        if (doc.subcategory) {
+          await Subcategory.incrementGigsCount(doc.subcategory);
+        }
       }
     }
   } catch (error) {
-    console.error('Error updating category gig count:', error);
+    console.error('Error updating category/subcategory gig count:', error);
+  }
+});
+
+// Post-delete middleware - decrement counts
+gigSchema.post('findOneAndDelete', async function (doc) {
+  if (doc && doc.status === 'open') {
+    try {
+      // Decrement category count
+      await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
+      
+      // Decrement subcategory count if exists
+      if (doc.subcategory) {
+        await mongoose.model('Subcategory').decrementGigsCount(doc.subcategory);
+      }
+    } catch (error) {
+      console.error('Error decrementing gig count on delete:', error);
+    }
   }
 });
 
 // Indexes
 gigSchema.index({ projectCategory: 1, status: 1 }, { name: 'category_status_idx' });
+gigSchema.index({ subcategory: 1, status: 1 }, { name: 'subcategory_status_idx' }); // New index
 gigSchema.index({ createdBy: 1, status: 1 }, { name: 'creator_status_idx' });
 gigSchema.index({ assignedTo: 1, status: 1 }, { name: 'assignee_status_idx' });
 gigSchema.index({ status: 1, createdAt: -1 }, { name: 'status_created_desc_idx' });
@@ -536,6 +604,10 @@ gigSchema.query.byCategory = function(categoryId) {
   return this.where({ projectCategory: categoryId });
 };
 
+gigSchema.query.bySubcategory = function(subcategoryId) {
+  return this.where({ subcategory: subcategoryId });
+};
+
 gigSchema.query.publicOnly = function() {
   return this.where({ visibility: 'public', isActive: true, deletedAt: null });
 };
@@ -559,7 +631,13 @@ gigSchema.statics.closeExpired = async function() {
     gig.lastUpdatedBy = gig.createdBy;
     await gig.save();
     
+    // Decrement category count
     await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+    
+    // Decrement subcategory count if exists
+    if (gig.subcategory) {
+      await mongoose.model('Subcategory').decrementGigsCount(gig.subcategory);
+    }
     
     results.push(gig._id);
   }
@@ -567,7 +645,7 @@ gigSchema.statics.closeExpired = async function() {
   return results;
 };
 
-// Static methods for images
+// Static methods for images (optional)
 gigSchema.statics.incrementLikes = async function(gigId) {
   return this.findByIdAndUpdate(
     gigId,
