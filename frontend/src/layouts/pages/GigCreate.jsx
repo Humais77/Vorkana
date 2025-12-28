@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Upload,
@@ -41,6 +41,7 @@ import { useGigStore } from "../../store/useGigStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
 import { useCreateGig } from "../../hooks/useGigs";
 import { useParentCategories } from '../../hooks/useCategories';
+import { useSubcategoriesByCategory } from '../../hooks/useSubcategories'; // NEW: Import subcategory hook
 import { SeoWrapper } from "../../components/SeoWrapper";
 import { isProfileCompleteEnough } from '../../utils/profileUtils';
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
@@ -92,23 +93,6 @@ const GigCreate = () => {
   const { lastCreatedGigId, setLastCreatedGigId, clearLastCreatedGig } = useGigStore();
   const { categories: storedCategories, setCategories } = useCategoryStore();
 
-  // TanStack Query hooks
-  const {
-    data: categoriesData,
-    isLoading: categoryLoading,
-    error: categoryError,
-    refetch: refetchCategories
-  } = useParentCategories();
-
-  const {
-    mutate: createGig,
-    isPending: gigLoading,
-    error: gigError,
-    isSuccess: gigSuccess,
-    data: createdGigData,
-    reset: resetGigMutation
-  } = useCreateGig();
-
   // Local state
   const [formData, setFormData] = useState({
     title: "",
@@ -143,9 +127,38 @@ const GigCreate = () => {
     timeline: false
   });
 
+  // NOW declare the subcategory hook AFTER formData is defined
+  const { 
+    data: subcategoriesData,
+    isLoading: subcategoryLoading,
+    error: subcategoryError,
+    refetch: refetchSubcategories
+  } = useSubcategoriesByCategory(formData.projectCategory, {
+    enabled: !!formData.projectCategory
+  });
+  
+  // TanStack Query hooks
+  const {
+    data: categoriesData,
+    isLoading: categoryLoading,
+    error: categoryError,
+    refetch: refetchCategories
+  } = useParentCategories();
+
+  const {
+    mutate: createGig,
+    isPending: gigLoading,
+    error: gigError,
+    isSuccess: gigSuccess,
+    data: createdGigData,
+    reset: resetGigMutation
+  } = useCreateGig();
+
+  // Component states
   const [attachments, setAttachments] = useState([]);
   const [files, setFiles] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
+  const [uploadedImages, setUploadedImages] = useState([]);
+  const [thumbnailFile, setThumbnailFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [activeStep, setActiveStep] = useState(1);
   const [uploadProgress, setUploadProgress] = useState({});
@@ -166,10 +179,12 @@ const GigCreate = () => {
     confirmPassword: ""
   });
   const [authMode, setAuthMode] = useState("login");
-  const [uploadedImages, setUploadedImages] = useState([]);
-  const [thumbnailFile, setThumbnailFile] = useState(null);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+
+  // Refs
+  const imageUploadRef = useRef(null);
+  const thumbnailUploadRef = useRef(null);
 
   // Initialize form data with user info when authenticated
   useEffect(() => {
@@ -190,13 +205,6 @@ const GigCreate = () => {
     }
   }, [currentUser]);
 
-  useEffect(() => {
-    console.log('DEBUG - Current categoriesData:', categoriesData);
-    console.log('DEBUG - Current storedCategories:', storedCategories);
-    console.log('DEBUG - Category loading:', categoryLoading);
-    console.log('DEBUG - Category error:', categoryError);
-  }, [categoriesData, storedCategories, categoryLoading, categoryError]);
-
   // Sync categories from query to store
   useEffect(() => {
     if (categoriesData && categoriesData.length > 0) {
@@ -204,84 +212,19 @@ const GigCreate = () => {
     }
   }, [categoriesData, setCategories]);
 
-  // Update the useEffect that updates subcategories
-useEffect(() => {
-  console.log('DEBUG - Category changed:', formData.projectCategory);
-  console.log('DEBUG - Categories data available:', !!categoriesData);
-
-  if (formData.projectCategory && categoriesData) {
-    // Get the current category list
-    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-      ? storedCategories
-      : (Array.isArray(categoriesData) ? categoriesData : []);
-
-    console.log('Category list:', categoryList);
-
-    // Find the selected category
-    const selectedCategory = categoryList.find(c => c._id === formData.projectCategory);
-    console.log('Selected category:', selectedCategory);
-
-    if (selectedCategory) {
-      // Get subcategories
-      const subs = selectedCategory.children ||
-        selectedCategory.subcategories ||
-        [];
-
-      console.log('Found subcategories:', subs);
-      setSubcategories(subs);
-
-      // Reset subcategory only if it's not valid for the new category
-      if (formData.subcategory) {
-        const currentSubExists = subs.find(s => s._id === formData.subcategory);
-        if (!currentSubExists) {
-          setFormData(prev => ({ 
-            ...prev, 
-            subcategory: "" 
-          }));
-          setCompletedFields(prev => ({
-            ...prev,
-            subcategory: false
-          }));
-        }
-      }
-    } else {
-      console.log('No selected category found');
-      setSubcategories([]);
+  // Reset subcategory when category changes
+  useEffect(() => {
+    if (formData.projectCategory) {
       setFormData(prev => ({ 
         ...prev, 
-        subcategory: "" 
+        subcategory: '' 
       }));
-      setCompletedFields(prev => ({
-        ...prev,
-        subcategory: false
+      setCompletedFields(prev => ({ 
+        ...prev, 
+        subcategory: false 
       }));
     }
-  } else {
-    console.log('No project category selected or no categories data');
-    setSubcategories([]);
-    setFormData(prev => ({ 
-      ...prev, 
-      subcategory: "" 
-    }));
-    setCompletedFields(prev => ({
-      ...prev,
-      subcategory: false
-    }));
-  }
-}, [formData.projectCategory, categoriesData, storedCategories]);
-useEffect(() => {
-    if (!isProfileCompleteEnough(currentUser, 70)) {
-      toast.error('Please complete your profile before creating a service');
-      navigate('/dashboard');
-    }
-  }, [currentUser, navigate]);
-  // Cleanup when component unmounts
-  useEffect(() => {
-    return () => {
-      clearLastCreatedGig();
-      resetGigMutation();
-    };
-  }, [clearLastCreatedGig, resetGigMutation]);
+  }, [formData.projectCategory]);
 
   // Handle successful gig creation
   useEffect(() => {
@@ -320,6 +263,14 @@ useEffect(() => {
     }
   }, [lastCreatedGigId, success, navigate]);
 
+  // Cleanup when component unmounts
+  useEffect(() => {
+    return () => {
+      clearLastCreatedGig();
+      resetGigMutation();
+    };
+  }, [clearLastCreatedGig, resetGigMutation]);
+
   // Reset form when user logs out
   useEffect(() => {
     if (!isAuthenticated && activeStep > 1) {
@@ -331,6 +282,13 @@ useEffect(() => {
       });
     }
   }, [isAuthenticated, activeStep]);
+
+  useEffect(() => {
+    if (!isProfileCompleteEnough(currentUser, 70)) {
+      toast.error('Please complete your profile before creating a service');
+      navigate('/dashboard');
+    }
+  }, [currentUser, navigate]);
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -352,7 +310,18 @@ useEffect(() => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
-  }, [errors]);
+    
+    // If category changes, trigger subcategories fetch
+    if (name === 'projectCategory' && value) {
+      refetchSubcategories();
+    }
+  }, [errors, refetchSubcategories]);
+
+  // Get subcategories array from hook data
+  const subcategories = useMemo(() => {
+    if (!subcategoriesData) return [];
+    return subcategoriesData?.subcategories || subcategoriesData || [];
+  }, [subcategoriesData]);
 
   const handleImageUpload = async (files) => {
     if (uploadingImages) return;
@@ -443,39 +412,39 @@ useEffect(() => {
     }
   };
 
- const validateField = (fieldName, value) => {
-  switch (fieldName) {
-    case 'fullName':
-      return value.trim().length >= 3;
-    case 'oauthEmail':
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(value);
-    case 'country':
-      return value.trim().length >= 2;
-    case 'phone':
-      return value.trim().length >= 5;
-    case 'title':
-      return value.trim().length >= 5;
-    case 'projectCategory':
-      return !!value;
-    case 'subcategory':
-      // Check if subcategory is required (if there are subcategories available)
-      if (subcategories.length > 0) {
+const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'fullName':
+        return value.trim().length >= 3;
+      case 'oauthEmail':
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(value);
+      case 'country':
+        return value.trim().length >= 2;
+      case 'phone':
+        return value.trim().length >= 5;
+      case 'title':
+        return value.trim().length >= 5;
+      case 'projectCategory':
         return !!value;
-      }
-      // If no subcategories exist for this category, it's not required
-      return true;
-    case 'budget':
-      const budgetNum = parseFloat(value);
-      return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
-    case 'description':
-      return value.trim().length >= 20;
-    case 'timeline':
-      return value.trim().length >= 3;
-    default:
-      return !!value;
-  }
-};
+      case 'subcategory':
+        // Check if subcategory is required (if there are subcategories available)
+        if (subcategories.length > 0) {
+          return !!value;
+        }
+        // If no subcategories exist for this category, it's not required
+        return true;
+      case 'budget':
+        const budgetNum = parseFloat(value);
+        return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
+      case 'description':
+        return value.trim().length >= 20;
+      case 'timeline':
+        return value.trim().length >= 3;
+      default:
+        return !!value;
+    }
+  };
 
   const handleLoginChange = (e) => {
     const { name, value } = e.target;
@@ -702,67 +671,67 @@ useEffect(() => {
     }
   };
 
-  const validateStep = useCallback((step) => {
-  const newErrors = {};
+const validateStep = useCallback((step) => {
+    const newErrors = {};
 
-  if (step === 1) {
-    if (!formData.fullName || formData.fullName.trim().length < 3) {
-      newErrors.fullName = "Full name must be at least 3 characters.";
+    if (step === 1) {
+      if (!formData.fullName || formData.fullName.trim().length < 3) {
+        newErrors.fullName = "Full name must be at least 3 characters.";
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!formData.oauthEmail || !emailRegex.test(formData.oauthEmail)) {
+        newErrors.oauthEmail = "Please enter a valid email address.";
+      }
+
+      if (!isAuthenticated) {
+        newErrors.auth = "Please sign in to continue.";
+      }
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!formData.oauthEmail || !emailRegex.test(formData.oauthEmail)) {
-      newErrors.oauthEmail = "Please enter a valid email address.";
+    if (step === 2) {
+      if (!formData.country || formData.country.trim().length < 2) {
+        newErrors.country = "Country is required.";
+      }
+
+      if (!formData.phone || formData.phone.trim().length < 5) {
+        newErrors.phone = "Phone number is required.";
+      }
     }
 
-    if (!isAuthenticated) {
-      newErrors.auth = "Please sign in to continue.";
-    }
-  }
+    if (step === 3) {
+      if (!formData.title || formData.title.trim().length < 5) {
+        newErrors.title = "Title must be at least 5 characters.";
+      }
 
-  if (step === 2) {
-    if (!formData.country || formData.country.trim().length < 2) {
-      newErrors.country = "Country is required.";
-    }
+      if (!formData.projectCategory) {
+        newErrors.projectCategory = "Please select a project category.";
+      }
 
-    if (!formData.phone || formData.phone.trim().length < 5) {
-      newErrors.phone = "Phone number is required.";
-    }
-  }
+      // Check if subcategory is required (if there are subcategories available)
+      if (subcategories.length > 0 && !formData.subcategory) {
+        newErrors.subcategory = "Please select a subcategory.";
+      }
 
-  if (step === 3) {
-    if (!formData.title || formData.title.trim().length < 5) {
-      newErrors.title = "Title must be at least 5 characters.";
-    }
-
-    if (!formData.projectCategory) {
-      newErrors.projectCategory = "Please select a project category.";
+      const budgetNum = parseFloat(formData.budget);
+      if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
+        newErrors.budget = "Budget must be between $5 and $100,000.";
+      }
     }
 
-    // Check if subcategory is required (if there are subcategories available)
-    if (subcategories.length > 0 && !formData.subcategory) {
-      newErrors.subcategory = "Please select a subcategory.";
+    if (step === 4) {
+      if (!formData.description || formData.description.trim().length < 20) {
+        newErrors.description = "Description must be at least 20 characters.";
+      }
+
+      if (!formData.timeline || formData.timeline.trim().length < 3) {
+        newErrors.timeline = "Timeline is required.";
+      }
     }
 
-    const budgetNum = parseFloat(formData.budget);
-    if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
-      newErrors.budget = "Budget must be between $5 and $100,000.";
-    }
-  }
-
-  if (step === 4) {
-    if (!formData.description || formData.description.trim().length < 20) {
-      newErrors.description = "Description must be at least 20 characters.";
-    }
-
-    if (!formData.timeline || formData.timeline.trim().length < 3) {
-      newErrors.timeline = "Timeline is required.";
-    }
-  }
-
-  setErrors(newErrors);
-  return Object.keys(newErrors).length === 0;
-}, [formData, isAuthenticated, subcategories]);
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [formData, isAuthenticated, subcategories]);
 
   const nextStep = useCallback(() => {
     if (validateStep(activeStep)) {
@@ -823,9 +792,12 @@ useEffect(() => {
         visibility: formData.visibility,
         status: status
       };
- if (subcategories.length > 0 && !gigData.subcategory) {
-      throw new Error('Subcategory is required for this category');
-    }
+
+      // Validate subcategory if subcategories exist
+      if (subcategories.length > 0 && !gigData.subcategory) {
+        throw new Error('Subcategory is required for this category');
+      }
+
       // Append all data to FormData
       Object.keys(gigData).forEach(key => {
         if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
@@ -882,12 +854,12 @@ useEffect(() => {
 
     } catch (error) {
       if (error.message.includes('subcategory') || error.message.includes('Subcategory')) {
-      setErrors(prev => ({
-        ...prev,
-        subcategory: error.message
-      }));
-      setActiveStep(3); // Go back to step 3 where subcategory is selected
-    }
+        setErrors(prev => ({
+          ...prev,
+          subcategory: error.message
+        }));
+        setActiveStep(3); // Go back to step 3 where subcategory is selected
+      }
       console.error("Error in handleSubmit:", error);
       toast.error("Failed to prepare gig data. Please try again.");
       setErrors(prev => ({
@@ -897,7 +869,7 @@ useEffect(() => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig,subcategories]);
+  }, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig, subcategories]);
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
@@ -936,7 +908,7 @@ useEffect(() => {
   };
 
   // Get subcategory name for display
-  const getSubcategoryName = () => {
+   const getSubcategoryName = () => {
     if (!formData.subcategory) return "";
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
@@ -1284,13 +1256,27 @@ useEffect(() => {
                   <form onSubmit={handleSubmit} className="p-6 md:p-8" aria-label="Gig creation form">
                     {/* Display API errors */}
                     {allErrors.form && (
-                      <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-                        <p className="text-red-600 font-medium">{allErrors.form}</p>
-                      </div>
-                    )}
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+              <p className="text-red-600 font-medium">{allErrors.form}</p>
+            </div>
+          )}
+
+          {/* Display subcategory errors */}
+          {subcategoryError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+              <p className="text-red-600 font-medium">Failed to load subcategories. Please try again.</p>
+              <button
+                type="button"
+                onClick={() => refetchSubcategories()}
+                className="mt-2 px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
                     {/* Step 1: Authentication & Basic Info */}
-                    {activeStep === 1 && (
+                      {activeStep === 1 && (
                       <div className="space-y-6">
                         <h2 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center">
                           <LogIn className="mr-3 text-emerald-600" size={20} />
@@ -1727,104 +1713,114 @@ useEffect(() => {
                             </div>
 
                             {/* Project Category */}
-                            <div>
-                              <div className="flex justify-between items-center mb-2">
-                                <label htmlFor="projectCategory" className="text-sm font-semibold text-gray-700">
-                                  Project Category *
-                                </label>
-                                {categoryError && (
-                                  <button
-                                    type="button"
-                                    onClick={handleRefreshCategories}
-                                    className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                                    aria-label="Refresh categories list"
-                                  >
-                                    Refresh Categories
-                                  </button>
-                                )}
-                              </div>
-                              <div className="relative">
-                                <select
-                                  id="projectCategory"
-                                  name="projectCategory"
-                                  value={formData.projectCategory}
-                                  onChange={handleInputChange}
-                                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                                  disabled={categoryLoading || gigLoading}
-                                  required
-                                  aria-required="true"
-                                  aria-describedby="category-help"
-                                >
-                                  <option value="">Select a category</option>
-                                  {categoryLoading ? (
-                                    <option value="" disabled>Loading categories...</option>
-                                  ) : (
-                                    (Array.isArray(categoriesData) ? categoriesData : []).map((category) => (
-                                      <option key={category._id} value={category._id}>
-                                        {category.name}
-                                      </option>
-                                    ))
-                                  )}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                  <ChevronDown className="h-4 w-4" />
-                                </div>
-                              </div>
-                              {categoryLoading && (
-                                <div className="flex items-center mt-2 text-sm text-gray-500">
-                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                  Loading categories...
-                                </div>
-                              )}
-                              {categoryError && !categoryLoading && (
-                                <p className="mt-2 text-sm text-red-600">
-                                  Failed to load categories. Please try refreshing.
-                                </p>
-                              )}
-                              {errors.projectCategory && (
-                                <p className="mt-2 text-sm text-red-600" role="alert">{errors.projectCategory}</p>
-                              )}
-                            </div>
+                           <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label htmlFor="projectCategory" className="text-sm font-semibold text-gray-700">
+                        Project Category *
+                      </label>
+                      {categoryError && (
+                        <button
+                          type="button"
+                          onClick={handleRefreshCategories}
+                          className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                          aria-label="Refresh categories list"
+                        >
+                          Refresh Categories
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <select
+                        id="projectCategory"
+                        name="projectCategory"
+                        value={formData.projectCategory}
+                        onChange={handleInputChange}
+                        className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                        disabled={categoryLoading || gigLoading}
+                        required
+                        aria-required="true"
+                        aria-describedby="category-help"
+                      >
+                        <option value="">Select a category</option>
+                        {categoryLoading ? (
+                          <option value="" disabled>Loading categories...</option>
+                        ) : (
+                          (Array.isArray(categoriesData) ? categoriesData : []).map((category) => (
+                            <option key={category._id} value={category._id}>
+                              {category.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
+                    {categoryLoading && (
+                      <div className="flex items-center mt-2 text-sm text-gray-500">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Loading categories...
+                      </div>
+                    )}
+                    {categoryError && !categoryLoading && (
+                      <p className="mt-2 text-sm text-red-600">
+                        Failed to load categories. Please try refreshing.
+                      </p>
+                    )}
+                    {errors.projectCategory && (
+                      <p className="mt-2 text-sm text-red-600" role="alert">{errors.projectCategory}</p>
+                    )}
+                  </div>
 
-                            {/* Subcategory - Now Mandatory */}
-{subcategories.length > 0 && (
-  <div>
-    <label htmlFor="subcategory" className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
-      <Layers className="mr-2" size={14} />
-      Subcategory {subcategories.length > 0 && '*'}
-    </label>
-    <div className="relative">
-      <select
-        id="subcategory"
-        name="subcategory"
-        value={formData.subcategory}
-        onChange={handleInputChange}
-        className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-        disabled={!formData.projectCategory || gigLoading}
-        required={subcategories.length > 0}
-        aria-required={subcategories.length > 0}
-      >
-        <option value="">{subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories available'}</option>
-        {subcategories.map((subcategory) => (
-          <option key={subcategory._id} value={subcategory._id}>
-            {subcategory.name}
-          </option>
-        ))}
-      </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-        <ChevronDown className="h-4 w-4" />
-      </div>
-    </div>
-    <p className="mt-2 text-xs text-gray-500">
-      {subcategories.length > 0 
-        ? 'Please select a subcategory for better project matching'
-        : 'No subcategories available for this category'}
-    </p>
-    {errors.subcategory && (
-      <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
-    )}
-  </div>
-)}
+                  {/* Subcategory - Now using API hook */}
+                  <div>
+                    <label htmlFor="subcategory" className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                      <Layers className="mr-2" size={14} />
+                      Subcategory {subcategories.length > 0 && '*'}
+                    </label>
+                    <div className="relative">
+                      <select
+                        id="subcategory"
+                        name="subcategory"
+                        value={formData.subcategory}
+                        onChange={handleInputChange}
+                        className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                        disabled={!formData.projectCategory || subcategoryLoading || gigLoading}
+                        required={subcategories.length > 0}
+                        aria-required={subcategories.length > 0}
+                        aria-describedby="subcategory-help"
+                      >
+                        <option value="">
+                          {subcategoryLoading ? 'Loading subcategories...' : 
+                           subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories available'}
+                        </option>
+                        {!subcategoryLoading && subcategories.map((subcategory) => (
+                          <option key={subcategory._id} value={subcategory._id}>
+                            {subcategory.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="flex justify-between mt-2">
+                      <p id="subcategory-help" className="text-xs text-gray-500">
+                        {subcategories.length > 0 
+                          ? 'Please select a subcategory for better project matching'
+                          : 'No subcategories available for this category'}
+                      </p>
+                      {subcategoryLoading && (
+                        <span className="text-xs text-gray-500 flex items-center">
+                          <Loader2 className="h-2 w-2 animate-spin mr-1" />
+                          Loading...
+                        </span>
+                      )}
+                    </div>
+                    {errors.subcategory && (
+                      <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
+                    )}
+                  </div>
 
                             {/* Budget */}
                             <div>
@@ -2525,39 +2521,39 @@ useEffect(() => {
 
                     {/* Navigation Buttons */}
                     <div className="flex justify-end pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
-                      {activeStep < 4 ? (
-                        <button
-                          type="button"
-                          onClick={nextStep}
-                          className="px-6 md:px-8 py-3 md:py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
-                          disabled={gigLoading || isSubmitting || (activeStep === 1 && !isAuthenticated)}
-                          aria-label="Save and continue to next step"
-                        >
-                          <Save className="mr-2" size={20} />
-                          Save & Continue
-                          <ChevronRight className="ml-2" size={20} />
-                        </button>
-                      ) : activeStep === 4 ? (
-                        <button
-                          type="submit"
-                          disabled={gigLoading || categoryLoading || !isAuthenticated || isSubmitting}
-                          className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                          aria-label="Create your project gig"
-                        >
-                          {gigLoading || isSubmitting ? (
-                            <>
-                              <Loader2 className="mr-2 animate-spin" size={20} />
-                              Creating Gig...
-                            </>
-                          ) : (
-                            <>
-                              Create Gig
-                              <ChevronRight className="ml-2" size={20} />
-                            </>
-                          )}
-                        </button>
-                      ) : null}
-                    </div>
+            {activeStep < 4 ? (
+              <button
+                type="button"
+                onClick={nextStep}
+                className="px-6 md:px-8 py-3 md:py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                disabled={gigLoading || isSubmitting || subcategoryLoading || (activeStep === 1 && !isAuthenticated)}
+                aria-label="Save and continue to next step"
+              >
+                <Save className="mr-2" size={20} />
+                Save & Continue
+                <ChevronRight className="ml-2" size={20} />
+              </button>
+            ) : activeStep === 4 ? (
+              <button
+                type="submit"
+                disabled={gigLoading || categoryLoading || subcategoryLoading || !isAuthenticated || isSubmitting}
+                className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Create your project gig"
+              >
+                {gigLoading || isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 animate-spin" size={20} />
+                    Creating Gig...
+                  </>
+                ) : (
+                  <>
+                    Create Gig
+                    <ChevronRight className="ml-2" size={20} />
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
                   </form>
                 )}
               </div>
