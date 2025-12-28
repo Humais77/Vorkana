@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
+import { useSubcategoriesByCategory } from '../../hooks/useSubcategories'; // NEW: Import subcategory hook
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isProfileCompleteEnough } from '../../utils/profileUtils';
@@ -141,6 +142,44 @@ const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
   
+  // Form state with all fields from service model
+ const [formData, setFormData] = useState({
+  title: '',
+  description: '',
+  shortDescription: '',
+  category: '',
+  subcategory: '',
+  userLevel: 'new',
+  price: '',
+  currency: 'USD',
+  deliveryTime: '',
+  deliveryTimeUnit: 'days',
+  revisions: 1,
+  tags: [],
+  features: [],
+  requirements: [],
+  faqs: [],
+  packages: [],
+  searchKeywords: [],
+  metaTitle: '',
+  metaDescription: '',
+  gigType: 'basic',
+  status: 'draft',
+  sellerLevel: 'new',
+  isFeatured: false,
+  isRecommended: false,
+  isPopular: false,
+});
+  // NOW declare the subcategory hook AFTER formData is defined
+  const { 
+    data: subcategoriesData,
+    isLoading: subcategoryLoading,
+    error: subcategoryError,
+    refetch: refetchSubcategories
+  } = useSubcategoriesByCategory(formData.category, {
+    enabled: !!formData.category
+  });
+  
   // Use the categories hook
   const { 
     data: categoriesData, 
@@ -151,48 +190,7 @@ const CreateService = () => {
   
   const { user: currentUser, isAuthenticated } = useAuthStore();
   
-  // Form state with all fields from service model
-  const [formData, setFormData] = useState({
-    // Basic Information
-    title: '',
-    description: '',
-    shortDescription: '',
-    category: '',
-    subcategory: '',
-    userLevel: 'new',
-
-    // Pricing & Delivery
-    price: '',
-    currency: 'USD',
-    deliveryTime: '',
-    deliveryTimeUnit: 'days',
-    revisions: 1,
-
-    // Arrays
-    tags: [],
-    features: [],
-    requirements: [],
-    faqs: [],
-    packages: [],
-    searchKeywords: [],
-
-    // Metadata
-    metaTitle: '',
-    metaDescription: '',
-    gigType: 'basic',
-
-    // Status
-    status: 'draft',
-
-    // Optional fields with defaults
-    sellerLevel: 'new',
-    isFeatured: false,
-    isRecommended: false,
-    isPopular: false,
-  });
-
   // Component states
-  const [subcategories, setSubcategories] = useState([]);
   const [newTag, setNewTag] = useState('');
   const [newKeyword, setNewKeyword] = useState('');
   const [newFeature, setNewFeature] = useState({
@@ -255,30 +253,19 @@ const CreateService = () => {
     }
   }, [currentUser, navigate]);
 
-  // Update subcategories when category changes
+  // Reset subcategory when category changes
   useEffect(() => {
-    if (formData.category && categoriesData && Array.isArray(categoriesData)) {
-      const category = categoriesData.find(cat => cat._id === formData.category);
-      
-      if (category) {
-        const subs = category.children || category.subcategories || [];
-        setSubcategories(subs);
-        
-        if (formData.subcategory && !subs.find(s => s._id === formData.subcategory)) {
-          setFormData(prev => ({ ...prev, subcategory: '' }));
-          setCompletedFields(prev => ({ ...prev, subcategory: false }));
-        }
-      } else {
-        setSubcategories([]);
-        setFormData(prev => ({ ...prev, subcategory: '' }));
-        setCompletedFields(prev => ({ ...prev, subcategory: false }));
-      }
-    } else {
-      setSubcategories([]);
-      setFormData(prev => ({ ...prev, subcategory: '' }));
-      setCompletedFields(prev => ({ ...prev, subcategory: false }));
+    if (formData.category) {
+      setFormData(prev => ({ 
+        ...prev, 
+        subcategory: '' 
+      }));
+      setCompletedFields(prev => ({ 
+        ...prev, 
+        subcategory: false 
+      }));
     }
-  }, [formData.category, categoriesData]);
+  }, [formData.category]);
 
   // Handle successful service creation
   useEffect(() => {
@@ -303,12 +290,15 @@ const CreateService = () => {
 
   // Memoized handlers
   const handleInputChange = useCallback((e) => {
-    const { name, value, type, checked } = e.target;
-    
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+   const { name, value, type, checked } = e.target;
+  
+  // Ensure value is never undefined
+  const safeValue = value === undefined ? '' : value;
+  
+  setFormData(prev => ({
+    ...prev,
+    [name]: type === 'checkbox' ? checked : safeValue
+  }));
     
     // Update completed status based on validation
     const isValid = validateField(name, type === 'checkbox' ? checked : value);
@@ -321,7 +311,12 @@ const CreateService = () => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
-  }, [errors]);
+    
+    // If category changes, trigger subcategories fetch
+    if (name === 'category' && value) {
+      refetchSubcategories();
+    }
+  }, [errors, refetchSubcategories]);
 
   const validateField = useCallback((fieldName, value) => {
     switch (fieldName) {
@@ -831,10 +826,12 @@ const CreateService = () => {
 
   // Get subcategory name for display - memoized
   const getSubcategoryName = useCallback(() => {
-    if (!formData.subcategory) return "";
+    if (!formData.subcategory || !subcategoriesData) return "";
+    // Access subcategories from the hook response
+    const subcategories = subcategoriesData?.subcategories || subcategoriesData || [];
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
-  }, [formData.subcategory, subcategories]);
+  }, [formData.subcategory, subcategoriesData]);
 
   const formatPrice = useCallback((price) => {
     const num = parseFloat(price);
@@ -952,6 +949,13 @@ const CreateService = () => {
     </div>
   ), []);
 
+  // Get subcategories array from hook data
+  const subcategories = useMemo(() => {
+    if (!subcategoriesData) return [];
+    // Handle different response structures
+    return subcategoriesData?.subcategories || subcategoriesData || [];
+  }, [subcategoriesData]);
+
   // Memoized step content based on active step
   const renderStepContent = useMemo(() => {
     switch (activeStep) {
@@ -1040,27 +1044,29 @@ const CreateService = () => {
                   </label>
                   <div className="relative">
                     <select
-                      name="subcategory"
-                      value={formData.subcategory}
-                      onChange={handleInputChange}
-                      className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                      required
-                      aria-required="true"
-                      disabled={!formData.category || subcategories.length === 0 || createServiceMutation.isPending}
-                    >
-                      <option value="">Select a subcategory</option>
-                      {!formData.category ? (
-                        <option value="" disabled>Select a category first</option>
-                      ) : subcategories.length === 0 ? (
-                        <option value="" disabled>No subcategories available</option>
-                      ) : (
-                        subcategories.map(subcategory => (
-                          <option key={subcategory._id} value={subcategory._id}>
-                            {subcategory.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
+  name="subcategory"
+  value={formData.subcategory || ''} // Ensure it's never undefined
+  onChange={handleInputChange}
+  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+  required
+  aria-required="true"
+  disabled={!formData.category || subcategoryLoading || subcategories.length === 0 || createServiceMutation.isPending}
+>
+  <option value="">Select a subcategory</option>
+  {!formData.category ? (
+    <option value="" disabled>Select a category first</option>
+  ) : subcategoryLoading ? (
+    <option value="" disabled>Loading subcategories...</option>
+  ) : subcategories.length === 0 ? (
+    <option value="" disabled>No subcategories available for this category</option>
+  ) : (
+    subcategories.map(subcategory => (
+      <option key={subcategory._id} value={subcategory._id || ''}> {/* Ensure value is string */}
+        {subcategory.name}
+      </option>
+    ))
+  )}
+</select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
                       <ChevronDown className="h-4 w-4" />
                     </div>
@@ -1691,6 +1697,7 @@ const CreateService = () => {
     errors,
     categoryLoading,
     categoriesData,
+    subcategoryLoading,
     subcategories,
     createServiceMutation.isPending,
     handleInputChange,
@@ -1750,7 +1757,7 @@ const CreateService = () => {
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             <button
               type="submit"
-              disabled={createServiceMutation.isPending || categoryLoading || isSubmitting}
+              disabled={createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting}
               className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Save service as draft"
             >
@@ -1770,7 +1777,7 @@ const CreateService = () => {
             <button
               type="button"
               onClick={(e) => handleSubmit(e, 'active')}
-              disabled={createServiceMutation.isPending || categoryLoading || isSubmitting}
+              disabled={createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting}
               className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Publish service"
             >
@@ -1794,6 +1801,7 @@ const CreateService = () => {
     activeStep,
     createServiceMutation.isPending,
     categoryLoading,
+    subcategoryLoading,
     isSubmitting,
     prevStep,
     nextStep,
@@ -2000,6 +2008,20 @@ const CreateService = () => {
                     {createServiceMutation.error && (
                       <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
                         <p className="text-red-600 font-medium">{createServiceMutation.error.message}</p>
+                      </div>
+                    )}
+
+                    {/* Display subcategory errors */}
+                    {subcategoryError && (
+                      <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                        <p className="text-red-600 font-medium">Failed to load subcategories. Please try again.</p>
+                        <button
+                          type="button"
+                          onClick={() => refetchSubcategories()}
+                          className="mt-2 px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
+                        >
+                          Retry
+                        </button>
                       </div>
                     )}
 

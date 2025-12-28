@@ -28,9 +28,29 @@ export const useServices = (filters = {}) => {
     queryFn: async () => {
       try {
         const result = await servicesAPI.getAll(filters);
-        return result;
+        return result || {
+          success: true,
+          data: [],
+          pagination: {
+            page: filters.page || 1,
+            limit: filters.limit || 12,
+            total: 0,
+            totalPages: 0
+          }
+        };
       } catch (error) {
-        throw error;
+        console.error('Services API error:', error);
+        return {
+          success: false,
+          data: [],
+          pagination: {
+            page: filters.page || 1,
+            limit: filters.limit || 12,
+            total: 0,
+            totalPages: 0
+          },
+          error: error.message
+        };
       }
     },
     refetchOnWindowFocus: false,
@@ -50,7 +70,67 @@ export const useService = (identifier) => {
     },
   });
 };
+export const usePopularServices = (params = {}) => {
+  return useQuery({
+    queryKey: ['popularServices', params],
+    queryFn: async () => {
+      try {
+        const result = await servicesAPI.getPopularServices(params);
+        return result;
+      } catch (error) {
+        throw error;
+      }
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    retry: 1,
+    onError: (error) => {
+      console.error('Failed to load popular services:', error);
+    },
+  });
+};
 
+export const usePopularServicesByCategory = (params = {}) => {
+  return useQuery({
+    queryKey: ['popularServicesByCategory', params],
+    queryFn: async () => {
+      try {
+        const result = await servicesAPI.getPopularServicesByCategory(params);
+        return result;
+      } catch (error) {
+        throw error;
+      }
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 10 * 60 * 1000, // 10 minutes cache
+    retry: 1,
+  });
+};
+
+export const useTogglePopularStatus = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ serviceId, isPopular }) => {
+      return servicesAPI.togglePopularStatus(serviceId, isPopular);
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        // Invalidate relevant queries
+        queryClient.invalidateQueries(['popularServices']);
+        queryClient.invalidateQueries(['popularServicesByCategory']);
+        queryClient.invalidateQueries(['service', variables.serviceId]);
+        queryClient.invalidateQueries(['myServices']);
+        queryClient.invalidateQueries(['services']);
+        
+        toast.success(data.message || `Service ${variables.isPopular ? 'marked as popular' : 'removed from popular'} successfully!`);
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to update popular status');
+    },
+  });
+};
 export const useCategories = () => {
   return useQuery({
     queryKey: ['categories'],
@@ -168,9 +248,52 @@ export const useServiceStats = (filters = {}) => {
 export const useSearchServices = (searchParams) => {
   return useQuery({
     queryKey: ['searchServices', searchParams],
-    queryFn: () => servicesAPI.search(searchParams),
+    queryFn: async () => {
+      try {
+        // If searchParams is null or undefined, return empty result
+        if (!searchParams) {
+          return {
+            success: true,
+            data: [],
+            pagination: {
+              total: 0,
+              page: 1,
+              limit: 20,
+              totalPages: 0
+            }
+          };
+        }
+
+        const result = await servicesAPI.search(searchParams);
+        return result || {
+          success: true,
+          data: [],
+          pagination: {
+            total: 0,
+            page: 1,
+            limit: 20,
+            totalPages: 0
+          }
+        };
+      } catch (error) {
+        console.error('Search services error:', error);
+        // Always return a value, even on error
+        return {
+          success: false,
+          data: [],
+          pagination: {
+            total: 0,
+            page: 1,
+            limit: 20,
+            totalPages: 0
+          },
+          error: error.message
+        };
+      }
+    },
     enabled: Boolean(searchParams?.query || searchParams?.q || searchParams?.category),
     refetchOnWindowFocus: false,
+    staleTime: 2 * 60 * 1000, // 2 minutes
     onError: (error) => {
       toast.error(error.message || 'Failed to search services');
     },

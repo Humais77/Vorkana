@@ -3610,7 +3610,7 @@ const getPopularServices = async (req, res, next) => {
       category, 
       random = 'false',
       minRating = 4.0,
-      minOrders = 5,
+      minReviews = 5, // Use reviewsCount instead of ordersCount
       maxPrice,
       cache: useCacheParam = 'true'
     } = req.query;
@@ -3625,7 +3625,8 @@ const getPopularServices = async (req, res, next) => {
       status: 'active',
       isActive: true,
       isPopular: true,
-      rating: { $gte: parseFloat(minRating) }
+      rating: { $gte: parseFloat(minRating) },
+      reviewsCount: { $gte: parseInt(minReviews) || 0 } // Use reviewsCount
     };
 
     // Optional category filter
@@ -3660,15 +3661,6 @@ const getPopularServices = async (req, res, next) => {
 
     if (!services.length) {
       // Optional random ordering
-      const sortOptions = random === 'true' 
-        ? { $rand: {} }  // Use aggregation for random
-        : { 
-            rating: -1, 
-            views: -1, 
-            likes: -1,
-            createdAt: -1 
-          };
-
       if (random === 'true') {
         // Use aggregation for random sampling
         services = await Service.aggregate([
@@ -3721,7 +3713,14 @@ const getPopularServices = async (req, res, next) => {
           }
         ]);
       } else {
-        // Normal query with populate
+        // Normal query with populate - FIXED: removed ordersCount from sort
+        const sortOptions = { 
+          rating: -1, 
+          views: -1, 
+          likes: -1,
+          createdAt: -1 
+        };
+        
         services = await Service.find(filter)
           .select('title slug shortDescription description price currency rating reviewsCount deliveryTime deliveryTimeUnit revisions views likes thumbnail images')
           .populate('createdBy', 'name picture')
@@ -3938,25 +3937,22 @@ const getPopularServicesByCategory = async (req, res, next) => {
       }
     }
 
-    // This replaces your separate PopularService model functionality
-    const categories = ['web', 'video', 'software', 'mobile', 'design', 'data'];
+    // Use actual category slugs from your database
+    const categorySlugs = [
+      "glenda-bradtke-creative",  // From your database
+      "web-development",          // Add other actual slugs
+      "video-editing",            // Add other actual slugs
+      "graphic-design",           // Add other actual slugs
+      "mobile-apps",              // Add other actual slugs
+      "data-analysis"             // Add other actual slugs
+    ];
     
-    // Map category strings to actual category IDs from your database
-    const categoryMap = {
-      web: 'web_development',
-      video: 'video_editing',
-      software: 'software_development',
-      mobile: 'mobile_apps',
-      design: 'graphic_design',
-      data: 'data_analysis'
-    };
-
     result = [];
 
-    // For each category, find popular services
-    for (const categorySlug of categories) {
+    // For each category slug, find popular services
+    for (const categorySlug of categorySlugs) {
       const category = await Category.findOne({ 
-        slug: categoryMap[categorySlug] || categorySlug,
+        slug: categorySlug,
         isActive: true 
       });
 
@@ -3982,7 +3978,8 @@ const getPopularServicesByCategory = async (req, res, next) => {
               (service.description ? service.description.substring(0, 100) + '...' : ''),
             searchQuery: service.searchKeywords?.[0] || 
               service.title.toLowerCase().replace(/\s+/g, '-'),
-            category: categorySlug,
+            category: category.name, // Use category name instead of slug for display
+            categorySlug: category.slug,
             imageUrl: service.thumbnail?.url || 
               (service.images && service.images[0]?.url) ||
               `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,
@@ -4016,7 +4013,8 @@ const getPopularServicesByCategory = async (req, res, next) => {
           (service.description ? service.description.substring(0, 100) + '...' : ''),
         searchQuery: service.searchKeywords?.[0] || 
           service.title.toLowerCase().replace(/\s+/g, '-'),
-        category: service.category?.slug || 'web',
+        category: service.category?.name || 'Creative Services',
+        categorySlug: service.category?.slug || 'glenda-bradtke-creative',
         imageUrl: service.thumbnail?.url || 
           (service.images && service.images[0]?.url) ||
           `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,

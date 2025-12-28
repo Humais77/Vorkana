@@ -21,12 +21,12 @@ export const useSubcategories = (params = {}, options = {}) => {
         throw error;
       }
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     initialData: () => {
-      // Return cached data if fresh
+      // FIXED: Cache the check to avoid re-evaluating on every render
       if (subcategories.length > 0 && lastFetched) {
         const isStale = Date.now() - lastFetched > 5 * 60 * 1000;
         return isStale ? undefined : subcategories;
@@ -46,33 +46,44 @@ export const useSubcategories = (params = {}, options = {}) => {
  * Hook to get subcategories by category ID
  */
 export const useSubcategoriesByCategory = (categoryId, options = {}) => {
-  const setSubcategoriesByCategory = useSubcategoryStore((state) => state.setSubcategoriesByCategory);
-  const getSubcategoriesByCategory = useSubcategoryStore((state) => state.getSubcategoriesByCategory(categoryId));
-  
   return useQuery({
     queryKey: ['subcategories', 'category', categoryId],
     queryFn: async () => {
       try {
+        // Validate categoryId before making the request
+        if (!categoryId || categoryId.trim() === '') {
+          return {
+            subcategories: [],
+            category: null,
+            count: 0,
+            error: 'No category ID provided'
+          };
+        }
+
         const result = await subcategoriesAPI.getByCategory(categoryId);
-        return result;
+        
+        // Ensure consistent response structure
+        return {
+          subcategories: Array.isArray(result.subcategories) ? result.subcategories : [],
+          category: result.category || null,
+          count: result.count || 0,
+          error: result.error || null
+        };
       } catch (error) {
         console.error('Error fetching subcategories by category:', error);
-        throw error;
+        return {
+          subcategories: [],
+          category: null,
+          count: 0,
+          error: error.message
+        };
       }
     },
-    enabled: !!categoryId,
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    initialData: () => {
-      if (getSubcategoriesByCategory?.subcategories) {
-        return getSubcategoriesByCategory;
-      }
-      return undefined;
-    },
-    onSuccess: (data) => {
-      if (data && categoryId) {
-        setSubcategoriesByCategory(categoryId, data.subcategories);
-      }
-    },
+    enabled: !!categoryId && categoryId.trim() !== '',
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: 1, // Retry once on failure
     ...options,
   });
 };
@@ -81,7 +92,10 @@ export const useSubcategoriesByCategory = (categoryId, options = {}) => {
  * Hook to get a single subcategory by ID
  */
 export const useSubcategory = (id, options = {}) => {
-  const getSubcategory = useSubcategoryStore((state) => state.getSubcategoryById(id));
+  // FIXED: Use getState to avoid subscription
+  const getCachedSubcategory = useCallback(() => {
+    return useSubcategoryStore.getState().getSubcategoryById(id);
+  }, [id]);
   
   return useQuery({
     queryKey: ['subcategories', id],
@@ -96,7 +110,9 @@ export const useSubcategory = (id, options = {}) => {
     },
     enabled: !!id,
     staleTime: 10 * 60 * 1000,
-    initialData: () => getSubcategory || undefined,
+    initialData: () => getCachedSubcategory() || undefined,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 };
@@ -200,32 +216,32 @@ export const useSearchSubcategories = (query, options = {}) => {
     },
     enabled: !!debouncedQuery && debouncedQuery.length > 1,
     staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
     ...options,
   });
 };
 
 /**
- * Custom hook for subcategory selection
+ * SIMPLIFIED version for subcategory selection
  */
 export const useSubcategorySelection = (initialCategoryId = null) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategoryId);
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState(null);
   
   // Get subcategories for selected category
-  const { data: subcategoriesData } = useSubcategoriesByCategory(selectedCategoryId, {
+  const { 
+    data: subcategoriesData, 
+    isLoading: subcategoriesLoading,
+    error: subcategoriesError 
+  } = useSubcategoriesByCategory(selectedCategoryId, {
     enabled: !!selectedCategoryId,
   });
   
   const subcategories = subcategoriesData?.subcategories || [];
   
-  // Get selected subcategory details
-  const { data: selectedSubcategory } = useSubcategory(selectedSubcategoryId, {
-    enabled: !!selectedSubcategoryId,
-  });
-  
   const handleCategoryChange = useCallback((categoryId) => {
     setSelectedCategoryId(categoryId);
-    setSelectedSubcategoryId(null); // Reset subcategory when category changes
+    setSelectedSubcategoryId(null);
   }, []);
   
   const handleSubcategoryChange = useCallback((subcategoryId) => {
@@ -235,8 +251,9 @@ export const useSubcategorySelection = (initialCategoryId = null) => {
   return {
     selectedCategoryId,
     selectedSubcategoryId,
-    selectedSubcategory,
     subcategories,
+    subcategoriesLoading,
+    subcategoriesError,
     handleCategoryChange,
     handleSubcategoryChange,
     setSelectedCategoryId,

@@ -450,11 +450,7 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     
     const queryString = new URLSearchParams(params).toString();
     
-    console.log('Search API call:', `/api/services/search${queryString ? '?' + queryString : ''}`);
-    
     const response = await axiosInstance.get(`/api/services/search${queryString ? '?' + queryString : ''}`);
-    
-    console.log('Search response:', response.data);
     
     // Handle different response structures
     if (response.data && response.data.success) {
@@ -480,18 +476,132 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     console.error('Search services error:', error);
     console.error('Error details:', error.response?.data);
     
-    let errorMessage = 'Failed to search services';
-    if (error.response) {
-      if (error.response.status === 400) {
-        errorMessage = error.response.data?.message || 'Invalid search query';
-      } else {
-        errorMessage = error.response.data?.message || errorMessage;
-      }
-    }
-    
-    throw new Error(errorMessage);
+    // Always return a structured response
+    return {
+      success: false,
+      data: [],
+      pagination: {
+        total: 0
+      },
+      error: error.message
+    };
   }
 },
+getPopularServices: async (params = {}) => {
+    try {
+      const cleanParams = {};
+      Object.keys(params).forEach(key => {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+          cleanParams[key] = params[key];
+        }
+      });
+
+      console.log('Fetching popular services with params:', cleanParams);
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const url = `/api/services/popular${queryString ? '?' + queryString : ''}`;
+      
+      console.log('Popular services API URL:', url);
+      
+      const response = await axiosInstance.get(url);
+      
+      console.log('Popular services response:', response.data);
+      
+      if (response.data && response.data.success) {
+        return {
+          success: true,
+          data: response.data.services || response.data.data || [],
+          count: response.data.count || 0,
+          categoryStats: response.data.categoryStats || [],
+          ...response.data
+        };
+      }
+      
+      return {
+        success: true,
+        data: [],
+        count: 0,
+        categoryStats: []
+      };
+      
+    } catch (error) {
+      console.error('Popular services API error:', error.message);
+      console.error('Error details:', error.response?.data);
+      
+      // Return empty data on error
+      return {
+        success: false,
+        data: [],
+        count: 0,
+        categoryStats: [],
+        error: error.message
+      };
+    }
+  },
+  
+  // Add this method for popular services by category
+  getPopularServicesByCategory: async (params = {}) => {
+    try {
+      const cleanParams = {};
+      Object.keys(params).forEach(key => {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+          cleanParams[key] = params[key];
+        }
+      });
+
+      console.log('Fetching popular services by category with params:', cleanParams);
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const url = `/api/services/popular/category${queryString ? '?' + queryString : ''}`;
+      
+      console.log('Popular services by category API URL:', url);
+      
+      const response = await axiosInstance.get(url);
+      
+      console.log('Popular services by category response:', response.data);
+      
+      if (response.data && response.data.success) {
+        return {
+          success: true,
+          data: response.data.data || response.data.services || [],
+          count: response.data.count || 0,
+          ...response.data
+        };
+      }
+      
+      return {
+        success: true,
+        data: [],
+        count: 0
+      };
+      
+    } catch (error) {
+      console.error('Popular services by category API error:', error.message);
+      console.error('Error details:', error.response?.data);
+      
+      // Return empty data on error
+      return {
+        success: false,
+        data: [],
+        count: 0,
+        error: error.message
+      };
+    }
+  },
+  
+  // Add method to toggle popular status (admin only)
+  togglePopularStatus: async (serviceId, isPopular) => {
+    try {
+      const response = await axiosInstance.patch(`/api/services/${serviceId}/popular`, {
+        isPopular
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update popular status');
+    }
+  },
   getSimilar: async (serviceId, params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();

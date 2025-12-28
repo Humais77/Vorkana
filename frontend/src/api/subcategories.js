@@ -143,33 +143,57 @@ export const subcategoriesAPI = {
    * Get subcategories by category ID
    */
   getByCategory: async (categoryId, params = {}) => {
-    try {
-      const response = await axiosInstance.get(`/api/subcategories/category/${categoryId}`, { 
-        params: {
-          activeOnly: true,
-          ...params
-        }
-      });
-      
-      if (response.data?.success) {
-        return {
-          subcategories: response.data.data || [],
-          category: response.data.category,
-          count: response.data.count
-        };
-      }
-      
-      return {
-        subcategories: response.data || [],
-        category: null,
-        count: response.data?.length || 0
-      };
-      
-    } catch (error) {
-      console.error('Get subcategories by category error:', error);
-      throw error;
+  try {
+    // Validate categoryId
+    if (!categoryId || typeof categoryId !== 'string' || categoryId.trim() === '') {
+      throw new Error('Invalid category ID');
     }
-  },
+
+    // Clean categoryId - remove any ObjectId wrapper if present
+    const cleanCategoryId = categoryId.replace(/["']/g, '').trim();
+    
+    const response = await axiosInstance.get(`/api/subcategories/category/${cleanCategoryId}`, { 
+      params: {
+        activeOnly: true,
+        ...params
+      }
+    });
+    
+    // Handle different response structures
+    if (response.data?.success) {
+      return {
+        subcategories: response.data.data || [],
+        category: response.data.category,
+        count: response.data.count || 0
+      };
+    }
+    
+    // Fallback for direct array response
+    return {
+      subcategories: response.data || [],
+      category: null,
+      count: response.data?.length || 0
+    };
+    
+  } catch (error) {
+    console.error('Get subcategories by category error:', error);
+    
+    // Log more details about the error
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      console.error('Request URL:', error.config?.url);
+    }
+    
+    // Return empty structure instead of throwing
+    return {
+      subcategories: [],
+      category: null,
+      count: 0,
+      error: error.message
+    };
+  }
+},
   
   /**
    * Create subcategory (admin only)
