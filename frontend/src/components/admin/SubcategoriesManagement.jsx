@@ -1,5 +1,4 @@
-// SubcategoriesManagement.jsx
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminSubcategories, 
   useUpdateSubcategory, 
@@ -30,8 +29,6 @@ import {
   FiTrendingUp,
   FiFolderPlus,
   FiX,
-  FiList,
-  FiGrid,
   FiClock
 } from 'react-icons/fi';
 import { format } from 'date-fns';
@@ -86,10 +83,10 @@ const SubcategoryTableRow = memo(({
             </button>
             <div>
               <div className="text-sm font-medium text-gray-900">{subcategory.name}</div>
-<div className="text-xs text-gray-500 mt-1">
-  Slug: {subcategory.slug || 'N/A'} • 
-  Category: {subcategory.category?.name || categoriesMap[subcategory.category]?._id || 'N/A'}
-</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Slug: {subcategory.slug || 'N/A'} • 
+                Category: {subcategory.category?.name || categoriesMap[subcategory.category]?._id || 'N/A'}
+              </div>
             </div>
           </div>
         </td>
@@ -225,7 +222,6 @@ const SubcategoriesManagement = () => {
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedSubcategories, setExpandedSubcategories] = useState([]);
-  const [viewMode, setViewMode] = useState('table');
 
   const limit = 20;
   
@@ -253,6 +249,18 @@ const SubcategoriesManagement = () => {
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
+  // Search with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== '') {
+        setPage(1);
+        refetch();
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, refetch]);
+
   // Create categories map for quick lookup
   const categoriesMap = useMemo(() => {
     return categories.reduce((map, cat) => {
@@ -267,6 +275,10 @@ const SubcategoriesManagement = () => {
     setPage(1);
     refetch();
   }, [refetch]);
+
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -542,13 +554,17 @@ const SubcategoriesManagement = () => {
                 type="text"
                 placeholder="Search subcategories by name, slug, or description..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => {
+                    setSearchTerm('');
+                    setPage(1);
+                    refetch();
+                  }}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   <FiX className="h-4 w-4" />
@@ -557,32 +573,13 @@ const SubcategoriesManagement = () => {
             </div>
           </form>
           
-          <div className="flex items-center space-x-3">
-            <div className="flex border border-gray-300 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`px-3 py-2 ${viewMode === 'table' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
-                title="Table View"
-              >
-                <FiList className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-2 ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
-                title="Grid View"
-              >
-                <FiGrid className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
-            >
-              <FiFilter className="h-4 w-4" />
-              <span className="hidden md:inline">Filters</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+          >
+            <FiFilter className="h-4 w-4" />
+            <span className="hidden md:inline">Filters</span>
+          </button>
         </div>
 
         {/* Advanced Filters */}
@@ -634,192 +631,136 @@ const SubcategoriesManagement = () => {
         )}
       </div>
 
-      {/* Subcategories Table/Grid */}
-      {viewMode === 'table' ? (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-12 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedSubcategories.length === subcategories.length && subcategories.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Subcategory Details
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Created
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {subcategories.map((subcategory) => (
-                  <SubcategoryTableRow
-                    key={subcategory._id}
-                    subcategory={subcategory}
-                    isExpanded={expandedSubcategories.includes(subcategory._id)}
-                    isSelected={selectedSubcategories.includes(subcategory._id)}
-                    onToggleExpand={toggleExpandSubcategory}
-                    onToggleSelect={toggleSelectSubcategory}
-                    onView={handleView}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onDuplicate={handleDuplicate}
-                    onOpenActionMenu={setActionMenu}
-                    actionMenuId={actionMenu}
-                    categoriesMap={categoriesMap}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Empty State */}
-          {subcategories.length === 0 && !isLoading && (
-            <div className="text-center py-12">
-              <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
-              <h3 className="mt-4 text-lg font-medium text-gray-900">No subcategories found</h3>
-              <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="px-4 py-4 border-t border-gray-200">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="text-sm text-gray-700">
-                  Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
-                  <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
-                  <span className="font-medium">{pagination.total}</span> subcategories
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                  >
-                    <FiChevronLeft className="h-4 w-4" />
-                  </button>
-                  
-                  <div className="flex items-center space-x-1">
-                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                      let pageNum;
-                      if (pagination.totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (page <= 3) {
-                        pageNum = i + 1;
-                      } else if (page >= pagination.totalPages - 2) {
-                        pageNum = pagination.totalPages - 4 + i;
-                      } else {
-                        pageNum = page - 2 + i;
-                      }
-                      
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setPage(pageNum)}
-                          className={`px-3 py-1.5 rounded-md text-sm ${
-                            page === pageNum
-                              ? 'bg-indigo-600 text-white'
-                              : 'border border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                    
-                    {pagination.totalPages > 5 && page < pagination.totalPages - 2 && (
-                      <>
-                        <span className="px-2 text-gray-400">...</span>
-                        <button
-                          onClick={() => setPage(pagination.totalPages)}
-                          className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
-                        >
-                          {pagination.totalPages}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  
-                  <button
-                    onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                    disabled={page === pagination.totalPages}
-                    className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                  >
-                    <FiChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        // Grid View
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {subcategories.map((subcategory) => (
-            <div key={subcategory._id} className="bg-white rounded-lg border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
+      {/* Subcategories Table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-12 px-4 py-3">
                   <input
                     type="checkbox"
-                    checked={selectedSubcategories.includes(subcategory._id)}
-                    onChange={() => toggleSelectSubcategory(subcategory._id)}
+                    checked={selectedSubcategories.length === subcategories.length && subcategories.length > 0}
+                    onChange={toggleSelectAll}
                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{subcategory.name}</h3>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${subcategory.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {subcategory.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {categoriesMap[subcategory.category]?.name || 'Unknown Category'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Subcategory Details
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {subcategories.map((subcategory) => (
+                <SubcategoryTableRow
+                  key={subcategory._id}
+                  subcategory={subcategory}
+                  isExpanded={expandedSubcategories.includes(subcategory._id)}
+                  isSelected={selectedSubcategories.includes(subcategory._id)}
+                  onToggleExpand={toggleExpandSubcategory}
+                  onToggleSelect={toggleSelectSubcategory}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onDuplicate={handleDuplicate}
+                  onOpenActionMenu={setActionMenu}
+                  actionMenuId={actionMenu}
+                  categoriesMap={categoriesMap}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Empty State */}
+        {subcategories.length === 0 && !isLoading && (
+          <div className="text-center py-12">
+            <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
+            <h3 className="mt-4 text-lg font-medium text-gray-900">No subcategories found</h3>
+            <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="px-4 py-4 border-t border-gray-200">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="text-sm text-gray-700">
+                Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
+                <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
+                <span className="font-medium">{pagination.total}</span> subcategories
               </div>
-              
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 line-clamp-2">{subcategory.description || 'No description'}</p>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div className="text-sm text-gray-500">
-                  <div>Services: {subcategory.servicesCount || 0}</div>
-                  <div>Gigs: {subcategory.gigsCount || 0}</div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                >
+                  <FiChevronLeft className="h-4 w-4" />
+                </button>
+                
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setPage(pageNum)}
+                        className={`px-3 py-1.5 rounded-md text-sm ${
+                          page === pageNum
+                            ? 'bg-indigo-600 text-white'
+                            : 'border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  
+                  {pagination.totalPages > 5 && page < pagination.totalPages - 2 && (
+                    <>
+                      <span className="px-2 text-gray-400">...</span>
+                      <button
+                        onClick={() => setPage(pagination.totalPages)}
+                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
+                      >
+                        {pagination.totalPages}
+                      </button>
+                    </>
+                  )}
                 </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleView(subcategory)}
-                    className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
-                  >
-                    <FiEye className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleEdit(subcategory)}
-                    className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <FiEdit2 className="h-4 w-4" />
-                  </button>
-                </div>
+                
+                <button
+                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                  disabled={page === pagination.totalPages}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                >
+                  <FiChevronRight className="h-4 w-4" />
+                </button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       {showCreateModal && (

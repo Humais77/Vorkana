@@ -1,5 +1,4 @@
-// components/admin/ServicesManagement.jsx - OPTIMIZED VERSION
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminServices, 
   useUpdateService, 
@@ -27,7 +26,6 @@ import {
   FiTag,
   FiChevronLeft,
   FiChevronRight,
-  FiGrid,
   FiList,
   FiRefreshCw,
   FiStar,
@@ -50,216 +48,24 @@ import ServiceCreateModal from './ServiceCreateModal';
 import ServiceEditModal from './ServiceEditModal';
 import ServiceDetailsModal from './ServiceDetailsModal';
 import ServiceDeleteModal from './ServiceDeleteModal';
-// Memoized ServiceCard component
-// Memoized ServiceCard component
-const ServiceCard = memo(({ 
-  service, 
-  isSelected, 
-  onSelect, 
-  onView, 
-  onEdit, 
-  onDelete, 
-  onDuplicate,
-  actionMenu,
-  setActionMenu,
-  formatPrice 
-}) => {
-  const navigate = useNavigate();
-  
-  const getStatusColor = (status) => {
-    const colors = {
-      active: 'bg-green-100 text-green-800 border border-green-200',
-      draft: 'bg-gray-100 text-gray-800 border border-gray-200',
-      pending: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-      paused: 'bg-orange-100 text-orange-800 border border-orange-200',
-      denied: 'bg-red-100 text-red-800 border border-red-200',
-      suspended: 'bg-purple-100 text-purple-800 border border-purple-200'
-    };
-    return colors[status] || colors.draft;
-  };
 
-  // Get status with fallback
-  const status = service?.status || 'draft';
-  const statusText = status.charAt(0).toUpperCase() + status.slice(1);
-
-  return (
-    <div className={`bg-white rounded-lg border ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500 ring-opacity-20' : 'border-gray-200'} p-6 hover:shadow-lg transition-shadow`}>
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onSelect}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          {service?.thumbnail ? (
-            <img
-              src={service.thumbnail}
-              alt={service.title || 'Service'}
-              className="h-16 w-16 rounded-lg object-cover"
-            />
-          ) : (
-            <div className="h-16 w-16 flex-shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
-              <FiPackage className="h-8 w-8 text-gray-400" />
-            </div>
-          )}
-          <div>
-            <h3 className="font-semibold text-gray-900 line-clamp-1">
-              {service?.title || 'Untitled Service'}
-            </h3>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(status)}`}>
-                {statusText}
-              </span>
-              {service?.isFeatured && (
-                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                  Featured
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="relative">
-          <button
-            onClick={() => setActionMenu(actionMenu === service?._id ? null : service?._id)}
-            className="p-1 text-gray-400 hover:text-gray-600"
-            disabled={!service?._id}
-          >
-            <FiMoreVertical className="h-5 w-5" />
-          </button>
-          
-          {actionMenu === service?._id && (
-            <>
-              <div 
-                className="fixed inset-0 z-10"
-                onClick={() => setActionMenu(null)}
-              />
-              <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-                <div className="py-1">
-                  <button
-                    onClick={onView}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEye className="h-4 w-4 mr-2" />
-                    View
-                  </button>
-                  <button
-                    onClick={onEdit}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiEdit2 className="h-4 w-4 mr-2" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => {
-                      onDuplicate();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    <FiCopy className="h-4 w-4 mr-2" />
-                    Duplicate
-                  </button>
-                  {status === 'active' && (
-                    <button
-                      onClick={() => {
-                        toast.success('Feature coming soon');
-                        setActionMenu(null);
-                      }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50"
-                    >
-                      <FiPause className="h-4 w-4 mr-2" />
-                      Pause Service
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      onDelete();
-                      setActionMenu(null);
-                    }}
-                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    <FiTrash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      
-      <div className="mb-4">
-        <p className="text-sm text-gray-600 line-clamp-2">
-          {service?.description || 'No description available'}
-        </p>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">
-            {formatPrice(service?.price || 0, service?.currency || 'USD')}
-          </div>
-          <div className="text-xs text-gray-500">Price</div>
-        </div>
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">
-            {service?.deliveryTime || 0}
-          </div>
-          <div className="text-xs text-gray-500">
-            {service?.deliveryTimeUnit || 'days'}
-          </div>
-        </div>
-      </div>
-      
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center text-sm text-gray-500">
-            <FiActivity className="h-4 w-4 mr-1" />
-            <span>{service?.ordersCount || 0} orders</span>
-          </div>
-          <div className="flex items-center text-sm text-gray-500">
-            <FiStar className="h-4 w-4 mr-1 text-yellow-400" />
-            <span>{(service?.rating || 0).toFixed(1)}</span>
-          </div>
-        </div>
-        <div className="text-sm text-gray-500">
-          <FiCalendar className="h-4 w-4 inline mr-1" />
-          {service?.createdAt ? format(new Date(service.createdAt), 'MMM d') : 'N/A'}
-        </div>
-      </div>
-      
-      <div className="mt-4 flex space-x-2">
-        <button
-          onClick={onView}
-          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          View
-        </button>
-        <button
-          onClick={onEdit}
-          className="flex-1 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
-          Edit
-        </button>
-      </div>
-    </div>
-  );
-});
-
-ServiceCard.displayName = 'ServiceCard';
-
-// Memoized table row for list view
-// Memoized table row for list view
+// Memoized table row for list view with 3-dot menu
 const ServiceTableRow = memo(({
   service,
   isSelected,
   onSelect,
   onView,
   onEdit,
+  onDelete,
+  onDuplicate,
+  onFeatureToggle,
+  onStatusToggle,
+  actionMenu,
+  setActionMenu,
   formatPrice
 }) => {
+  const navigate = useNavigate();
+  
   const getStatusColor = (status) => {
     const colors = {
       active: 'bg-green-100 text-green-800 border border-green-200',
@@ -368,12 +174,92 @@ const ServiceTableRow = memo(({
           >
             <FiEdit2 className="h-4 w-4" />
           </button>
+          
+          {/* 3-dot menu */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActionMenu(actionMenu === service?._id ? null : service?._id);
+              }}
+              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+              title="More Actions"
+            >
+              <FiMoreVertical className="h-4 w-4" />
+            </button>
+            
+            {actionMenu === service?._id && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10"
+                  onClick={() => setActionMenu(null)}
+                />
+                <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        onDuplicate();
+                        setActionMenu(null);
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      <FiCopy className="h-4 w-4 mr-2" />
+                      Duplicate
+                    </button>
+                    <button
+                      onClick={() => {
+                        onFeatureToggle();
+                        setActionMenu(null);
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-purple-600 hover:bg-purple-50"
+                    >
+                      <FiStar className="h-4 w-4 mr-2" />
+                      {service?.isFeatured ? 'Remove Featured' : 'Mark as Featured'}
+                    </button>
+                    {status === 'active' ? (
+                      <button
+                        onClick={() => {
+                          onStatusToggle('paused');
+                          setActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
+                      >
+                        <FiPause className="h-4 w-4 mr-2" />
+                        Pause Service
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          onStatusToggle('active');
+                          setActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-green-600 hover:bg-green-50"
+                      >
+                        <FiPlay className="h-4 w-4 mr-2" />
+                        Activate Service
+                      </button>
+                    )}
+                    <div className="border-t border-gray-100 my-1"></div>
+                    <button
+                      onClick={() => {
+                        onDelete();
+                        setActionMenu(null);
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <FiTrash2 className="h-4 w-4 mr-2" />
+                      Delete Service
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </td>
     </tr>
   );
 });
-
 
 ServiceTableRow.displayName = 'ServiceTableRow';
 
@@ -395,7 +281,6 @@ const ServicesManagement = () => {
   const [page, setPage] = useState(1);
   const [selectedServices, setSelectedServices] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState('grid');
   const [actionMenu, setActionMenu] = useState(null);
   
   // MODAL STATES
@@ -454,12 +339,28 @@ const ServicesManagement = () => {
     revenue: stats.revenue || 0
   }), [stats.total, stats.active, stats.featured, stats.orders, stats.revenue]);
 
+  // Search with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== '') {
+        setPage(1);
+        refetch();
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, refetch]);
+
   // Memoized handlers
   const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
     refetch();
   }, [refetch]);
+
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -617,6 +518,32 @@ const ServicesManagement = () => {
       toast.error('Failed to duplicate service');
     }
   }, [createServiceMutation, refetch]);
+
+  const toggleFeature = useCallback(async (service) => {
+    try {
+      await updateServiceMutation.mutateAsync({
+        id: service._id,
+        data: { isFeatured: !service.isFeatured }
+      });
+      toast.success(`Service ${!service.isFeatured ? 'featured' : 'unfeatured'} successfully`);
+      refetch();
+    } catch (error) {
+      toast.error('Failed to update feature status');
+    }
+  }, [updateServiceMutation, refetch]);
+
+  const toggleStatus = useCallback(async (service, newStatus) => {
+    try {
+      await updateServiceMutation.mutateAsync({
+        id: service._id,
+        data: { status: newStatus }
+      });
+      toast.success(`Service status updated to ${newStatus}`);
+      refetch();
+    } catch (error) {
+      toast.error('Failed to update service status');
+    }
+  }, [updateServiceMutation, refetch]);
 
   const formatPrice = useCallback((price, currency = 'USD') => {
     return new Intl.NumberFormat('en-US', {
@@ -834,9 +761,22 @@ const ServicesManagement = () => {
                 type="text"
                 placeholder="Search services by title, description, or tags..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setPage(1);
+                    refetch();
+                  }}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </form>
           
@@ -848,23 +788,6 @@ const ServicesManagement = () => {
               <FiFilter className="h-4 w-4" />
               <span className="hidden md:inline">More Filters</span>
             </button>
-            
-            <div className="flex border border-gray-300 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-2 ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
-                title="Grid View"
-              >
-                <FiGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-2 ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'bg-white text-gray-600'}`}
-                title="List View"
-              >
-                <FiList className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         </div>
 
@@ -958,79 +881,65 @@ const ServicesManagement = () => {
         )}
       </div>
 
-      {/* Services Grid/List View */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((service) => (
-            <ServiceCard
-              key={service._id}
-              service={service}
-              isSelected={selectedServices.includes(service._id)}
-              onSelect={() => toggleSelectService(service._id)}
-              onView={() => handleViewService(service)}
-              onEdit={() => handleEditService(service)}
-              onDelete={() => handleDeleteServiceClick(service)}
-              onDuplicate={() => duplicateService(service)}
-              actionMenu={actionMenu}
-              setActionMenu={setActionMenu}
-              formatPrice={formatPrice}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-12 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedServices.length === services.length && services.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Service
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Price
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Orders
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rating
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Created
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {services.map((service) => (
-                  <ServiceTableRow
-                    key={service._id}
-                    service={service}
-                    isSelected={selectedServices.includes(service._id)}
-                    onSelect={() => toggleSelectService(service._id)}
-                    onView={() => handleViewService(service)}
-                    onEdit={() => handleEditService(service)}
-                    formatPrice={formatPrice}
+      {/* Services List View */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-12 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedServices.length === services.length && services.length > 0}
+                    onChange={toggleSelectAll}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Service
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Price
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Orders
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rating
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {services.map((service) => (
+                <ServiceTableRow
+                  key={service._id}
+                  service={service}
+                  isSelected={selectedServices.includes(service._id)}
+                  onSelect={() => toggleSelectService(service._id)}
+                  onView={() => handleViewService(service)}
+                  onEdit={() => handleEditService(service)}
+                  onDelete={() => handleDeleteServiceClick(service)}
+                  onDuplicate={() => duplicateService(service)}
+                  onFeatureToggle={() => toggleFeature(service)}
+                  onStatusToggle={(newStatus) => toggleStatus(service, newStatus)}
+                  actionMenu={actionMenu}
+                  setActionMenu={setActionMenu}
+                  formatPrice={formatPrice}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {/* Empty State */}
       {services.length === 0 && !isLoading && (

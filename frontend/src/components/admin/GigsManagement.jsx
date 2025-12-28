@@ -1,5 +1,4 @@
-// GigsManagement.jsx - OPTIMIZED VERSION
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminGigs, 
   useCreateGig, 
@@ -29,7 +28,7 @@ import {
   FiMoreVertical,
   FiChevronDown,
   FiChevronUp,
-  FiUnlock
+  FiUnlock,FiX
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import GigViewModal from './GigViewModal';
@@ -150,13 +149,8 @@ const GigTableRow = memo(({
             >
               <FiEdit2 className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => onDelete(gig)}
-              className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded"
-              title="Delete Gig"
-            >
-              <FiTrash2 className="h-4 w-4" />
-            </button>
+            
+            {/* 3-dot menu */}
             <div className="relative">
               <button
                 onClick={() => onOpenActionMenu(actionMenuId === gig._id ? null : gig._id)}
@@ -164,6 +158,29 @@ const GigTableRow = memo(({
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
+              
+              {actionMenuId === gig._id && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-10"
+                    onClick={() => onOpenActionMenu(null)}
+                  />
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          onDelete(gig);
+                          onOpenActionMenu(null);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <FiTrash2 className="h-4 w-4 mr-2" />
+                        Delete Gig
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </td>
@@ -234,6 +251,9 @@ const GigsManagement = () => {
 
   const limit = 20;
   
+  // Search with debounce
+  
+
   // Use React Query with proper caching
   const { 
     data, 
@@ -264,6 +284,19 @@ const GigsManagement = () => {
     setPage(1);
     refetch();
   }, [refetch]);
+useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== '') {
+        setPage(1);
+        refetch();
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, refetch]);
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -511,21 +544,32 @@ const GigsManagement = () => {
                 type="text"
                 placeholder="Search gigs by title, description, or skills..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setPage(1);
+                    refetch();
+                  }}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </form>
           
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
-            >
-              <FiFilter className="h-4 w-4" />
-              <span className="hidden md:inline">Filters</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+          >
+            <FiFilter className="h-4 w-4" />
+            <span className="hidden md:inline">Filters</span>
+          </button>
         </div>
 
         {/* Advanced Filters */}
