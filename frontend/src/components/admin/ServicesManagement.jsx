@@ -46,8 +46,11 @@ import {
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { adminAPI } from '../../api/admin';
-
+import ServiceCreateModal from './ServiceCreateModal';
+import ServiceEditModal from './ServiceEditModal';
+import ServiceDetailsModal from './ServiceDetailsModal';
+import ServiceDeleteModal from './ServiceDeleteModal';
+// Memoized ServiceCard component
 // Memoized ServiceCard component
 const ServiceCard = memo(({ 
   service, 
@@ -75,6 +78,10 @@ const ServiceCard = memo(({
     return colors[status] || colors.draft;
   };
 
+  // Get status with fallback
+  const status = service?.status || 'draft';
+  const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
   return (
     <div className={`bg-white rounded-lg border ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500 ring-opacity-20' : 'border-gray-200'} p-6 hover:shadow-lg transition-shadow`}>
       <div className="flex items-start justify-between mb-4">
@@ -85,10 +92,10 @@ const ServiceCard = memo(({
             onChange={onSelect}
             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
           />
-          {service.thumbnail ? (
+          {service?.thumbnail ? (
             <img
               src={service.thumbnail}
-              alt={service.title}
+              alt={service.title || 'Service'}
               className="h-16 w-16 rounded-lg object-cover"
             />
           ) : (
@@ -97,12 +104,14 @@ const ServiceCard = memo(({
             </div>
           )}
           <div>
-            <h3 className="font-semibold text-gray-900 line-clamp-1">{service.title}</h3>
+            <h3 className="font-semibold text-gray-900 line-clamp-1">
+              {service?.title || 'Untitled Service'}
+            </h3>
             <div className="flex items-center space-x-2 mt-1">
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
-                {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
+              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(status)}`}>
+                {statusText}
               </span>
-              {service.isFeatured && (
+              {service?.isFeatured && (
                 <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
                   Featured
                 </span>
@@ -113,13 +122,14 @@ const ServiceCard = memo(({
         
         <div className="relative">
           <button
-            onClick={() => setActionMenu(actionMenu === service._id ? null : service._id)}
+            onClick={() => setActionMenu(actionMenu === service?._id ? null : service?._id)}
             className="p-1 text-gray-400 hover:text-gray-600"
+            disabled={!service?._id}
           >
             <FiMoreVertical className="h-5 w-5" />
           </button>
           
-          {actionMenu === service._id && (
+          {actionMenu === service?._id && (
             <>
               <div 
                 className="fixed inset-0 z-10"
@@ -128,14 +138,14 @@ const ServiceCard = memo(({
               <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
                 <div className="py-1">
                   <button
-                    onClick={() => navigate(`/admin/services/${service._id}`)}
+                    onClick={onView}
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
                     <FiEye className="h-4 w-4 mr-2" />
                     View
                   </button>
                   <button
-                    onClick={() => navigate(`/admin/services/${service._id}/edit`)}
+                    onClick={onEdit}
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
                     <FiEdit2 className="h-4 w-4 mr-2" />
@@ -151,7 +161,7 @@ const ServiceCard = memo(({
                     <FiCopy className="h-4 w-4 mr-2" />
                     Duplicate
                   </button>
-                  {service.status === 'active' && (
+                  {status === 'active' && (
                     <button
                       onClick={() => {
                         toast.success('Feature coming soon');
@@ -181,17 +191,25 @@ const ServiceCard = memo(({
       </div>
       
       <div className="mb-4">
-        <p className="text-sm text-gray-600 line-clamp-2">{service.description}</p>
+        <p className="text-sm text-gray-600 line-clamp-2">
+          {service?.description || 'No description available'}
+        </p>
       </div>
       
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{formatPrice(service.price, service.currency)}</div>
+          <div className="text-lg font-bold text-gray-900">
+            {formatPrice(service?.price || 0, service?.currency || 'USD')}
+          </div>
           <div className="text-xs text-gray-500">Price</div>
         </div>
         <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">{service.deliveryTime}</div>
-          <div className="text-xs text-gray-500">{service.deliveryTimeUnit}</div>
+          <div className="text-lg font-bold text-gray-900">
+            {service?.deliveryTime || 0}
+          </div>
+          <div className="text-xs text-gray-500">
+            {service?.deliveryTimeUnit || 'days'}
+          </div>
         </div>
       </div>
       
@@ -199,16 +217,16 @@ const ServiceCard = memo(({
         <div className="flex items-center space-x-4">
           <div className="flex items-center text-sm text-gray-500">
             <FiActivity className="h-4 w-4 mr-1" />
-            <span>{service.ordersCount || 0} orders</span>
+            <span>{service?.ordersCount || 0} orders</span>
           </div>
           <div className="flex items-center text-sm text-gray-500">
             <FiStar className="h-4 w-4 mr-1 text-yellow-400" />
-            <span>{service.rating?.toFixed(1) || '0.0'}</span>
+            <span>{(service?.rating || 0).toFixed(1)}</span>
           </div>
         </div>
         <div className="text-sm text-gray-500">
           <FiCalendar className="h-4 w-4 inline mr-1" />
-          {format(new Date(service.createdAt), 'MMM d')}
+          {service?.createdAt ? format(new Date(service.createdAt), 'MMM d') : 'N/A'}
         </div>
       </div>
       
@@ -233,6 +251,7 @@ const ServiceCard = memo(({
 ServiceCard.displayName = 'ServiceCard';
 
 // Memoized table row for list view
+// Memoized table row for list view
 const ServiceTableRow = memo(({
   service,
   isSelected,
@@ -253,6 +272,10 @@ const ServiceTableRow = memo(({
     return colors[status] || colors.draft;
   };
 
+  // Get status with fallback
+  const status = service?.status || 'draft';
+  const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
   return (
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-4">
@@ -265,10 +288,10 @@ const ServiceTableRow = memo(({
       </td>
       <td className="px-4 py-4">
         <div className="flex items-center space-x-3">
-          {service.thumbnail ? (
+          {service?.thumbnail ? (
             <img
               src={service.thumbnail}
-              alt={service.title}
+              alt={service.title || 'Service'}
               className="h-12 w-12 rounded-lg object-cover"
             />
           ) : (
@@ -277,11 +300,13 @@ const ServiceTableRow = memo(({
             </div>
           )}
           <div>
-            <div className="text-sm font-medium text-gray-900 line-clamp-1">{service.title}</div>
-            {service.createdBy?.name && (
+            <div className="text-sm font-medium text-gray-900 line-clamp-1">
+              {service?.title || 'Untitled Service'}
+            </div>
+            {service?.createdBy?.name && (
               <div className="text-xs text-gray-500 mt-1">By {service.createdBy.name}</div>
             )}
-            {service.category?.name && (
+            {service?.category?.name && (
               <div className="text-xs text-gray-400 mt-0.5">{service.category.name}</div>
             )}
           </div>
@@ -289,18 +314,18 @@ const ServiceTableRow = memo(({
       </td>
       <td className="px-4 py-4">
         <div className="text-sm font-semibold text-gray-900">
-          {formatPrice(service.price, service.currency)}
+          {formatPrice(service?.price || 0, service?.currency || 'USD')}
         </div>
         <div className="text-xs text-gray-500">
-          {service.deliveryTime} {service.deliveryTimeUnit}
+          {service?.deliveryTime || 0} {service?.deliveryTimeUnit || 'days'}
         </div>
       </td>
       <td className="px-4 py-4">
         <div className="flex flex-wrap gap-1">
-          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(service.status)}`}>
-            {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
+          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(status)}`}>
+            {statusText}
           </span>
-          {service.isFeatured && (
+          {service?.isFeatured && (
             <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
               Featured
             </span>
@@ -310,18 +335,22 @@ const ServiceTableRow = memo(({
       <td className="px-4 py-4">
         <div className="flex items-center space-x-1">
           <FiActivity className="h-4 w-4 text-gray-400" />
-          <span className="text-sm font-medium">{service.ordersCount || 0}</span>
+          <span className="text-sm font-medium">{service?.ordersCount || 0}</span>
         </div>
       </td>
       <td className="px-4 py-4">
         <div className="flex items-center space-x-1">
           <FiStar className="h-4 w-4 text-yellow-400" />
-          <span className="text-sm font-medium">{service.rating?.toFixed(1) || '0.0'}</span>
-          <span className="text-xs text-gray-400">({service.reviewsCount || 0})</span>
+          <span className="text-sm font-medium">
+            {(service?.rating || 0).toFixed(1)}
+          </span>
+          <span className="text-xs text-gray-400">
+            ({service?.reviewsCount || 0})
+          </span>
         </div>
       </td>
       <td className="px-4 py-4 text-sm text-gray-500">
-        {format(new Date(service.createdAt), 'MMM d, yyyy')}
+        {service?.createdAt ? format(new Date(service.createdAt), 'MMM d, yyyy') : 'N/A'}
       </td>
       <td className="px-4 py-4">
         <div className="flex items-center space-x-2">
@@ -345,6 +374,7 @@ const ServiceTableRow = memo(({
   );
 });
 
+
 ServiceTableRow.displayName = 'ServiceTableRow';
 
 // Main ServicesManagement Component
@@ -365,14 +395,20 @@ const ServicesManagement = () => {
   const [page, setPage] = useState(1);
   const [selectedServices, setSelectedServices] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [serviceToDelete, setServiceToDelete] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
   const [actionMenu, setActionMenu] = useState(null);
+  
+  // MODAL STATES
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedService, setSelectedService] = useState(null);
+  const [serviceToDelete, setServiceToDelete] = useState(null);
 
   const limit = 12;
   
-  // Fetch data with proper caching
+  // Fetch data
   const { 
     data, 
     isLoading, 
@@ -393,11 +429,11 @@ const ServicesManagement = () => {
     isActive: filters.isActive || undefined
   });
   
-  // Fetch categories and users with caching
+  // Fetch categories and users
   const { data: categoriesData } = useCategoriesForDropdown();
   const { data: usersData } = useUsersForDropdown();
   
-  // Use mutations with proper cache invalidation
+  // Use mutations
   const updateServiceMutation = useUpdateService();
   const deleteServiceMutation = useDeleteService();
   const createServiceMutation = useCreateService();
@@ -410,7 +446,6 @@ const ServicesManagement = () => {
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
   const stats = data?.stats || {};
 
-  // Memoized service stats
   const serviceStats = useMemo(() => ({
     total: stats.total || 0,
     active: stats.active || 0,
@@ -431,6 +466,95 @@ const ServicesManagement = () => {
     setPage(1);
   }, []);
 
+  // MODAL HANDLERS
+  const handleCreateService = useCallback(() => {
+    setShowCreateModal(true);
+  }, []);
+
+  const handleViewService = useCallback((service) => {
+    setSelectedService(service);
+    setShowDetailsModal(true);
+  }, []);
+
+  const handleEditService = useCallback((service) => {
+    setSelectedService(service);
+    setShowEditModal(true);
+  }, []);
+
+  const handleDeleteServiceClick = useCallback((service) => {
+    setSelectedService(service);
+    setServiceToDelete({ type: 'single', id: service._id });
+    setShowDeleteModal(true);
+  }, []);
+
+  const handleBulkDeleteClick = useCallback(() => {
+    if (selectedServices.length === 0) {
+      toast.error('Please select services first');
+      return;
+    }
+    
+    setServiceToDelete({ type: 'bulk', ids: selectedServices });
+    setShowDeleteModal(true);
+  }, [selectedServices]);
+
+  const handleSubmitCreate = useCallback(async (formData) => {
+    try {
+      await createServiceMutation.mutateAsync(formData);
+      toast.success('Service created successfully');
+      setShowCreateModal(false);
+      refetch();
+    } catch (error) {
+      toast.error(error.message || 'Failed to create service');
+    }
+  }, [createServiceMutation, refetch]);
+
+  const handleSubmitEdit = useCallback(async (formData) => {
+    if (!selectedService) return;
+    
+    try {
+      await updateServiceMutation.mutateAsync({
+        id: selectedService._id,
+        data: formData
+      });
+      toast.success('Service updated successfully');
+      setShowEditModal(false);
+      setSelectedService(null);
+      refetch();
+    } catch (error) {
+      toast.error(error.message || 'Failed to update service');
+    }
+  }, [selectedService, updateServiceMutation, refetch]);
+
+  const handleSubmitDelete = useCallback(async (deleteOptions) => {
+    try {
+      if (serviceToDelete.type === 'bulk') {
+        // Handle bulk deletion
+        const deletePromises = serviceToDelete.ids.map(id => 
+          deleteServiceMutation.mutateAsync({
+            id,
+            permanent: deleteOptions?.permanent || false,
+            force: deleteOptions?.force || false
+          })
+        );
+        
+        await Promise.all(deletePromises);
+        toast.success(`${serviceToDelete.ids.length} services deleted successfully`);
+        setSelectedServices([]);
+      } else {
+        // Handle single deletion
+        await deleteServiceMutation.mutateAsync(deleteOptions);
+        toast.success('Service deleted successfully');
+      }
+      
+      setShowDeleteModal(false);
+      setServiceToDelete(null);
+      setSelectedService(null);
+      refetch();
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete service');
+    }
+  }, [serviceToDelete, deleteServiceMutation, refetch]);
+
   const handleBulkAction = useCallback(async (action) => {
     if (selectedServices.length === 0) {
       toast.error('Please select services first');
@@ -443,16 +567,13 @@ const ServicesManagement = () => {
         'pause': 'pause',
         'feature': 'feature',
         'unfeature': 'unfeature',
-        'recommend': 'recommend',
-        'unrecommend': 'unrecommend',
         'delete': 'delete'
       };
 
       const operation = operationMap[action];
       
       if (action === 'delete') {
-        setServiceToDelete({ type: 'bulk', ids: selectedServices });
-        setShowDeleteModal(true);
+        handleBulkDeleteClick();
         return;
       }
 
@@ -469,90 +590,7 @@ const ServicesManagement = () => {
     } catch (error) {
       toast.error('Failed to perform bulk action');
     }
-  }, [selectedServices, bulkServiceMutation, refetch]);
-
-  const handleDeleteService = useCallback(async () => {
-    try {
-      console.log('Deleting service:', serviceToDelete);
-      
-      if (serviceToDelete.type === 'bulk') {
-        const deletePromises = serviceToDelete.ids.map(id => 
-          adminAPI.deleteService(id, false)
-        );
-        
-        const results = await Promise.allSettled(deletePromises);
-        const successful = results.filter(r => r.status === 'fulfilled' && r.value.data?.success);
-        
-        if (successful.length > 0) {
-          toast.success(`${successful.length} services deleted successfully`);
-        }
-        
-        setSelectedServices([]);
-        refetch();
-      }
-
-      setShowDeleteModal(false);
-      setServiceToDelete(null);
-    } catch (error) {
-      console.error('Delete service error:', error);
-      
-      if (error.response) {
-        const { status, data } = error.response;
-        
-        switch (status) {
-          case 400:
-            toast.error(data.message || 'Invalid request');
-            break;
-          case 401:
-            toast.error('Authentication required');
-            break;
-          case 403:
-            toast.error('You do not have permission to delete this service');
-            break;
-          case 404:
-            toast.error('Service not found');
-            break;
-          case 500:
-            toast.error('Server error');
-            break;
-          default:
-            toast.error('Delete failed');
-        }
-      } else if (error.request) {
-        toast.error('Network error. Please check your connection.');
-      } else {
-        toast.error('Delete failed');
-      }
-    }
-  }, [serviceToDelete, refetch]);
-
-  const handleViewService = useCallback((service) => {
-    navigate(`/admin/services/${service._id}`);
-  }, [navigate]);
-
-  const handleEditService = useCallback((service) => {
-    navigate(`/admin/services/${service._id}/edit`);
-  }, [navigate]);
-
-  const handleCreateService = useCallback(() => {
-    navigate('/services/create');
-  }, [navigate]);
-
-  const toggleSelectAll = useCallback((e) => {
-    if (e.target.checked) {
-      setSelectedServices(services.map(service => service._id));
-    } else {
-      setSelectedServices([]);
-    }
-  }, [services]);
-
-  const toggleSelectService = useCallback((serviceId) => {
-    setSelectedServices(prev =>
-      prev.includes(serviceId)
-        ? prev.filter(id => id !== serviceId)
-        : [...prev, serviceId]
-    );
-  }, []);
+  }, [selectedServices, bulkServiceMutation, refetch, handleBulkDeleteClick]);
 
   const duplicateService = useCallback(async (service) => {
     try {
@@ -560,12 +598,16 @@ const ServicesManagement = () => {
         title: `${service.title} (Copy)`,
         description: service.description,
         category: service.category?._id || service.category,
+        subcategory: service.subcategory?._id || service.subcategory,
         price: service.price,
         currency: service.currency || 'USD',
         deliveryTime: service.deliveryTime,
         deliveryTimeUnit: service.deliveryTimeUnit || 'days',
         revisions: service.revisions || 1,
-        status: 'draft'
+        status: 'draft',
+        tags: service.tags || [],
+        features: service.features || [],
+        shortDescription: service.shortDescription || ''
       };
 
       await createServiceMutation.mutateAsync(duplicateData);
@@ -612,8 +654,44 @@ const ServicesManagement = () => {
     toast.success('Data refreshed');
   }, [refetch]);
 
-  // Memoized service selection count
-  const selectedCount = useMemo(() => selectedServices.length, [selectedServices]);
+  const toggleSelectAll = useCallback((e) => {
+    if (e.target.checked) {
+      setSelectedServices(services.map(service => service._id));
+    } else {
+      setSelectedServices([]);
+    }
+  }, [services]);
+
+  const toggleSelectService = useCallback((serviceId) => {
+    setSelectedServices(prev =>
+      prev.includes(serviceId)
+        ? prev.filter(id => id !== serviceId)
+        : [...prev, serviceId]
+    );
+  }, []);
+
+  // Create categories map for ServiceDetailsModal
+  const categoriesMap = useMemo(() => {
+    const map = {};
+    categories.forEach(cat => {
+      map[cat._id] = cat;
+      if (cat.subcategories) {
+        cat.subcategories.forEach(sub => {
+          map[sub._id] = sub;
+        });
+      }
+    });
+    return map;
+  }, [categories]);
+
+  // Create users map for ServiceDetailsModal
+  const usersMap = useMemo(() => {
+    const map = {};
+    users.forEach(user => {
+      map[user._id] = user;
+    });
+    return map;
+  }, [users]);
 
   if (isLoading && !services.length) {
     return (
@@ -700,14 +778,14 @@ const ServicesManagement = () => {
       </div>
 
       {/* Bulk Actions */}
-      {selectedCount > 0 && (
+      {selectedServices.length > 0 && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center space-x-3">
               <FiPackage className="h-5 w-5 text-indigo-600" />
               <div>
                 <p className="font-medium text-indigo-800">
-                  {selectedCount} service{selectedCount > 1 ? 's' : ''} selected
+                  {selectedServices.length} service{selectedServices.length > 1 ? 's' : ''} selected
                 </p>
                 <p className="text-sm text-indigo-600">Choose an action to perform</p>
               </div>
@@ -735,7 +813,7 @@ const ServicesManagement = () => {
                 <span>Feature</span>
               </button>
               <button
-                onClick={() => handleBulkAction('delete')}
+                onClick={handleBulkDeleteClick}
                 className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
               >
                 <FiTrash2 className="h-4 w-4" />
@@ -891,10 +969,7 @@ const ServicesManagement = () => {
               onSelect={() => toggleSelectService(service._id)}
               onView={() => handleViewService(service)}
               onEdit={() => handleEditService(service)}
-              onDelete={() => {
-                setServiceToDelete({ type: 'single', id: service._id });
-                setShowDeleteModal(true);
-              }}
+              onDelete={() => handleDeleteServiceClick(service)}
               onDuplicate={() => duplicateService(service)}
               actionMenu={actionMenu}
               setActionMenu={setActionMenu}
@@ -1031,84 +1106,76 @@ const ServicesManagement = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <DeleteConfirmationModal
-          type="service"
-          itemToDelete={serviceToDelete}
+      {/* MODALS */}
+      {/* Create Service Modal */}
+      {showCreateModal && (
+        <ServiceCreateModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleSubmitCreate}
+          loading={createServiceMutation.isLoading}
+          categories={categories}
+          users={users}
+        />
+      )}
+
+      {/* Edit Service Modal */}
+      {showEditModal && selectedService && (
+        <ServiceEditModal
+          service={selectedService}
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedService(null);
+          }}
+          onSubmit={handleSubmitEdit}
+          loading={updateServiceMutation.isLoading}
+          categories={categories}
+          users={users}
+        />
+      )}
+
+      {/* Service Details Modal */}
+      {showDetailsModal && selectedService && (
+        <ServiceDetailsModal
+          service={selectedService}
+          isOpen={showDetailsModal}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedService(null);
+          }}
+          onEdit={() => {
+            setShowDetailsModal(false);
+            setShowEditModal(true);
+          }}
+          onDelete={() => {
+            setShowDetailsModal(false);
+            handleDeleteServiceClick(selectedService);
+          }}
+          onDuplicate={() => duplicateService(selectedService)}
+          categoriesMap={categoriesMap}
+          usersMap={usersMap}
+          formatPrice={formatPrice}
+        />
+      )}
+
+      {/* Delete Service Modal */}
+      {showDeleteModal && serviceToDelete && (
+        <ServiceDeleteModal
+          service={serviceToDelete.type === 'single' 
+            ? services.find(s => s._id === serviceToDelete.id) || selectedService
+            : null}
+          isOpen={showDeleteModal}
           onClose={() => {
             setShowDeleteModal(false);
             setServiceToDelete(null);
+            setSelectedService(null);
           }}
-          onConfirm={handleDeleteService}
+          onDelete={handleSubmitDelete}
+          permanent={false}
+          loading={deleteServiceMutation.isLoading}
         />
       )}
-    </div>
-  );
-};
-
-// Delete Confirmation Modal (keep as is)
-const DeleteConfirmationModal = ({ type, itemToDelete, onClose, onConfirm }) => {
-  const isBulk = itemToDelete?.type === 'bulk';
-  
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-        <div className="p-6">
-          <div className="flex items-center mb-4">
-            <FiTrash2 className="h-6 w-6 text-red-600 mr-3" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Confirm Delete</h3>
-              {isBulk && (
-                <p className="text-sm text-gray-500 mt-1">
-                  {itemToDelete.ids.length} service{itemToDelete.ids.length > 1 ? 's' : ''} selected
-                </p>
-              )}
-            </div>
-          </div>
-          
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-            <div className="flex">
-              <FiAlertTriangle className="h-5 w-5 text-yellow-600 mr-3 flex-shrink-0" />
-              <div>
-                <p className="font-medium text-yellow-800">Warning</p>
-                <p className="text-sm text-yellow-700 mt-1">
-                  {isBulk
-                    ? `This will permanently delete ${itemToDelete.ids.length} ${type}${itemToDelete.ids.length > 1 ? 's' : ''}. This action cannot be undone.`
-                    : `This will permanently delete the ${type}. This action cannot be undone.`}
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          {isBulk && (
-            <div className="mb-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Affected Services:</p>
-              <div className="max-h-40 overflow-y-auto">
-                <p className="text-sm text-gray-600">
-                  {itemToDelete.ids.length} service{itemToDelete.ids.length > 1 ? 's' : ''} will be deleted
-                </p>
-              </div>
-            </div>
-          )}
-          
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center"
-            >
-              <FiTrash2 className="h-4 w-4 mr-2" />
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
