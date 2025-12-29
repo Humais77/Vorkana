@@ -5,6 +5,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useState, useCallback, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
+import { useRef } from 'react';
 
 export const useSearch = () => {
   const [searchParams] = useSearchParams();
@@ -162,13 +163,20 @@ export const useSearch = () => {
   });
 
   // Perform search action
- const performSearch = useCallback((query, type = 'services', filters = {}, options = {}) => {
+const performSearch = useCallback((query, type = 'services', filters = {}, options = {}) => {
   const searchTerm = query.trim();
   if (!searchTerm) return;
 
-  setSearchQuery(searchTerm);
-  setSearchType(type);
-  setActiveFilters(filters);
+  // Only update state if values have changed
+  if (searchTerm !== searchQuery) setSearchQuery(searchTerm);
+  if (type !== searchType) setSearchType(type);
+  
+  // Compare filters to avoid unnecessary updates
+  const currentFiltersStr = JSON.stringify(filters);
+  const prevFiltersStr = JSON.stringify(activeFilters);
+  if (currentFiltersStr !== prevFiltersStr) {
+    setActiveFilters(filters);
+  }
 
   // Save to search history if user is logged in
   if (localStorage.getItem('userToken') && !options.skipHistory) {
@@ -185,17 +193,16 @@ export const useSearch = () => {
   localStorage.setItem('recentSearches', JSON.stringify(updatedSearches));
 
   // Navigate to search results
-  let url; // ← Declare url variable here
+  let url;
   if (options.navigate !== false) {
-    url = searchAPI.formatSearchURL(searchTerm, type, filters); // ← Assign value here
-    if (options.navigate) {
+    url = searchAPI.formatSearchURL(searchTerm, type, filters);
+    if (options.navigate && typeof options.navigate === 'function') {
       options.navigate(url);
     }
   }
 
   return url;
-}, [saveSearchMutation]);
-
+}, [searchQuery, searchType, activeFilters, saveSearchMutation]);
   // Update URL with search params
   const updateSearchURL = useCallback((navigate) => {
     const url = searchAPI.formatSearchURL(searchQuery, searchType, activeFilters);
@@ -291,18 +298,33 @@ export const useSearchResults = (initialParams = {}) => {
     getFilterCount
   } = useSearch();
 
-  // Initialize from URL params
-  useEffect(() => {
-    if (initialParams.query) {
-      setSearchQuery(initialParams.query);
+  // Store previous values to prevent unnecessary updates
+  const prevInitialParamsRef = useRef(initialParams);
+  const prevFiltersRef = useRef({});
+
+  // Initialize from URL params - FIXED
+ useEffect(() => {
+    const currentParams = JSON.stringify(initialParams);
+    const prevParams = JSON.stringify(prevInitialParamsRef.current);
+    
+    if (currentParams !== prevParams) {
+      if (initialParams.query && initialParams.query !== searchQuery) {
+        setSearchQuery(initialParams.query);
+      }
+      if (initialParams.type && initialParams.type !== searchType) {
+        setSearchType(initialParams.type);
+      }
+      if (initialParams.filters) {
+        const currentFilters = JSON.stringify(initialParams.filters);
+        const prevFilters = JSON.stringify(prevFiltersRef.current);
+        if (currentFilters !== prevFilters) {
+          updateFilters(initialParams.filters);
+          prevFiltersRef.current = initialParams.filters;
+        }
+      }
+      prevInitialParamsRef.current = initialParams;
     }
-    if (initialParams.type) {
-      setSearchType(initialParams.type);
-    }
-    if (initialParams.filters) {
-      updateFilters(initialParams.filters);
-    }
-  }, [initialParams, setSearchQuery, setSearchType, updateFilters]);
+  }, [initialParams, searchQuery, searchType, setSearchQuery, setSearchType, updateFilters]);
 
   const searchResults = useFullSearch({
     type: searchType,
