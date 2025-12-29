@@ -15,10 +15,10 @@ import {
   validateName,
   validateDateOfBirth,
   validateBio
-} from "../hooks/useAuth";
-import { useAuthStore } from "../store/useAuthStore";
+} from "../../hooks/useAuth";
+import { useAuthStore } from "../../store/useAuthStore";
 import { motion, AnimatePresence } from "framer-motion";
-import auth_modal_bg from '../assets/auth_modal_bg.png';
+import auth_modal_bg from '../../assets/auth_modal_bg.png';
 
 const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const navigate = useNavigate();
