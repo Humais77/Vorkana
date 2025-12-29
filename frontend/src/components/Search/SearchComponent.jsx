@@ -1,286 +1,385 @@
-// src/components/search/SearchComponent.jsx - Enhanced
+// SearchComponent.jsx - Updated with new API integration
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, X, Clock, ChevronRight, Loader2, TrendingUp, Sparkles } from 'lucide-react';
+import { Search, X, Clock, TrendingUp, Loader2, Sparkles, ChevronRight, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+import { useNavbarSearch } from '../../hooks/useSearch';
 
 const SearchComponent = ({ 
   initialQuery = '',
-  placeholder = "Find services...",
+  placeholder = "Find services, gigs, or categories...",
   variant = "navbar",
   className = "",
   autoFocus = false,
-  onSearch
+  onSearch,
+  showSuggestions = true
 }) => {
   const navigate = useNavigate();
   const searchRef = useRef(null);
+  const inputRef = useRef(null);
   
-  const [query, setQuery] = useState(initialQuery);
-  const [suggestions, setSuggestions] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const {
+    searchQuery,
+    setSearchQuery,
+    debouncedQuery,
+    quickSearch,
+    handleQuickSearch,
+    clearSearch: clearSearchHook
+  } = useNavbarSearch();
+  
+  const [localQuery, setLocalQuery] = useState(initialQuery || searchQuery);
   const [showDropdown, setShowDropdown] = useState(false);
   const [recentSearches, setRecentSearches] = useState([]);
-  const [trendingSearches, setTrendingSearches] = useState([]);
-  const [popularCategories, setPopularCategories] = useState([]);
+  const [popularSearches, setPopularSearches] = useState([]);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   
-  // Load recent searches and trending data
+  // Load recent and popular searches
   useEffect(() => {
+    // Load recent searches from localStorage
     const saved = localStorage.getItem('recentSearches');
     if (saved) {
       try {
-        setRecentSearches(JSON.parse(saved).slice(0, 5));
+        const parsed = JSON.parse(saved);
+        setRecentSearches(parsed.slice(0, 5));
       } catch (err) {
         console.error('Error loading recent searches:', err);
       }
     }
     
-    // Load trending searches
-    loadTrendingData();
-    
-    // Load popular categories
-    loadPopularCategories();
+    // Set default popular searches
+    setPopularSearches([
+      'Logo Design',
+      'Website Development',
+      'Social Media Marketing',
+      'Content Writing',
+      'Video Editing',
+      'SEO Services'
+    ]);
   }, []);
   
-  const loadTrendingData = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/search/suggestions`, {
-        params: { limit: 5 }
-      });
-      
-      if (response.data.success && response.data.suggestions) {
-        const trending = response.data.suggestions
-          .filter(s => s.type === 'service')
-          .slice(0, 5)
-          .map(s => s.title);
-        
-        setTrendingSearches(trending.length > 0 ? trending : [
-          'Logo Design',
-          'Website Development',
-          'Social Media Marketing',
-          'SEO Services',
-          'Content Writing'
-        ]);
-      }
-    } catch (error) {
-      console.error('Error loading trending data:', error);
-      setTrendingSearches([
-        'Logo Design',
-        'Website Development',
-        'Social Media Marketing',
-        'SEO Services',
-        'Content Writing'
-      ]);
-    }
-  };
-  
-  const loadPopularCategories = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/categories/popular`);
-      
-      if (response.data.success && response.data.data) {
-        setPopularCategories(response.data.data.slice(0, 6));
-      }
-    } catch (error) {
-      console.error('Error loading popular categories:', error);
-    }
-  };
-  
-  // Fetch suggestions
+  // Sync local query with hook query
   useEffect(() => {
-    if (query.length < 2) {
-      setSuggestions([]);
-      return;
+    if (searchQuery !== localQuery) {
+      setLocalQuery(searchQuery);
     }
-    
-    const timer = setTimeout(async () => {
-      setIsLoading(true);
-      try {
-        const response = await axios.get(`${API_URL}/api/search/suggestions`, {
-          params: {
-            query,
-            limit: 8
-          }
-        });
-        
-        if (response.data.success) {
-          const processedSuggestions = response.data.suggestions.map(suggestion => ({
-            ...suggestion,
-            title: formatSuggestionTitle(suggestion.title || suggestion.text || suggestion),
-            type: suggestion.type || 'service'
-          }));
-          setSuggestions(processedSuggestions);
-        }
-      } catch (error) {
-        console.error('Error fetching suggestions:', error);
-        setSuggestions([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [query]);
+  }, [searchQuery]);
   
-  const saveRecentSearch = useCallback((searchQuery) => {
-    if (!searchQuery.trim()) return;
+  // Handle query change
+  const handleQueryChange = (value) => {
+    setLocalQuery(value);
+    setSearchQuery(value);
+    setFocusedIndex(-1);
     
-    const newSearch = {
-      query: searchQuery.trim(),
-      timestamp: new Date().toISOString(),
-      type: 'search'
-    };
-    
-    const updated = [
-      newSearch,
-      ...recentSearches.filter(item => 
-        item.query.toLowerCase() !== searchQuery.toLowerCase()
-      )
-    ].slice(0, 5);
-    
-    setRecentSearches(updated);
-    localStorage.setItem('recentSearches', JSON.stringify(updated));
-  }, [recentSearches]);
-  
-  const handleSearch = useCallback((searchQuery) => {
-    if (!searchQuery.trim()) return;
-    saveRecentSearch(searchQuery);
-    if (onSearch) {
-      onSearch(searchQuery);
+    if (value.length >= 2 && showSuggestions) {
+      setShowDropdown(true);
+    } else if (value.length === 0) {
+      setShowDropdown(true); // Show recent/popular when empty
     } else {
-      navigate(`/search/services?query=${encodeURIComponent(searchQuery.trim())}`);
+      setShowDropdown(false);
     }
+  };
+  
+  // Handle search
+  const handleSearch = useCallback((query = localQuery) => {
+    const searchTerm = query.trim();
+    if (!searchTerm) return;
+    
+    handleQuickSearch(searchTerm);
     setShowDropdown(false);
-  }, [navigate, onSearch]);
-
+    
+    if (onSearch) {
+      onSearch(searchTerm);
+    } else {
+      navigate(`/search?query=${encodeURIComponent(searchTerm)}&type=services`);
+    }
+    
+    // Save to recent searches
+    const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+    const updated = [
+      { query: searchTerm, timestamp: new Date().toISOString(), type: 'search' },
+      ...recent.filter(item => item.query.toLowerCase() !== searchTerm.toLowerCase())
+    ].slice(0, 10);
+    
+    localStorage.setItem('recentSearches', JSON.stringify(updated));
+    setRecentSearches(updated.slice(0, 5));
+  }, [localQuery, navigate, onSearch, handleQuickSearch]);
+  
+  // Handle form submit
   const handleSubmit = (e) => {
     e.preventDefault();
-    handleSearch(query);
+    handleSearch();
+    if (inputRef.current) {
+      inputRef.current.blur();
+    }
   };
   
-  const clearSearch = () => {
-    setQuery('');
-    setSuggestions([]);
+  // Handle key down for keyboard navigation
+  const handleKeyDown = (e) => {
+    if (!showDropdown) return;
+    
+    const allSuggestions = [
+      ...(localQuery.length >= 2 ? (quickSearch.results || []) : []),
+      ...(localQuery.length === 0 ? recentSearches.map(s => ({ ...s, type: 'recent' })) : []),
+      ...(localQuery.length === 0 ? popularSearches.map(p => ({ title: p, type: 'popular' })) : [])
+    ];
+    
+    switch(e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex(prev => 
+          prev < allSuggestions.length - 1 ? prev + 1 : 0
+        );
+        break;
+        
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex(prev => 
+          prev > 0 ? prev - 1 : allSuggestions.length - 1
+        );
+        break;
+        
+      case 'Enter':
+        e.preventDefault();
+        if (focusedIndex >= 0 && allSuggestions[focusedIndex]) {
+          const item = allSuggestions[focusedIndex];
+          handleSearch(item.title || item.query || item.text);
+        } else {
+          handleSearch();
+        }
+        break;
+        
+      case 'Escape':
+        setShowDropdown(false);
+        setFocusedIndex(-1);
+        break;
+    }
   };
   
-  const handleSuggestionClick = (suggestion) => {
-    const searchTerm = suggestion.title || suggestion.text || suggestion;
-    handleSearch(searchTerm);
-  };
-  
-  const handleCategoryClick = (category) => {
-    handleSearch(category.name);
-  };
-  
-  // Close dropdown when clicking outside
+  // Handle click outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setShowDropdown(false);
+        setFocusedIndex(-1);
       }
     };
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Format suggestion title - remove any trailing numbers/0
+  
+  // Clear search
+  const clearSearch = () => {
+    setLocalQuery('');
+    setSearchQuery('');
+    clearSearchHook();
+    setShowDropdown(true);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+  
+  // Format suggestion title
   const formatSuggestionTitle = (title) => {
     if (!title) return '';
-    // Remove any trailing numbers, parentheses, or counts
     return title.replace(/\s*\(\d+\)\s*$/, '').replace(/\s*\d+\s*$/, '').trim();
   };
-
-  // Variant styles
+  
+  // Get container class based on variant
   const getContainerClass = () => {
+    const base = 'relative';
     switch(variant) {
       case 'hero':
-        return 'w-full max-w-4xl mx-auto';
+        return `${base} w-full max-w-3xl mx-auto`;
       case 'navbar':
-        return 'w-full max-w-xl';
+        return `${base} w-full max-w-2xl`;
       default:
-        return 'w-full';
+        return `${base} w-full`;
     }
   };
-
+  
+  // Get input class based on variant
   const getInputClass = () => {
-    switch(variant) {
-      case 'hero':
-        return 'w-full px-6 py-4 pl-14 text-lg border-2 border-gray-300 rounded-2xl focus:outline-none focus:ring-4 focus:ring-green-500/30 focus:border-green-500 transition-all duration-200 bg-white shadow-lg';
-      case 'navbar':
-        return 'w-full px-4 py-3 pl-12 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 bg-white';
-      default:
-        return 'w-full px-4 py-3 pl-12 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 bg-white';
+  const base = 'w-full bg-white placeholder-gray-500 focus:outline-none';
+  switch(variant) {
+    case 'hero':
+      // Keeps hero larger but matches the new sharp style
+      return `${base} px-6 py-4 text-lg`;
+    case 'navbar':
+    default:
+      // Slimmer, clean text for the navbar
+      return `${base} px-3 text-[15px]`;
+  }
+};
+
+  // Get suggestions to display
+  const getDisplaySuggestions = () => {
+    if (localQuery.length >= 2) {
+      return quickSearch.results || [];
+    } else if (localQuery.length === 0 && showDropdown) {
+      return [];
     }
+    return [];
   };
+  
+  const displaySuggestions = getDisplaySuggestions();
+  const showRecentPopular = localQuery.length === 0 && showDropdown;
 
   return (
-  <div ref={searchRef} className={`relative ${className}`}>
+  <div ref={searchRef} className={`${getContainerClass()} ${className}`}>
     <form 
       onSubmit={handleSubmit} 
-      className="flex items-stretch h-10 border border-gray-300 rounded-[4px] bg-white overflow-hidden"
+      className={`relative flex items-stretch overflow-hidden border border-gray-300 rounded-[4px] bg-white transition-colors hover:border-gray-400 ${
+        variant === 'hero' ? 'h-14' : 'h-10'
+      }`}
     >
-      <div className="relative flex-1">
+      <div className="relative flex-1 flex items-center">
+        {/* Input Field */}
         <input
+          ref={inputRef}
           type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            if (e.target.value.length >= 2) setShowDropdown(true);
-          }}
+          value={localQuery}
+          onChange={(e) => handleQueryChange(e.target.value)}
           onFocus={() => setShowDropdown(true)}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoFocus={autoFocus}
-          // Matching the clean, smaller text and padding from the screenshot
-          className="w-full h-full px-3 text-[15px] text-gray-800 placeholder-gray-500 focus:outline-none"
+          className={getInputClass()}
+          aria-label="Search"
+          aria-expanded={showDropdown}
+          aria-controls="search-suggestions"
         />
         
-        {/* Loading/Clear icons positioned absolutely to not move the text */}
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-          {isLoading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
-          {query && (
-            <button type="button" onClick={() => setQuery('')} className="p-1 hover:bg-gray-100 rounded-full">
+        {/* Action Icons (Loading/Clear) */}
+        <div className="flex items-center gap-1 px-2">
+          {quickSearch.isLoading && (
+            <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+          )}
+          {localQuery && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            >
               <X className="w-4 h-4 text-gray-400" />
             </button>
           )}
         </div>
       </div>
 
-      {/* The high-contrast dark search button (Matches Image 1 & 2) */}
+      {/* High-Contrast Search Button (The "Fiverr" look) */}
       <button 
         type="submit"
-        className="bg-[#222325] hover:bg-black transition-colors px-4 flex items-center justify-center"
+        className="bg-[#222325] hover:bg-black transition-colors px-5 flex items-center justify-center border-l border-gray-300"
       >
-        <Search className="w-5 h-5 text-white" />
+        <Search className={`${variant === 'hero' ? 'w-6 h-6' : 'w-5 h-5'} text-white`} />
       </button>
     </form>
     
-    {/* Dropdown - Matches the square theme */}
+    {/* Suggestions Dropdown (Styled to match the sharp edges) */}
     <AnimatePresence>
       {showDropdown && (
         <motion.div
-          initial={{ opacity: 0, y: 5 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 5 }}
-          className="absolute top-[calc(100%+4px)] w-full bg-white shadow-xl border border-gray-200 z-50 rounded-sm overflow-hidden"
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.15 }}
+          id="search-suggestions"
+          role="listbox"
+          className="absolute top-[calc(100%+4px)] w-full bg-white rounded-sm shadow-2xl border border-gray-200 z-50 max-h-96 overflow-y-auto"
         >
-          {query.length >= 2 && suggestions.map((s, i) => (
+            {/* Recent Searches */}
+            {showRecentPopular && recentSearches.length > 0 && (
+              <div className="p-3 border-b border-gray-100">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
+                  <History className="w-4 h-4" />
+                  <span>Recent Searches</span>
+                </div>
+                <div className="space-y-1">
+                  {recentSearches.map((item, index) => (
+                    <button
+                      key={`recent-${index}`}
+                      onClick={() => handleSearch(item.query)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded hover:bg-gray-50 text-left text-sm text-gray-700 ${focusedIndex === index ? 'bg-gray-50' : ''}`}
+                      role="option"
+                      aria-selected={focusedIndex === index}
+                    >
+                      <div className="flex items-center gap-3">
+                        <History className="w-4 h-4 text-gray-400" />
+                        <span>{item.query}</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Popular Searches */}
+            {showRecentPopular && (
+              <div className="p-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
+                  <TrendingUp className="w-4 h-4" />
+                  <span>Popular Searches</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {popularSearches.map((search, index) => (
+                    <button
+                      key={`popular-${index}`}
+                      onClick={() => handleSearch(search)}
+                      className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-full transition-colors"
+                      role="option"
+                    >
+                      {search}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Quick Search Results */}
+           {localQuery.length >= 2 && displaySuggestions.map((item, index) => (
             <button
-              key={i}
-              onClick={() => handleSearch(s.title)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left text-sm text-gray-700"
+              key={`suggestion-${index}`}
+              onClick={() => handleSearch(item.title || item.text)}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left text-sm border-b border-gray-50 last:border-0 ${
+                focusedIndex === index ? 'bg-gray-50' : ''
+              }`}
             >
-              <Search className="w-3.5 h-3.5 text-gray-400" />
-              <span>{s.title}</span>
+              <Search className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-700 font-medium">{item.title || item.text}</span>
             </button>
           ))}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  </div>
-);
+            {/* No Results */}
+            {localQuery.length >= 2 && !quickSearch.isLoading && displaySuggestions.length === 0 && (
+              <div className="p-6 text-center">
+                <div className="text-3xl mb-2">🔍</div>
+                <p className="text-gray-600 text-sm">
+                  No results found for "{localQuery}"
+                </p>
+              </div>
+            )}
+            
+            {/* Loading State */}
+            {quickSearch.isLoading && localQuery.length >= 2 && (
+              <div className="p-4 text-center">
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin mx-auto" />
+              </div>
+            )}
+            
+            {/* Search Hint */}
+            {localQuery.length === 1 && (
+              <div className="p-3 border-t border-gray-100">
+                <p className="text-xs text-gray-500 text-center">
+                  Type at least 2 characters to see suggestions
+                </p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 };
 
 export default SearchComponent;

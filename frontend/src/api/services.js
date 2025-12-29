@@ -541,53 +541,67 @@ getPopularServices: async (params = {}) => {
   
   // Add this method for popular services by category
   getPopularServicesByCategory: async (params = {}) => {
-    try {
-      const cleanParams = {};
-      Object.keys(params).forEach(key => {
-        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
-          cleanParams[key] = params[key];
-        }
-      });
-
-      console.log('Fetching popular services by category with params:', cleanParams);
-      
-      const queryString = new URLSearchParams(cleanParams).toString();
-      const url = `/api/services/popular/category${queryString ? '?' + queryString : ''}`;
-      
-      console.log('Popular services by category API URL:', url);
-      
-      const response = await axiosInstance.get(url);
-      
-      console.log('Popular services by category response:', response.data);
-      
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          data: response.data.data || response.data.services || [],
-          count: response.data.count || 0,
-          ...response.data
-        };
+  try {
+    const cleanParams = {};
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+        cleanParams[key] = params[key];
       }
-      
+    });
+
+    console.log('Fetching popular services by category with params:', cleanParams);
+    
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const url = `/api/services/popular/category${queryString ? '?' + queryString : ''}`;
+    
+    console.log('Popular services by category API URL:', url);
+    
+    const response = await axiosInstance.get(url);
+    
+    console.log('Popular services by category response:', response.data);
+    
+    // IMPORTANT: Return data in the expected format
+    if (response.data && response.data.success) {
       return {
         success: true,
-        data: [],
-        count: 0
-      };
-      
-    } catch (error) {
-      console.error('Popular services by category API error:', error.message);
-      console.error('Error details:', error.response?.data);
-      
-      // Return empty data on error
-      return {
-        success: false,
-        data: [],
-        count: 0,
-        error: error.message
+        data: response.data.data || response.data.services || [],
+        count: response.data.count || 0,
+        ...response.data
       };
     }
-  },
+    
+    // Fallback to getPopularServices if needed
+    console.log('Falling back to regular popular services...');
+    const popularResponse = await axiosInstance.get(`/api/services/popular${queryString ? '?' + queryString : ''}`);
+    
+    if (popularResponse.data && popularResponse.data.success) {
+      return {
+        success: true,
+        data: popularResponse.data.services || popularResponse.data.data || [],
+        count: popularResponse.data.count || 0,
+        ...popularResponse.data
+      };
+    }
+    
+    return {
+      success: true,
+      data: [],
+      count: 0
+    };
+    
+  } catch (error) {
+    console.error('Popular services by category API error:', error.message);
+    console.error('Error details:', error.response?.data);
+    
+    // Return empty data on error
+    return {
+      success: false,
+      data: [],
+      count: 0,
+      error: error.message
+    };
+  }
+},
   
   // Add method to toggle popular status (admin only)
   togglePopularStatus: async (serviceId, isPopular) => {
