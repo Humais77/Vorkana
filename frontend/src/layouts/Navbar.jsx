@@ -194,14 +194,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
             {/* Desktop: Search */}
             <div className="hidden lg:flex items-center ml-6 mr-auto">
-              {showSearch && (
-                <div>
+              <div>
                   <SearchComponent 
                     placeholder="What service are you looking for today?"
                     className="w-[400px] xl:w-[480px]" 
                   />
                 </div>
-              )}
             </div>
 
             {/* Center: Logo (Mobile only) */}
@@ -311,13 +309,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 </AnimatePresence>
               </div>
 
-              <Link
-                to="/find-work"
-                className="px-4 py-2.5 text-gray-700 hover:text-black font-medium hover:bg-gray-50 rounded-lg transition-all duration-150"
-                onClick={closeAllDropdowns}
-              >
-                Find Work
-              </Link>
 
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">
@@ -507,14 +498,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <span className="font-medium text-gray-800">Home</span>
                       </Link>
 
-                      <Link
-                        to="/find-work"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
-                      >
-                        <Briefcase className="w-5 h-5 text-gray-600" />
-                        <span className="font-medium text-gray-800">Find Work</span>
-                      </Link>
                     </div>
 
                     {/* Explore Section */}
