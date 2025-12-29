@@ -40,7 +40,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   ], []);
 
   const quickLinks = useMemo(() => [
-    { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/all-gigs" },
+    { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/gigs" },
     { name: "Browse All Services", icon: <Briefcase className="w-4 h-4" />, path: "/services" },
   ], []);
 

@@ -142,24 +142,32 @@ export const subcategoriesAPI = {
   /**
    * Get subcategories by category ID
    */
-  getByCategory: async (categoryId, params = {}) => {
+getByCategory: async (categoryIdentifier, params = {}) => {
   try {
-    // Validate categoryId
-    if (!categoryId || typeof categoryId !== 'string' || categoryId.trim() === '') {
-      throw new Error('Invalid category ID');
+    if (!categoryIdentifier || typeof categoryIdentifier !== 'string' || categoryIdentifier.trim() === '') {
+      throw new Error('Invalid category identifier');
     }
 
-    // Clean categoryId - remove any ObjectId wrapper if present
-    const cleanCategoryId = categoryId.replace(/["']/g, '').trim();
+    // Check if it's an ObjectId (24 hex chars) or a slug
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(categoryIdentifier);
     
-    const response = await axiosInstance.get(`/api/subcategories/category/${cleanCategoryId}`, { 
+    let url;
+    if (isObjectId) {
+      // It's a MongoDB ObjectId
+      url = `/api/subcategories/category/${categoryIdentifier}`;
+    } else {
+      // It's a slug - use a different endpoint
+      url = `/api/subcategories/category-by-slug/${categoryIdentifier}`;
+    }
+    
+    const response = await axiosInstance.get(url, { 
       params: {
         activeOnly: true,
         ...params
       }
     });
     
-    // Handle different response structures
+    // Handle response
     if (response.data?.success) {
       return {
         subcategories: response.data.data || [],
@@ -168,7 +176,6 @@ export const subcategoriesAPI = {
       };
     }
     
-    // Fallback for direct array response
     return {
       subcategories: response.data || [],
       category: null,
@@ -177,13 +184,6 @@ export const subcategoriesAPI = {
     
   } catch (error) {
     console.error('Get subcategories by category error:', error);
-    
-    // Log more details about the error
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      console.error('Request URL:', error.config?.url);
-    }
     
     // Return empty structure instead of throwing
     return {

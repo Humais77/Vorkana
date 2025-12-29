@@ -121,9 +121,39 @@ export const useSearchCategories = (query, options = {}) => {
 export const usePopularCategories = (options = {}) => {
   return useQuery({
     queryKey: ['categories', 'popular'],
-    queryFn: () => categoriesAPI.getPopular(),
+    queryFn: async () => {
+      try {
+        const categories = await categoriesAPI.getAll({
+          popular: true,
+          isActive: true,
+          limit: 20,
+          includeServicesCount: true
+        });
+        return categories || [];
+      } catch (error) {
+        console.error('Error fetching popular categories:', error);
+        throw error;
+      }
+    },
     staleTime: 10 * 60 * 1000, // 10 minutes
     ...options,
+  });
+};
+export const usePopularServicesByCategory = (params = {}) => {
+  return useQuery({
+    queryKey: ['popularServicesByCategory', params],
+    queryFn: async () => {
+      try {
+        const result = await servicesAPI.getPopularServicesByCategory(params);
+        return result;
+      } catch (error) {
+        console.error('Error fetching popular services by category:', error);
+        throw error;
+      }
+    },
+    enabled: !!params.category, // Only fetch when category is selected
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
   });
 };
 

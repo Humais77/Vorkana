@@ -12,6 +12,7 @@ import HowItWorks from '../components/HowItWorks'
 import LogoMakerBanner from './LogoMakerBanner'
 import { useState } from 'react'
 import GetQuoteBanner from './GetQuoteBanner'
+import PopularCategoriesSection from './PopularCategoriesSection'
 
 const Home = ({ onSignupClick, onSigninClick }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -41,7 +42,8 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       )}
 
       <CategoryGrid />
-      <PopularServices />
+      <PopularCategoriesSection/>
+      {/* <PopularServices /> */}
       <GetQuoteBanner/>
       <Testimonials />
       {/* <Stats /> */}

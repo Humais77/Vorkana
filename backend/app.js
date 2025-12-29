@@ -118,7 +118,9 @@ const corsOptions = {
     'Accept',
     'X-Admin-Request', 
     'X-Admin-Token',
-    'Cache-Control', // Add cache control headers
+    'X-Request-Source',
+    'X-Client-Version',
+    'Cache-Control', 
     'If-Modified-Since'
   ],
   exposedHeaders: [
@@ -140,7 +142,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-security(app);
+// security(app);
 
 // ==================== RATE LIMITING ====================
 

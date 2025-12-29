@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Footer from './Footer';
-import AuthModal from '../components/AuthModal';
+import AuthModal from '../components/AuthModal/AuthModal.jsx';
 
 const PublicLayout = ({
   showAuthModal,

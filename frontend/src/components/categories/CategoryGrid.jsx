@@ -234,7 +234,7 @@ const CategoryGrid = () => {
               Browse Categories
             </h2>
             <p className="text-red-600 text-sm md:text-base">
-              Failed to load categories. Showing sample categories instead.
+              Failed to load categories.
             </p>
           </div>
           <CategoryGridView 
@@ -311,7 +311,7 @@ const CategoryGridView = ({
                 >
                   {/* Main Category Card */}
                   <Link
-                    to={`/categories/${cat.slug || cat.id}`}
+                   to={`/categories/${cat.slug || cat.id}`}
                     className="flex flex-col items-center justify-center
                       w-28 h-34       
                       bg-white rounded-lg shadow-sm
@@ -377,7 +377,7 @@ const CategoryGridView = ({
                         
                         {subcategories.length > 8 && (
                           <Link
-                            to={`/categories/${cat.slug || cat.id}`}
+                           to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
                             className="text-center text-sm text-blue-600 hover:text-blue-700 p-2 block border-t border-gray-100"
                           >
                             View all {subcategories.length} subcategories →

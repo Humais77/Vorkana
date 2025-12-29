@@ -58,6 +58,9 @@ import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
 import PublicProfile from './layouts/pages/PublicProfile';
 import AllServicesPage from './components/AllServicesPage';
+import PopularServices from './components/services/PopularService';
+import SubcategoryDetailPage from './layouts/pages/SubcategoryDetailPage';
+import PopularServicesPage from './components/services/PopularService';
 
 const App = () => {
   useAuthSync();
@@ -114,12 +117,14 @@ const App = () => {
           >
             <Route path="/" element={<Home onSigninClick={openSigninModal} onSignupClick={openSignupModal} />} />
             <Route path="/about-us" element={<AboutUsPage />} />
-            <Route path="/sign-in" element={<Signin />} />
-            <Route path="/sign-up" element={<Signup />} />
+            <Route path="/signin" element={<Signin />} />
+            <Route path="/signup" element={<Signup />} />
             
             <Route path="/create-gig" element={<GigCreate />} />
             <Route path="/gig/:id" element={<GigDetails />} />
             <Route path="/categories/:categoryId" element={<CategoryPage />} />
+            <Route path="/categories/:categoryId/:subcategorySlug" element={<SubcategoryDetailPage />} />
+            <Route path="/popular-services" element={<PopularServices />} />
             <Route path="/gigs" element={<GigListingsPage />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/:userId" element={<PublicProfile/>} />
@@ -127,6 +132,8 @@ const App = () => {
             <Route path="/services/create" element={<CreateService />} />
             <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/services" element={<ServiceListingPage />} />
+            <Route path="/popular-services" element={<PopularServicesPage />} />
+<Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
             <Route path="/all-gigs" element={<AllGigsPage />} />
             <Route path="/all-services" element={<AllServicesPage />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
