@@ -972,35 +972,7 @@ const validateStep = useCallback((step) => {
                   who have the skills you need. The more details you provide, the better matches you'll get.
                 </p>
 
-                <div className="flex flex-wrap gap-4 md:gap-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
-                      <Users className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-sm md:text-base">10K+ Freelancers</div>
-                      <div className="text-xs md:text-sm text-gray-500">Ready to work</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
-                      <Star className="w-4 h-4 md:w-5 md:h-5 text-yellow-500 fill-yellow-500" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-sm md:text-base">4.9/5 Rating</div>
-                      <div className="text-xs md:text-sm text-gray-500">Client satisfaction</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
-                      <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-sm md:text-base">No Fees</div>
-                      <div className="text-xs md:text-sm text-gray-500">Posting is completely free</div>
-                    </div>
-                  </div>
-                </div>
+             
               </div>
 
               <div className="md:w-1/3 w-full">

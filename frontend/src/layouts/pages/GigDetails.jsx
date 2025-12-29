@@ -545,10 +545,7 @@ const GigDetails = () => {
                       <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getUrgencyColor(gig.urgency)}`}>
                         {gig.urgency.toUpperCase()} PRIORITY
                       </span>
-                      <span className="flex items-center text-gray-500 text-sm">
-                        <Eye className="h-4 w-4 mr-1" aria-hidden="true" />
-                        {viewCount} views
-                      </span>
+                      
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -671,12 +668,7 @@ const GigDetails = () => {
                           </span>
                         )}
                         
-                        {gigUser?.createdAt && (
-                          <span className="flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" aria-hidden="true" />
-                            Member for {accountAge}
-                          </span>
-                        )}
+                        
                       </div>
                       
                       {/* User Stats */}
@@ -1189,7 +1181,7 @@ const GigDetails = () => {
 
             {/* Right Column - Gig Info & Actions */}
             <aside className="lg:col-span-1">
-              <div className="sticky top-8 space-y-8">
+              <div className=" top-8 space-y-8">
 
                 {/* Project Quick Stats */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
@@ -1207,10 +1199,7 @@ const GigDetails = () => {
                         {gig.urgency.toUpperCase()}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Views</span>
-                      <span className="font-semibold text-blue-600">{viewCount}</span>
-                    </div>
+                    
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                       <span className="text-gray-600">Posted</span>
                       <span className="font-semibold text-gray-900">{timeAgo}</span>

@@ -410,11 +410,6 @@ const GigListingsPage = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [setSearchParams]);
 
-  // Go back
-  const goBack = useCallback(() => {
-    navigate(-1);
-  }, [navigate]);
-
   return (
     <SeoWrapper
       title={seoTitle}
@@ -433,13 +428,7 @@ const GigListingsPage = () => {
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <div className="flex items-center justify-center mb-6">
-                <button
-                  onClick={goBack}
-                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors mr-4"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
+                
                 <h1 className="text-4xl md:text-5xl font-bold mb-4">
                   Find Your Next Gig
                 </h1>
