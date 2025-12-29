@@ -1,127 +1,150 @@
-// layouts/pages/HelpCenterPage.jsx
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search, ArrowRight, Mail, Globe, UserPlus, Zap, FileText, Lock } from 'lucide-react';
 
 const HelpCenterPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  
-  const faqCategories = [
-    {
-      title: 'Getting Started',
-      questions: [
-        'How do I create an account?',
-        'How do I verify my email?',
-        'How do I set up my profile?'
-      ]
-    },
-    {
-      title: 'Account & Settings',
-      questions: [
-        'How do I change my password?',
-        'How do I update my payment methods?',
-        'How do I manage notifications?'
-      ]
-    },
-    {
-      title: 'Services & Orders',
-      questions: [
-        'How do I create a service?',
-        'How do I place an order?',
-        'How do I manage my orders?'
-      ]
-    }
-  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Help Center</h1>
-          <p className="text-gray-600 text-lg">
-            Find answers and get support
-          </p>
-        </div>
+    <div className="min-h-screen bg-white text-black font-sans antialiased">
+      <main className="max-w-5xl mx-auto px-8 py-24">
         
-        <div className="max-w-3xl mx-auto mb-12">
-          <div className="relative">
+        {/* Header Section */}
+        <header className="mb-32">
+          <div className="flex items-center gap-3 mb-6 text-zinc-400">
+            <span className="text-[10px] uppercase tracking-[0.4em] font-black">Help System 1.0</span>
+            <div className="h-[1px] flex-grow bg-zinc-100"></div>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-8">
+            Platform <span className="font-light italic text-zinc-500">Procedures</span>.
+          </h1>
+          <div className="relative max-w-xl">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for help articles..."
-              className="w-full px-6 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 shadow-sm"
+              placeholder="Search guides (e.g., 'Auth', 'Gig Creation')"
+              className="w-full bg-transparent border-b-2 border-black py-4 outline-none text-sm font-bold tracking-widest uppercase placeholder:text-zinc-300"
             />
-            <button className="absolute right-3 top-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-300">
-              Search
-            </button>
           </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-lg p-8 mb-12">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Frequently Asked Questions</h2>
-          
-          <div className="space-y-8">
-            {faqCategories.map((category, index) => (
-              <div key={index}>
-                <h3 className="font-semibold text-lg text-gray-800 mb-4">{category.title}</h3>
-                <div className="space-y-3">
-                  {category.questions.map((question, qIndex) => (
-                    <div key={qIndex} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors duration-300">
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-700">{question}</span>
-                        <button className="text-blue-600 hover:text-blue-800">
-                          View Answer →
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        </header>
+
+        {/* Phase 1: Authentication */}
+        <section className="mb-40">
+          <div className="flex items-center gap-4 mb-16">
+            <span className="text-5xl font-black text-zinc-100">01</span>
+            <h2 className="text-2xl font-bold tracking-tight uppercase">Identity & Authentication</h2>
+          </div>
+
+          <div className="space-y-24">
+            {/* Auth Modal Explanation */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+              <div className="md:col-span-4 py-2 border-l-2 border-black pl-6">
+                <h3 className="font-black text-sm uppercase tracking-widest mb-2">The Auth Modal</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed uppercase">Accessing the Vorkana ecosystem.</p>
               </div>
-            ))}
+              <div className="md:col-span-8 text-zinc-600 leading-relaxed italic">
+                To begin, select "Login" or "Join" from the navigation. A secure 
+                <span className="text-black font-bold not-italic"> Auth Modal </span> 
+                will appear, centralizing all entry points into the platform.
+              </div>
+            </div>
+
+            {/* Login Methods */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-16 ml-6 md:ml-0">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 text-black">
+                  <Globe className="w-4 h-4" />
+                  <h4 className="text-xs font-black uppercase tracking-widest">Single Sign-On (Google)</h4>
+                </div>
+                <p className="text-sm text-zinc-500">
+                  Instant account synchronization. Select the "Continue with Google" 
+                  option within the modal for rapid, passwordless entry.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 text-black">
+                  <Mail className="w-4 h-4" />
+                  <h4 className="text-xs font-black uppercase tracking-widest">Standard Credentials</h4>
+                </div>
+                <p className="text-sm text-zinc-500">
+                  Enter a valid business email and a high-entropy password. 
+                  A verification link will be dispatched to ensure domain ownership.
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-lg p-6">
-            <div className="text-3xl mb-4">📞</div>
-            <h3 className="font-semibold text-lg mb-2">Contact Support</h3>
-            <p className="text-gray-600 mb-4">Get help from our support team</p>
-            <Link
-              to="/contact"
-              className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Contact Us →
-            </Link>
+        </section>
+
+        {/* Phase 2: Operations */}
+        <section className="mb-40">
+          <div className="flex items-center gap-4 mb-16">
+            <span className="text-5xl font-black text-zinc-100">02</span>
+            <h2 className="text-2xl font-bold tracking-tight uppercase">Gigs & Services</h2>
           </div>
-          
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-lg p-6">
-            <div className="text-3xl mb-4">📚</div>
-            <h3 className="font-semibold text-lg mb-2">Documentation</h3>
-            <p className="text-gray-600 mb-4">Browse our detailed guides</p>
-            <button className="inline-flex items-center text-green-600 hover:text-green-800 font-medium">
-              View Guides →
-            </button>
+
+          <div className="space-y-24">
+            {/* The Login Requirement */}
+            <div className="bg-zinc-50 p-12 border-l-4 border-black">
+              <div className="flex items-center gap-3 mb-4">
+                <Lock className="w-5 h-5" />
+                <h3 className="font-black text-sm uppercase tracking-widest">Prerequisite: Authorization</h3>
+              </div>
+              <p className="text-lg text-zinc-800 font-medium">
+                Creating Gigs or listing Services requires an active, verified session. 
+                If you are not logged in, the platform will automatically trigger the 
+                <span className="underline decoration-1 underline-offset-4"> Auth Modal </span> 
+                when you attempt to "Create" or "Post."
+              </p>
+            </div>
+
+            {/* Execution Steps */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              <div className="border-t border-zinc-200 pt-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <Zap className="w-4 h-4" />
+                  <h4 className="font-bold uppercase text-xs tracking-[0.2em]">How to Create a Gig</h4>
+                </div>
+                <ul className="space-y-4 text-sm text-zinc-600">
+                  <li className="flex gap-4"><span>01</span> <span>Access your User Dashboard.</span></li>
+                  <li className="flex gap-4"><span>02</span> <span>Select "Create New Gig" from the active tasks.</span></li>
+                  <li className="flex gap-4"><span>03</span> <span>Define scope, pricing milestones, and timelines.</span></li>
+                </ul>
+              </div>
+
+              <div className="border-t border-zinc-200 pt-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <FileText className="w-4 h-4" />
+                  <h4 className="font-bold uppercase text-xs tracking-[0.2em]">Posting a Service</h4>
+                </div>
+                <ul className="space-y-4 text-sm text-zinc-600">
+                  <li className="flex gap-4"><span>01</span> <span>Navigate to your Professional Profile.</span></li>
+                  <li className="flex gap-4"><span>02</span> <span>Click "Add New Service" to list your expertise.</span></li>
+                  <li className="flex gap-4"><span>03</span> <span>Upload portfolio assets and set your package tiers.</span></li>
+                </ul>
+              </div>
+            </div>
           </div>
-          
-          <div className="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100 rounded-lg p-6">
-            <div className="text-3xl mb-4">🎥</div>
-            <h3 className="font-semibold text-lg mb-2">Video Tutorials</h3>
-            <p className="text-gray-600 mb-4">Watch step-by-step tutorials</p>
-            <button className="inline-flex items-center text-purple-600 hover:text-purple-800 font-medium">
-              Watch Videos →
-            </button>
+        </section>
+
+        {/* Support CTA */}
+        <footer className="border-t border-black pt-16 flex flex-col md:flex-row justify-between items-start gap-12">
+          <div className="max-w-md">
+            <h3 className="text-2xl font-bold mb-4 italic tracking-tighter">Facing Auth Issues?</h3>
+            <p className="text-zinc-500 text-sm">
+              If the Auth Modal fails to initialize or your credentials are 
+              unrecognized, contact our system administrators immediately.
+            </p>
           </div>
-        </div>
-        
-        <div className="text-center">
-          <Link
-            to="/"
-            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          <Link 
+            to="/contact" 
+            className="group flex items-center gap-4 bg-black text-white px-10 py-5 font-bold uppercase text-xs tracking-[0.2em] hover:bg-zinc-800 transition-all"
           >
-            Return to Home
+            Direct Inquiry
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-2 transition-transform" />
           </Link>
-        </div>
-      </div>
+        </footer>
+      </main>
     </div>
   );
 };

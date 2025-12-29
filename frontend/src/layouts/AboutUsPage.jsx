@@ -1,138 +1,130 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { Globe, ShieldCheck, Zap, ArrowRight } from 'lucide-react';
 import Footer from './Footer';
 
 const AboutUsPage = () => {
   const location = useLocation();
   
-  // Get query parameters
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const source = queryParams.get('source');
     const medium = queryParams.get('medium');
     const campaign = queryParams.get('campaign');
     
-    // Track page view with query parameters
-    if (source) {
-      console.log(`About Us page visited from: ${source}`);
-      
-      // Send to analytics
-      if (typeof window !== 'undefined' && window.gtag) {
-        window.gtag('event', 'page_view', {
-          page_title: 'About Us',
-          page_location: window.location.href,
-          source: source,
-          medium: medium || 'website',
-          campaign: campaign || 'direct'
-        });
-      }
+    if (source && typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', 'page_view', {
+        page_title: 'About Vorkana',
+        page_location: window.location.href,
+        source: source,
+        medium: medium || 'website',
+        campaign: campaign || 'direct'
+      });
     }
   }, [location.search]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
-      {/* Header/Navbar would go here */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="min-h-screen bg-white text-black font-sans">
+      <main className="max-w-6xl mx-auto px-6 py-20">
+        
         {/* Hero Section */}
-        <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-            About Vorkana
+        <div className="border-b border-black pb-16 mb-20">
+          <span className="text-xs uppercase tracking-[0.3em] font-bold text-gray-500 block mb-4">
+            Established 2023
+          </span>
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 italic">
+            VORKANA.
           </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Connecting talented freelancers with visionary clients worldwide
+          <p className="text-2xl md:text-3xl text-zinc-600 max-w-3xl leading-tight">
+            The bridge between elite talent and global visionaries. 
+            We define the future of distributed work.
           </p>
         </div>
 
         {/* Mission Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-8 mb-12">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Our Mission</h2>
-            <p className="text-gray-700 text-lg leading-relaxed mb-6">
-              At Vorkana, we believe that talent knows no boundaries. Our mission is to 
-              democratize access to global opportunities by creating a platform where 
-              freelancers can thrive and businesses can find the perfect talent for 
-              their projects.
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32">
+          <div>
+            <h2 className="text-xs uppercase tracking-widest font-bold mb-6 text-zinc-400">Our Mission</h2>
+            <p className="text-xl leading-relaxed text-zinc-800">
+              At Vorkana, we believe that excellence has no borders. We are architecting 
+              a platform where the world’s most skilled professionals can connect 
+              with companies that value quality over quantity.
             </p>
-            <p className="text-gray-700 text-lg leading-relaxed">
-              We're building more than just a marketplace - we're creating a community 
-              where creativity meets opportunity, and where every professional can 
-              build the career they've always wanted.
+          </div>
+          <div className="flex items-center">
+            <p className="text-lg leading-relaxed text-zinc-500 border-l border-zinc-200 pl-8">
+              We aren't just a marketplace; we are a standard. By democratizing access 
+              to high-stakes projects, we empower freelancers to build sustainable, 
+              prestigious careers from anywhere on Earth.
             </p>
           </div>
         </div>
 
-        {/* Values Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-          <div className="bg-gradient-to-br from-blue-50 to-white p-6 rounded-xl shadow-sm border border-blue-100">
-            <div className="text-blue-600 text-3xl mb-4">🌍</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Global Reach</h3>
-            <p className="text-gray-600">
-              Connecting professionals from every corner of the world, breaking down 
-              geographical barriers to opportunity.
+        {/* Values Section - Monochrome Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-1 border-y border-black bg-black mb-32">
+          <div className="bg-white p-10 hover:bg-zinc-50 transition-colors">
+            <Globe className="w-8 h-8 mb-6" />
+            <h3 className="text-xl font-bold mb-4 uppercase tracking-tight">Global Reach</h3>
+            <p className="text-zinc-600 leading-relaxed">
+              Breaking geographical barriers. We connect the world’s top 3% of talent 
+              with projects that deserve their expertise.
             </p>
           </div>
           
-          <div className="bg-gradient-to-br from-green-50 to-white p-6 rounded-xl shadow-sm border border-green-100">
-            <div className="text-green-600 text-3xl mb-4">🤝</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Trust & Safety</h3>
-            <p className="text-gray-600">
-              Built-in protections, verified profiles, and secure payments to ensure 
-              every transaction is safe and reliable.
+          <div className="bg-white p-10 hover:bg-zinc-50 transition-colors">
+            <ShieldCheck className="w-8 h-8 mb-6" />
+            <h3 className="text-xl font-bold mb-4 uppercase tracking-tight">Trust & Safety</h3>
+            <p className="text-zinc-600 leading-relaxed">
+              Verified protocols and secure capital management. We ensure every 
+              partnership is protected by industry-leading standards.
             </p>
           </div>
           
-          <div className="bg-gradient-to-br from-purple-50 to-white p-6 rounded-xl shadow-sm border border-purple-100">
-            <div className="text-purple-600 text-3xl mb-4">⚡</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Speed & Efficiency</h3>
-            <p className="text-gray-600">
-              Streamlined processes that help you find talent or projects faster, 
-              so you can focus on what matters most.
+          <div className="bg-white p-10 hover:bg-zinc-50 transition-colors">
+            <Zap className="w-8 h-8 mb-6" />
+            <h3 className="text-xl font-bold mb-4 uppercase tracking-tight">Efficiency</h3>
+            <p className="text-zinc-600 leading-relaxed">
+              Time is the ultimate currency. Our streamlined vetting and matching 
+              engine moves at the speed of your business.
             </p>
           </div>
         </div>
 
-        {/* Story Section */}
-        <div className="mb-16">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">Our Story</h2>
-          <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200">
-            <p className="text-gray-700 mb-4">
-              Vorkana was founded in 2023 by a team of entrepreneurs and freelancers 
-              who experienced firsthand the challenges of finding quality work and 
-              reliable talent in the digital economy.
+        {/* Story Section - Minimalist */}
+        <div className="max-w-3xl mb-32">
+          <h2 className="text-3xl font-bold mb-10">The Vorkana Story</h2>
+          <div className="space-y-6 text-lg text-zinc-700 leading-relaxed">
+            <p>
+              Vorkana was born from a simple observation: the digital economy was 
+              becoming a race to the bottom. In 2023, our founders set out to reverse 
+              that trend.
             </p>
-            <p className="text-gray-700 mb-4">
-              Frustrated by platforms that prioritized quantity over quality, we set 
-              out to build a different kind of freelancing platform - one that values 
-              human connection, supports professional growth, and makes the entire 
-              process seamless and enjoyable.
-            </p>
-            <p className="text-gray-700">
-              Today, Vorkana serves thousands of professionals and businesses 
-              worldwide, helping them build meaningful partnerships and achieve 
-              their goals together.
+            <p>
+              We built a workspace that prioritizes human connection and professional 
+              integrity. By removing the "noise" found on traditional platforms, 
+              we allow the work to speak for itself.
             </p>
           </div>
         </div>
 
-        {/* CTA Section */}
-        <div className="text-center">
-          <h2 className="text-3xl font-bold text-gray-900 mb-6">Join Our Community</h2>
-          <p className="text-gray-600 text-lg mb-8 max-w-2xl mx-auto">
-            Whether you're looking to hire exceptional talent or build your 
-            freelance career, Vorkana is the place for you.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+        {/* CTA Section - High Contrast */}
+        <div className="bg-black text-white p-12 md:p-20 text-center flex flex-col items-center">
+          <h2 className="text-3xl md:text-5xl font-bold mb-8 tracking-tighter">
+            Ready to elevate your project?
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-6">
             <Link
               to="/"
-              className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-300 shadow-sm hover:shadow"
+              className="group flex items-center gap-3 bg-white text-black px-10 py-4 font-bold uppercase text-sm tracking-widest hover:bg-zinc-200 transition-all"
             >
               Start Hiring
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </Link>
             <Link
               to="/create-gig"
-              className="px-8 py-3 bg-white hover:bg-gray-50 text-blue-600 font-medium rounded-lg border-2 border-blue-600 transition-colors duration-300 shadow-sm hover:shadow"
+              className="px-10 py-4 border border-zinc-700 font-bold uppercase text-sm tracking-widest hover:border-white transition-all"
             >
-              Start Freelancing
+              Join as Talent
             </Link>
           </div>
         </div>

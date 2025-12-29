@@ -7,10 +7,11 @@ import Testimonials from './Testimonal'
 import Stats from './Stats'
 import CallToAction from './CallToAction'
 import MakeItHappen from './MakeItHappen'
-import AuthModal from '../components/AuthModal';
+import AuthModal from '../components/AuthModal/AuthModal';
 import HowItWorks from '../components/HowItWorks'
 import LogoMakerBanner from './LogoMakerBanner'
 import { useState } from 'react'
+import GetQuoteBanner from './GetQuoteBanner'
 
 const Home = ({ onSignupClick, onSigninClick }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -40,8 +41,8 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       )}
 
       <CategoryGrid />
-      <HowItWorks/>
       <PopularServices />
+      <GetQuoteBanner/>
       <Testimonials />
       {/* <Stats /> */}
       <MakeItHappen 

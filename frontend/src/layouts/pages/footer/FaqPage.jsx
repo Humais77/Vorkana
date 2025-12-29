@@ -1,60 +1,56 @@
-// layouts/pages/FaqPage.jsx
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search, Plus, Minus, ArrowRight, ArrowUpRight, HelpCircle, ShieldCheck, Zap } from 'lucide-react';
 
 const FaqPage = () => {
-  const [openCategory, setOpenCategory] = useState(null);
+  const [openCategory, setOpenCategory] = useState(0);
   const [openQuestions, setOpenQuestions] = useState({});
 
   const faqData = [
     {
-      category: 'Getting Started',
+      category: 'Identity & Access',
       questions: [
         {
-          q: 'How do I create an account?',
-          a: 'Click the "Sign Up" button in the top right corner and fill in your details. You can sign up with your email or use social login options.'
+          q: 'How do I establish a professional profile?',
+          a: 'Select "Sign Up" and provide your professional credentials. You may utilize Google OAuth for immediate synchronization or use a standard email-based registration.'
         },
         {
-          q: 'Is there a fee to join?',
-          a: 'No, creating an account is completely free. You only pay for services you purchase or pay a commission when you earn from your services.'
+          q: 'What is the verification protocol?',
+          a: 'Upon registration, a validation link is dispatched to your email. Completing this step is mandatory to unlock Gig creation and Service listing capabilities.'
         },
         {
-          q: 'How do I verify my account?',
-          a: 'After signing up, check your email for a verification link. You can also verify your identity through your account settings for additional trust.'
+          q: 'Can I manage multiple professional identities?',
+          a: 'No. To maintain platform integrity, Vorkana enforces a one-account-per-individual policy. Secondary accounts are subject to immediate deactivation.'
         }
       ]
     },
     {
-      category: 'Services & Orders',
+      category: 'Project Workflows',
       questions: [
         {
-          q: 'How do I create a service?',
-          a: 'Navigate to "Create Service" from your dashboard or the main menu. Fill in the service details, set your pricing, and publish your service.'
+          q: 'How do I list a new Service?',
+          a: 'Access the "Create Service" module from your dashboard. Define your deliverables, technical requirements, and project scope before publishing to the marketplace.'
         },
         {
-          q: 'How do I place an order?',
-          a: 'Browse services, select one that fits your needs, click "Order Now", choose your package, and complete the payment process.'
+          q: 'What are Gig Milestones?',
+          a: 'Milestones are specific phases within a project. Each phase must be logged and approved to ensure the project remains aligned with the initial scope.'
         },
         {
-          q: 'What payment methods are accepted?',
-          a: 'We accept major credit cards, PayPal, and bank transfers. All payments are processed securely through our encrypted payment system.'
+          q: 'How are project files protected?',
+          a: 'All deliverables are managed through our secure infrastructure, ensuring that project assets are only accessible to the authorized parties involved in the Gig.'
         }
       ]
     },
     {
-      category: 'Payments & Pricing',
+      category: 'Disputes & Resolution',
       questions: [
         {
-          q: 'How are freelancers paid?',
-          a: 'Freelancers are paid once the client approves the delivered work. Payments are processed weekly and can be withdrawn to your preferred method.'
+          q: 'What happens if a deliverable is misaligned?',
+          a: 'If a project outcome does not match the agreed-upon scope, you may initiate a resolution request via the Dispute Center for Admin mediation.'
         },
         {
-          q: 'What is the service fee?',
-          a: 'We charge a 10% service fee on each transaction. This helps us maintain and improve our platform and provide customer support.'
-        },
-        {
-          q: 'When will I receive my payment?',
-          a: 'Payments are typically processed within 3-5 business days after work approval. You can track payment status in your dashboard.'
+          q: 'How does Admin mediation work?',
+          a: 'Our team reviews the timestamped logs and communication history within the Gig to provide an objective resolution based on the project data.'
         }
       ]
     }
@@ -72,133 +68,119 @@ const FaqPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Frequently Asked Questions</h1>
-          <p className="text-gray-600 text-lg">
-            Find answers to common questions
-          </p>
-        </div>
+    <div className="min-h-screen bg-white text-black font-sans antialiased">
+      <main className="max-w-6xl mx-auto px-8 py-24">
         
-        <div className="max-w-4xl mx-auto">
-          {/* Search Bar */}
-          <div className="mb-12">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search for questions..."
-                className="w-full px-6 py-4 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 shadow-sm"
+        {/* Header - High Contrast */}
+        <section className="mb-20 border-b-2 border-black pb-12">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-[3px] w-12 bg-black"></div>
+            <span className="text-xs uppercase tracking-[0.3em] font-bold">Information Desk</span>
+          </div>
+          <h1 className="text-5xl font-bold tracking-tighter mb-6 uppercase">
+            Knowledge Base
+          </h1>
+          <p className="text-lg text-zinc-800 max-w-xl font-medium leading-relaxed">
+            Standard operating procedures and frequently asked questions regarding 
+            the Vorkana marketplace infrastructure.
+          </p>
+        </section>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
+          
+          {/* Left Column: Search & Categories */}
+          <div className="lg:col-span-4 space-y-12">
+            <div className="relative border-b-2 border-black pb-2">
+              <Search className="absolute left-0 top-1 w-5 h-5" />
+              <input 
+                type="text" 
+                placeholder="SEARCH PROTOCOLS..." 
+                className="w-full pl-8 bg-transparent outline-none text-xs font-bold uppercase tracking-widest placeholder:text-zinc-300"
               />
-              <button className="absolute right-3 top-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-300">
-                Search
-              </button>
             </div>
-          </div>
-          
-          {/* FAQ Categories */}
-          <div className="space-y-6 mb-12">
-            {faqData.map((category, categoryIndex) => (
-              <div key={categoryIndex} className="bg-white rounded-lg shadow-lg overflow-hidden">
-                {/* Category Header */}
+
+            <nav className="space-y-4">
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.4em] text-zinc-400 mb-6">Directory</h2>
+              {faqData.map((cat, idx) => (
                 <button
-                  onClick={() => toggleCategory(categoryIndex)}
-                  className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors duration-300 flex justify-between items-center"
+                  key={idx}
+                  onClick={() => toggleCategory(idx)}
+                  className={`block w-full text-left text-xs font-bold uppercase tracking-widest py-2 transition-all ${
+                    openCategory === idx ? 'text-black border-l-4 border-black pl-4' : 'text-zinc-400 hover:text-black'
+                  }`}
                 >
-                  <h3 className="font-semibold text-lg text-gray-800">{category.category}</h3>
-                  <span className="text-gray-500 text-xl">
-                    {openCategory === categoryIndex ? '−' : '+'}
-                  </span>
+                  {cat.category}
                 </button>
-                
-                {/* Questions (Collapsible) */}
-                {openCategory === categoryIndex && (
-                  <div className="px-6 py-4 space-y-4">
-                    {category.questions.map((question, questionIndex) => (
-                      <div key={questionIndex} className="border-b border-gray-200 last:border-b-0 pb-4 last:pb-0">
-                        <button
-                          onClick={() => toggleQuestion(categoryIndex, questionIndex)}
-                          className="w-full text-left flex justify-between items-start"
-                        >
-                          <h4 className="font-medium text-gray-800 flex-1 mr-4">{question.q}</h4>
-                          <span className="text-gray-500 text-lg flex-shrink-0">
-                            {openQuestions[`${categoryIndex}-${questionIndex}`] ? '−' : '+'}
-                          </span>
-                        </button>
-                        
-                        {openQuestions[`${categoryIndex}-${questionIndex}`] && (
-                          <div className="mt-3 pl-4">
-                            <p className="text-gray-600">{question.a}</p>
-                          </div>
-                        )}
+              ))}
+            </nav>
+          </div>
+
+          {/* Right Column: Accordion */}
+          <div className="lg:col-span-8">
+            {faqData[openCategory] && (
+              <div className="space-y-1">
+                <h2 className="text-2xl font-bold uppercase mb-10 tracking-tight">
+                  {faqData[openCategory].category}
+                </h2>
+                {faqData[openCategory].questions.map((item, qIdx) => (
+                  <div key={qIdx} className="border-b border-zinc-200">
+                    <button
+                      onClick={() => toggleQuestion(openCategory, qIdx)}
+                      className="w-full flex justify-between items-center py-8 text-left group"
+                    >
+                      <span className="text-sm font-bold uppercase tracking-tight group-hover:translate-x-1 transition-transform">
+                        {item.q}
+                      </span>
+                      {openQuestions[`${openCategory}-${qIdx}`] ? (
+                        <Minus className="w-4 h-4" />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
+                    </button>
+                    {openQuestions[`${openCategory}-${qIdx}`] && (
+                      <div className="pb-8 pr-12">
+                        <p className="text-zinc-700 text-sm leading-relaxed font-medium">
+                          {item.a}
+                        </p>
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-          
-          {/* Quick Links */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            <Link
-              to="/help"
-              className="block p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-lg hover:shadow-md transition-shadow duration-300"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-800">Visit Help Center</span>
-                <span className="text-blue-600 text-xl">→</span>
-              </div>
-              <p className="text-gray-600 text-sm mt-2">Detailed guides and tutorials</p>
-            </Link>
-            
-            <Link
-              to="/contact"
-              className="block p-6 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-lg hover:shadow-md transition-shadow duration-300"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-800">Contact Support</span>
-                <span className="text-green-600 text-xl">→</span>
-              </div>
-              <p className="text-gray-600 text-sm mt-2">Get personalized help</p>
-            </Link>
-            
-            <Link
-              to="/blog"
-              className="block p-6 bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100 rounded-lg hover:shadow-md transition-shadow duration-300"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-800">Read Our Blog</span>
-                <span className="text-purple-600 text-xl">→</span>
-              </div>
-              <p className="text-gray-600 text-sm mt-2">Tips and best practices</p>
-            </Link>
-          </div>
-          
-          {/* Still Have Questions */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg p-8 text-center text-white mb-12">
-            <h3 className="text-2xl font-bold mb-4">Still Have Questions?</h3>
-            <p className="mb-6 opacity-90">
-              Our support team is ready to help you with any questions not covered here.
-            </p>
-            <Link
-              to="/contact"
-              className="inline-flex items-center px-8 py-3 bg-white text-blue-600 font-medium rounded-lg hover:bg-gray-100 transition-colors duration-300 shadow-lg"
-            >
-              Contact Support
-            </Link>
-          </div>
-          
-          <div className="text-center">
-            <Link
-              to="/"
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Return to Home
-            </Link>
+            )}
           </div>
         </div>
-      </div>
+
+        {/* Support Grid - High Contrast */}
+        <section className="mt-32 grid grid-cols-1 md:grid-cols-3 border-2 border-black">
+          <Link to="/help" className="p-10 border-b-2 md:border-b-0 md:border-r-2 border-black hover:bg-black hover:text-white transition-all group">
+            <HelpCircle className="w-6 h-6 mb-6" />
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-2">Help Center</h3>
+            <p className="text-xs font-medium opacity-70">Browse detailed technical documentation.</p>
+            <ArrowUpRight className="w-4 h-4 mt-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </Link>
+          
+          <Link to="/contact" className="p-10 border-b-2 md:border-b-0 md:border-r-2 border-black hover:bg-black hover:text-white transition-all group">
+            <Zap className="w-6 h-6 mb-6" />
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-2">Direct Support</h3>
+            <p className="text-xs font-medium opacity-70">Open a ticket with our resolution team.</p>
+            <ArrowUpRight className="w-4 h-4 mt-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </Link>
+
+          <Link to="/trust" className="p-10 hover:bg-black hover:text-white transition-all group">
+            <ShieldCheck className="w-6 h-6 mb-6" />
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-2">Integrity Policy</h3>
+            <p className="text-xs font-medium opacity-70">Review platform safety protocols.</p>
+            <ArrowUpRight className="w-4 h-4 mt-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </Link>
+        </section>
+
+        <div className="mt-24 text-center">
+          <Link to="/" className="text-xs font-bold uppercase tracking-[0.4em] border-b-2 border-black pb-1 hover:text-zinc-600">
+            Return to Home
+          </Link>
+        </div>
+      </main>
     </div>
   );
 };

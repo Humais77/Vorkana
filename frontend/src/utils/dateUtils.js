@@ -1,29 +1,41 @@
-// utils/dateUtils.js
+
 export const formatDateForAPI = (dateString) => {
-  if (!dateString) return null;
+  console.log('📅 formatDateForAPI called with:', dateString, 'type:', typeof dateString);
   
-  // If it's already a date string without time, return as-is
-  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    return dateString;
+  if (!dateString || dateString.trim() === '') {
+    console.log('📅 No date provided, returning null');
+    return null;
   }
   
-  // If it has time component, extract just the date
   try {
+    // If it's already in YYYY-MM-DD format
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      console.log('📅 Already in correct format, returning:', dateString);
+      return dateString;
+    }
+    
+    // Parse and format
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) return null;
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('📅 Invalid date:', dateString);
+      return null;
+    }
     
     // Format as YYYY-MM-DD
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
+    const formatted = `${year}-${month}-${day}`;
     
-    return `${year}-${month}-${day}`;
+    console.log('📅 Formatted date:', { original: dateString, formatted });
+    return formatted;
   } catch (error) {
-    console.error('Error formatting date:', error);
+    console.error('📅 Error formatting date:', error, 'dateString:', dateString);
     return null;
   }
 };
-
 export const formatDateForInput = (dateString) => {
   if (!dateString) return '';
   
