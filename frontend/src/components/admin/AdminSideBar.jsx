@@ -11,7 +11,7 @@ import {
   FiFolderMinus
 } from 'react-icons/fi';
 
-const AdminSideBar = ({ isMobileOpen, setIsMobileOpen }) => {
+const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
   const navItems = [
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },
@@ -113,4 +113,4 @@ const AdminSideBar = ({ isMobileOpen, setIsMobileOpen }) => {
   );
 };
 
-export default AdminSideBar;
+export default Sidebar;
