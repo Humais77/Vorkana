@@ -290,33 +290,46 @@ const CreateService = () => {
 
   // Memoized handlers
   const handleInputChange = useCallback((e) => {
-   const { name, value, type, checked } = e.target;
+  const { name, value, type, checked } = e.target;
   
-  // Ensure value is never undefined
-  const safeValue = value === undefined ? '' : value;
+  // Handle different input types
+  let newValue;
+  
+  if (type === 'checkbox') {
+    newValue = checked;
+  } else if (type === 'number') {
+    // Handle empty number inputs
+    newValue = value === '' ? '' : value;
+  } else if (type === 'select-one') {
+    // Handle select inputs
+    newValue = value || '';
+  } else {
+    // Handle text inputs
+    newValue = value || '';
+  }
   
   setFormData(prev => ({
     ...prev,
-    [name]: type === 'checkbox' ? checked : safeValue
+    [name]: newValue
   }));
     
-    // Update completed status based on validation
-    const isValid = validateField(name, type === 'checkbox' ? checked : value);
-    setCompletedFields(prev => ({
-      ...prev,
-      [name]: isValid
-    }));
+  // Update completed status based on validation
+  const isValid = validateField(name, newValue);
+  setCompletedFields(prev => ({
+    ...prev,
+    [name]: isValid
+  }));
     
-    // Clear error for this field
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: "" }));
-    }
+  // Clear error for this field
+  if (errors[name]) {
+    setErrors(prev => ({ ...prev, [name]: "" }));
+  }
     
-    // If category changes, trigger subcategories fetch
-    if (name === 'category' && value) {
-      refetchSubcategories();
-    }
-  }, [errors, refetchSubcategories]);
+  // If category changes, trigger subcategories fetch
+  if (name === 'category' && newValue) {
+    refetchSubcategories();
+  }
+}, [errors, refetchSubcategories]);
 
   const validateField = useCallback((fieldName, value) => {
     switch (fieldName) {
@@ -977,7 +990,7 @@ const CreateService = () => {
                 <input
                   type="text"
                   name="title"
-                  value={formData.title}
+                  value={formData.title || ''}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   placeholder="e.g., Professional Web Development Service"
@@ -1045,7 +1058,7 @@ const CreateService = () => {
                   <div className="relative">
                     <select
   name="subcategory"
-  value={formData.subcategory || ''} // Ensure it's never undefined
+  value={formData.subcategory || ''} // Ensure it's always a string
   onChange={handleInputChange}
   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
   required
@@ -1061,7 +1074,7 @@ const CreateService = () => {
     <option value="" disabled>No subcategories available for this category</option>
   ) : (
     subcategories.map(subcategory => (
-      <option key={subcategory._id} value={subcategory._id || ''}> {/* Ensure value is string */}
+      <option key={subcategory._id} value={subcategory._id || ''}>
         {subcategory.name}
       </option>
     ))
@@ -1113,7 +1126,7 @@ const CreateService = () => {
                 </label>
                 <textarea
                   name="description"
-                  value={formData.description}
+                  value={formData.description || ''}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   rows="6"

@@ -53,47 +53,142 @@ const sanitizeServiceInput = (data, files = {}) => {
   
   for (const key in data) {
     if (typeof data[key] === 'string') {
-      sanitized[key] = sanitizeHtml(data[key], {
-        allowedTags: [],
-        allowedAttributes: {},
-        disallowedTagsMode: 'escape'
-      }).trim();
-    } else if (Array.isArray(data[key]) && data[key].length > 0 && typeof data[key][0] === 'string') {
-      sanitized[key] = data[key].map(item => sanitizeHtml(item, {
-        allowedTags: [],
-        allowedAttributes: {},
-        disallowedTagsMode: 'escape'
-      }).trim());
-    } else if (key === 'features' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(feature => ({
-        ...feature,
-        title: sanitizeHtml(feature.title || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        description: sanitizeHtml(feature.description || '', { allowedTags: [], allowedAttributes: {} }).trim()
-      }));
-    } else if (key === 'faqs' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(faq => ({
-        ...faq,
-        question: sanitizeHtml(faq.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        answer: sanitizeHtml(faq.answer || '', { allowedTags: [], allowedAttributes: {} }).trim()
-      }));
-    } else if (key === 'requirements' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(req => ({
-        ...req,
-        question: sanitizeHtml(req.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        options: req.options ? req.options.map(opt => sanitizeHtml(opt || '', { allowedTags: [], allowedAttributes: {} }).trim()) : []
-      }));
-    } else if (key === 'packages' && Array.isArray(data[key])) {
-      sanitized[key] = data[key].map(pkg => ({
-        ...pkg,
-        name: sanitizeHtml(pkg.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        description: sanitizeHtml(pkg.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-        features: pkg.features ? pkg.features.map(f => sanitizeHtml(f || '', { allowedTags: [], allowedAttributes: {} }).trim()) : []
-      }));
+      // Try to parse JSON if it looks like JSON
+      if (
+        (key === 'tags' || key === 'features' || key === 'faqs' || key === 'searchKeywords' || key === 'packages' || key === 'requirements') &&
+        (data[key].startsWith('[') || data[key].startsWith('{'))
+      ) {
+        try {
+          const parsed = JSON.parse(data[key]);
+          if (Array.isArray(parsed)) {
+            sanitized[key] = parsed.map(item => {
+              if (typeof item === 'string') {
+                return sanitizeHtml(item, {
+                  allowedTags: [],
+                  allowedAttributes: {},
+                  disallowedTagsMode: 'escape'
+                }).trim();
+              }
+              return item;
+            });
+          } else {
+            sanitized[key] = data[key];
+          }
+        } catch (e) {
+          // If not valid JSON, treat as string
+          sanitized[key] = sanitizeHtml(data[key], {
+            allowedTags: [],
+            allowedAttributes: {},
+            disallowedTagsMode: 'escape'
+          }).trim();
+        }
+      } else {
+        sanitized[key] = sanitizeHtml(data[key], {
+          allowedTags: [],
+          allowedAttributes: {},
+          disallowedTagsMode: 'escape'
+        }).trim();
+      }
+    } else if (Array.isArray(data[key])) {
+      // If it's already an array
+      if (key === 'tags' || key === 'searchKeywords') {
+        sanitized[key] = data[key].map(item => 
+          sanitizeHtml(item.toString(), { 
+            allowedTags: [], 
+            allowedAttributes: {} 
+          }).trim()
+        );
+      } else if (key === 'features') {
+        sanitized[key] = data[key].map(feature => {
+          if (typeof feature === 'string') {
+            return { 
+              title: sanitizeHtml(feature, { allowedTags: [], allowedAttributes: {} }).trim(),
+              description: '' 
+            };
+          }
+          return {
+            title: sanitizeHtml(feature.title || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+            description: sanitizeHtml(feature.description || '', { allowedTags: [], allowedAttributes: {} }).trim()
+          };
+        });
+      } else if (key === 'faqs') {
+        sanitized[key] = data[key].map(faq => {
+          if (typeof faq === 'string') {
+            return { 
+              question: sanitizeHtml(faq, { allowedTags: [], allowedAttributes: {} }).trim(),
+              answer: '' 
+            };
+          }
+          return {
+            question: sanitizeHtml(faq.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+            answer: sanitizeHtml(faq.answer || '', { allowedTags: [], allowedAttributes: {} }).trim()
+          };
+        });
+      } else if (key === 'requirements') {
+        sanitized[key] = data[key].map(req => {
+          if (typeof req === 'string') {
+            return { 
+              question: sanitizeHtml(req, { allowedTags: [], allowedAttributes: {} }).trim(),
+              options: [] 
+            };
+          }
+          return {
+            question: sanitizeHtml(req.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+            options: req.options ? req.options.map(opt => 
+              sanitizeHtml(opt.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
+            ) : []
+          };
+        });
+      } else if (key === 'packages') {
+        sanitized[key] = data[key].map(pkg => {
+          if (typeof pkg === 'string') {
+            try {
+              const parsed = JSON.parse(pkg);
+              return {
+                name: sanitizeHtml(parsed.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+                description: sanitizeHtml(parsed.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+                price: parsed.price || 0,
+                deliveryTime: parsed.deliveryTime || 0,
+                features: (parsed.features || []).map(f => 
+                  sanitizeHtml(f.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
+                )
+              };
+            } catch (e) {
+              return {
+                name: sanitizeHtml(pkg, { allowedTags: [], allowedAttributes: {} }).trim(),
+                description: '',
+                price: 0,
+                deliveryTime: 0,
+                features: []
+              };
+            }
+          }
+          return {
+            name: sanitizeHtml(pkg.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+            description: sanitizeHtml(pkg.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
+            price: pkg.price || 0,
+            deliveryTime: pkg.deliveryTime || 0,
+            features: pkg.features ? pkg.features.map(f => 
+              sanitizeHtml(f.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
+            ) : []
+          };
+        });
+      } else if (typeof data[key][0] === 'string') {
+        sanitized[key] = data[key].map(item => 
+          sanitizeHtml(item.toString(), { 
+            allowedTags: [], 
+            allowedAttributes: {} 
+          }).trim()
+        );
+      } else {
+        sanitized[key] = data[key];
+      }
     } else {
       sanitized[key] = data[key];
     }
   }
   
+  // Handle files if present
   if (files && Array.isArray(files)) {
     const imageUrls = files.map(file => {
       const safePath = file.path.replace(/\\/g, '/');
@@ -331,9 +426,40 @@ const createService = async (req, res, next) => {
         requestId
       });
     }
-
-    const sanitizedData = sanitizeServiceInput(req.body);
+let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        bodyData = req.body;
+      }
+    }
     
+    // Check if data is nested in a 'data' field (common with FormData)
+    if (bodyData.data && typeof bodyData.data === 'string') {
+      try {
+        bodyData = JSON.parse(bodyData.data);
+      } catch (e) {
+        // Keep as is
+      }
+    }
+    const sanitizedData = sanitizeServiceInput(req.body);
+    const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
+    arrayFields.forEach(field => {
+      if (sanitizedData[field] && !Array.isArray(sanitizedData[field])) {
+        if (typeof sanitizedData[field] === 'string') {
+          try {
+            sanitizedData[field] = JSON.parse(sanitizedData[field]);
+          } catch (e) {
+            sanitizedData[field] = sanitizedData[field].split(',').map(item => item.trim()).filter(item => item);
+          }
+        } else {
+          sanitizedData[field] = [];
+        }
+      } else if (!sanitizedData[field]) {
+        sanitizedData[field] = [];
+      }
+    });
     // Verify category is provided
     if (!sanitizedData.category) {
       return res.status(400).json({
@@ -3912,13 +4038,29 @@ const togglePopularStatus = async (req, res, next) => {
   }
 };
 
-// Get Popular Services by Category
 const getPopularServicesByCategory = async (req, res, next) => {
   const requestId = generateRequestId();
   
   try {
-    const cacheKey = 'popular_services_by_category';
-    const useCache = req.query.cache !== 'false';
+    // Get query parameters
+    const { 
+      limit = 12, 
+      minRating = 0,  // Changed from 4.0 to 0 to include all popular services
+      minReviews = 0, // Changed from 5 to 0
+      cache: useCacheParam = 'true',
+      random = 'false'
+    } = req.query;
+
+    const queryLimit = Math.min(parseInt(limit) || 12, 50);
+    const useCache = useCacheParam === 'true';
+    
+    // Generate cache key
+    const cacheKey = generateCacheKey('popular_services_by_category', {
+      limit: queryLimit,
+      minRating,
+      minReviews,
+      random
+    });
 
     // Try to get from cache
     let result;
@@ -3928,8 +4070,8 @@ const getPopularServicesByCategory = async (req, res, next) => {
         console.log(`Cache hit for popular services by category: ${cacheKey}`);
         return res.json({
           success: true,
-          data: result,
-          count: result.length,
+          data: result.data || result,
+          count: result.count || (Array.isArray(result) ? result.length : 0),
           requestId,
           timestamp: new Date().toISOString(),
           cached: true
@@ -3937,109 +4079,183 @@ const getPopularServicesByCategory = async (req, res, next) => {
       }
     }
 
-    // Use actual category slugs from your database
-    const categorySlugs = [
-      "glenda-bradtke-creative",  // From your database
-      "web-development",          // Add other actual slugs
-      "video-editing",            // Add other actual slugs
-      "graphic-design",           // Add other actual slugs
-      "mobile-apps",              // Add other actual slugs
-      "data-analysis"             // Add other actual slugs
-    ];
+    // FIXED: Simplified filter - just get services where isPopular = true
+    const filter = {
+      isPopular: true,  // CRITICAL: Filter for popular services
+      status: 'active',
+      isActive: true
+    };
+
+    console.log(`Fetching popular services with filter:`, filter);
     
-    result = [];
+    let services = [];
+    let totalCount = 0;
 
-    // For each category slug, find popular services
-    for (const categorySlug of categorySlugs) {
-      const category = await Category.findOne({ 
-        slug: categorySlug,
-        isActive: true 
-      });
+    // Get total count first
+    totalCount = await Service.countDocuments(filter);
+    console.log(`Found ${totalCount} popular services in database`);
 
-      if (category) {
-        const services = await Service.find({
-          category: category._id,
-          status: 'active',
-          isActive: true,
-          isPopular: true,
-          rating: { $gte: 4.0 }
-        })
-        .select('title slug shortDescription price rating thumbnail images searchKeywords')
-        .populate('category', 'name slug')
-        .limit(6)
-        .lean();
-
-        if (services.length > 0) {
-          // Format for frontend
-          const formattedServices = services.map(service => ({
-            id: service._id.toString(),
-            name: service.title,
-            description: service.shortDescription || 
-              (service.description ? service.description.substring(0, 100) + '...' : ''),
-            searchQuery: service.searchKeywords?.[0] || 
-              service.title.toLowerCase().replace(/\s+/g, '-'),
-            category: category.name, // Use category name instead of slug for display
-            categorySlug: category.slug,
-            imageUrl: service.thumbnail?.url || 
-              (service.images && service.images[0]?.url) ||
-              `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,
-            rating: service.rating || 0,
-            price: service.price
-          }));
-
-          // Take up to 3 services per category for the carousel
-          result.push(...formattedServices.slice(0, 3));
+    if (random === 'true') {
+      // Use aggregation for random sampling
+      const aggregation = [
+        { $match: filter },
+        { $sample: { size: queryLimit } },
+        {
+          $lookup: {
+            from: 'categories',
+            localField: 'category',
+            foreignField: '_id',
+            as: 'categoryDetails'
+          }
+        },
+        { $unwind: { path: '$categoryDetails', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'creatorDetails'
+          }
+        },
+        { $unwind: { path: '$creatorDetails', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            _id: 1,
+            title: 1,
+            slug: 1,
+            shortDescription: 1,
+            description: 1,
+            price: 1,
+            currency: 1,
+            rating: 1,
+            reviewsCount: 1,
+            deliveryTime: 1,
+            deliveryTimeUnit: 1,
+            revisions: 1,
+            views: 1,
+            likes: 1,
+            thumbnail: 1,
+            images: 1,
+            tags: 1,
+            features: 1,
+            isPopular: 1,
+            isFeatured: 1,
+            category: '$categoryDetails',
+            createdBy: '$creatorDetails',
+            createdAt: 1,
+            updatedAt: 1
+          }
         }
+      ];
+
+      services = await Service.aggregate(aggregation);
+    } else {
+      // Normal query with sort
+      services = await Service.find(filter)
+        .select('title slug shortDescription description price currency rating reviewsCount deliveryTime deliveryTimeUnit revisions views likes thumbnail images tags features isPopular isFeatured category createdBy')
+        .populate('category', 'name slug icon')
+        .populate('createdBy', 'name picture')
+        .sort({ 
+          createdAt: -1,
+          rating: -1,
+          views: -1
+        })
+        .limit(queryLimit)
+        .lean();
+    }
+
+    console.log(`Retrieved ${services.length} popular services from database`);
+
+    // If no popular services found, return empty array
+    if (services.length === 0) {
+      console.log('No popular services found, returning empty array');
+      return res.json({
+        success: true,
+        data: [],
+        count: 0,
+        message: 'No popular services found',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Format the services for response
+    const formattedServices = services.map(service => {
+      // Get category name
+      let categoryName = 'Creative Services';
+      if (service.category && service.category.name) {
+        categoryName = service.category.name;
       }
-    }
 
-    // If we don't have enough popular services, fill with featured services
-    if (result.length < 6) {
-      const featuredServices = await Service.find({
-        status: 'active',
-        isActive: true,
-        isFeatured: true,
-        _id: { $nin: result.map(s => s.id) }
-      })
-      .select('title slug shortDescription price rating thumbnail images searchKeywords')
-      .populate('category', 'name slug')
-      .limit(12 - result.length)
-      .lean();
+      // Get image URL
+      let imageUrl = null;
+      if (service.thumbnail && service.thumbnail.url) {
+        imageUrl = service.thumbnail.url;
+      } else if (service.images && service.images.length > 0) {
+        const firstImage = service.images[0];
+        imageUrl = typeof firstImage === 'object' ? firstImage.url : firstImage;
+      }
 
-      const additionalServices = featuredServices.map(service => ({
+      // Get search query
+      let searchQuery = service.title || '';
+      if (service.tags && service.tags.length > 0) {
+        searchQuery = service.tags[0];
+      }
+
+      return {
+        _id: service._id,
         id: service._id.toString(),
+        title: service.title,
         name: service.title,
-        description: service.shortDescription || 
-          (service.description ? service.description.substring(0, 100) + '...' : ''),
-        searchQuery: service.searchKeywords?.[0] || 
-          service.title.toLowerCase().replace(/\s+/g, '-'),
-        category: service.category?.name || 'Creative Services',
-        categorySlug: service.category?.slug || 'glenda-bradtke-creative',
-        imageUrl: service.thumbnail?.url || 
-          (service.images && service.images[0]?.url) ||
-          `https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80`,
+        slug: service.slug,
+        shortDescription: service.shortDescription || 
+          (service.description ? service.description.substring(0, 120) + '...' : 'Professional service'),
+        description: service.description,
+        price: service.price,
+        currency: service.currency || 'USD',
         rating: service.rating || 0,
-        price: service.price
-      }));
+        reviewsCount: service.reviewsCount || 0,
+        deliveryTime: service.deliveryTime,
+        deliveryTimeUnit: service.deliveryTimeUnit || 'days',
+        revisions: service.revisions || 0,
+        views: service.views || 0,
+        likes: service.likes || 0,
+        tags: service.tags || [],
+        features: service.features || [],
+        thumbnail: service.thumbnail,
+        images: service.images || [],
+        imageUrl: imageUrl,
+        category: categoryName,
+        categoryId: service.category?._id || service.category,
+        searchQuery: searchQuery.toLowerCase().replace(/\s+/g, '-'),
+        createdBy: {
+          _id: service.createdBy?._id || service.createdBy,
+          name: service.createdBy?.name || 'Unknown',
+          picture: service.createdBy?.picture || null
+        },
+        isPopular: service.isPopular || false,
+        isFeatured: service.isFeatured || false,
+        status: service.status || 'active',
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt
+      };
+    });
 
-      result.push(...additionalServices);
-    }
-
-    // Order by rating/price to ensure quality display
-    const orderedResult = result
-      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-      .slice(0, 12);
-
-    // Cache the result for 10 minutes
+    // Cache the result
     if (useCache) {
-      await cache.set(cacheKey, orderedResult, 600);
+      await cache.set(cacheKey, {
+        data: formattedServices,
+        count: formattedServices.length,
+        total: totalCount
+      }, 600);
       console.log(`Cache set for popular services by category: ${cacheKey}`);
     }
 
     res.json({
       success: true,
-      data: orderedResult,
-      count: orderedResult.length,
+      data: formattedServices,
+      count: formattedServices.length,
+      total: totalCount,
       requestId,
       timestamp: new Date().toISOString(),
       cached: false
@@ -4047,11 +4263,16 @@ const getPopularServicesByCategory = async (req, res, next) => {
 
   } catch (error) {
     console.error('[POPULAR BY CATEGORY ERROR]', error);
-    res.status(500).json({
+    
+    // Return empty array on error
+    res.json({
       success: false,
-      message: 'Failed to fetch popular services by category',
-      code: 'POPULAR_CATEGORY_ERROR',
-      requestId
+      data: [],
+      count: 0,
+      message: 'Error fetching popular services',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      requestId,
+      timestamp: new Date().toISOString()
     });
   }
 };

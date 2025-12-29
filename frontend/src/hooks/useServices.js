@@ -89,6 +89,74 @@ export const usePopularServices = (params = {}) => {
     },
   });
 };
+// Add these hooks to your existing useServices.js file
+
+/**
+ * Hook to get services by category ID
+ */
+export const useServicesByCategory = (categoryId, subcategoryId = null, options = {}) => {
+  return useQuery({
+    queryKey: ['services', 'category', categoryId, subcategoryId],
+    queryFn: async () => {
+      if (!categoryId) return [];
+      
+      try {
+        // Use servicesAPI instead of direct axiosInstance
+        const result = await servicesAPI.getAll({
+          category: categoryId,
+          subcategory: subcategoryId,
+          status: 'active',
+          limit: 50
+        });
+        
+        // Handle different response structures
+        if (result?.success) {
+          return result.data || [];
+        }
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching services by category:', error);
+        return [];
+      }
+    },
+    enabled: !!categoryId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
+/**
+ * Hook to get services by subcategory slug
+ */
+export const useServicesBySubcategory = (subcategorySlug, options = {}) => {
+  return useQuery({
+    queryKey: ['services', 'subcategory', subcategorySlug],
+    queryFn: async () => {
+      if (!subcategorySlug) return [];
+      
+      try {
+        // Use servicesAPI with subcategory filter
+        const result = await servicesAPI.getAll({
+          subcategorySlug: subcategorySlug,
+          status: 'active',
+          limit: 50
+        });
+        
+        if (result?.success) {
+          return result.data || [];
+        }
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching services by subcategory:', error);
+        return [];
+      }
+    },
+    enabled: !!subcategorySlug,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
 
 export const usePopularServicesByCategory = (params = {}) => {
   return useQuery({

@@ -126,7 +126,6 @@ const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
       "aggregateRating": provider.rating ? {
         "@type": "AggregateRating",
         "ratingValue": provider.rating,
-        "ratingCount": provider.totalReviews || 0,
         "bestRating": 5,
         "worstRating": 1
       } : undefined
@@ -134,7 +133,6 @@ const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
     "aggregateRating": service.rating ? {
       "@type": "AggregateRating",
       "ratingValue": service.rating,
-      "ratingCount": service.reviewsCount || 0,
       "bestRating": 5,
       "worstRating": 1
     } : undefined,
@@ -208,12 +206,7 @@ const ServiceDetails = () => {
   const [viewCount, setViewCount] = useState(0);
   const [imageViewMode, setImageViewMode] = useState('thumbnail');
 
-  // Update view count when service loads
-  useEffect(() => {
-    if (service) {
-      setViewCount(service.views || Math.floor(Math.random() * 500) + 100);
-    }
-  }, [service]);
+  
 
   // Helper functions
   const handleShare = async () => {
@@ -629,10 +622,7 @@ const ServiceDetails = () => {
                           FEATURED
                         </span>
                       )}
-                      <span className="flex items-center text-gray-500 text-sm">
-                        <Eye className="h-4 w-4 mr-1" aria-hidden="true" />
-                        {viewCount} views
-                      </span>
+                     
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -724,14 +714,6 @@ const ServiceDetails = () => {
                           </span>
                         )}
                         
-                        {serviceUser?.rating && (
-                          <span className="flex items-center" itemProp="aggregateRating" itemScope itemType="https://schema.org/AggregateRating">
-                            <meta itemProp="ratingValue" content={serviceUser.rating.toString()} />
-                            <meta itemProp="reviewCount" content={(serviceUser.totalReviews || 0).toString()} />
-                            {renderStars(serviceUser.rating)}
-                            <span className="ml-1">({serviceUser.totalReviews || 0})</span>
-                          </span>
-                        )}
                         
                         {serviceUser?.education && (
                           <span className="flex items-center">
@@ -1302,21 +1284,7 @@ const ServiceDetails = () => {
                         {service.status?.toUpperCase() || 'ACTIVE'}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Rating</span>
-                      <div className="flex items-center gap-2">
-                        {renderStars(service.rating || 0)}
-                        <span className="text-gray-900 font-medium">({service.reviewsCount || 0})</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Views</span>
-                      <span className="font-semibold text-blue-600">{viewCount}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span className="text-gray-600">Likes</span>
-                      <span className="font-semibold text-pink-600">{service.likes || 0}</span>
-                    </div>
+                    
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                       <span className="text-gray-600">Posted</span>
                       <span className="font-semibold text-gray-900">{timeAgo}</span>
