@@ -37,7 +37,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     deviceType: "web"
   });
 
-  // Signup form state with all new fields
+  // Signup form state
   const [signupData, setSignupData] = useState({
     name: "",
     email: "",
@@ -57,8 +57,6 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState('');
-  const [currentLanguage, setCurrentLanguage] = useState('');
-  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Memoized data
@@ -80,10 +78,9 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     clearError();
     setShowEmailForm(false);
     setPasswordStrength('');
-    setShowAdvancedFields(false);
   }, [activeTab, clearError]);
 
-  // Prevent layout shift when modal opens
+  // Prevent layout shift
   useEffect(() => {
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = 'hidden';
@@ -98,9 +95,13 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const handleSigninChange = useCallback((e) => {
     const { name, value } = e.target;
     setSigninData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear field-specific errors
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
+    
+    // Clear backend error when user starts typing
     clearError();
   }, [errors, clearError]);
 
@@ -108,21 +109,21 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     const { name, value } = e.target;
     setSignupData(prev => ({ ...prev, [name]: value }));
     
-    // Validate password on change
-    if (name === 'password' && value) {
+    // Clear field-specific errors
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: "" }));
+    }
+    
+    // Password validation for real-time feedback
+    if (name === 'password') {
       const validation = validatePassword(value);
       if (!validation.valid) {
         setPasswordStrength(validation.message);
       } else {
         setPasswordStrength('Strong password');
       }
-    } else if (name === 'password' && !value) {
-      setPasswordStrength('');
     }
     
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: "" }));
-    }
     clearError();
   }, [errors, clearError]);
 
@@ -163,25 +164,6 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       newErrors.password = passwordValidation.message;
     }
 
-    // Optional field validations
-    if (signupData.phoneNumber && !validatePhoneNumber(signupData.phoneNumber)) {
-      newErrors.phoneNumber = "Please enter a valid phone number";
-    }
-
-    if (signupData.dateOfBirth) {
-      const dobValidation = validateDateOfBirth(signupData.dateOfBirth);
-      if (!dobValidation.valid) {
-        newErrors.dateOfBirth = dobValidation.message;
-      }
-    }
-
-    if (signupData.bio) {
-      const bioValidation = validateBio(signupData.bio);
-      if (!bioValidation.valid) {
-        newErrors.bio = bioValidation.message;
-      }
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [signupData]);
@@ -191,24 +173,34 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     if (!validateSignin()) return;
 
     setIsSubmitting(true);
+    clearError(); // Clear previous backend errors
+    
     try {
-      await loginMutation.mutateAsync(signinData);
-      onClose();
-      navigate("/dashboard");
+      const result = await loginMutation.mutateAsync(signinData);
+      
+      // Check if login was successful
+      if (result && result.success) {
+        onClose();
+        navigate("/dashboard");
+      }
+      // If login failed, the error is already shown by the mutation
     } catch (error) {
       console.error("Login failed:", error);
+      // Error is already handled in the mutation's onError
+      // Stay on the modal, don't navigate
     } finally {
       setIsSubmitting(false);
     }
-  }, [validateSignin, loginMutation, signinData, onClose, navigate]);
+  }, [validateSignin, loginMutation, signinData, onClose, navigate, clearError]);
 
   const handleSignupSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!validateSignup()) return;
 
     setIsSubmitting(true);
+    clearError(); // Clear previous errors
+    
     try {
-      // Prepare registration data
       const registrationData = {
         name: signupData.name,
         email: signupData.email,
@@ -224,16 +216,19 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         education: signupData.education || undefined
       };
 
-      await registerMutation.mutateAsync(registrationData);
-      toast.success("Registration successful! Please check your email to verify your account.");
-      onClose();
-      navigate("/verify-email");
+      const result = await registerMutation.mutateAsync(registrationData);
+      
+      if (result && result.success) {
+        toast.success("Registration successful! Please check your email to verify your account.");
+        onClose();
+        navigate("/verify-email");
+      }
     } catch (error) {
       console.error("Registration failed:", error);
     } finally {
       setIsSubmitting(false);
     }
-  }, [validateSignup, signupData, registerMutation, onClose, navigate]);
+  }, [validateSignup, signupData, registerMutation, onClose, navigate, clearError]);
 
   // Google OAuth
   const handleGoogleAuth = useCallback(() => {
@@ -252,7 +247,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     return validation.valid ? 'green' : 'red';
   }, [signupData.password]);
 
-  // Password requirements checklist - memoized
+  // Password requirements checklist
   const passwordRequirements = useMemo(() => [
     { text: "At least 8 characters", met: signupData.password.length >= 8 },
     { text: "One uppercase letter", met: /[A-Z]/.test(signupData.password) },
@@ -261,7 +256,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(signupData.password) },
   ], [signupData.password]);
 
-  // Render social buttons view - NOT memoized, just a regular function
+  // Render social buttons (removed Facebook & Apple)
   const renderSocialButtons = () => (
     <div className="space-y-4">
       <button
@@ -286,45 +281,25 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         <Mail className="w-5 h-5 mr-3" />
         Continue with {activeTab === 'signin' ? 'email' : 'email'}
       </button>
-
-      {/* Divider */}
-      <div className="relative my-4">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
-        </div>
-        <div className="relative flex justify-center text-base">
-          <span className="px-4 bg-white text-gray-500 text-sm">Or</span>
-        </div>
-      </div>
-
-      {/* Apple & Facebook Buttons */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => { }}
-          disabled={loading || isSubmitting}
-          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85a4.41 4.41 0 0 1-2.68-4.04z" />
-          </svg>
-          Apple
-        </button>
-
-        <button
-          onClick={() => { }}
-          disabled={loading || isSubmitting}
-          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg className="w-5 h-5 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-          </svg>
-          Facebook
-        </button>
-      </div>
     </div>
   );
 
-  // Render email form view - NOT memoized, just a regular function
+  // Helper function to format error messages
+  const formatErrorMessage = (error) => {
+    if (!error) return '';
+    
+    // Capitalize first letter
+    let formatted = error.charAt(0).toUpperCase() + error.slice(1);
+    
+    // Add period if missing
+    if (!formatted.endsWith('.')) {
+      formatted += '.';
+    }
+    
+    return formatted;
+  };
+
+  // Render email form
   const renderEmailForm = () => (
     <div className="overflow-y-auto max-h-[500px] pr-2">
       {/* Back Button */}
@@ -343,9 +318,32 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         </h3>
       </div>
 
+      {/* Error Display - Show detailed backend errors */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-600 font-medium text-sm">{error}</p>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fadeIn">
+          <div className="flex items-start">
+            <AlertCircle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-red-700 font-medium text-sm">
+                {formatErrorMessage(error)}
+              </p>
+              {error.includes('locked') && (
+                <p className="text-red-600 text-xs mt-1">
+                  Please wait or contact support if you believe this is an error.
+                </p>
+              )}
+              {error.includes('deactivated') && (
+                <p className="text-red-600 text-xs mt-1">
+                  Contact support to reactivate your account.
+                </p>
+              )}
+              {error.includes('Invalid email or password') && (
+                <p className="text-red-600 text-xs mt-1">
+                  Please check your credentials and try again.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -361,13 +359,19 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="email"
               value={signinData.email}
               onChange={handleSigninChange}
+              onBlur={(e) => {
+                // Validate on blur for instant feedback
+                if (e.target.value && !validateEmail(e.target.value)) {
+                  setErrors(prev => ({ ...prev, email: "Please enter a valid email address" }));
+                }
+              }}
               className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="you@example.com"
               disabled={loading || loginMutation.isPending || isSubmitting}
               autoFocus
             />
             {errors.email && (
-              <p className="mt-2 text-sm text-red-600">{errors.email}</p>
+              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
             )}
           </div>
 
@@ -394,6 +398,12 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 name="password"
                 value={signinData.password}
                 onChange={handleSigninChange}
+                onBlur={(e) => {
+                  // Validate on blur for instant feedback
+                  if (!e.target.value) {
+                    setErrors(prev => ({ ...prev, password: "Password is required" }));
+                  }
+                }}
                 className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
                 placeholder="••••••••"
                 disabled={loading || loginMutation.isPending || isSubmitting}
@@ -408,7 +418,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               </button>
             </div>
             {errors.password && (
-              <p className="mt-2 text-sm text-red-600">{errors.password}</p>
+              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
             )}
           </div>
 
@@ -453,6 +463,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="name"
               value={signupData.name}
               onChange={handleSignupChange}
+              onBlur={(e) => {
+                // Validate on blur for instant feedback
+                if (e.target.value) {
+                  const validation = validateName(e.target.value);
+                  if (!validation.valid) {
+                    setErrors(prev => ({ ...prev, name: validation.message }));
+                  }
+                }
+              }}
               className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="John Doe"
               disabled={loading || registerMutation.isPending || isSubmitting}
@@ -460,7 +479,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               required
             />
             {errors.name && (
-              <p className="mt-2 text-sm text-red-600">{errors.name}</p>
+              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.name}</p>
             )}
           </div>
 
@@ -473,13 +492,19 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               name="email"
               value={signupData.email}
               onChange={handleSignupChange}
+              onBlur={(e) => {
+                // Validate on blur for instant feedback
+                if (e.target.value && !validateEmail(e.target.value)) {
+                  setErrors(prev => ({ ...prev, email: "Please enter a valid email address" }));
+                }
+              }}
               className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
               placeholder="you@example.com"
               disabled={loading || registerMutation.isPending || isSubmitting}
               required
             />
             {errors.email && (
-              <p className="mt-2 text-sm text-red-600">{errors.email}</p>
+              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
             )}
           </div>
 
@@ -493,6 +518,15 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 name="password"
                 value={signupData.password}
                 onChange={handleSignupChange}
+                onBlur={(e) => {
+                  // Validate on blur for instant feedback
+                  if (e.target.value) {
+                    const validation = validatePassword(e.target.value);
+                    if (!validation.valid) {
+                      setErrors(prev => ({ ...prev, password: validation.message }));
+                    }
+                  }
+                }}
                 className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
                 placeholder="••••••••"
                 disabled={loading || registerMutation.isPending || isSubmitting}
@@ -510,7 +544,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
             {/* Password strength indicator */}
             {signupData.password && (
-              <div className={`mt-3 p-3 rounded text-sm ${getPasswordStrengthColor() === 'green'
+              <div className={`mt-3 p-3 rounded text-sm animate-fadeIn ${getPasswordStrengthColor() === 'green'
                   ? 'bg-green-50 text-green-700 border border-green-200'
                   : 'bg-red-50 text-red-700 border border-red-200'
                 }`}>
@@ -522,7 +556,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             )}
 
             {errors.password && (
-              <p className="mt-2 text-sm text-red-600">{errors.password}</p>
+              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
             )}
 
             {/* Password requirements checklist */}
@@ -587,7 +621,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     </div>
   );
 
-  // Simplified animations - useMemo for static animations
+  // Animations
   const modalAnimation = useMemo(() => ({
     initial: { opacity: 0, scale: 0.95 },
     animate: { opacity: 1, scale: 1 },
@@ -709,5 +743,16 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     </AnimatePresence>
   );
 };
+
+// Add CSS animations
+const styles = `
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fadeIn {
+    animation: fadeIn 0.2s ease-out;
+  }
+`;
 
 export default React.memo(AuthModal);

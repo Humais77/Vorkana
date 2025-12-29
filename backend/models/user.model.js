@@ -291,45 +291,58 @@ phoneNumber: {
   {
     timestamps: true,
     toJSON: {
-      virtuals: true,
-      transform: (doc, ret) => {
-        // Remove sensitive fields
-        delete ret.__v;
-        delete ret.password;
-        delete ret.resetPasswordToken;
-        delete ret.resetPasswordExpires;
-        delete ret.failedLoginAttempts;
-        delete ret.lockUntil;
-        delete ret.twoFactorSecret;
-        delete ret.emailVerificationToken;
-        delete ret.passwordHistory;
-        delete ret.deviceTokens;
-        delete ret.loginHistory;
-        delete ret.suspiciousActivityDetected;
-        
-        // Apply privacy settings
-        if (!ret.privacySettings?.showEmail) {
-          delete ret.email;
-        }
-        if (!ret.privacySettings?.showPhone) {
-          delete ret.phoneNumber;
-        }
-        if (!ret.privacySettings?.showLocation) {
-          delete ret.country;
-          delete ret.city;
-        }
-        if (!ret.privacySettings?.showLastSeen) {
-          delete ret.lastSeenAt;
-        }
-        
-        // Format dates
-        if (ret.dateOfBirth) {
-          ret.dateOfBirth = ret.dateOfBirth.toISOString().split('T')[0];
-        }
-        
-        return ret;
+  virtuals: true,
+  transform: (doc, ret) => {
+    // Remove sensitive fields
+    delete ret.__v;
+    delete ret.password;
+    delete ret.resetPasswordToken;
+    delete ret.resetPasswordExpires;
+    delete ret.failedLoginAttempts;
+    delete ret.lockUntil;
+    delete ret.twoFactorSecret;
+    delete ret.emailVerificationToken;
+    delete ret.passwordHistory;
+    delete ret.deviceTokens;
+    delete ret.loginHistory;
+    delete ret.suspiciousActivityDetected;
+    
+    // Apply privacy settings - FIXED VERSION
+    if (ret.privacySettings) {
+      // Only show email if privacy settings allow it AND the field exists
+      if (!ret.privacySettings.showEmail && ret.hasOwnProperty('email')) {
+        delete ret.email;
       }
-    },
+      
+      // Only show phone if privacy settings allow it AND the field exists
+      if (!ret.privacySettings.showPhone && ret.hasOwnProperty('phoneNumber')) {
+        delete ret.phoneNumber;
+      }
+      
+      // Only show location if privacy settings allow it AND the fields exist
+      if (!ret.privacySettings.showLocation) {
+        if (ret.hasOwnProperty('country')) delete ret.country;
+        if (ret.hasOwnProperty('city')) delete ret.city;
+      }
+      
+      // Only show last seen if privacy settings allow it
+      if (!ret.privacySettings.showLastSeen && ret.hasOwnProperty('lastSeenAt')) {
+        delete ret.lastSeenAt;
+      }
+    } else {
+      // If no privacy settings object exists, hide sensitive info by default
+      if (ret.hasOwnProperty('email')) delete ret.email;
+      if (ret.hasOwnProperty('phoneNumber')) delete ret.phoneNumber;
+    }
+    
+    // Format dates
+    if (ret.dateOfBirth) {
+      ret.dateOfBirth = ret.dateOfBirth.toISOString().split('T')[0];
+    }
+    
+    return ret;
+  }
+},
     toObject: {
       virtuals: true,
       transform: (doc, ret) => {

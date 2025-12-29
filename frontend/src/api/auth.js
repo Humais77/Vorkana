@@ -35,14 +35,24 @@ axiosInstance.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle token expiration
+    // Handle token expiration - ONLY for authenticated requests
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
+      
+      // Check if this is a login/register request - don't try to refresh token for auth endpoints
+      const isAuthEndpoint = originalRequest.url.includes('/api/auth/login') || 
+                            originalRequest.url.includes('/api/auth/register');
+      
+      if (isAuthEndpoint) {
+        // For login/register failures, just reject with the original error
+        return Promise.reject(error);
+      }
       
       try {
         const refreshToken = localStorage.getItem('refreshToken');
         if (!refreshToken) {
-          throw new Error('No refresh token available');
+          // No refresh token available, reject with original error
+          return Promise.reject(error);
         }
         
         const response = await axiosInstance.post('/api/auth/refresh-token', {
@@ -75,7 +85,14 @@ axiosInstance.interceptors.response.use(
       }
     }
     
-    // Handle specific error cases
+    // For 401 errors on login, don't show "No refresh token available"
+    if (error.response?.status === 401 && 
+        originalRequest.url.includes('/api/auth/login')) {
+      // Return the original error with backend message
+      return Promise.reject(error);
+    }
+    
+    // Handle other error cases
     if (error.response) {
       const { status, data } = error.response;
       
@@ -152,26 +169,33 @@ export const sanitizeInput = (input) => {
 export const authAPI = {
   // Authentication
   login: async (userData) => {
+  try {
     const response = await axiosInstance.post('/api/auth/login', userData);
+    
+    // Only store tokens if login was successful
     if (response.data.token && response.data.refreshToken) {
       localStorage.setItem('userToken', response.data.token);
       localStorage.setItem('refreshToken', response.data.refreshToken);
+      
       if (response.data.user) {
         localStorage.setItem('userInfo', JSON.stringify(response.data.user));
       }
     }
+    
     return response.data;
-  },
+  } catch (error) {
+    // For login errors, clear any existing tokens first
+    localStorage.removeItem('userToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userInfo');
+    
+    // Re-throw the error so the caller can handle it
+    throw error;
+  }
+},
   
   register: async (userData) => {
     const response = await axiosInstance.post('/api/auth/register', userData);
-    if (response.data.token && response.data.refreshToken) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
-    }
     return response.data;
   },
   
@@ -199,34 +223,70 @@ export const authAPI = {
     return response.data;
   },
   
-   updateProfile: async (userData) => {
-    try {
-      // Get token from localStorage directly as fallback
-      const token = localStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-      
-      console.log('Update profile request with token:', token.substring(0, 20) + '...');
-      
-      const response = await axiosInstance.put('/api/auth/profile', userData, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      console.log('Update profile response:', response.data);
-      
-      if (response.data.success && response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
-      return response.data;
-    } catch (error) {
-      console.error('Update profile API error:', error.response || error.message);
-      throw error;
+  // In auth.js - updateProfile function (add more detailed logging)
+updateProfile: async (userData) => {
+  try {
+    const token = localStorage.getItem('userToken');
+    if (!token) {
+      throw new Error('No authentication token found');
     }
-  },
+    
+    console.log('🚀 SENDING UPDATE DATA:', {
+      data: userData,
+      dataType: typeof userData,
+      hasBio: 'bio' in userData,
+      bioLength: userData.bio?.length,
+      hasLanguages: 'languages' in userData,
+      languagesType: Array.isArray(userData.languages) ? 'array' : typeof userData.languages,
+      languagesValue: userData.languages,
+      hasPrivacySettings: 'privacySettings' in userData,
+      privacySettingsType: typeof userData.privacySettings,
+      privacySettingsValue: userData.privacySettings
+    });
+    
+    const response = await axiosInstance.put('/api/auth/profile', userData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log('✅ Update profile SUCCESS:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌❌❌ FULL UPDATE PROFILE ERROR:', {
+      // Basic error info
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      
+      // Response details (if available)
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      responseHeaders: error.response?.headers,
+      
+      // Response data (validation errors)
+      responseData: error.response?.data,
+      
+      // Request details
+      requestURL: error.config?.url,
+      requestMethod: error.config?.method,
+      requestHeaders: error.config?.headers,
+      requestData: error.config?.data ? JSON.parse(error.config.data) : null,
+      
+      // Stack trace
+      stack: error.stack
+    });
+    
+    // Re-throw with more context
+    const enhancedError = new Error(
+      `Update failed: ${error.response?.data?.message || error.message}`
+    );
+    enhancedError.response = error.response;
+    enhancedError.config = error.config;
+    throw enhancedError;
+  }
+},
   
   changePassword: async (currentPassword, newPassword) => {
     const response = await axiosInstance.post('/api/auth/change-password', {

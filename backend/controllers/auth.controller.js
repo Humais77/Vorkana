@@ -213,32 +213,23 @@ const register = async (req, res) => {
       });
     }
 
-    // Generate tokens
-    const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
 
-    // Log registration
-    logSecurityEvent('REGISTRATION_SUCCESS', user._id, ip, { email: user.email });
+    logSecurityEvent('REGISTRATION_SUCCESS', user._id, ip, { 
+      email: user.email,
+      emailVerified: false 
+    });
 
-    // Add to login history
-    await user.addLoginHistory(ip, req.headers['user-agent'], true);
-
-    res.status(201).json({
+   res.status(201).json({
       success: true,
       message: 'Registration successful. Please check your email to verify your account.',
-      token,
-      refreshToken,
+      // Don't include token or refreshToken
+      requiresVerification: true,
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified,
-        phoneNumber: user.phoneNumber,
-        country: user.country,
-        city: user.city,
-        privacySettings: user.privacySettings
+        emailVerified: user.emailVerified // This will be false
       }
     });
 
@@ -301,8 +292,9 @@ const login = async (req, res) => {
     }
 
     // Find user with security fields
-    const user = await User.findOne({ email: email.toLowerCase() })
+   const user = await User.findOne({ email: email.toLowerCase() })
       .select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected +emailVerified');
+    
     
     // Check if account exists
     if (!user) {
@@ -373,8 +365,15 @@ const login = async (req, res) => {
     // But mark it in the response
     const requiresVerification = !user.emailVerified;
     
-    if (requiresVerification) {
-      logSecurityEvent('LOGIN_UNVERIFIED_EMAIL', user._id, ip, { email: user.email });
+   if (!user.emailVerified) {
+      logSecurityEvent('LOGIN_ATTEMPT_UNVERIFIED_EMAIL', user._id, ip, { email: user.email });
+      
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before logging in.',
+        requiresVerification: true,
+        code: 'EMAIL_NOT_VERIFIED'
+      });
     }
 
     // Reset login attempts on successful login
@@ -839,7 +838,7 @@ const changePassword = async (req, res) => {
 // Verify email with token validation
 const verifyEmail = async (req, res) => {
   try {
-    const { token } = req.params;
+    const { token } = req.params;  // ❌ This is const
     const ip = req.ip || req.connection.remoteAddress;
     
     if (!token || token.length !== 64) {
@@ -874,6 +873,10 @@ const verifyEmail = async (req, res) => {
     user.suspiciousActivityDetected = false;
     await user.save();
     
+    // ✅ FIX: Use different variable names
+    const authToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    
     // Invalidate cache for this user
     await invalidateUserCache(user._id);
     
@@ -888,15 +891,23 @@ const verifyEmail = async (req, res) => {
     // Log verification
     logSecurityEvent('EMAIL_VERIFIED', user._id, ip, { email: user.email });
 
-    // Generate new tokens since email verification status changed
-    const newToken = generateToken(user._id);
-    const newRefreshToken = generateRefreshToken(user._id);
-
     res.json({
       success: true,
       message: 'Email verified successfully',
-      token: newToken,
-      refreshToken: newRefreshToken,
+      token: authToken,  // ✅ FIX: Use the new variable
+      refreshToken: refreshToken,  // ✅ FIX: Use the new variable
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture,
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber,
+        country: user.country,
+        city: user.city,
+        privacySettings: user.privacySettings
+      },
       redirectUrl: `${process.env.FRONTEND_URL}/dashboard`
     });
   } catch (error) {
@@ -1298,7 +1309,18 @@ const refreshToken = async (req, res) => {
     });
   }
 };
-
+const calculateMemberDuration = (createdAt) => {
+  if (!createdAt) return 'Recently';
+  const created = new Date(createdAt);
+  const now = new Date();
+  const diffYears = now.getFullYear() - created.getFullYear();
+  const diffMonths = now.getMonth() - created.getMonth();
+  
+  if (diffYears > 0) {
+    return `${diffYears} year${diffYears !== 1 ? 's' : ''}`;
+  }
+  return `${diffMonths} month${diffMonths !== 1 ? 's' : ''}`;
+};
 // Get public user profile (for other users to see) with caching
 const getPublicProfile = async (req, res) => {
   try {
@@ -1311,25 +1333,20 @@ const getPublicProfile = async (req, res) => {
       });
     }
 
-    // Generate cache key
-    const cacheKey = `user:${userId}:public:${req.user ? 'auth' : 'guest'}`;
-    
-    // Try to get from cache first
-    const cachedProfile = await cache.get(cacheKey);
-    if (cachedProfile) {
-      return res.json({
-        success: true,
-        profile: cachedProfile,
-        cached: true
-      });
-    }
-
     const user = await User.findById(userId);
     
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account is not active'
       });
     }
 
@@ -1349,55 +1366,77 @@ const getPublicProfile = async (req, res) => {
       });
     }
 
-    // Build public profile based on privacy settings
+    // Get the user document with the transform applied
+    // We need to manually apply privacy settings
+    const userObject = user.toObject();
+    
+    // Build public profile with manual privacy checks
     const publicProfile = {
-      _id: user._id,
-      name: user.name,
-      picture: user.picture,
-      bio: user.bio,
-      rating: user.rating,
-      totalReviews: user.totalReviews,
-      responseRate: user.responseRate,
-      responseTime: user.responseTime,
-      occupation: user.occupation,
-      education: user.education,
-      languages: user.languages,
-      createdAt: user.createdAt,
-      isOnline: user.isOnline,
-      accountType: user.accountType
+      _id: userObject._id,
+      name: userObject.name,
+      picture: userObject.picture,
+      bio: userObject.bio,
+      rating: userObject.rating,
+      totalReviews: userObject.totalReviews,
+      responseRate: userObject.responseRate,
+      responseTime: userObject.responseTime,
+      occupation: userObject.occupation,
+      education: userObject.education,
+      languages: userObject.languages,
+      createdAt: userObject.createdAt,
+      isOnline: userObject.isOnline,
+      accountType: userObject.accountType,
+      completedOrders: userObject.completedOrders || 0,
+      gender: userObject.gender,
+      dateOfBirth: userObject.dateOfBirth,
+      age: userObject.age,
+      fullLocation: userObject.fullLocation,
+      lastSeenAt: userObject.lastSeenAt
     };
 
     // Add location if allowed
-    if (user.privacySettings.showLocation) {
-      publicProfile.country = user.country;
-      publicProfile.city = user.city;
-      publicProfile.fullLocation = user.fullLocation;
+    if (userObject.privacySettings.showLocation) {
+      publicProfile.country = userObject.country;
+      publicProfile.city = userObject.city;
+      publicProfile.fullLocation = userObject.fullLocation || 
+        (userObject.city && userObject.country ? 
+          `${userObject.city}, ${userObject.country}` : null);
     }
 
-    // Add contact info if allowed
-    if (user.privacySettings.showEmail && req.user) {
-      publicProfile.email = user.email;
+    // Add email if allowed (always show for the profile owner)
+    if (req.user && req.user._id.toString() === userId.toString()) {
+      // Always show email to the profile owner
+      publicProfile.email = userObject.email;
+    } else if (userObject.privacySettings.showEmail) {
+      // Show email to others if privacy settings allow
+      publicProfile.email = userObject.email;
     }
-    if (user.privacySettings.showPhone && req.user) {
-      publicProfile.phoneNumber = user.phoneNumber;
+
+    // Add phone if allowed
+    if (userObject.privacySettings.showPhone) {
+      publicProfile.phoneNumber = userObject.phoneNumber;
     }
 
     // Add last seen if allowed
-    if (user.privacySettings.showLastSeen) {
-      publicProfile.lastSeenAt = user.lastSeenAt;
+    if (!userObject.privacySettings.showLastSeen) {
+      delete publicProfile.lastSeenAt;
     }
 
-    // Calculate member duration
-    const memberDuration = Math.floor((Date.now() - user.createdAt) / (1000 * 60 * 60 * 24));
-    publicProfile.memberSince = `${memberDuration} days`;
+    // Add social links
+    if (userObject.linkedin) publicProfile.linkedin = userObject.linkedin;
+    if (userObject.github) publicProfile.github = userObject.github;
+    if (userObject.website) publicProfile.website = userObject.website;
 
-    // Cache the public profile for 10 minutes
-    await cache.set(cacheKey, publicProfile, 600);
+    // Add privacy settings (for the frontend to know what's visible)
+    publicProfile.privacySettings = userObject.privacySettings;
+
+    // Calculate member duration for display
+    const memberSince = calculateMemberDuration(userObject.createdAt);
+    publicProfile.memberSince = memberSince;
 
     res.json({
       success: true,
-      profile: publicProfile,
-      cached: false
+      profile: publicProfile
     });
   } catch (error) {
     console.error('Get public profile error:', error);
@@ -1650,6 +1689,8 @@ const verifyEmailRedirect = async (req, res) => {
     user.emailVerificationToken = undefined;
     user.suspiciousActivityDetected = false;
     await user.save();
+    const authToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
     
     // Invalidate cache for this user
     await invalidateUserCache(user._id);
@@ -1728,17 +1769,26 @@ const verifyEmailRedirect = async (req, res) => {
         <div class="container">
           <div class="success-icon">✓</div>
           <h1>Email Verified Successfully!</h1>
-          <p>Your email has been verified. You're being redirected to the app...</p>
+          <p>Your email has been verified. You're being logged in...</p>
           <div class="spinner"></div>
         </div>
         <script>
-          // Store tokens in localStorage and redirect
-          localStorage.setItem('userToken', '${newToken}');
-          localStorage.setItem('refreshToken', '${newRefreshToken}');
+          // ✅ FIX: Use the correct variable names
+          localStorage.setItem('userToken', '${authToken}');
+          localStorage.setItem('refreshToken', '${refreshToken}');
           
-          // Redirect after a short delay
+          // Store user info
+          localStorage.setItem('userInfo', JSON.stringify({
+            _id: '${user._id}',
+            name: '${user.name.replace(/'/g, "\\'")}',
+            email: '${user.email}',
+            role: '${user.role}',
+            emailVerified: true
+          }));
+          
+          // Redirect to dashboard
           setTimeout(() => {
-            window.location.href = '${process.env.FRONTEND_URL}/verified?status=success&token=${newToken}';
+            window.location.href = '${process.env.FRONTEND_URL}/dashboard?verified=true';
           }, 1500);
         </script>
       </body>

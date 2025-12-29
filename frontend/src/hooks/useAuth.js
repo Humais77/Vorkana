@@ -50,13 +50,15 @@ export const useLogin = () => {
   
   return useMutation({
     mutationFn: authAPI.login,
-    onMutate: () => setLoading(true),
+    onMutate: () => {
+      setLoading(true);
+      setError(null); // Clear previous errors
+    },
     onSuccess: (data) => {
       if (data.success) {
         setAuth(data.user, data.token, data.refreshToken);
         toast.success(data.message || 'Login successful!');
         
-        // Navigate based on email verification status
         if (data.requiresVerification) {
           toast('Please verify your email to access all features', { 
             icon: '📧',
@@ -67,35 +69,82 @@ export const useLogin = () => {
           navigate('/dashboard');
         }
       } else {
-        setError(data.message || 'Login failed');
-        toast.error(data.message || 'Login failed');
+        // Show backend error message directly
+        const errorMsg = data.message || 'Login failed';
+        setError(errorMsg);
+        toast.error(errorMsg);
+        // DO NOT navigate here - stay on login page
       }
     },
     onError: (error) => {
-      const errorMessage = error.response?.data?.message || 'Login failed';
-      const errorCode = error.response?.data?.code;
-      
-      // Handle specific error codes
-      if (errorCode === 'ACCOUNT_LOCKED') {
-        const retryAfter = error.response?.data?.retryAfter;
-        const message = retryAfter 
-          ? `Account locked. Try again in ${Math.ceil(retryAfter / 60)} minutes`
-          : errorMessage;
-        toast.error(message, { duration: 5000 });
-      } else if (errorCode === 'ACCOUNT_DEACTIVATED') {
-        toast.error('Account is deactivated. Please contact support.', { 
-          duration: 5000 
-        });
+  // Extract detailed error from backend
+  let errorMessage = 'Login failed';
+  
+  if (error.response) {
+    // The request was made and the server responded with a status code
+    const backendError = error.response.data;
+    
+    // Check if this is the interceptor's "No refresh token" error
+    if (error.message && error.message.includes('No refresh token available')) {
+      // This is from the interceptor, not the backend
+      // Try to get the original backend error
+      if (backendError && backendError.message) {
+        errorMessage = backendError.message;
       } else {
-        toast.error(errorMessage);
+        errorMessage = 'Invalid email or password';
       }
-      
-      setError(errorMessage);
-    },
+    } else if (backendError && backendError.message) {
+      // Show the actual backend error message
+      errorMessage = backendError.message;
+    } else if (backendError && backendError.errors && Array.isArray(backendError.errors)) {
+      // Handle validation errors array
+      errorMessage = backendError.errors.join(', ');
+    } else if (typeof backendError === 'string') {
+      errorMessage = backendError;
+    }
+    
+    // Handle specific HTTP status codes
+    if (error.response.status === 401) {
+      // Make sure we show the actual backend message, not the interceptor message
+      if (!errorMessage.includes('Invalid') && !errorMessage.includes('invalid')) {
+        errorMessage = errorMessage || 'Invalid email or password';
+      }
+    } else if (error.response.status === 429) {
+      errorMessage = errorMessage || 'Too many attempts. Please try again later.';
+    } else if (error.response.status === 423) {
+      errorMessage = errorMessage || 'Account is locked. Please try again later.';
+    } else if (error.response.status === 403) {
+      errorMessage = errorMessage || 'Account is deactivated. Please contact support.';
+    }
+  } else if (error.request) {
+    // The request was made but no response was received
+    errorMessage = 'Network error. Please check your connection.';
+  } else {
+    // Something happened in setting up the request
+    // Filter out interceptor-specific messages
+    if (error.message && error.message.includes('No refresh token')) {
+      errorMessage = 'Invalid email or password';
+    } else {
+      errorMessage = error.message || 'Login failed';
+    }
+  }
+  
+  setError(errorMessage);
+  toast.error(errorMessage);
+  
+  // Log detailed error for debugging (remove in production)
+  console.error('Login error details:', {
+    message: error.message,
+    response: error.response?.data,
+    status: error.response?.status,
+    config: error.config?.url
+  });
+},
     onSettled: () => setLoading(false),
   });
 };
 
+// Update the useRegister hook as well
 export const useRegister = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   const setLoading = useAuthStore((state) => state.setLoading);
@@ -104,35 +153,59 @@ export const useRegister = () => {
   
   return useMutation({
     mutationFn: authAPI.register,
-    onMutate: () => setLoading(true),
+    onMutate: () => {
+      setLoading(true);
+      setError(null);
+    },
     onSuccess: (data) => {
       if (data.success) {
-        setAuth(data.user, data.token, data.refreshToken);
+        // setAuth(data.user, data.token, data.refreshToken);
         toast.success(data.message || 'Registration successful!');
-        navigate('/verify-email');
+        localStorage.removeItem('userToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('userInfo');
+        
+        // Navigate to verify email page
+        navigate('/verify-email', { 
+          state: { 
+            email: data.user?.email,
+            message: data.message 
+          }
+        });
       } else {
-        setError(data.message || 'Registration failed');
-        toast.error(data.message || 'Registration failed');
+        const errorMsg = data.message || 'Registration failed';
+        setError(errorMsg);
+        toast.error(errorMsg);
       }
     },
     onError: (error) => {
-      const errorMessage = error.response?.data?.message || 'Registration failed';
-      const errorCode = error.response?.data?.code;
+      let errorMessage = 'Registration failed';
       
-      if (errorCode === 'REGISTRATION_ERROR') {
-        toast.error('Registration error. Please try again.');
-      } else if (error.response?.status === 409) {
-        toast.error('Email already exists. Please use a different email.');
-      } else if (error.response?.status === 400 && error.response.data.errors) {
-        // Show validation errors
-        error.response.data.errors.forEach(err => {
-          toast.error(err);
-        });
+      if (error.response) {
+        const backendError = error.response.data;
+        
+        if (backendError.message) {
+          errorMessage = backendError.message;
+        } else if (backendError.errors && Array.isArray(backendError.errors)) {
+          errorMessage = backendError.errors.join(', ');
+        } else if (typeof backendError === 'string') {
+          errorMessage = backendError;
+        }
+        
+        // Handle specific HTTP status codes
+        if (error.response.status === 409) {
+          errorMessage = errorMessage || 'Email already exists. Please use a different email.';
+        } else if (error.response.status === 400) {
+          errorMessage = errorMessage || 'Please check your registration details.';
+        }
+      } else if (error.request) {
+        errorMessage = 'Network error. Please check your connection.';
       } else {
-        toast.error(errorMessage);
+        errorMessage = error.message || 'Registration failed';
       }
       
       setError(errorMessage);
+      toast.error(errorMessage);
     },
     onSettled: () => setLoading(false),
   });

@@ -28,19 +28,30 @@ const VerifyEmail = () => {
     }
   }, [token]);
 
-  const handleVerification = async () => {
-    try {
-      const result = await verifyEmail.mutateAsync(token);
-      if (result.success) {
-        setStatus('success');
-        toast.success('Email verified successfully!');
-      } else {
-        setStatus('error');
+  // In VerifyEmail.jsx - Update handleVerification function
+const handleVerification = async () => {
+  try {
+    const result = await verifyEmail.mutateAsync(token);
+    if (result.success) {
+      setStatus('success');
+      toast.success('Email verified successfully!');
+      
+      // ✅ Store tokens if provided (for API verification)
+      if (result.token && result.refreshToken) {
+        localStorage.setItem('userToken', result.token);
+        localStorage.setItem('refreshToken', result.refreshToken);
+        localStorage.setItem('userInfo', JSON.stringify(result.user));
+        
+        // Update auth store
+        useAuthStore.getState().setAuth(result.user, result.token, result.refreshToken);
       }
-    } catch (error) {
+    } else {
       setStatus('error');
     }
-  };
+  } catch (error) {
+    setStatus('error');
+  }
+};
 
   const handleResendEmail = async () => {
     if (!user?.email) {
