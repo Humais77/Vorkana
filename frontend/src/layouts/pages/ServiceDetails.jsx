@@ -285,7 +285,25 @@ const ServiceDetails = () => {
       </div>
     );
   };
+const formatRevisions = (revisions) => {
+  if (revisions === 0) return 'No revisions';
+  if (revisions === 1) return '1 revision';
+  return `${revisions} revisions`;
+};
 
+const getDeliverySpeed = (deliveryTime, unit) => {
+  const days = unit === 'hours' ? deliveryTime / 24 : unit === 'weeks' ? deliveryTime * 7 : deliveryTime;
+  if (days < 1) return 'Express (Under 1 day)';
+  if (days <= 3) return 'Fast (1-3 days)';
+  if (days <= 7) return 'Standard (3-7 days)';
+  return 'Extended (Over 7 days)';
+};
+
+const calculateCompletionRate = (completedOrders, totalOrders) => {
+  if (!totalOrders || totalOrders === 0) return 'N/A';
+  const rate = (completedOrders / totalOrders) * 100;
+  return `${Math.round(rate)}%`;
+};
   const getStatusColor = (status) => {
     const STATUS_COLORS = {
       active: 'bg-green-100 text-green-800 border-green-200',
@@ -767,6 +785,7 @@ const ServiceDetails = () => {
                         )}
                       </div>
                       
+                      
                       {/* View Profile Link */}
                       <div className="mt-2">
                         <span className="text-emerald-600 text-sm font-medium group-hover:text-emerald-700 flex items-center gap-1">
@@ -777,6 +796,7 @@ const ServiceDetails = () => {
                     </div>
                   </Link>
                 </div>
+                
 
                 {/* Price & Delivery Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -1232,7 +1252,38 @@ const ServiceDetails = () => {
                     </div>
                   </div>
                 )}
-
+<div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+    <FileText className="h-5 w-5 text-gray-600" />
+    Service Metadata
+  </h4>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+    {service.metaTitle && (
+      <div>
+        <span className="text-gray-500">Meta Title:</span>
+        <p className="text-gray-800 font-medium">{service.metaTitle}</p>
+      </div>
+    )}
+    {service.metaDescription && (
+      <div>
+        <span className="text-gray-500">Meta Description:</span>
+        <p className="text-gray-800">{service.metaDescription}</p>
+      </div>
+    )}
+    {service.searchKeywords && service.searchKeywords.length > 0 && (
+      <div className="md:col-span-2">
+        <span className="text-gray-500">Search Keywords:</span>
+        <div className="flex flex-wrap gap-2 mt-1">
+          {service.searchKeywords.map((keyword, index) => (
+            <span key={index} className="px-2 py-1 bg-white text-gray-700 text-xs rounded border">
+              {keyword}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+</div>
                 {/* Last Updated */}
                 <footer className="pt-6 border-t border-gray-200">
                   <div className="flex flex-wrap justify-between items-center gap-4">
@@ -1303,6 +1354,73 @@ const ServiceDetails = () => {
                     )}
                   </div>
                 </div>
+                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
+  <h3 className="text-xl font-bold text-gray-900 mb-6">Additional Details</h3>
+  <div className="space-y-5">
+    {/* Delivery Speed */}
+    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+      <span className="text-gray-600">Delivery Speed</span>
+      <span className="font-semibold text-gray-900">
+        {getDeliverySpeed(service.deliveryTime, service.deliveryTimeUnit)}
+      </span>
+    </div>
+    
+    {/* Revisions Details */}
+    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+      <span className="text-gray-600">Revisions Policy</span>
+      <span className="font-semibold text-gray-900">
+        {formatRevisions(service.revisions)}
+      </span>
+    </div>
+    
+    {/* Service Rating */}
+    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+      <span className="text-gray-600">Service Rating</span>
+      <div className="flex items-center">
+        {renderStars(service.rating || 0)}
+        {service.reviewsCount > 0 && (
+          <span className="ml-2 text-sm text-gray-500">
+            ({service.reviewsCount})
+          </span>
+        )}
+      </div>
+    </div>
+    
+    {/* Views */}
+    {service.views !== undefined && (
+      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-gray-600 flex items-center">
+          <Eye className="h-4 w-4 mr-2" />
+          Views
+        </span>
+        <span className="font-semibold text-gray-900">
+          {service.views.toLocaleString()}
+        </span>
+      </div>
+    )}
+    
+    {/* Likes */}
+    {service.likes !== undefined && (
+      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-gray-600 flex items-center">
+          <Heart className="h-4 w-4 mr-2" />
+          Likes
+        </span>
+        <span className="font-semibold text-gray-900">
+          {service.likes.toLocaleString()}
+        </span>
+      </div>
+    )}
+    
+    {/* Version */}
+    {service.version !== undefined && (
+      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-gray-600">Version</span>
+        <span className="font-semibold text-gray-900">v{service.version}</span>
+      </div>
+    )}
+  </div>
+</div>
 
                 {/* Category & Tags */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">

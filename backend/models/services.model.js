@@ -152,24 +152,31 @@ subcategory: {
       default: Date.now
     }
   }],
-  thumbnail: {
-    url: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^https?:\/\//.test(v);
-        },
-        message: 'Thumbnail must be a valid URL'
-      }
-    },
-    public_id: String,
-    width: Number,
-    height: Number,
-    size: Number,
-    format: String,
-    uploadedAt: Date
+thumbnail: {
+  url: {
+    type: String,
+    required: [true, 'Thumbnail URL is required'], // Added required
+    validate: {
+      validator: function(v) {
+        if (!v) return false; // Now required
+        return /^https?:\/\//.test(v);
+      },
+      message: 'Thumbnail must be a valid URL'
+    }
   },
+  public_id: {
+    type: String,
+    required: true // Added required
+  },
+  width: Number,
+  height: Number,
+  size: Number,
+  format: String,
+  uploadedAt: {
+    type: Date,
+    default: Date.now
+  }
+},
 
   tags: [{
     type: String,

@@ -249,51 +249,26 @@ getByCategory: async (categoryIdentifier, params = {}) => {
   }
 },
   create: async (serviceData, files = null) => {
-    try {
-     let response;
+  try {
+    let response;
     
-    if (files && files instanceof FormData) {
-      // If files is already FormData (with serviceData appended)
+    // If files is FormData (already contains all data)
+    if (files instanceof FormData) {
       response = await axiosInstance.post('/api/services', files, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
-    } else if (files && files.length > 0) {
-      // If separate files array
-      const formData = new FormData();
-      
-      formData.append('data', JSON.stringify(serviceData));
-       Object.keys(serviceData).forEach(key => {
-        if (serviceData[key] !== undefined && serviceData[key] !== null) {
-          formData.append(key, 
-            typeof serviceData[key] === 'object' 
-              ? JSON.stringify(serviceData[key]) 
-              : serviceData[key]
-          );
-        }
-      });
-      
-      files.forEach((file) => {
-        formData.append('images', file);
-      });
-      
-     response = await axiosInstance.post('/api/services', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
     } else {
-      // No files
+      // If no files, just send JSON
       response = await axiosInstance.post('/api/services', serviceData);
     }
     
-   if (response.data && response.data.success) {
+    if (response.data && response.data.success) {
       return {
         success: true,
         message: response.data.message || 'Service created successfully',
         service: response.data.service || response.data.data,
-        // Ensure serviceId is available
         serviceId: response.data.service?._id || response.data.service?.id || 
                   response.data.data?._id || response.data.data?.id
       };
@@ -301,36 +276,33 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     
     return response.data;
       
-    } catch (error) {
-      let errorMessage = 'Failed to create service';
+  } catch (error) {
+    let errorMessage = 'Failed to create service';
+    
+    if (error.response) {
+      const { data, status } = error.response;
       
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400) {
-          if (data.code === 'CATEGORY_NOT_FOUND') {
-            errorMessage = 'Invalid category selected. Please refresh the page and try again.';
-          } else if (data.errors) {
-            const validationErrors = data.errors.map(err => err.message).join(', ');
-            errorMessage = `Validation failed: ${validationErrors}`;
-          } else if (data.message) {
-            errorMessage = data.message;
-          }
-        } else if (status === 401) {
-          errorMessage = 'Please login to create a service';
-        } 
-        // REMOVE: seller-specific restriction
-        // else if (status === 403) {
-        //   errorMessage = 'Only sellers can create services';
-        // } 
-        else if (status === 409) {
-          errorMessage = 'A service with similar title already exists';
+      if (status === 400) {
+        if (data.code === 'CATEGORY_NOT_FOUND') {
+          errorMessage = 'Invalid category selected.';
+        } else if (data.code === 'SUBCATEGORY_NOT_FOUND') {
+          errorMessage = 'Invalid subcategory selected.';
+        } else if (data.errors) {
+          const validationErrors = data.errors.map(err => err.message).join(', ');
+          errorMessage = `Validation failed: ${validationErrors}`;
+        } else if (data.message) {
+          errorMessage = data.message;
         }
+      } else if (status === 401) {
+        errorMessage = 'Please login to create a service';
+      } else if (status === 409) {
+        errorMessage = 'A service with similar title already exists';
       }
-      
-      throw new Error(errorMessage);
     }
-  },
+    
+    throw new Error(errorMessage);
+  }
+},
   
   update: async (id, updateData, files = null) => {
     try {

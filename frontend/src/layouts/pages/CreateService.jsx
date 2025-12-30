@@ -41,7 +41,8 @@ import {
   Trash2,
   ArrowLeft,
   Eye,
-  Layers as LayersIcon
+  Layers as LayersIcon,
+  Images as  ImageIcon
 } from 'lucide-react';
 import { useCreateService } from '../../hooks/useServices.js';
 import { useCategories } from '../../hooks/useCategories';
@@ -154,7 +155,7 @@ const CreateService = () => {
   currency: 'USD',
   deliveryTime: '',
   deliveryTimeUnit: 'days',
-  revisions: 1,
+  revisions: '1',
   tags: [],
   features: [],
   requirements: [],
@@ -236,7 +237,8 @@ const CreateService = () => {
     price: false,
     deliveryTime: false,
     description: false,
-    shortDescription: false
+    shortDescription: false,
+     thumbnail: false,
   });
 
   // Refs for file inputs to avoid state updates on every change
@@ -266,33 +268,69 @@ const CreateService = () => {
       }));
     }
   }, [formData.category]);
-
-  // Handle successful service creation
-  useEffect(() => {
-    if (createServiceMutation.isSuccess && createServiceMutation.data) {
-      const serviceId = createServiceMutation.data.data?._id || createServiceMutation.data.service?._id || createServiceMutation.data._id;
-
-      if (serviceId) {
-        setCreatedServiceId(serviceId);
-        setSuccess(true);
-        setActiveStep(5);
-
-        toast.success(createServiceMutation.data.message || "Service created successfully!");
-
-        const timer = setTimeout(() => {
-          navigate(`/service/${serviceId}`);
-        }, 3000);
-
-        return () => clearTimeout(timer);
+const handleSuccessfulNavigation = (serviceId) => {
+  try {
+    const serviceUrl = `/services/${serviceId}`;
+    console.log('Attempting navigation to:', serviceUrl);
+    
+    // Try direct navigation first
+    navigate(serviceUrl);
+    
+    // Fallback: If navigation doesn't work, redirect after delay
+    setTimeout(() => {
+      if (window.location.pathname !== serviceUrl) {
+        console.log('Direct navigation failed, using window.location');
+        window.location.href = serviceUrl;
       }
+    }, 1000);
+  } catch (error) {
+    console.error('Navigation error:', error);
+    // Ultimate fallback
+    window.location.href = `/services/${serviceId}`;
+  }
+};
+
+useEffect(() => {
+  if (createServiceMutation.isSuccess && createServiceMutation.data) {
+    console.log('Service creation success:', createServiceMutation.data);
+    
+    // Try multiple ways to get the service ID
+    let serviceId = null;
+    
+    if (createServiceMutation.data.serviceId) {
+      serviceId = createServiceMutation.data.serviceId;
+    } else if (createServiceMutation.data.service?._id) {
+      serviceId = createServiceMutation.data.service._id;
+    } else if (createServiceMutation.data.data?._id) {
+      serviceId = createServiceMutation.data.data._id;
+    } else if (createServiceMutation.data._id) {
+      serviceId = createServiceMutation.data._id;
     }
-  }, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
+    
+    console.log('Extracted service ID:', serviceId);
+    
+    if (serviceId) {
+      setCreatedServiceId(serviceId);
+      setSuccess(true);
+      setActiveStep(5);
+      toast.success('Service created! Redirecting...');
+      
+      // Navigate after a short delay
+      setTimeout(() => {
+        handleSuccessfulNavigation(serviceId);
+      }, 1500);
+    } else {
+      console.error('No service ID found in response:', createServiceMutation.data);
+      toast.error('Service created but could not redirect. Please check your services.');
+    }
+  }
+}, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
 
   // Memoized handlers
-  const handleInputChange = useCallback((e) => {
+const handleInputChange = useCallback((e) => {
   const { name, value, type, checked } = e.target;
   
-  // Handle different input types
+  // Always ensure we have a valid value
   let newValue;
   
   if (type === 'checkbox') {
@@ -303,31 +341,40 @@ const CreateService = () => {
     newValue = value || '';
   } else if (name === 'description') {
     // Limit description to 5000 characters
-    newValue = value ? value.slice(0, 5000) : '';
+    newValue = (value || '').slice(0, 5000);
   } else if (name === 'shortDescription') {
     // Limit short description to 250 characters
-    newValue = value ? value.slice(0, 250) : '';
+    newValue = (value || '').slice(0, 250);
   } else {
-    newValue = value || '';
+    newValue = value || ''; // Always ensure string
   }
   
-  setFormData(prev => ({
-    ...prev,
-    [name]: newValue
-  }));
-    
-  // Update completed status based on validation
+  // Special handling for empty strings in number fields
+  if ((name === 'price' || name === 'deliveryTime' || name === 'revisions') && newValue === '') {
+    // Allow empty string for number fields
+    setFormData(prev => ({
+      ...prev,
+      [name]: newValue
+    }));
+  } else {
+    setFormData(prev => ({
+      ...prev,
+      [name]: newValue
+    }));
+  }
+  
+  // Update completed status
   const isValid = validateField(name, newValue);
   setCompletedFields(prev => ({
     ...prev,
     [name]: isValid
   }));
-    
+  
   // Clear error for this field
   if (errors[name]) {
     setErrors(prev => ({ ...prev, [name]: "" }));
   }
-    
+  
   // If category changes, trigger subcategories fetch
   if (name === 'category' && newValue) {
     refetchSubcategories();
@@ -335,28 +382,35 @@ const CreateService = () => {
 }, [errors, refetchSubcategories]);
 
   const validateField = useCallback((fieldName, value) => {
-    switch (fieldName) {
-      case 'title':
-        return value && value.trim().length >= 5;
-      case 'description':
-        return value && value.trim().length >= 50;
-      case 'shortDescription':
-        return value && value.trim().length >= 20;
-      case 'category':
-        return !!value;
-      case 'subcategory':
-        return !!value;
-      case 'price':
-        const priceNum = parseFloat(value);
-        return !isNaN(priceNum) && priceNum >= 1 && priceNum <= 100000;
-      case 'deliveryTime':
-        const deliveryNum = parseInt(value);
-        return !isNaN(deliveryNum) && deliveryNum >= 1 && deliveryNum <= 365;
-      default:
-        return !!value;
-    }
-  }, []);
-
+  // Handle empty strings for number fields
+  if ((fieldName === 'price' || fieldName === 'deliveryTime') && value === '') {
+    return false;
+  }
+  
+  const stringValue = String(value || '');
+  const trimmedValue = stringValue.trim();
+  
+  switch (fieldName) {
+    case 'title':
+      return trimmedValue.length >= 5 && trimmedValue.length <= 200;
+    case 'description':
+      return trimmedValue.length >= 50 && trimmedValue.length <= 5000;
+    case 'shortDescription':
+      return trimmedValue.length >= 20 && trimmedValue.length <= 250;
+    case 'category':
+      return !!value;
+    case 'subcategory':
+      return !!value;
+    case 'price':
+      const priceNum = parseFloat(value);
+      return !isNaN(priceNum) && priceNum >= 1 && priceNum <= 100000;
+    case 'deliveryTime':
+      const deliveryNum = parseInt(value);
+      return !isNaN(deliveryNum) && deliveryNum >= 1 && deliveryNum <= 365;
+    default:
+      return !!trimmedValue;
+  }
+}, []);
   // Tag Management
   const handleAddTag = useCallback(() => {
     if (newTag.trim() && !formData.tags.includes(newTag.trim()) && formData.tags.length < 20) {
@@ -400,7 +454,15 @@ const CreateService = () => {
     }));
     toast.success('Keyword removed');
   }, []);
-
+useEffect(() => {
+  return () => {
+    // Clean up object URLs
+    uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    if (thumbnailFile) {
+      URL.revokeObjectURL(thumbnailFile.preview);
+    }
+  };
+}, [uploadedImages, thumbnailFile]);
   // Features Management
   const handleAddFeature = useCallback(() => {
     if (newFeature.title.trim()) {
@@ -582,28 +644,36 @@ const CreateService = () => {
   }, [uploadingImages, uploadedImages]);
 
   const handleThumbnailUpload = useCallback((file) => {
-    if (uploadingThumbnail) return;
-    
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Thumbnail exceeds 2MB limit');
-      return;
-    }
-    
-    if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
-      toast.error('Invalid image type for thumbnail');
-      return;
-    }
-    
-    setThumbnailFile({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size,
-      type: file.type
-    });
-    
-    toast.success('Thumbnail selected');
-  }, [uploadingThumbnail]);
+  if (uploadingThumbnail) return;
+  
+  if (file.size > 2 * 1024 * 1024) {
+    toast.error('Thumbnail exceeds 2MB limit');
+    return;
+  }
+  
+  if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
+    toast.error('Invalid image type for thumbnail');
+    return;
+  }
+  
+  const newThumbnail = {
+    file,
+    preview: URL.createObjectURL(file),
+    name: file.name,
+    size: file.size,
+    type: file.type
+  };
+  
+  setThumbnailFile(newThumbnail);
+  setCompletedFields(prev => ({ ...prev, thumbnail: true }));
+  
+  // Clear thumbnail error if exists
+  if (errors.thumbnail) {
+    setErrors(prev => ({ ...prev, thumbnail: "" }));
+  }
+  
+  toast.success('Thumbnail selected');
+}, [uploadingThumbnail, errors.thumbnail]);
 
   const removeImage = useCallback((index) => {
     const image = uploadedImages[index];
@@ -650,30 +720,32 @@ const CreateService = () => {
     const newErrors = {};
 
     if (step === 1) {
-    if (!formData.title || formData.title.trim().length < 5) {
-      newErrors.title = "Service title must be at least 5 characters.";
-    }
-
-    if (!formData.category) {
-      newErrors.category = "Please select a category.";
-    }
-
-    if (!formData.subcategory) {
-      newErrors.subcategory = "Please select a subcategory.";
-    }
-
-    if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
-      newErrors.shortDescription = "Short description must be at least 20 characters.";
-    } else if (formData.shortDescription.trim().length > 250) {
-      newErrors.shortDescription = "Short description cannot exceed 250 characters.";
-    }
-
-    if (!formData.description || formData.description.trim().length < 50) {
-      newErrors.description = "Description must be at least 50 characters.";
-    } else if (formData.description.trim().length > 5000) {
-      newErrors.description = "Description cannot exceed 5000 characters.";
-    }
+  if (!formData.title || formData.title.trim().length < 5) {
+    newErrors.title = "Service title must be at least 5 characters.";
+  } else if (formData.title.trim().length > 200) {
+    newErrors.title = "Service title cannot exceed 200 characters.";
   }
+
+  if (!formData.category) {
+    newErrors.category = "Please select a category.";
+  }
+
+  if (!formData.subcategory) {
+    newErrors.subcategory = "Please select a subcategory.";
+  }
+
+  if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
+    newErrors.shortDescription = "Short description must be at least 20 characters.";
+  } else if (formData.shortDescription.trim().length > 250) {
+    newErrors.shortDescription = "Short description cannot exceed 250 characters.";
+  }
+
+  if (!formData.description || formData.description.trim().length < 50) {
+    newErrors.description = "Description must be at least 50 characters.";
+  } else if (formData.description.trim().length > 5000) {
+    newErrors.description = "Description cannot exceed 5000 characters.";
+  }
+}
     if (step === 2) {
       const priceNum = parseFloat(formData.price);
       if (!formData.price || isNaN(priceNum) || priceNum < 1 || priceNum > 100000) {
@@ -689,6 +761,12 @@ const CreateService = () => {
     if (step === 3) {
       // Additional validations can be added here
     }
+    if (step === 4) {
+    // Validate thumbnail (now required)
+    if (!thumbnailFile) {
+      newErrors.thumbnail = "Thumbnail is required";
+    }
+  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -705,136 +783,148 @@ const CreateService = () => {
   }, []);
 
   const handleSubmit = useCallback(async (e, status = 'draft') => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    // Validate all steps
-    let hasError = false;
-    for (let step = 1; step <= 4; step++) {
-      if (!validateStep(step)) {
-        setActiveStep(step);
-        hasError = true;
-        break;
-      }
+  // Validate all steps
+  let hasError = false;
+  for (let step = 1; step <= 4; step++) {
+    if (!validateStep(step)) {
+      setActiveStep(step);
+      hasError = true;
+      break;
     }
+  }
+   if (!thumbnailFile) {
+    setActiveStep(4);
+    setErrors({ thumbnail: "Thumbnail is required" });
+    hasError = true;
+  }
 
-    if (hasError) {
+  if (hasError) {
+    setIsSubmitting(false);
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('token') || localStorage.getItem('userToken');
+
+    if (!token) {
+      toast.error('Please login to create a service');
+      navigate('/login');
       setIsSubmitting(false);
       return;
     }
 
-    try {
-      const token = localStorage.getItem('token') || localStorage.getItem('userToken');
+    // Create FormData
+    const submitFormData = new FormData();
 
-      if (!token) {
-        toast.error('Please login to create a service');
-        navigate('/login');
-        setIsSubmitting(false);
-        return;
-      }
+    // Append all required fields
+    submitFormData.append('title', formData.title.trim());
+    submitFormData.append('description', formData.description.trim());
+    submitFormData.append('shortDescription', formData.shortDescription.trim());
+    submitFormData.append('category', formData.category);
+    submitFormData.append('subcategory', formData.subcategory || ''); // Ensure string even if empty
+    submitFormData.append('price', formData.price);
+    submitFormData.append('currency', formData.currency);
+    submitFormData.append('deliveryTime', formData.deliveryTime);
+    submitFormData.append('deliveryTimeUnit', formData.deliveryTimeUnit);
+    submitFormData.append('revisions', formData.revisions);
+    submitFormData.append('status', status);
 
-      if (categoryLoading) {
-        toast.error('Categories are still loading. Please wait...');
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (categoryError) {
-        toast.error('Failed to load categories. Please refresh the page.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      const serviceData = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        shortDescription: formData.shortDescription.trim(),
-        category: formData.category,
-        subcategory: formData.subcategory,
-        price: parseFloat(formData.price),
-        currency: formData.currency,
-        deliveryTime: parseInt(formData.deliveryTime),
-        deliveryTimeUnit: formData.deliveryTimeUnit,
-        revisions: parseInt(formData.revisions) || 1,
-        gigType: formData.gigType,
-        status: status,
-        userLevel: formData.userLevel,
-        isFeatured: formData.isFeatured,
-        isRecommended: formData.isRecommended,
-        isPopular: formData.isPopular,
-      };
-
-      const submitFormData = new FormData();
-
-      // Append required fields
-      submitFormData.append('title', serviceData.title);
-      submitFormData.append('description', serviceData.description);
-      submitFormData.append('shortDescription', serviceData.shortDescription);
-      submitFormData.append('category', serviceData.category);
-      submitFormData.append('subcategory', serviceData.subcategory);
-      submitFormData.append('price', serviceData.price);
-      submitFormData.append('currency', serviceData.currency);
-      submitFormData.append('deliveryTime', serviceData.deliveryTime);
-      submitFormData.append('deliveryTimeUnit', serviceData.deliveryTimeUnit);
-      submitFormData.append('revisions', serviceData.revisions);
-      submitFormData.append('gigType', serviceData.gigType);
-      submitFormData.append('status', status);
-      submitFormData.append('userLevel', serviceData.userLevel);
-
-      // Append optional fields
-      if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
-      if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
-
-      // Arrays
-      if (formData.tags?.length > 0) submitFormData.append('tags', JSON.stringify(formData.tags));
-      if (formData.searchKeywords?.length > 0) submitFormData.append('searchKeywords', JSON.stringify(formData.searchKeywords));
-      if (formData.features?.length > 0) submitFormData.append('features', JSON.stringify(formData.features));
-      if (formData.requirements?.length > 0) submitFormData.append('requirements', JSON.stringify(formData.requirements));
-      if (formData.faqs?.length > 0) submitFormData.append('faqs', JSON.stringify(formData.faqs));
-      if (formData.packages?.length > 0) submitFormData.append('packages', JSON.stringify(formData.packages));
-
-      // Booleans
-      submitFormData.append('isFeatured', serviceData.isFeatured);
-      submitFormData.append('isRecommended', serviceData.isRecommended);
-      submitFormData.append('isPopular', serviceData.isPopular);
-
-      // Images
-      if (thumbnailFile) {
-        submitFormData.append('thumbnail', thumbnailFile.file);
-      }
-      
-      uploadedImages.forEach((img) => {
-        submitFormData.append('images', img.file);
+    // Append optional fields with proper formatting
+    if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
+    if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
+    
+    // Append arrays properly - each item individually
+    if (formData.tags?.length > 0) {
+      formData.tags.forEach(tag => {
+        submitFormData.append('tags[]', tag);
       });
-
-      await createServiceMutation.mutateAsync({
-        serviceData: serviceData,
-        files: submitFormData
-      });
-      
-    } catch (error) {
-      if (error.message.includes('Category not found') || error.message.includes('Invalid category')) {
-        toast.error('Invalid category selected. Please refresh the page and select a valid category.');
-        await refetchCategories();
-      } else if (error.message.includes('Network Error')) {
-        toast.error('Network error. Please check your connection.');
-      } else {
-        toast.error(error.message || 'Failed to create service');
-      }
-    } finally {
-      setIsSubmitting(false);
     }
-  }, [
-    formData, 
-    validateStep, 
-    categoryLoading, 
-    categoryError, 
-    navigate, 
-    createServiceMutation, 
-    thumbnailFile, 
-    uploadedImages, 
-    refetchCategories
-  ]);
+    
+    if (formData.searchKeywords?.length > 0) {
+      formData.searchKeywords.forEach(keyword => {
+        submitFormData.append('searchKeywords[]', keyword);
+      });
+    }
+    
+    if (formData.features?.length > 0) {
+      formData.features.forEach((feature, index) => {
+        submitFormData.append(`features[${index}][title]`, feature.title);
+        submitFormData.append(`features[${index}][description]`, feature.description || '');
+        submitFormData.append(`features[${index}][included]`, feature.included);
+      });
+    }
+    
+    if (formData.requirements?.length > 0) {
+      formData.requirements.forEach((req, index) => {
+        submitFormData.append(`requirements[${index}][question]`, req.question);
+        submitFormData.append(`requirements[${index}][type]`, req.type);
+        submitFormData.append(`requirements[${index}][required]`, req.required);
+        if (req.options?.length > 0) {
+          req.options.forEach((opt, optIndex) => {
+            submitFormData.append(`requirements[${index}][options][${optIndex}]`, opt);
+          });
+        }
+      });
+    }
+    
+    if (formData.faqs?.length > 0) {
+      formData.faqs.forEach((faq, index) => {
+        submitFormData.append(`faqs[${index}][question]`, faq.question);
+        submitFormData.append(`faqs[${index}][answer]`, faq.answer);
+      });
+    }
+    
+    if (formData.packages?.length > 0) {
+      formData.packages.forEach((pkg, index) => {
+        submitFormData.append(`packages[${index}][name]`, pkg.name);
+        submitFormData.append(`packages[${index}][description]`, pkg.description || '');
+        submitFormData.append(`packages[${index}][price]`, pkg.price);
+        submitFormData.append(`packages[${index}][deliveryTime]`, pkg.deliveryTime);
+        submitFormData.append(`packages[${index}][revisions]`, pkg.revisions || 0);
+        submitFormData.append(`packages[${index}][popular]`, pkg.popular || false);
+        if (pkg.features?.length > 0) {
+          pkg.features.forEach((feature, featIndex) => {
+            submitFormData.append(`packages[${index}][features][${featIndex}]`, feature);
+          });
+        }
+      });
+    }
+
+    // Append images
+    if (thumbnailFile) {
+      submitFormData.append('thumbnail', thumbnailFile.file);
+    }
+    
+    uploadedImages.forEach((img, index) => {
+      submitFormData.append('images', img.file);
+    });
+
+    // Send request
+    await createServiceMutation.mutateAsync({
+      serviceData: null, // Don't send serviceData separately
+      files: submitFormData
+    });
+    
+  } catch (error) {
+    console.error('Submit error:', error);
+    
+    if (error.message.includes('Category not found') || error.message.includes('Invalid category')) {
+      toast.error('Invalid category selected. Please refresh the page and select a valid category.');
+      await refetchCategories();
+    } else if (error.message.includes('Subcategory not found')) {
+      toast.error('Invalid subcategory selected. Please select a valid subcategory.');
+    } else if (error.message.includes('Network Error')) {
+      toast.error('Network error. Please check your connection.');
+    } else {
+      toast.error(error.message || 'Failed to create service');
+    }
+  } finally {
+    setIsSubmitting(false);
+  }
+}, [formData, validateStep, createServiceMutation, thumbnailFile, uploadedImages, navigate, refetchCategories]);
 
   // Get category name for display - memoized
   const getCategoryName = useCallback(() => {
@@ -1027,7 +1117,7 @@ const CreateService = () => {
                   <div className="relative">
                     <select
                       name="category"
-                      value={formData.category}
+                       value={formData.category || ''}
                       onChange={handleInputChange}
                       className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                       required
@@ -1103,25 +1193,30 @@ const CreateService = () => {
   </label>
   <textarea
     name="shortDescription"
-    value={formData.shortDescription}
+    value={formData.shortDescription || ''}
     onChange={handleInputChange}
     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
     rows="3"
-    placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
+    placeholder="Brief description of your service (appears in listings)."
     required
-    maxLength="250"  // Add maxLength attribute
+    maxLength={250}
     aria-required="true"
-    aria-describedby="short-desc-help"
+    aria-describedby="short-desc-help short-desc-count"
   />
   <div className="flex justify-between mt-2">
     <p id="short-desc-help" className="text-xs text-gray-500">
       Minimum 20 characters, maximum 250 characters
     </p>
-    <span className={`text-xs font-medium ${
-      formData.shortDescription.length < 20 ? 'text-red-600' : 
-      formData.shortDescription.length >= 250 ? 'text-red-600' : 'text-green-600'
-    }`}>
-      {formData.shortDescription.length}/250
+    <span 
+      id="short-desc-count"
+      className={`text-xs font-medium ${
+        !formData.shortDescription ? 'text-gray-500' :
+        formData.shortDescription.length < 20 ? 'text-red-600' : 
+        formData.shortDescription.length > 230 ? 'text-yellow-600' : 'text-green-600'
+      }`}
+    >
+      {formData.shortDescription?.length || 0}/250
+      {formData.shortDescription?.length > 230 && ' (Approaching limit)'}
     </span>
   </div>
   {errors.shortDescription && (
@@ -1130,7 +1225,7 @@ const CreateService = () => {
 </div>
 
               {/* Full Description */}
-              <div>
+             <div>
   <label className="block text-sm font-medium text-gray-700 mb-2">
     Full Description <span className="text-red-500">*</span>
   </label>
@@ -1140,32 +1235,33 @@ const CreateService = () => {
     onChange={handleInputChange}
     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
     rows="6"
-    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
+    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details."
     required
-    maxLength="5000"  // Add maxLength attribute
+    maxLength={5000}
     aria-required="true"
-    aria-describedby="desc-help"
+    aria-describedby="desc-help desc-count"
   />
   <div className="flex justify-between mt-2">
-    <div>
-      <p id="desc-help" className="text-xs text-gray-500">
-        Minimum 50 characters, maximum 5000 characters
-      </p>
-      <p className="text-xs text-gray-500">
-        Characters remaining: {5000 - formData.description.length}
-      </p>
-    </div>
-    <span className={`text-xs font-medium ${
-      formData.description.length < 50 ? 'text-red-600' : 
-      formData.description.length >= 5000 ? 'text-red-600' : 'text-green-600'
-    }`}>
-      {formData.description.length}/5000
+    <p id="desc-help" className="text-xs text-gray-500">
+      Minimum 50 characters, maximum 5000 characters
+    </p>
+    <span 
+      id="desc-count"
+      className={`text-xs font-medium ${
+        !formData.description ? 'text-gray-500' :
+        formData.description.length < 50 ? 'text-red-600' : 
+        formData.description.length > 4800 ? 'text-yellow-600' : 'text-green-600'
+      }`}
+    >
+      {formData.description?.length || 0}/5000
+      {formData.description?.length > 4800 && ' (Approaching limit)'}
     </span>
   </div>
   {errors.description && (
     <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
   )}
 </div>
+
             </div>
           </div>
         );
@@ -1190,7 +1286,7 @@ const CreateService = () => {
                   <input
                     type="number"
                     name="price"
-                    value={formData.price}
+                    value={formData.price || ''}
                     onChange={handleInputChange}
                     className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="Enter your price"
@@ -1224,7 +1320,7 @@ const CreateService = () => {
                 </label>
                 <select
                   name="currency"
-                  value={formData.currency}
+                   value={formData.currency || 'USD'}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
                   aria-label="Select currency"
@@ -1247,7 +1343,7 @@ const CreateService = () => {
                   <input
                     type="number"
                     name="deliveryTime"
-                    value={formData.deliveryTime}
+                     value={formData.deliveryTime || ''}
                     onChange={handleInputChange}
                     className="flex-1 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="e.g., 7"
@@ -1294,7 +1390,7 @@ const CreateService = () => {
                 <input
                   type="number"
                   name="revisions"
-                  value={formData.revisions}
+                    value={formData.revisions || ''}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   placeholder="Number of revisions"
@@ -1326,7 +1422,7 @@ const CreateService = () => {
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      value={newTag}
+                      value={newTag || ''}
                       onChange={(e) => setNewTag(e.target.value)}
                       onKeyPress={(e) => handleKeyPress(e, 'tag')}
                       className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
@@ -1433,7 +1529,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFeature.title}
+                          value={newFeature.title || ''}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
                           onKeyPress={(e) => handleKeyPress(e, 'feature')}
                           className="w-full p-3 border border-gray-300 rounded-lg"
@@ -1447,7 +1543,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFeature.description}
+                           value={newFeature.description || ''}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Brief description"
@@ -1590,60 +1686,72 @@ const CreateService = () => {
 
               {/* Thumbnail Upload */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
-                <div className="space-y-4">
-                  <p className="text-gray-600 text-sm">
-                    The thumbnail is the main image displayed in service listings.
-                  </p>
+  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+    <ImageIcon className="w-5 h-5 mr-2" />
+    Thumbnail <span className="text-red-500 ml-1">*</span>
+  </h3>
+  <div className="space-y-4">
+    <p className="text-gray-600 text-sm flex items-center">
+      <AlertCircle className="w-4 h-4 mr-2 text-blue-500" />
+      The thumbnail is required and will be displayed as the main service image.
+    </p>
 
-                  {thumbnailFile ? (
-                    <div className="flex items-start gap-4">
-                      <div className="relative">
-                        <img
-                          src={thumbnailFile.preview}
-                          alt="Service thumbnail preview"
-                          className="w-32 h-32 object-cover rounded-lg"
-                          loading="lazy"
-                        />
-                        <button
-                          type="button"
-                          onClick={removeThumbnail}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
-                        <p className="text-gray-500 text-sm">
-                          {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
-                      <input
-                        type="file"
-                        id="thumbnail-upload"
-                        ref={thumbnailUploadRef}
-                        accept="image/jpeg,image/jpg,image/png,image/webp"
-                        onChange={(e) => handleThumbnailUpload(e.target.files[0])}
-                        className="hidden"
-                        disabled={uploadingThumbnail || createServiceMutation.isPending}
-                      />
-                      <label htmlFor="thumbnail-upload" className="cursor-pointer">
-                        <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                        <h4 className="text-lg font-medium text-gray-900 mb-1">
-                          Upload Thumbnail
-                        </h4>
-                        <p className="text-gray-600 text-sm mb-2">
-                          Recommended: 800×600 pixels, max 2MB
-                        </p>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
+    {thumbnailFile ? (
+      <div className="flex items-start gap-4">
+        <div className="relative">
+          <img
+            src={thumbnailFile.preview}
+            alt="Service thumbnail preview"
+            className="w-32 h-32 object-cover rounded-lg"
+            loading="lazy"
+          />
+          <button
+            type="button"
+            onClick={removeThumbnail}
+            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+            aria-label="Remove thumbnail"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div>
+          <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+          <p className="text-gray-500 text-sm">
+            {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB
+          </p>
+        </div>
+      </div>
+    ) : (
+      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors bg-gray-50">
+        <input
+          type="file"
+          id="thumbnail-upload"
+          ref={thumbnailUploadRef}
+          accept="image/jpeg,image/jpg,image/png,image/webp"
+          onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+          className="hidden"
+          disabled={uploadingThumbnail || createServiceMutation.isPending}
+          required
+        />
+        <label htmlFor="thumbnail-upload" className="cursor-pointer">
+          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+          <h4 className="text-lg font-medium text-gray-900 mb-1">
+            Upload Thumbnail (Required)
+          </h4>
+          <p className="text-gray-600 text-sm mb-2">
+            Recommended: 800×600 pixels, max 2MB
+          </p>
+          <p className="text-red-500 text-xs">
+            * Thumbnail is required for service listing
+          </p>
+        </label>
+      </div>
+    )}
+  </div>
+  {!thumbnailFile && (
+    <p className="mt-2 text-sm text-red-600">Thumbnail is required</p>
+  )}
+</div>
 
               {/* FAQs */}
               <div>
@@ -1660,7 +1768,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFAQ.question}
+                           value={newFAQ.question || ''} 
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Common question from clients"
@@ -1672,7 +1780,7 @@ const CreateService = () => {
                           Answer
                         </label>
                         <textarea
-                          value={newFAQ.answer}
+                           value={newFAQ.answer || ''} 
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           rows="3"
@@ -1935,12 +2043,14 @@ const CreateService = () => {
                       <span className="font-medium">{uploadedImages.length} uploaded</span>
                     </li>
                   )}
-                  {activeStep >= 4 && thumbnailFile && (
-                    <li className="flex justify-between">
-                      <span className="text-blue-100">Thumbnail:</span>
-                      <span className="font-medium">Uploaded</span>
-                    </li>
-                  )}
+{activeStep >= 4 && (
+  <li className="flex justify-between">
+    <span className="text-blue-100">Thumbnail:</span>
+    <span className="font-medium">
+      {thumbnailFile ? 'Uploaded' : 'Required'}
+    </span>
+  </li>
+)}
                 </ul>
               </div>
             </div>
@@ -1959,6 +2069,17 @@ const CreateService = () => {
                   </div>
                 )}
               </div>
+              <div className="bg-white/10 rounded-xl p-4 mt-4">
+  <h4 className="font-bold mb-2">Service Details</h4>
+  <ul className="text-sm space-y-1 text-left">
+    <li>✓ Thumbnail uploaded successfully</li>
+    {uploadedImages.length > 0 && (
+      <li>✓ {uploadedImages.length} additional image{uploadedImages.length !== 1 ? 's' : ''}</li>
+    )}
+    <li>✓ Service information saved</li>
+    <li>✓ Ready for clients to discover</li>
+  </ul>
+</div>
               <div className="bg-white/10 rounded-xl p-4">
                 <h4 className="font-bold mb-2">What happens next?</h4>
                 <ul className="text-sm space-y-1 text-left pl-4">
@@ -2021,7 +2142,7 @@ const CreateService = () => {
                     <div className="w-20 h-1 bg-blue-600 rounded-full mx-auto animate-pulse"></div>
                     <div className="mt-8">
                       <button
-                        onClick={() => navigate(`/service/${createdServiceId}`)}
+                        onClick={() => navigate(`/services/${createdServiceId}`)}
                         className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                         aria-label="View your newly created service"
                       >

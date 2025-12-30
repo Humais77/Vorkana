@@ -411,7 +411,35 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
 const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT:SERVICE] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
-
+const parseFormDataArrays = (bodyData, arrayFields) => {
+  const parsed = {};
+  
+  for (const key in bodyData) {
+    if (arrayFields.includes(key)) {
+      // Handle arrays sent as FormData
+      if (typeof bodyData[key] === 'string') {
+        try {
+          parsed[key] = JSON.parse(bodyData[key]);
+        } catch (e) {
+          // If it's a comma-separated string
+          if (bodyData[key].includes(',')) {
+            parsed[key] = bodyData[key].split(',').map(item => item.trim()).filter(item => item);
+          } else {
+            parsed[key] = [bodyData[key]];
+          }
+        }
+      } else if (Array.isArray(bodyData[key])) {
+        parsed[key] = bodyData[key];
+      } else {
+        parsed[key] = [];
+      }
+    } else {
+      parsed[key] = bodyData[key];
+    }
+  }
+  
+  return parsed;
+};
 // Create Service
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -443,23 +471,23 @@ let bodyData = req.body;
         // Keep as is
       }
     }
-    const sanitizedData = sanitizeServiceInput(req.body);
-    const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
-    arrayFields.forEach(field => {
-      if (sanitizedData[field] && !Array.isArray(sanitizedData[field])) {
-        if (typeof sanitizedData[field] === 'string') {
-          try {
-            sanitizedData[field] = JSON.parse(sanitizedData[field]);
-          } catch (e) {
-            sanitizedData[field] = sanitizedData[field].split(',').map(item => item.trim()).filter(item => item);
-          }
-        } else {
-          sanitizedData[field] = [];
-        }
-      } else if (!sanitizedData[field]) {
-        sanitizedData[field] = [];
-      }
-    });
+   const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
+let sanitizedData = req.body;
+
+// Check if it's FormData (multipart)
+if (req.headers['content-type']?.includes('multipart/form-data')) {
+  sanitizedData = parseFormDataArrays(req.body, arrayFields);
+}
+
+// Then sanitize
+sanitizedData = sanitizeServiceInput(sanitizedData);
+
+// Ensure all array fields exist as arrays
+arrayFields.forEach(field => {
+  if (!Array.isArray(sanitizedData[field])) {
+    sanitizedData[field] = [];
+  }
+});
     // Verify category is provided
     if (!sanitizedData.category) {
       return res.status(400).json({
@@ -538,6 +566,21 @@ let bodyData = req.body;
     // Check for thumbnail
     if (req.files && req.files.thumbnail) {
       uploadedThumbnail.push(...req.files.thumbnail);
+    } else if (req.body.thumbnail) {
+      // If thumbnail comes as a string URL (from client-side upload)
+      serviceData.thumbnail = {
+        url: req.body.thumbnail,
+        public_id: `thumbnail-${Date.now()}`,
+        uploadedAt: new Date()
+      };
+    } else {
+      // Thumbnail is now required
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail is required',
+        code: 'THUMBNAIL_REQUIRED',
+        requestId
+      });
     }
     
     // Check for other images
@@ -569,7 +612,15 @@ let bodyData = req.body;
         serviceData.images.push(thumbnailUpload[0]);
       }
     }
-
+    if (!serviceData.thumbnail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail is required. Please upload a thumbnail image.',
+        code: 'THUMBNAIL_MISSING',
+        requestId
+      });
+    }
+    
     // Upload other images
     if (uploadedFiles.length > 0) {
       const uploadedImages = await processUploadToCloudinary(uploadedFiles, 'services');
