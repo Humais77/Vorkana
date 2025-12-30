@@ -75,7 +75,73 @@ router.get('/subcategories',
   },
   adminController.getSubcategories
 );
-
+router.get('/subcategories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_SUBCATEGORIES', 'categories'),
+  adminController.exportSubcategories
+);
+router.get('/subcategories/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
+  adminController.getSubcategoryStats
+);
+router.post('/subcategories/bulk', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
+  adminController.bulkUpdateSubcategories
+);
+router.get('/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  async (req, res) => {
+    try {
+      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
+      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
+      
+      const { categoryId } = req.query;
+      
+      const filter = {
+        isActive: true,
+        deletedAt: null
+      };
+      
+      if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+        filter.category = categoryId;
+      }
+      
+      const subcategories = await Subcategory.find(filter)
+        .select('name slug icon description category order')
+        .populate('category', 'name slug')
+        .sort({ order: 1, name: 1 })
+        .lean();
+      
+      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
+      
+      res.json({
+        success: true,
+        data: subcategories
+      });
+    } catch (error) {
+      console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch subcategories',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+router.get('/categories/:categoryId/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('manage_categories'),
+  auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
+  adminController.getSubcategoriesDropdown
+);
 // Get subcategory by ID - FIXED ROUTE
 router.get('/subcategories/:id', 
   verifyAdmin, 
@@ -191,38 +257,15 @@ router.delete('/subcategories/:id',
 );
 
 // Bulk operations on subcategories
-router.post('/subcategories/bulk', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  requirePermission('manage_categories'),
-  auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
-  adminController.bulkUpdateSubcategories
-);
+
 
 // Get subcategory statistics
-router.get('/subcategories/stats', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
-  adminController.getSubcategoryStats
-);
+
 
 // Export subcategories
-router.get('/subcategories/export', 
-  verifyAdmin, 
-  requirePermission('manage_categories'),
-  auditLog('EXPORT_SUBCATEGORIES', 'categories'),
-  adminController.exportSubcategories
-);
 
 // Subcategory dropdown for specific category
-router.get('/categories/:categoryId/subcategories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  requirePermission('manage_categories'),
-  auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
-  adminController.getSubcategoriesDropdown
-);
+
 
 // ============================================
 // EXISTING ROUTES (keep these as they are)
@@ -260,7 +303,28 @@ router.get('/users/export',
   auditLog('EXPORT_USERS', 'users'),
   adminController.exportUsers
 );
+// Add this route after the existing user routes in admin.route.js
 
+// User bulk operations
+router.post('/users/bulk-action', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_users'),
+  auditLog('BULK_USER_ACTION', 'users'),
+  async (req, res, next) => {
+    try {
+      console.log('[USERS BULK ACTION] Request:', {
+        body: req.body,
+        admin: req.admin?.email
+      });
+      next();
+    } catch (error) {
+      console.error('[USERS BULK ACTION MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  adminController.bulkUpdateUsers
+);
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -394,7 +458,13 @@ router.get('/services',
   },
   serviceController.getAdminServices
 );
-
+router.get('/services/stats', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SERVICE_STATS', 'services'),
+  serviceController.getServiceStats
+);
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -446,13 +516,7 @@ router.put('/services/:id',
   serviceController.updateService
 );
 
-router.get('/services/stats', 
-  verifyAdmin, 
-  adminApiLimiter,
-  requirePermission('view_analytics'),
-  auditLog('VIEW_SERVICE_STATS', 'services'),
-  serviceController.getServiceStats
-);
+
 
 // Gig Management Routes
 router.get('/gigs', 
@@ -478,7 +542,18 @@ router.get('/gigs',
   },
   adminController.getGigs
 );
-
+router.get('/gigs/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_GIG_STATS', 'gigs'),
+  adminController.getGigStats
+);
+router.get('/gigs/export', 
+  verifyAdmin, 
+  requirePermission('manage_gigs'),
+  auditLog('EXPORT_GIGS', 'gigs'),
+  adminController.exportGigs
+);
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -547,19 +622,9 @@ router.post('/gigs/bulk',
   adminController.bulkUpdateGigs
 );
 
-router.get('/gigs/export', 
-  verifyAdmin, 
-  requirePermission('manage_gigs'),
-  auditLog('EXPORT_GIGS', 'gigs'),
-  adminController.exportGigs
-);
 
-router.get('/gigs/stats', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_GIG_STATS', 'gigs'),
-  adminController.getGigStats
-);
+
+
 
 // Dropdown routes
 router.get('/categories/dropdown', 
@@ -624,47 +689,7 @@ router.get('/categories/dropdown',
   }
 );
 
-router.get('/subcategories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  async (req, res) => {
-    try {
-      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
-      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
-      
-      const { categoryId } = req.query;
-      
-      const filter = {
-        isActive: true,
-        deletedAt: null
-      };
-      
-      if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
-        filter.category = categoryId;
-      }
-      
-      const subcategories = await Subcategory.find(filter)
-        .select('name slug icon description category order')
-        .populate('category', 'name slug')
-        .sort({ order: 1, name: 1 })
-        .lean();
-      
-      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
-      
-      res.json({
-        success: true,
-        data: subcategories
-      });
-    } catch (error) {
-      console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch subcategories',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
+
 
 router.get('/users/dropdown', 
   verifyAdmin, 

@@ -81,15 +81,20 @@ const userSchema = new mongoose.Schema(
   trim: true,
   validate: {
     validator: function (v) {
-      if (!v) return true;
-      try {
-        const phoneNumber = parsePhoneNumberFromString(v);
-        return phoneNumber && phoneNumber.isValid();
-      } catch {
-        return false;
-      }
+      if (!v || v.trim() === '') return true; // optional
+      
+      const phoneStr = v.toString().trim();
+      
+      // Basic validation - accept any format that starts with + and has digits
+      const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
+      const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
+      
+      // Check if it starts with + and has reasonable length
+      return phoneRegex.test(phoneStr) && 
+             cleanPhone.length >= 8 && 
+             cleanPhone.length <= 16;
     },
-    message: 'Please provide a valid international phone number (e.g., +15551234567)'
+    message: 'Phone number should start with + and have 7-15 digits (e.g., +15551234567)'
   }
 },
     gender: {

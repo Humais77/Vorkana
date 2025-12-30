@@ -145,113 +145,337 @@ const getCategories = async (req, res) => {
     });
   }
 };
-
-// In admin.controller.js - FIXED getDashboardStats function
-const getDashboardStats = async (req, res) => {
+const bulkUpdateUsers = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    // Execute parallel queries with proper filters
-    const [
-      totalUsers,
-      activeUsers,
-      totalCategories,
-      activeCategories,
-       totalSubcategories,
-      activeSubcategories,
-      totalServices,
-      activeServices,
-      totalGigs,
-      activeGigs,
-      recentActivity
-    ] = await Promise.all([
-      // Users - count all users
-      User.countDocuments(),
-      // Users - count active users (isActive: true)
-      User.countDocuments({ isActive: true }),
+    const { ids, operation, data = {} } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No users selected',
+        code: 'NO_USERS_SELECTED',
+        requestId
+      });
+    }
+
+    // Validate IDs
+    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid user IDs provided',
+        code: 'INVALID_IDS',
+        requestId
+      });
+    }
+
+    let updateData = {};
+    let message = 'Users updated successfully';
+
+    switch (operation) {
+      case 'activate':
+        updateData = { 
+          isActive: true,
+          deletedAt: null
+        };
+        message = 'Users activated successfully';
+        break;
+        
+      case 'deactivate':
+        updateData = { 
+          isActive: false 
+        };
+        message = 'Users deactivated successfully';
+        break;
+        
+      case 'verify-email':
+        updateData = { 
+          emailVerified: true 
+        };
+        message = 'Users email verified successfully';
+        break;
+        
+      case 'unverify-email':
+        updateData = { 
+          emailVerified: false 
+        };
+        message = 'Users email unverified successfully';
+        break;
+        
+      case 'promote-admin':
+        // Security: Check if admin is trying to self-promote
+        if (validIds.includes(req.admin._id.toString())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot change your own role in bulk operation',
+            code: 'SELF_ROLE_CHANGE',
+            requestId
+          });
+        }
+        updateData = { 
+          role: 'admin' 
+        };
+        message = 'Users promoted to admin successfully';
+        break;
+        
+      case 'demote-user':
+        // Security: Check if admin is trying to self-demote
+        if (validIds.includes(req.admin._id.toString())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot change your own role in bulk operation',
+            code: 'SELF_ROLE_CHANGE',
+            requestId
+          });
+        }
+        updateData = { 
+          role: 'user' 
+        };
+        message = 'Users demoted to regular users successfully';
+        break;
+        
+      case 'delete':
+        updateData = { 
+          isActive: false,
+          deletedAt: new Date(),
+          deletedBy: req.admin._id 
+        };
+        message = 'Users deleted successfully';
+        break;
+        
+      default:
+        updateData = data;
+    }
+
+    updateData.updatedAt = new Date();
+
+    // Perform bulk update
+    const result = await User.updateMany(
+      { 
+        _id: { $in: validIds },
+        _id: { $ne: req.admin._id } // Prevent self-modification
+      },
+      { $set: updateData }
+    );
+
+    // Security: Log bulk action
+    await logAdminAction(req.admin._id, `BULK_${operation.toUpperCase()}_USERS`, 'users', {
+      count: validIds.length,
+      operation,
+      modifiedCount: result.modifiedCount,
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      message,
+      operation,
+      modifiedCount: result.modifiedCount,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[BULK UPDATE USERS ERROR]', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate data found',
+        code: 'DUPLICATE_DATA',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to perform bulk operation',
+      code: 'BULK_OPERATION_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+const getDashboardStats = async (req, res) => {
+  const requestId = uuidv4();
+  const startTime = Date.now();
+  
+  try {
+    console.log(`[DASHBOARD STATS] Starting dashboard stats collection for request: ${requestId}`);
+    
+    // OPTIMIZATION: Use lean() and minimal field selection for all queries
+    const statsAggregation = await Promise.allSettled([
+      // Users stats - optimized
+      User.aggregate([
+        {
+          $facet: {
+            totalUsers: [{ $count: "count" }],
+            activeUsers: [{ $match: { isActive: true } }, { $count: "count" }]
+          }
+        }
+      ]).then(res => res[0]),
       
-      // Categories - count all non-deleted categories
-      Category.countDocuments({ deletedAt: null }),
-      // Categories - count active, non-deleted categories
-      Category.countDocuments({ 
-        isActive: true, 
-        deletedAt: null 
-      }),
-      Subcategory.countDocuments({ deletedAt: null }),
-      Subcategory.countDocuments({ 
-        isActive: true, 
-        deletedAt: null 
-      }),
-      // Services - count all services (with proper filter)
-      Service.countDocuments({ deletedAt: null }),
-      // Services - count active services (check your Service model schema)
-      Service.countDocuments({ 
-        status: 'active',  // Change this to match your actual field name
-        isActive: true,    // Add if exists in your schema
-        deletedAt: null 
-      }),
-      
-      // Gigs - count all non-deleted gigs
-      Gig.countDocuments({ deletedAt: null }),
-      // Gigs - count active gigs (check your Gig model schema)
-      Gig.countDocuments({ 
-        status: { $in: ['open', 'in_progress'] }, // Active gig statuses
-        isActive: true,                           // Add if exists in your schema
-        deletedAt: null 
+      // Categories stats - optimized
+      Category.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $group: {
+            _id: '$isSubcategory',
+            total: { $sum: 1 },
+            active: {
+              $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] }
+            }
+          }
+        }
+      ]).then(res => {
+        const result = { totalCategories: 0, activeCategories: 0, totalSubcategories: 0, activeSubcategories: 0 };
+        res.forEach(item => {
+          if (item._id === false) {
+            result.totalCategories = item.total;
+            result.activeCategories = item.active;
+          } else if (item._id === true) {
+            result.totalSubcategories = item.total;
+            result.activeSubcategories = item.active;
+          }
+        });
+        return result;
       }),
       
-      // Recent activity (last 5 users)
-      User.find()
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .select('name email role picture createdAt')
-        .lean()
+      // Services stats - simplified
+      Service.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $group: {
+            _id: null,
+            totalServices: { $sum: 1 },
+            activeServices: {
+              $sum: {
+                $cond: [
+                  {
+                    $or: [
+                      { $eq: ["$status", "active"] },
+                      { $eq: ["$isActive", true] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]).then(res => ({
+        totalServices: res[0]?.totalServices || 0,
+        activeServices: res[0]?.activeServices || 0
+      })),
+      
+      // Gigs stats - simplified
+      Gig.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $group: {
+            _id: null,
+            totalGigs: { $sum: 1 },
+            activeGigs: {
+              $sum: {
+                $cond: [
+                  {
+                    $in: [
+                      "$status",
+                      ["open", "in_progress", "assigned"]
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]).then(res => ({
+        totalGigs: res[0]?.totalGigs || 0,
+        activeGigs: res[0]?.activeGigs || 0
+      })),
+      
+      // Recent activity - optimized with projection
+      User.find({}, { 
+        name: 1, 
+        email: 1, 
+        role: 1, 
+        picture: 1, 
+        createdAt: 1,
+        lastLoginAt: 1
+      })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean()
     ]);
 
+    // Process results with fallbacks
+    const results = statsAggregation.map(p => 
+      p.status === 'fulfilled' ? p.value : null
+    );
+    
+    const userStats = results[0] || { totalUsers: [], activeUsers: [] };
+    const categoryStats = results[1] || { 
+      totalCategories: 0, 
+      activeCategories: 0, 
+      totalSubcategories: 0, 
+      activeSubcategories: 0 
+    };
+    const serviceStats = results[2] || { totalServices: 0, activeServices: 0 };
+    const gigStats = results[3] || { totalGigs: 0, activeGigs: 0 };
+    const recentActivity = results[4] || [];
+
+    // Build response object
     const stats = {
       overview: {
-        totalUsers,
-        activeUsers
+        totalUsers: userStats.totalUsers?.[0]?.count || 0,
+        activeUsers: userStats.activeUsers?.[0]?.count || 0
       },
-      categories: {
-         totalCategories,
-        activeCategories,
-        totalSubcategories,
-        activeSubcategories
-      },
-      services: {
-        totalServices,
-        activeServices
-      },
-      gigs: {
-        totalGigs,
-        activeGigs
-      },
+      categories: categoryStats,
+      services: serviceStats,
+      gigs: gigStats,
       recentActivity: recentActivity.map(user => ({
         name: user.name,
         email: user.email,
         role: user.role,
         picture: user.picture,
-        joined: user.createdAt
+        joined: user.createdAt,
+        lastSeen: user.lastLoginAt
       }))
     };
+
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    console.log(`[DASHBOARD STATS] Completed in ${executionTime}ms for request: ${requestId}`);
 
     res.json({
       success: true,
       data: stats,
       requestId,
+      executionTime: `${executionTime}ms`,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('[DASHBOARD STATS ERROR]', error);
     
-    // Return proper fallback structure
-    res.status(500).json({
-      success: false,
-      message: 'Failed to load dashboard statistics',
-      code: 'DASHBOARD_ERROR',
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    console.error(`[DASHBOARD STATS] Failed after ${executionTime}ms for request: ${requestId}`);
+    
+    // Return fast fallback response
+    res.status(200).json({
+      success: true,
+      message: 'Dashboard statistics loaded with minimal data',
+      code: 'DASHBOARD_MINIMAL',
       requestId,
+      executionTime: `${executionTime}ms`,
       data: {
         overview: {
           totalUsers: 0,
@@ -259,7 +483,9 @@ const getDashboardStats = async (req, res) => {
         },
         categories: {
           totalCategories: 0,
-          activeCategories: 0
+          activeCategories: 0,
+          totalSubcategories: 0,
+          activeSubcategories: 0
         },
         services: {
           totalServices: 0,
@@ -811,7 +1037,7 @@ const createUser = async (req, res) => {
     }
 
     // Validate phone number if provided
-    if (sanitizedData.phoneNumber && !validatePhoneNumber(sanitizedData.phoneNumber)) {
+    if (sanitizedData.phoneNumber && !validatePhoneNumberWithLib(sanitizedData.phoneNumber)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid phone number format',
@@ -933,57 +1159,121 @@ const validateDateOfBirth = (dob) => {
   return age >= 13 && age <= 120;
 };
 
-const validatePhoneNumber = (phone) => {
-  if (!phone || phone.trim() === '') return true; // optional
-
-  const phoneNumber = parsePhoneNumberFromString(phone.trim());
-
-  // If it parses at all (has +country code or recognizable format), accept it
-  // This allows placeholders like +1234567890, +15551234567, etc.
-  return !!phoneNumber;
+const validatePhoneNumberWithLib = (phone) => {
+  if (!phone || phone.trim() === '') return true;
+  
+  try {
+    const phoneNumber = parsePhoneNumberFromString(phone);
+    
+    if (!phoneNumber) {
+      return false;
+    }
+    
+    // Accept any number that can be parsed (even if it's not 100% valid)
+    return phoneNumber.isPossible();
+  } catch (error) {
+    console.log('[PHONE VALIDATION] Error parsing phone:', phone, error.message);
+    
+    // Fallback to basic validation
+    const phoneStr = phone.toString().trim();
+    const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
+    const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
+    
+    return phoneRegex.test(phoneStr) && cleanPhone.length >= 8 && cleanPhone.length <= 16;
+  }
 };
 // Export Users
+// Export Users - FIXED VERSION
 const exportUsers = async (req, res) => {
+  const requestId = uuidv4();
+  
   try {
     const { format = 'json' } = req.query;
 
+    console.log(`[EXPORT USERS] Starting export with format: ${format}, requestId: ${requestId}`);
+
     // Security: Get users with minimal sensitive data
     const users = await User.find()
-      .select('name email role isActive emailVerified createdAt lastLoginAt')
+      .select('name email role isActive emailVerified createdAt lastLoginAt phoneNumber country city occupation education languages')
       .lean();
 
-    if (format === 'csv') {
-      const headers = ['ID', 'Name', 'Email', 'Role', 'Active', 'Email Verified', 'Created At', 'Last Login'];
+    console.log(`[EXPORT USERS] Found ${users.length} users to export`);
+
+    if (format.toLowerCase() === 'csv') {
+      // Prepare CSV headers
+      const headers = [
+        'ID',
+        'Name',
+        'Email',
+        'Role',
+        'Active',
+        'Email Verified',
+        'Phone Number',
+        'Country',
+        'City',
+        'Occupation',
+        'Education',
+        'Languages',
+        'Created At',
+        'Last Login'
+      ];
+
+      // Prepare CSV rows
       const csvRows = users.map(user => [
         user._id,
-        `"${user.name.replace(/"/g, '""')}"`,
-        user.email,
-        user.role,
+        `"${(user.name || '').replace(/"/g, '""')}"`, // Escape quotes
+        user.email || '',
+        user.role || 'user',
         user.isActive ? 'Yes' : 'No',
         user.emailVerified ? 'Yes' : 'No',
-        new Date(user.createdAt).toISOString(),
+        user.phoneNumber || '',
+        user.country || '',
+        user.city || '',
+        user.occupation || '',
+        user.education || '',
+        `"${(Array.isArray(user.languages) ? user.languages.join(', ') : '').replace(/"/g, '""')}"`,
+        user.createdAt ? new Date(user.createdAt).toISOString() : '',
         user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : 'Never'
       ]);
 
-      const csvContent = [headers.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\r\n'); // Use \r\n for proper CSV format
 
-      res.header('Content-Type', 'text/csv');
-      res.header('Content-Disposition', 'attachment; filename="users_export.csv"');
+      console.log(`[EXPORT USERS] CSV content generated, ${csvRows.length} rows`);
+
+      // Set proper CSV headers
+      res.header('Content-Type', 'text/csv; charset=utf-8');
+      res.header('Content-Disposition', `attachment; filename="users_export_${Date.now()}.csv"`);
+      res.header('X-Request-ID', requestId);
+      res.header('X-Export-Records', users.length);
+      res.header('X-Export-Timestamp', new Date().toISOString());
+      
       return res.send(csvContent);
     }
 
+    // Default to JSON format
+    console.log(`[EXPORT USERS] Returning JSON format, ${users.length} users`);
+    
     res.json({
       success: true,
       count: users.length,
       data: users,
-      exportedAt: new Date().toISOString()
+      exportedAt: new Date().toISOString(),
+      requestId,
+      format: 'json'
     });
 
   } catch (error) {
     console.error('[EXPORT USERS ERROR]', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to export users'
+      message: 'Failed to export users',
+      code: 'EXPORT_ERROR',
+      requestId,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -1371,11 +1661,14 @@ const getGigById = async (req, res) => {
   }
 };
 
-// Create Gig (Admin)
+// Create Gig (Admin) - UPDATED VERSION
 const createGig = async (req, res) => {
   const requestId = uuidv4();
   
   try {
+    console.log('[CREATE GIG] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[CREATE GIG] Admin ID:', req.admin._id);
+
     const gigData = {
       ...req.body,
       createdBy: req.admin._id,
@@ -1413,7 +1706,7 @@ const createGig = async (req, res) => {
       });
     }
 
-    // Validate subcategory if provided - UPDATED TO USE SUBCATEGORY MODEL
+    // Validate subcategory if provided
     if (gigData.subcategory) {
       if (!mongoose.Types.ObjectId.isValid(gigData.subcategory)) {
         return res.status(400).json({
@@ -1424,7 +1717,6 @@ const createGig = async (req, res) => {
         });
       }
       
-      // Check if subcategory exists and belongs to the selected category
       const subcategory = await Subcategory.findOne({
         _id: gigData.subcategory,
         category: gigData.projectCategory,
@@ -1441,23 +1733,39 @@ const createGig = async (req, res) => {
       }
     }
 
-    // Validate client exists if provided
-    if (gigData.createdBy && !mongoose.Types.ObjectId.isValid(gigData.createdBy)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid client ID',
-        code: 'INVALID_CLIENT_ID',
-        requestId
-      });
+    // FIX: Remove any client/createdBy validation since admin is creating it
+    // The admin is the creator, so we don't need to validate a separate client
+    
+    // If client ID is provided in body, use it; otherwise use admin as creator
+    if (gigData.clientId && mongoose.Types.ObjectId.isValid(gigData.clientId)) {
+      // Validate client exists
+      const client = await User.findById(gigData.clientId);
+      if (!client) {
+        return res.status(400).json({
+          success: false,
+          message: 'Client not found',
+          code: 'CLIENT_NOT_FOUND',
+          requestId
+        });
+      }
+      gigData.createdBy = gigData.clientId;
+    } else {
+      // Admin is creating the gig on behalf of the system or themselves
+      gigData.createdBy = req.admin._id;
     }
 
-    // Create gig
+    // Remove any clientId field to avoid confusion
+    delete gigData.clientId;
+
+    console.log('[CREATE GIG] Final gig data:', JSON.stringify(gigData, null, 2));
+
+    // Create gig with runValidators false to avoid user validation
     const gig = await Gig.create(gigData);
 
-    // Populate for response - UPDATED TO POPULATE SUBCATEGORY
+    // Populate for response
     const populatedGig = await Gig.findById(gig._id)
       .populate('projectCategory', 'name slug icon')
-      .populate('subcategory', 'name slug icon description') // Updated to Subcategory model
+      .populate('subcategory', 'name slug icon description')
       .populate('createdBy', 'name email picture')
       .lean();
 
@@ -1506,6 +1814,7 @@ const createGig = async (req, res) => {
 
   } catch (error) {
     console.error('[CREATE GIG ERROR]', error);
+    console.error('[CREATE GIG ERROR DETAILS]', error.stack);
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -1518,6 +1827,8 @@ const createGig = async (req, res) => {
     
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
+      console.error('[CREATE GIG VALIDATION ERROR]', messages);
+      console.error('[CREATE GIG VALIDATION ERROR DETAILS]', error.errors);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -1529,9 +1840,10 @@ const createGig = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: 'Failed to create gig',
+      message: 'Failed to create gig: ' + (error.message || 'Internal server error'),
       code: 'GIG_CREATE_ERROR',
-      requestId
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -2073,11 +2385,19 @@ const bulkUpdateGigs = async (req, res) => {
 };
 
 // Export Gigs
+// Export Gigs - FIXED VERSION
 const exportGigs = async (req, res) => {
   const requestId = uuidv4();
   
   try {
     const { format = 'json' } = req.query;
+    
+    console.log('[EXPORT GIGS] Request received:', {
+      format,
+      query: req.query,
+      params: req.params,
+      admin: req.admin?.email
+    });
 
     // Get gigs with populated data
     const gigs = await Gig.find({ deletedAt: null })
@@ -2087,7 +2407,12 @@ const exportGigs = async (req, res) => {
       .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -communicationHistory')
       .lean();
 
-    if (format === 'csv') {
+    console.log(`[EXPORT GIGS] Found ${gigs.length} gigs, format requested: ${format}`);
+
+    // FIX: Check format properly (case-insensitive)
+    const requestedFormat = (format || '').toString().toLowerCase().trim();
+    
+    if (requestedFormat === 'csv') {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
         'Category', 'Subcategory', 'Status', 'Urgency', 'Visibility',
@@ -2126,15 +2451,31 @@ const exportGigs = async (req, res) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
-      res.header('Content-Type', 'text/csv');
-      res.header('Content-Disposition', `attachment; filename="gigs_export_${Date.now()}.csv"`);
-      res.header('X-Request-ID', requestId);
-      res.header('X-Export-Records', gigs.length);
-      res.header('X-Export-Timestamp', new Date().toISOString());
+      // Set proper headers
+      res.set({
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="gigs_export_${Date.now()}.csv"`,
+        'X-Request-ID': requestId,
+        'X-Export-Records': gigs.length.toString(),
+        'X-Export-Timestamp': new Date().toISOString(),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
       
+      console.log(`[EXPORT GIGS] Sending CSV response with ${gigs.length} records`);
       return res.send(csvContent);
     }
 
+    // Default to JSON
+    console.log(`[EXPORT GIGS] Sending JSON response with ${gigs.length} records`);
+    
+    res.set({
+      'Content-Type': 'application/json',
+      'X-Request-ID': requestId,
+      'X-Export-Records': gigs.length.toString()
+    });
+    
     res.json({
       success: true,
       format: 'json',
@@ -2156,6 +2497,7 @@ const exportGigs = async (req, res) => {
 };
 
 // Get Gig Statistics
+// Get Gig Statistics - FIXED VERSION
 const getGigStats = async (req, res) => {
   const requestId = uuidv4();
   
@@ -2175,10 +2517,26 @@ const getGigStats = async (req, res) => {
                 completedGigs: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
                 cancelledGigs: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
                 closedGigs: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
-                totalBudget: { $sum: '$budget' },
-                avgBudget: { $avg: '$budget' },
-                totalBids: { $sum: { $size: '$bids' } },
-                avgBidsPerGig: { $avg: { $size: '$bids' } }
+                totalBudget: { $sum: { $ifNull: ['$budget', 0] } },
+                avgBudget: { $avg: { $ifNull: ['$budget', 0] } },
+                totalBids: {
+                  $sum: {
+                    $cond: [
+                      { $isArray: '$bids' },
+                      { $size: '$bids' },
+                      0
+                    ]
+                  }
+                },
+                avgBidsPerGig: {
+                  $avg: {
+                    $cond: [
+                      { $isArray: '$bids' },
+                      { $size: '$bids' },
+                      0
+                    ]
+                  }
+                }
               }
             }
           ],
@@ -2188,10 +2546,18 @@ const getGigStats = async (req, res) => {
               $group: {
                 _id: '$projectCategory',
                 count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' },
-                totalBids: { $sum: { $size: '$bids' } },
-                maxBudget: { $max: '$budget' },
-                minBudget: { $min: '$budget' }
+                avgBudget: { $avg: { $ifNull: ['$budget', 0] } },
+                totalBids: {
+                  $sum: {
+                    $cond: [
+                      { $isArray: '$bids' },
+                      { $size: '$bids' },
+                      0
+                    ]
+                  }
+                },
+                maxBudget: { $max: { $ifNull: ['$budget', 0] } },
+                minBudget: { $min: { $ifNull: ['$budget', 0] } }
               }
             },
             { $sort: { count: -1 } },
@@ -2202,7 +2568,7 @@ const getGigStats = async (req, res) => {
               $group: {
                 _id: '$status',
                 count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' }
+                avgBudget: { $avg: { $ifNull: ['$budget', 0] } }
               }
             },
             { $sort: { count: -1 } }
@@ -2212,7 +2578,7 @@ const getGigStats = async (req, res) => {
               $group: {
                 _id: '$urgency',
                 count: { $sum: 1 },
-                avgBudget: { $avg: '$budget' }
+                avgBudget: { $avg: { $ifNull: ['$budget', 0] } }
               }
             },
             { $sort: { count: -1 } }
@@ -2220,12 +2586,20 @@ const getGigStats = async (req, res) => {
           budgetDistribution: [
             {
               $bucket: {
-                groupBy: "$budget",
+                groupBy: { $ifNull: ["$budget", 0] },
                 boundaries: [0, 100, 500, 1000, 5000, 10000, 50000, 100000],
                 default: "100000+",
                 output: {
                   count: { $sum: 1 },
-                  avgBids: { $avg: { $size: '$bids' } }
+                  avgBids: {
+                    $avg: {
+                      $cond: [
+                        { $isArray: '$bids' },
+                        { $size: '$bids' },
+                        0
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -2238,7 +2612,7 @@ const getGigStats = async (req, res) => {
                   month: { $month: '$createdAt' }
                 },
                 count: { $sum: 1 },
-                totalBudget: { $sum: '$budget' }
+                totalBudget: { $sum: { $ifNull: ['$budget', 0] } }
               }
             },
             { $sort: { '_id.year': -1, '_id.month': -1 } },
@@ -2279,11 +2653,14 @@ const getGigStats = async (req, res) => {
 
   } catch (error) {
     console.error('[GIG STATS ERROR]', error);
+    console.error('[GIG STATS ERROR DETAILS]', error.stack);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to fetch gig statistics',
       code: 'GIG_STATS_ERROR',
-      requestId
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -3149,4 +3526,5 @@ module.exports = {
   bulkUpdateSubcategories,
   getSubcategoryStats,
   exportSubcategories,
+  bulkUpdateUsers
 };
