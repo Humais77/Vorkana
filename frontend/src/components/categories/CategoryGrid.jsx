@@ -299,204 +299,194 @@ const CategoryGridView = ({
         <div className="relative">
           {/* For lg screens: 10 categories in one row */}
           <div className="hidden lg:flex justify-center gap-5">
-            {categories.slice(0, 10).map((cat) => {
-              const subcategories = subcategoriesMap[cat.id] || [];
-              const hasSubcategories = subcategories.length > 0;
-              const isExpanded = expandedCategory === cat.id;
-              
-              return (
-                <div 
-                  key={cat.id}
-                  className="flex flex-col items-center relative"
+  {categories.slice(0, 10).map((cat) => {
+    const subcategories = subcategoriesMap[cat.id] || [];
+    const hasSubcategories = subcategories.length > 0;
+    const isExpanded = expandedCategory === cat.id;
+    
+    return (
+      <div 
+        key={cat.id}
+        className="flex flex-col items-center relative"
+      >
+        {/* Main Category Card - FIXED SIZE */}
+        <div
+          className="flex flex-col items-center justify-start
+            w-28 h-34       
+            bg-white rounded-lg shadow-sm
+            hover:shadow-md transition-all duration-200
+            border border-gray-100 hover:border-blue-100
+            group relative z-10"
+        >
+          {/* Clickable area for category link */}
+          <Link
+            to={`/categories/${cat.slug || cat.id}`}
+            className="flex flex-col items-center justify-start flex-1 w-full p-3"
+          >
+            <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+              {cat.icon}
+            </div>
+            
+            {/* Fixed height container for text */}
+            <div className="h-10 flex items-center justify-center w-full">
+              <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2 break-words">
+                {cat.name}
+              </span>
+            </div>
+            
+            {cat.servicesCount > 0 && (
+              <span className="text-xs text-gray-500 mt-auto pt-2">
+                {cat.servicesCount} services
+              </span>
+            )}
+          </Link>
+          
+          {/* Expand indicator - separate from link */}
+          {hasSubcategories && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleCategory(cat.id);
+              }}
+              className="absolute top-2 right-2 text-gray-400 hover:text-blue-600 transition-colors"
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+            </button>
+          )}
+        </div>
+        
+        {/* Subcategories Dropdown */}
+        {hasSubcategories && isExpanded && (
+          <div className="absolute top-full left-0 right-0 mt-1 z-20">
+            <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-60 overflow-y-auto">
+              {subcategories.slice(0, 8).map((subcat) => (
+                <Link
+                  key={subcat.id}
+                  to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
+                  className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded transition-colors"
                 >
-                  {/* Main Category Card */}
-                  <Link
-                   to={`/categories/${cat.slug || cat.id}`}
-                    className="flex flex-col items-center justify-center
-                      w-28 h-34       
-                      bg-white rounded-lg shadow-sm
-                      hover:shadow-md transition-all duration-200
-                      border border-gray-100 hover:border-blue-100
-                      group p-3 relative z-10"
-                  >
-                    <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
-                      {cat.icon}
-                    </div>
-                    <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2">
-                      {cat.name}
-                    </span>
-                    
-                    {/* Expand indicator */}
-                    {hasSubcategories && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          toggleCategory(cat.id);
-                        }}
-                        className="absolute top-2 right-2 text-gray-400 hover:text-blue-600 transition-colors"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                    
-                    {cat.servicesCount > 0 && (
-                      <span className="text-xs text-gray-500 mt-2">
-                        {cat.servicesCount} services
+                  <div className="text-gray-600">
+                    {subcat.icon}
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-sm text-gray-800">{subcat.name}</span>
+                    {subcat.servicesCount > 0 && (
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({subcat.servicesCount})
                       </span>
                     )}
-                  </Link>
-                  
-                  {/* Subcategories Dropdown */}
-                  {hasSubcategories && isExpanded && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-20">
-                      <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-60 overflow-y-auto">
-                        {subcategories.slice(0, 8).map((subcat) => (
-                          <Link
-                            key={subcat.id}
-                            to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
-                            className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded transition-colors"
-                          >
-                            <div className="text-gray-600">
-                              {subcat.icon}
-                            </div>
-                            <div className="flex-1">
-                              <span className="text-sm text-gray-800">{subcat.name}</span>
-                              {subcat.servicesCount > 0 && (
-                                <span className="text-xs text-gray-500 ml-2">
-                                  ({subcat.servicesCount})
-                                </span>
-                              )}
-                            </div>
-                          </Link>
-                        ))}
-                        
-                        {subcategories.length > 8 && (
-                          <Link
-                           to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
-                            className="text-center text-sm text-blue-600 hover:text-blue-700 p-2 block border-t border-gray-100"
-                          >
-                            View all {subcategories.length} subcategories →
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                </Link>
+              ))}
+              
+              {subcategories.length > 8 && (
+                <Link
+                  to={`/categories/${cat.slug || cat.id}`}
+                  className="text-center text-sm text-blue-600 hover:text-blue-700 p-2 block border-t border-gray-100"
+                >
+                  View all {subcategories.length} subcategories →
+                </Link>
+              )}
+            </div>
           </div>
+        )}
+      </div>
+    );
+  })}
+</div>
 
           {/* For md/sm screens: 4 per row with show more text button */}
           <div className="lg:hidden">
-            <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
-              {displayCategories.map((cat) => {
-                const subcategories = subcategoriesMap[cat.id] || [];
-                const hasSubcategories = subcategories.length > 0;
-                const isExpanded = expandedCategory === cat.id;
-                
-                return (
-                  <div 
-                    key={cat.id}
-                    className="relative"
-                  >
-                    {/* Main Category Card */}
-                    <Link
-                      to={`/categories/${cat.slug || cat.id}`}
-                      className="flex flex-col items-center justify-center
-                        bg-white rounded-lg shadow-sm
-                        hover:shadow-md transition-all duration-200
-                        border border-gray-100 hover:border-blue-100
-                        group p-3 h-full min-h-[120px] relative"
-                    >
-                      <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
-                        {cat.icon}
-                      </div>
-                      <span className="text-xs font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2">
-                        {cat.name}
-                      </span>
-                      
-                      {/* Expand indicator for mobile */}
-                      {hasSubcategories && (
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleCategory(cat.id);
-                          }}
-                          className="absolute top-1 right-1 text-gray-400 hover:text-blue-600 transition-colors"
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="w-3 h-3" />
-                          ) : (
-                            <ChevronRight className="w-3 h-3" />
-                          )}
-                        </button>
-                      )}
-                      
-                      {cat.servicesCount > 0 && (
-                        <span className="text-xs text-gray-500 mt-1">
-                          {cat.servicesCount}
-                        </span>
-                      )}
-                    </Link>
-                    
-                    {/* Subcategories for mobile (appears below) */}
-                    {hasSubcategories && isExpanded && (
-                      <div className="absolute top-full left-0 right-0 mt-1 z-10">
-                        <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-48 overflow-y-auto">
-                          {subcategories.slice(0, 5).map((subcat) => (
-                            <Link
-                              key={subcat.id}
-                              to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
-                              className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded transition-colors text-sm"
-                            >
-                              <div className="text-gray-600 flex-shrink-0">
-                                {subcat.icon}
-                              </div>
-                              <span className="text-gray-800 truncate">{subcat.name}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            
-            {/* Show More text button for md/sm when there are more than 8 categories */}
-            {hasMoreCategories && !showAll && categories.length > 8 && (
-              <div className="text-center mt-6">
-                <button
-                  onClick={() => setShowAll(true)}
-                  className="px-6 py-2 text-sm font-medium text-blue-600 
-                    hover:text-blue-700 transition-colors duration-200
-                    hover:underline"
-                >
-                  Show More Categories
-                </button>
+  <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
+    {displayCategories.map((cat) => {
+      const subcategories = subcategoriesMap[cat.id] || [];
+      const hasSubcategories = subcategories.length > 0;
+      const isExpanded = expandedCategory === cat.id;
+      
+      return (
+        <div 
+          key={cat.id}
+          className="relative"
+        >
+          {/* Main Category Card - FIXED SIZE */}
+          <div
+            className="flex flex-col items-center justify-start
+              bg-white rounded-lg shadow-sm
+              hover:shadow-md transition-all duration-200
+              border border-gray-100 hover:border-blue-100
+              group h-[120px] relative"
+          >
+            {/* Clickable area for category link */}
+            <Link
+              to={`/categories/${cat.slug || cat.id}`}
+              className="flex flex-col items-center justify-start flex-1 w-full p-3"
+            >
+              <div className="text-gray-700 group-hover:text-blue-600 transition-colors duration-200 mb-2">
+                {cat.icon}
               </div>
-            )}
-            
-            {/* Show Less button when expanded */}
-            {showAll && hasMoreCategories && (
-              <div className="text-center mt-6">
-                <button
-                  onClick={() => setShowAll(false)}
-                  className="px-6 py-2 text-sm font-medium text-blue-600 
-                    hover:text-blue-700 transition-colors duration-200
-                    hover:underline"
-                >
-                  Show Less
-                </button>
+              
+              {/* Fixed height container for text */}
+              <div className="h-10 flex items-center justify-center w-full">
+                <span className="text-xs font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2 break-words">
+                  {cat.name}
+                </span>
               </div>
+              
+              {cat.servicesCount > 0 && (
+                <span className="text-xs text-gray-500 mt-auto pt-1">
+                  {cat.servicesCount}
+                </span>
+              )}
+            </Link>
+            
+            {/* Expand indicator for mobile - separate from link */}
+            {hasSubcategories && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggleCategory(cat.id);
+                }}
+                className="absolute top-1 right-1 text-gray-400 hover:text-blue-600 transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+              </button>
             )}
           </div>
+          
+          {/* Subcategories for mobile (appears below) */}
+          {hasSubcategories && isExpanded && (
+            <div className="absolute top-full left-0 right-0 mt-1 z-10">
+              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-48 overflow-y-auto">
+                {subcategories.slice(0, 5).map((subcat) => (
+                  <Link
+                    key={subcat.id}
+                    to={`/categories/${cat.slug || cat.id}/${subcat.slug || subcat.id}`}
+                    className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded transition-colors text-sm"
+                  >
+                    <div className="text-gray-600 flex-shrink-0">
+                      {subcat.icon}
+                    </div>
+                    <span className="text-gray-800 truncate">{subcat.name}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+</div>
         </div>
       </div>
     </section>

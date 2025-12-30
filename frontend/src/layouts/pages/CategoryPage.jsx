@@ -566,49 +566,6 @@ const CategoryPage = () => {
             </div>
           )}
 
-          {/* Why Choose Us Section */}
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 mb-16">
-            <div className="text-center mb-10">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Why Choose {category.name} Experts on Vorkana
-              </h2>
-              <p className="text-gray-600 max-w-2xl mx-auto">
-                Connect with top professionals who deliver exceptional results
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  title: "Verified Experts",
-                  description: "All providers are verified and reviewed",
-                  icon: "✓"
-                },
-                {
-                  title: "Quality Results",
-                  description: "Guaranteed satisfaction with every project",
-                  icon: "★"
-                },
-                {
-                  title: "Secure Payments",
-                  description: "Your funds are protected until you approve",
-                  icon: "🔒"
-                },
-                {
-                  title: "24/7 Support",
-                  description: "Round-the-clock customer service",
-                  icon: "🕒"
-                }
-              ].map((feature, index) => (
-                <div key={index} className="bg-white rounded-xl p-6 text-center">
-                  <div className="text-3xl mb-4">{feature.icon}</div>
-                  <h3 className="font-bold text-gray-900 mb-2">{feature.title}</h3>
-                  <p className="text-gray-600 text-sm">{feature.description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Get Started CTA */}
           <div className="text-center bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-12 text-white">
             <h2 className="text-3xl font-bold mb-4">Ready to Get Started?</h2>
