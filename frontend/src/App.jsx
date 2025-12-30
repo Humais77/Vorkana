@@ -61,7 +61,8 @@ import AllServicesPage from './components/AllServicesPage';
 import PopularServices from './components/services/PopularService';
 import SubcategoryDetailPage from './layouts/pages/SubcategoryDetailPage';
 import PopularServicesPage from './components/services/PopularService';
-
+import NotFound from './layouts/pages/NotFound';
+import AdminNotFound from "./layouts/pages/AdminNotFound";
 const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
@@ -163,6 +164,8 @@ const App = () => {
             <Route path="/payment-protection" element={<PaymentProtectionPage />} />
             <Route path="/faq" element={<FaqPage />} />
             <Route path="/search" element={<SearchResults />} />
+            <Route path="*" element={<NotFound />} />
+
           </Route>
 
           <Route path="/admin/*" element={
@@ -172,6 +175,7 @@ const App = () => {
               </AdminLayout>
             </ProtectedAdminRoute>
           } />
+          <Route path="*" element={<AdminNotFound />} />
         </Routes>
       </BrowserRouter>
     </SecurityProvider>
