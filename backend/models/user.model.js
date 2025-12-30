@@ -76,23 +76,20 @@ const userSchema = new mongoose.Schema(
       maxlength: [500, 'Bio cannot exceed 500 characters'],
       default: ''
     },
-    // Alternative - More flexible phone validation
-phoneNumber: {
+    phoneNumber: {
   type: String,
   trim: true,
   validate: {
     validator: function (v) {
-      if (!v || v === '') return true; // Optional field
-
-      // Clean the input: remove all non-digits except leading +
-      const cleaned = v.replace(/[^\d+]/g, '');
-      
-      // Basic E.164-like check: optional +, then 1-15 digits, starting with 1-9
-      const e164Regex = /^\+?[1-9]\d{1,14}$/;
-      
-      return e164Regex.test(cleaned);
+      if (!v) return true;
+      try {
+        const phoneNumber = parsePhoneNumberFromString(v);
+        return phoneNumber && phoneNumber.isValid();
+      } catch {
+        return false;
+      }
     },
-    message: 'Please enter a valid phone number (e.g., +1234567890, (123) 456-7890, 123-456-7890)'
+    message: 'Please provide a valid international phone number (e.g., +15551234567)'
   }
 },
     gender: {

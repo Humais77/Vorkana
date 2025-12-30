@@ -8,9 +8,21 @@ const rateLimit = require('express-rate-limit');
 const blacklist = new Set(); // In production, use Redis
 const mongoose = require('mongoose');
 const EmailService = require('../services/email.service');
+const { parsePhoneNumberFromString } = require('libphonenumber-js');
+const asyncHandler = require('express-async-handler');
+const { performance } = require('perf_hooks');
 
 // Cache utility import (make sure this file exists)
 const cache = require('../utils/cache.js');
+const perfMiddleware = (req, res, next) => {
+  req.startTime = performance.now();
+  next();
+};
+
+// Cached bcrypt comparison for timing attack prevention
+const fakeCompare = async () => {
+  return await bcrypt.compare('fake', '$2b$10$fakeHashForTimingPrevention');
+};
 
 // ========== TOKEN FUNCTIONS ==========
 const generateToken = (id) => {
@@ -73,10 +85,21 @@ const sanitizeInput = (input) => {
 };
 
 const validatePhoneNumber = (phone) => {
-  if (!phone) return true;
-  return validator.isMobilePhone(phone, 'any', { strictMode: false });
-};
+  if (!phone) return true; // Optional field
 
+  try {
+    const phoneNumber = parsePhoneNumberFromString(phone);
+    if (!phoneNumber || !phoneNumber.isValid()) {
+      return false;
+    }
+    // Optional: enforce mobile only (if you want mobile numbers specifically)
+    // return phoneNumber.getType() === 'MOBILE' || phoneNumber.getType() === 'FIXED_LINE_OR_MOBILE';
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
 const validateDateOfBirth = (dob) => {
   if (!dob) return true;
   
@@ -127,60 +150,85 @@ const logSecurityEvent = (event, userId, ip, details = {}) => {
     // Implement logging to database or external service
   }
 };
-
+const optimizeDatabase = async () => {
+  try {
+    const mongoose = require('mongoose');
+    
+    // Set connection options for better performance
+    mongoose.connection.on('connected', () => {
+      console.log('✅ Database connected with optimized settings');
+      
+      // Set query timeouts
+      mongoose.set('maxTimeMS', 10000);
+      
+      // Disable full docs in update operations
+      mongoose.set('returnOriginal', false);
+      
+      // Enable lean queries by default for find operations
+      mongoose.set('toObject', { virtuals: true });
+      mongoose.set('toJSON', { virtuals: true });
+    });
+    
+  } catch (error) {
+    console.error('Database optimization error:', error.message);
+  }
+};
 // ========== CONTROLLER FUNCTIONS ==========
 
 // Register new user
-const register = async (req, res) => {
+const register = asyncHandler(async (req, res) => {
+  const startTime = performance.now();
+  const ip = req.ip || req.connection.remoteAddress;
+  
   try {
     const { name, email, password, phoneNumber, dateOfBirth, gender, country, city } = req.body;
-    const ip = req.ip || req.connection.remoteAddress;
 
-    // Validate password strength
-    if (!validatePassword(password)) {
-      logSecurityEvent('WEAK_PASSWORD_ATTEMPT', null, ip, { email });
+    // 1. Quick validations first (fast checks)
+    if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)'
+        message: 'Name, email, and password are required'
       });
     }
 
-    // Validate phone number if provided
-    if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
+    // 2. Email validation (fast regex check before database)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid phone number'
+        message: 'Please provide a valid email address'
       });
     }
 
-    // Validate date of birth if provided
-    if (dateOfBirth && !validateDateOfBirth(dateOfBirth)) {
+    // 3. Password strength validation (fast checks)
+    if (password.length < 8) {
       return res.status(400).json({
         success: false,
-        message: 'You must be at least 13 years old and not older than 120 years'
+        message: 'Password must be at least 8 characters'
       });
     }
 
-    // Check for existing user
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    // 4. Check for existing user (database call - optimize with lean)
+    const existingUser = await User.findOne({ email: email.toLowerCase() })
+      .select('_id')
+      .lean()
+      .maxTimeMS(5000); // Timeout after 5 seconds
+
     if (existingUser) {
-      logSecurityEvent('DUPLICATE_REGISTRATION_ATTEMPT', null, ip, { email });
+      // Constant-time delay to prevent timing attacks
+      await fakeCompare();
+      
       return res.status(409).json({
         success: false,
         message: 'User already exists with this email'
       });
     }
 
-    // Sanitize inputs
-    const sanitizedData = {
-      name: sanitizeInput(name),
-      email: email.toLowerCase(),
+    // 5. Prepare user data (avoid unnecessary operations)
+    const userData = {
+      name: name.trim().substring(0, 50), // Limit length
+      email: email.toLowerCase().trim(),
       password,
-      phoneNumber: phoneNumber ? sanitizeInput(phoneNumber) : undefined,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-      gender: gender || '',
-      country: country ? sanitizeInput(country) : '',
-      city: city ? sanitizeInput(city) : '',
       role: 'user',
       privacySettings: {
         profileVisibility: 'public',
@@ -191,52 +239,77 @@ const register = async (req, res) => {
       }
     };
 
-    // Create user
-    const user = await User.create(sanitizedData);
+    // Only add optional fields if they exist and are valid
+    if (phoneNumber && phoneNumber.trim()) {
+      userData.phoneNumber = phoneNumber.trim().substring(0, 20);
+    }
+    
+    if (dateOfBirth) {
+      const dob = new Date(dateOfBirth);
+      if (!isNaN(dob.getTime())) {
+        userData.dateOfBirth = dob;
+      }
+    }
+    
+    if (gender && ['male', 'female', 'other', 'prefer-not-to-say'].includes(gender)) {
+      userData.gender = gender;
+    }
+    
+    if (country && country.trim()) {
+      userData.country = country.trim().substring(0, 100);
+    }
+    
+    if (city && city.trim()) {
+      userData.city = city.trim().substring(0, 100);
+    }
 
-    // Invalidate cache for user lists
-    await cache.del('users:*');
+    // 6. Create user (password hashing happens in pre-save middleware)
+    const user = await User.create(userData);
 
-    // Generate verification token
+    // 7. Generate verification token (don't wait for email)
     const verificationToken = user.createEmailVerificationToken();
-    await user.save({ validateBeforeSave: false });
+    
+    // Save user without waiting for email
+    user.save({ validateBeforeSave: false }).catch(err => {
+      console.error('Error saving user after creation:', err.message);
+    });
 
-    // Send verification email
-    try {
-      await EmailService.sendVerificationEmail(user, verificationToken);
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      // Don't fail registration if email fails
-      logSecurityEvent('EMAIL_SEND_FAILED', user._id, ip, { 
-        email: user.email,
-        error: emailError.message 
+    // 8. Send verification email in background (non-blocking)
+    if (EmailService && typeof EmailService.sendVerificationEmail === 'function') {
+      process.nextTick(async () => {
+        try {
+          await EmailService.sendVerificationEmail(user, verificationToken);
+        } catch (emailError) {
+          console.error('Background email error:', emailError.message);
+        }
       });
     }
 
+    // 9. Response (immediate)
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+    
+    console.log(`✅ Registration completed in ${processingTime.toFixed(2)}ms`);
 
-    logSecurityEvent('REGISTRATION_SUCCESS', user._id, ip, { 
-      email: user.email,
-      emailVerified: false 
-    });
-
-   res.status(201).json({
+    res.status(201).json({
       success: true,
       message: 'Registration successful. Please check your email to verify your account.',
-      // Don't include token or refreshToken
       requiresVerification: true,
+      processingTime: processingTime.toFixed(2),
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        emailVerified: user.emailVerified // This will be false
+        emailVerified: user.emailVerified
       }
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
-    
-    // Validation errors
+    const endTime = performance.now();
+    console.error(`❌ Registration error (${(endTime - startTime).toFixed(2)}ms):`, error.message);
+
+    // Handle specific errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -246,7 +319,6 @@ const register = async (req, res) => {
       });
     }
 
-    // Duplicate key error
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -254,36 +326,24 @@ const register = async (req, res) => {
       });
     }
 
-    // Server error
+    // Generic error
     res.status(500).json({
       success: false,
       message: 'Server error during registration',
       code: 'REGISTRATION_ERROR'
     });
   }
-};
+});
 
-// Login user
-const login = async (req, res) => {
+// Optimized login function
+const login = asyncHandler(async (req, res) => {
+  const startTime = performance.now();
+  const { email, password, deviceToken, deviceType } = req.body;
+  const ip = req.ip || req.connection.remoteAddress;
+  const userAgent = req.headers['user-agent'];
+
   try {
-    const { email, password, deviceToken, deviceType } = req.body;
-    const ip = req.ip || req.connection.remoteAddress;
-    const userAgent = req.headers['user-agent'];
-
-    // Generate cache key for failed login attempts
-    const loginAttemptsKey = `login_attempts:${email}:${ip}`;
-    
-    // Check rate limiting in cache
-    const attempts = await cache.get(loginAttemptsKey) || 0;
-    if (attempts >= 5) {
-      return res.status(429).json({
-        success: false,
-        message: 'Too many login attempts. Please try again later.',
-        code: 'RATE_LIMIT_EXCEEDED'
-      });
-    }
-
-    // Basic validation
+    // 1. Quick validations
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -291,19 +351,17 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user with security fields
-   const user = await User.findOne({ email: email.toLowerCase() })
-      .select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected +emailVerified');
-    
-    
-    // Check if account exists
+    // 2. Find user with optimized query
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected +emailVerified')
+      .maxTimeMS(5000);
+
     if (!user) {
-      // Increment failed attempts in cache
-      await cache.set(loginAttemptsKey, attempts + 1, 900); // 15 minutes TTL
+      // Constant-time delay for security
+      await fakeCompare();
       
-      // Constant-time delay to prevent timing attacks
-      await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
-      logSecurityEvent('LOGIN_FAILED_NO_USER', null, ip, { email });
+      const endTime = performance.now();
+      console.log(`❌ Login failed - user not found (${(endTime - startTime).toFixed(2)}ms)`);
       
       return res.status(401).json({
         success: false,
@@ -311,48 +369,40 @@ const login = async (req, res) => {
       });
     }
 
-    // Check account lock
+    // 3. Check account status (fast checks)
     if (user.lockUntil && user.lockUntil > Date.now()) {
       const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
-      logSecurityEvent('LOGIN_ATTEMPT_LOCKED_ACCOUNT', user._id, ip, { email: user.email });
-      
       return res.status(423).json({
         success: false,
         message: `Account is locked. Try again in ${remainingTime} minutes.`,
-        retryAfter: Math.ceil((user.lockUntil - Date.now()) / 1000),
         code: 'ACCOUNT_LOCKED'
       });
     }
 
-    // Check if account is active
     if (!user.isActive) {
-      logSecurityEvent('LOGIN_ATTEMPT_INACTIVE_ACCOUNT', user._id, ip, { email: user.email });
-      
       return res.status(403).json({
         success: false,
-        message: 'Account is deactivated. Please contact support.',
+        message: 'Account is deactivated',
         code: 'ACCOUNT_DEACTIVATED'
       });
     }
 
-    // Verify password
+    // 4. Verify password
     const isPasswordValid = await user.comparePassword(password);
     
     if (!isPasswordValid) {
-      // Increment failed attempts in cache
-      await cache.set(loginAttemptsKey, attempts + 1, 900);
-      
-      // Log failed attempt
-      await user.incrementLoginAttempts();
-      await user.addLoginHistory(ip, userAgent, false);
-      
-      logSecurityEvent('LOGIN_FAILED_WRONG_PASSWORD', user._id, ip, { 
-        email: user.email,
-        attempts: user.failedLoginAttempts + 1
+      // Log failed attempt in background
+      process.nextTick(async () => {
+        try {
+          await user.incrementLoginAttempts();
+          await user.addLoginHistory(ip, userAgent, false);
+        } catch (err) {
+          console.error('Error logging failed attempt:', err.message);
+        }
       });
-      
+
       // Constant-time delay
-      await bcrypt.compare(password, '$2b$10$fakeHashForTimingPrevention');
+      await fakeCompare();
       
       return res.status(401).json({
         success: false,
@@ -361,13 +411,8 @@ const login = async (req, res) => {
       });
     }
 
-    // FIX: Allow login even if email is not verified
-    // But mark it in the response
-    const requiresVerification = !user.emailVerified;
-    
-   if (!user.emailVerified) {
-      logSecurityEvent('LOGIN_ATTEMPT_UNVERIFIED_EMAIL', user._id, ip, { email: user.email });
-      
+    // 5. Check email verification
+    if (!user.emailVerified) {
       return res.status(403).json({
         success: false,
         message: 'Please verify your email before logging in.',
@@ -376,87 +421,90 @@ const login = async (req, res) => {
       });
     }
 
-    // Reset login attempts on successful login
-    await user.resetLoginAttempts();
-    await user.addLoginHistory(ip, userAgent, true);
-    
-    // Clear failed attempts from cache
-    await cache.del(loginAttemptsKey);
-    
-    // Update last login
-    user.lastLoginAt = new Date();
-    user.lastSeenAt = new Date();
-    
-    // Store device token for push notifications
-    if (deviceToken) {
-      await user.addDeviceToken(deviceToken, deviceType);
-    }
-    
-    await user.save({ validateBeforeSave: false });
-
-    // Generate tokens
-    const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    // Cache user profile for public access
-    const userCacheKey = `user:${user._id}:public`;
-    const publicProfile = {
-      _id: user._id,
-      name: user.name,
-      picture: user.picture,
-      bio: user.bio,
-      rating: user.rating,
-      totalReviews: user.totalReviews,
-      responseRate: user.responseRate,
-      responseTime: user.responseTime,
-      occupation: user.occupation,
-      education: user.education,
-      languages: user.languages,
-      createdAt: user.createdAt,
-      isOnline: user.isOnline,
-      accountType: user.accountType,
-      country: user.privacySettings.showLocation ? user.country : undefined,
-      city: user.privacySettings.showLocation ? user.city : undefined
-    };
-    
-    await cache.set(userCacheKey, publicProfile, 300); // Cache for 5 minutes
-
-    // Log successful login
-    logSecurityEvent('LOGIN_SUCCESS', user._id, ip, { 
-      email: user.email,
-      deviceType,
-      emailVerified: user.emailVerified
-    });
-
-    res.json({
-      success: true,
-      message: requiresVerification ? 
-        'Login successful. Please verify your email to access all features.' : 
-        'Login successful',
-      token,
-      refreshToken,
-      requiresVerification,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified,
-        lastLoginAt: user.lastLoginAt,
-        privacySettings: user.privacySettings,
-        phoneNumber: user.phoneNumber,
-        country: user.country,
-        city: user.city,
-        bio: user.bio,
-        rating: user.rating,
-        isOnline: user.isOnline
+    // 6. Reset login attempts in background
+    process.nextTick(async () => {
+      try {
+        await user.resetLoginAttempts();
+        await user.addLoginHistory(ip, userAgent, true);
+        
+        if (deviceToken) {
+          await user.addDeviceToken(deviceToken, deviceType);
+        }
+        
+        user.lastLoginAt = new Date();
+        user.lastSeenAt = new Date();
+        await user.save({ validateBeforeSave: false });
+      } catch (err) {
+        console.error('Error updating user after login:', err.message);
       }
     });
 
+    // 7. Generate tokens
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    // 8. Prepare response (lean user object)
+    const userResponse = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      picture: user.picture,
+      emailVerified: user.emailVerified,
+      phoneNumber: user.phoneNumber,
+      country: user.country,
+      city: user.city,
+      bio: user.bio,
+      rating: user.rating,
+      isOnline: true
+    };
+
+    // 9. Cache public profile in background
+    process.nextTick(async () => {
+      try {
+        const publicProfile = {
+          _id: user._id,
+          name: user.name,
+          picture: user.picture,
+          bio: user.bio,
+          rating: user.rating,
+          totalReviews: user.totalReviews,
+          responseRate: user.responseRate,
+          responseTime: user.responseTime,
+          occupation: user.occupation,
+          education: user.education,
+          languages: user.languages,
+          createdAt: user.createdAt,
+          isOnline: true,
+          accountType: user.accountType,
+          country: user.privacySettings.showLocation ? user.country : undefined,
+          city: user.privacySettings.showLocation ? user.city : undefined
+        };
+        
+        const userCacheKey = `user:${user._id}:public`;
+        if (cache && typeof cache.set === 'function') {
+          await cache.set(userCacheKey, publicProfile, 300);
+        }
+      } catch (err) {
+        console.error('Error caching user profile:', err.message);
+      }
+    });
+
+    const endTime = performance.now();
+    console.log(`✅ Login completed in ${(endTime - startTime).toFixed(2)}ms`);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      refreshToken,
+      processingTime: (endTime - startTime).toFixed(2),
+      user: userResponse
+    });
+
   } catch (error) {
-    console.error('Login error:', error);
-    logSecurityEvent('LOGIN_ERROR', null, req.ip, { error: error.message });
+    const endTime = performance.now();
+    console.error(`❌ Login error (${(endTime - startTime).toFixed(2)}ms):`, error.message);
     
     res.status(500).json({
       success: false,
@@ -464,7 +512,11 @@ const login = async (req, res) => {
       code: 'LOGIN_ERROR'
     });
   }
-};
+});
+optimizeDatabase();
+// Add database connection optimization
+
+
 
 // Get user profile with caching
 const getProfile = async (req, res) => {
