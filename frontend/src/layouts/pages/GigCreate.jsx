@@ -720,14 +720,16 @@ const validateStep = useCallback((step) => {
     }
 
     if (step === 4) {
-      if (!formData.description || formData.description.trim().length < 20) {
-        newErrors.description = "Description must be at least 20 characters.";
-      }
+  if (!formData.description || formData.description.trim().length < 20) {
+    newErrors.description = "Description must be at least 20 characters.";
+  } else if (formData.description.trim().length > 5000) {
+    newErrors.description = "Description cannot exceed 5000 characters.";
+  }
 
-      if (!formData.timeline || formData.timeline.trim().length < 3) {
-        newErrors.timeline = "Timeline is required.";
-      }
-    }
+  if (!formData.timeline || formData.timeline.trim().length < 3) {
+    newErrors.timeline = "Timeline is required.";
+  }
+}
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -2051,44 +2053,47 @@ const validateStep = useCallback((step) => {
 
                             {/* Description */}
                             <div>
-                              <label htmlFor="description" className="block text-sm font-semibold text-gray-700 mb-2">
-                                Project Description *
-                              </label>
-                              <textarea
-                                id="description"
-                                name="description"
-                                value={formData.description}
-                                onChange={handleInputChange}
-                                rows="5"
-                                className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all resize-none disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
-                                placeholder="Describe your project in detail. Include:
+  <label htmlFor="description" className="block text-sm font-semibold text-gray-700 mb-2">
+    Project Description *
+  </label>
+  <textarea
+    id="description"
+    name="description"
+    value={formData.description}
+    onChange={handleInputChange}
+    rows="5"
+    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all resize-none disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+    placeholder="Describe your project in detail. Include:
 • What you want to achieve
 • Specific requirements
 • Preferred technologies/tools
 • Any examples or references"
-                                disabled={gigLoading}
-                                required
-                                aria-required="true"
-                                aria-describedby="description-help"
-                              />
-                              <div className="flex flex-col md:flex-row justify-between mt-2 gap-2">
-                                <div>
-                                  <p id="description-help" className="text-xs text-gray-500">
-                                    Minimum 20 characters required
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    Maximum 5000 characters allowed
-                                  </p>
-                                </div>
-                                <span className={`text-sm font-medium ${formData.description.length < 20 ? 'text-red-500' : 'text-emerald-500'
-                                  }`}>
-                                  {formData.description.length}/5000
-                                </span>
-                              </div>
-                              {errors.description && (
-                                <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
-                              )}
-                            </div>
+    disabled={gigLoading}
+    required
+    maxLength="5000"  // Add maxLength attribute
+    aria-required="true"
+    aria-describedby="description-help"
+  />
+  <div className="flex flex-col md:flex-row justify-between mt-2 gap-2">
+    <div>
+      <p id="description-help" className="text-xs text-gray-500">
+        Minimum 20 characters, maximum 5000 characters
+      </p>
+      <p className="text-xs text-gray-500">
+        Characters remaining: {5000 - formData.description.length}
+      </p>
+    </div>
+    <span className={`text-sm font-medium ${
+      formData.description.length < 20 ? 'text-red-500' : 
+      formData.description.length >= 5000 ? 'text-red-500' : 'text-emerald-500'
+    }`}>
+      {formData.description.length}/5000
+    </span>
+  </div>
+  {errors.description && (
+    <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
+  )}
+</div>
 
                             {/* Skills Required */}
                             <div>

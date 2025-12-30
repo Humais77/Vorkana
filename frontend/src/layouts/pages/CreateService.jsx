@@ -298,13 +298,16 @@ const CreateService = () => {
   if (type === 'checkbox') {
     newValue = checked;
   } else if (type === 'number') {
-    // Handle empty number inputs
     newValue = value === '' ? '' : value;
   } else if (type === 'select-one') {
-    // Handle select inputs
     newValue = value || '';
+  } else if (name === 'description') {
+    // Limit description to 5000 characters
+    newValue = value ? value.slice(0, 5000) : '';
+  } else if (name === 'shortDescription') {
+    // Limit short description to 250 characters
+    newValue = value ? value.slice(0, 250) : '';
   } else {
-    // Handle text inputs
     newValue = value || '';
   }
   
@@ -647,27 +650,30 @@ const CreateService = () => {
     const newErrors = {};
 
     if (step === 1) {
-      if (!formData.title || formData.title.trim().length < 5) {
-        newErrors.title = "Service title must be at least 5 characters.";
-      }
-
-      if (!formData.category) {
-        newErrors.category = "Please select a category.";
-      }
-
-      if (!formData.subcategory) {
-        newErrors.subcategory = "Please select a subcategory.";
-      }
-
-      if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
-        newErrors.shortDescription = "Short description must be at least 20 characters.";
-      }
-
-      if (!formData.description || formData.description.trim().length < 50) {
-        newErrors.description = "Description must be at least 50 characters.";
-      }
+    if (!formData.title || formData.title.trim().length < 5) {
+      newErrors.title = "Service title must be at least 5 characters.";
     }
 
+    if (!formData.category) {
+      newErrors.category = "Please select a category.";
+    }
+
+    if (!formData.subcategory) {
+      newErrors.subcategory = "Please select a subcategory.";
+    }
+
+    if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
+      newErrors.shortDescription = "Short description must be at least 20 characters.";
+    } else if (formData.shortDescription.trim().length > 250) {
+      newErrors.shortDescription = "Short description cannot exceed 250 characters.";
+    }
+
+    if (!formData.description || formData.description.trim().length < 50) {
+      newErrors.description = "Description must be at least 50 characters.";
+    } else if (formData.description.trim().length > 5000) {
+      newErrors.description = "Description cannot exceed 5000 characters.";
+    }
+  }
     if (step === 2) {
       const priceNum = parseFloat(formData.price);
       if (!formData.price || isNaN(priceNum) || priceNum < 1 || priceNum > 100000) {
@@ -1091,67 +1097,75 @@ const CreateService = () => {
               </div>
 
               {/* Short Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Short Description <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  name="shortDescription"
-                  value={formData.shortDescription}
-                  onChange={handleInputChange}
-                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
-                  rows="3"
-                  placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
-                  required
-                  aria-required="true"
-                  aria-describedby="short-desc-help"
-                />
-                <div className="flex justify-between mt-2">
-                  <p id="short-desc-help" className="text-xs text-gray-500">
-                    Required - Minimum 20 characters
-                  </p>
-                  <span className={`text-xs font-medium ${formData.shortDescription.length < 20 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formData.shortDescription.length}/250
-                  </span>
-                </div>
-                {errors.shortDescription && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
-                )}
-              </div>
+             <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Short Description <span className="text-red-500">*</span>
+  </label>
+  <textarea
+    name="shortDescription"
+    value={formData.shortDescription}
+    onChange={handleInputChange}
+    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+    rows="3"
+    placeholder="Brief description of your service (appears in listings). Minimum 20 characters."
+    required
+    maxLength="250"  // Add maxLength attribute
+    aria-required="true"
+    aria-describedby="short-desc-help"
+  />
+  <div className="flex justify-between mt-2">
+    <p id="short-desc-help" className="text-xs text-gray-500">
+      Minimum 20 characters, maximum 250 characters
+    </p>
+    <span className={`text-xs font-medium ${
+      formData.shortDescription.length < 20 ? 'text-red-600' : 
+      formData.shortDescription.length >= 250 ? 'text-red-600' : 'text-green-600'
+    }`}>
+      {formData.shortDescription.length}/250
+    </span>
+  </div>
+  {errors.shortDescription && (
+    <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
+  )}
+</div>
 
               {/* Full Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Description <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description || ''}
-                  onChange={handleInputChange}
-                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
-                  rows="6"
-                  placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
-                  required
-                  aria-required="true"
-                  aria-describedby="desc-help"
-                />
-                <div className="flex justify-between mt-2">
-                  <div>
-                    <p id="desc-help" className="text-xs text-gray-500">
-                      Minimum 50 characters required
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Maximum 5000 characters allowed
-                    </p>
-                  </div>
-                  <span className={`text-xs font-medium ${formData.description.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formData.description.length}/5000
-                  </span>
-                </div>
-                {errors.description && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
-                )}
-              </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Full Description <span className="text-red-500">*</span>
+  </label>
+  <textarea
+    name="description"
+    value={formData.description || ''}
+    onChange={handleInputChange}
+    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+    rows="6"
+    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details. Minimum 50 characters."
+    required
+    maxLength="5000"  // Add maxLength attribute
+    aria-required="true"
+    aria-describedby="desc-help"
+  />
+  <div className="flex justify-between mt-2">
+    <div>
+      <p id="desc-help" className="text-xs text-gray-500">
+        Minimum 50 characters, maximum 5000 characters
+      </p>
+      <p className="text-xs text-gray-500">
+        Characters remaining: {5000 - formData.description.length}
+      </p>
+    </div>
+    <span className={`text-xs font-medium ${
+      formData.description.length < 50 ? 'text-red-600' : 
+      formData.description.length >= 5000 ? 'text-red-600' : 'text-green-600'
+    }`}>
+      {formData.description.length}/5000
+    </span>
+  </div>
+  {errors.description && (
+    <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
+  )}
+</div>
             </div>
           </div>
         );
