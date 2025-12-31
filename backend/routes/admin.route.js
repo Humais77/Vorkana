@@ -591,11 +591,22 @@ router.get('/gigs/export',
   auditLog('EXPORT_GIGS', 'gigs'),
   adminController.exportGigs
 );
+// Ensure the GET /api/admin/gigs/:id route includes proper population
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('VIEW_GIG', 'gigs'),
+  async (req, res, next) => {
+    try {
+      // Add query parameters for population
+      req.query.populateSubcategory = true;
+      req.query.populateCategory = true;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  },
   adminController.getGigById
 );
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAdminDashboard } from '../../../hooks/useAdminDashboard';
+import { useAdminDashboard ,useSystemHealth, useChartData, useRecentActivities } from '../../../hooks/useAdminDashboard';
 import { useAdminStore } from '../../../store/useAdminStore';
 import { Link } from 'react-router-dom';
 import {
@@ -33,7 +33,9 @@ const AdminDashboard = () => {
   const { dashboardStats } = useAdminStore();
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState('');
-
+const { data: systemHealthData } = useSystemHealth();
+const { data: chartData } = useChartData('monthlyGrowth', '30d');
+const { data: recentActivitiesData } = useRecentActivities(5);
   useEffect(() => {
     if (dashboardStats.lastUpdated) {
       setLastUpdate(formatDistanceToNow(new Date(dashboardStats.lastUpdated), { addSuffix: true }));
@@ -110,14 +112,35 @@ const AdminDashboard = () => {
   ];
 
   // Get recent users from dashboard data if available
-  const recentUsers = dashboardData?.recentActivity || [];
+ const recentUsers = recentActivitiesData?.data || dashboardData?.recentActivity || [];
 
-  const platformHealth = [
-    { label: 'API Response', value: '98ms', status: 'good', icon: <FiActivity className="h-4 w-4" /> },
-    { label: 'Database', value: 'Connected', status: 'good', icon: <FiDatabase className="h-4 w-4" /> },
-    { label: 'Server Uptime', value: '99.9%', status: 'good', icon: <FiServer className="h-4 w-4" /> },
-    { label: 'Memory Usage', value: '64%', status: 'warning', icon: <FiBarChart2 className="h-4 w-4" /> },
-  ];
+const platformHealth = [
+  { 
+    label: 'API Response', 
+    value: systemHealthData?.data?.responseTime || '98ms', 
+    status: 'good', 
+    icon: <FiActivity className="h-4 w-4" /> 
+  },
+  { 
+    label: 'Database', 
+    value: systemHealthData?.data?.database === 'connected' ? 'Connected' : 'Disconnected', 
+    status: systemHealthData?.data?.database === 'connected' ? 'good' : 'error', 
+    icon: <FiDatabase className="h-4 w-4" /> 
+  },
+  { 
+    label: 'Server Uptime', 
+    value: systemHealthData?.data?.uptime ? `${Math.floor(systemHealthData.data.uptime / 3600)}h` : '99.9%', 
+    status: 'good', 
+    icon: <FiServer className="h-4 w-4" /> 
+  },
+  { 
+    label: 'Memory Usage', 
+    value: systemHealthData?.data?.memory?.heapUsed || '64%', 
+    status: systemHealthData?.data?.memory?.heapUsed?.includes('MB') && parseInt(systemHealthData.data.memory.heapUsed) > 500 ? 'warning' : 'good', 
+    icon: <FiBarChart2 className="h-4 w-4" /> 
+  },
+];
+
 
   if (isLoading) {
     return (
@@ -139,6 +162,16 @@ const AdminDashboard = () => {
           <p className="text-gray-600 mt-1">Welcome back! Here's what's happening with your platform.</p>
         </div>
         <div className="flex items-center space-x-3">
+           <div className="hidden md:flex items-center space-x-2">
+    <div className={`h-2 w-2 rounded-full ${
+      systemHealthData?.data?.status === 'healthy' ? 'bg-green-500' : 
+      systemHealthData?.data?.status === 'unhealthy' ? 'bg-red-500' : 
+      'bg-yellow-500'
+    }`}></div>
+    <span className="text-sm text-gray-500">
+      System: {systemHealthData?.data?.status || 'Unknown'}
+    </span>
+  </div>
           <div className="text-sm text-gray-500 hidden md:block">
             Last updated {lastUpdate}
           </div>

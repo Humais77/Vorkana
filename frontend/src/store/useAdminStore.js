@@ -19,6 +19,17 @@ export const useAdminStore = create(
         activeGigs: 0,
         lastUpdated: null
       },
+      systemHealth: {
+        status: 'unknown',
+        timestamp: null,
+        uptime: 0,
+        database: 'unknown',
+        responseTime: '0ms'
+      },
+       categoryStats: null,
+      subcategoryStats: null,
+      serviceStats: null,
+      gigStats: null,
       
       // Users State
       users: [],
@@ -196,6 +207,46 @@ export const useAdminStore = create(
       setSubcategoriesFilters: (filters) => set({ 
         subcategoriesFilters: { ...get().subcategoriesFilters, ...filters }
       }),
+      setGigs: (data) => {
+        const gigs = Array.isArray(data) ? data : data?.data || [];
+        const pagination = data?.pagination || null;
+        set({ 
+          gigs, 
+          gigsPagination: pagination,
+          gigsLastFetched: Date.now() 
+        });
+      },
+      setSelectedGig: (gig) => set({ selectedGig: gig }),
+      
+      setGigsFilters: (filters) => set({ 
+        gigsFilters: { ...get().gigsFilters, ...filters }
+      }),
+      
+      setServices: (data) => {
+        const services = Array.isArray(data) ? data : data?.data || [];
+        const pagination = data?.pagination || null;
+        set({ 
+          services, 
+          servicesPagination: pagination,
+          servicesLastFetched: Date.now() 
+        });
+      },
+      
+      setSelectedService: (service) => set({ selectedService: service }),
+      
+      setServicesFilters: (filters) => set({ 
+        servicesFilters: { ...get().servicesFilters, ...filters }
+      }),
+       
+      setSystemHealth: (health) => set({ systemHealth: health }),
+      
+      setCategoryStats: (stats) => set({ categoryStats: stats }),
+      
+      setSubcategoryStats: (stats) => set({ subcategoryStats: stats }),
+      
+      setServiceStats: (stats) => set({ serviceStats: stats }),
+      
+      setGigStats: (stats) => set({ gigStats: stats }),
       
       getSubcategoryById: (id) => {
         const subcategories = get().subcategories;
@@ -218,10 +269,12 @@ export const useAdminStore = create(
         dashboardStats: {
           totalUsers: 0,
           totalCategories: 0,
+          totalSubcategories: 0,
           totalServices: 0,
           totalGigs: 0,
           activeUsers: 0,
           activeCategories: 0,
+          activeSubcategories: 0,
           activeServices: 0,
           activeGigs: 0,
           lastUpdated: null
@@ -238,14 +291,31 @@ export const useAdminStore = create(
         subcategoriesPagination: null,
         subcategoriesLastFetched: null,
         subcategoriesFilters: {},
-        selectedSubcategory: null,
-        services: [], // Add this
-        servicesPagination: null, // Add this
-        servicesLastFetched: null, // Add this
-        servicesFilters: {}, // Add this
+        gigs: [],
+        gigsPagination: null,
+        gigsLastFetched: null,
+        gigsFilters: {},
+        services: [],
+        servicesPagination: null,
+        servicesLastFetched: null,
+        servicesFilters: {},
+        systemHealth: {
+          status: 'unknown',
+          timestamp: null,
+          uptime: 0,
+          database: 'unknown',
+          responseTime: '0ms'
+        },
+        categoryStats: null,
+        subcategoryStats: null,
+        serviceStats: null,
+        gigStats: null,
         selectedUser: null,
         selectedCategory: null,
+        selectedSubcategory: null,
         selectedService: null,
+        selectedGig: null,
+        selectedTab: 'dashboard',
         sidebarOpen: true,
         theme: 'light',
         notifications: []

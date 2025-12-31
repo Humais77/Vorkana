@@ -37,16 +37,16 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
         />
       )}
 
-      {/* Sidebar - Fixed positioning with proper layout */}
+      {/* Sidebar */}
       <aside className={`
         fixed lg:relative inset-y-0 left-0
         w-64 bg-white border-r border-gray-200
         transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
         lg:translate-x-0 transition-transform duration-300 ease-in-out
         flex flex-col h-full shadow-lg lg:shadow-none
-        z-50 lg:z-auto
+        z-50
       `}>
-        {/* Logo & Toggle */}
+        {/* Logo & Close button for mobile */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg"></div>
@@ -55,9 +55,10 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
               <p className="text-xs text-gray-500">Vorkana</p>
             </div>
           </div>
+          {/* Close button for mobile sidebar */}
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="lg:hidden text-gray-500 hover:text-gray-700"
+            className="lg:hidden text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100"
           >
             <FiX className="h-6 w-6" />
           </button>

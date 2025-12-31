@@ -1,7 +1,7 @@
 // UserManagement.jsx - OPTIMIZED VERSION
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAdminUsers, useUpdateUser, useDeleteUser } from '../../hooks/useAdminDashboard';
+import { useAdminUsers, useUpdateUser, useDeleteUser ,useBulkUserOperations, useExportUsers } from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiUsers,
@@ -295,7 +295,8 @@ const UsersManagement = () => {
   
   const updateUserMutation = useUpdateUser();
   const deleteUserMutation = useDeleteUser();
-  
+  const bulkUserMutation = useBulkUserOperations();
+const exportUsersMutation = useExportUsers();
   const users = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -474,9 +475,26 @@ const UsersManagement = () => {
     toast.success('Data refreshed');
   }, [refetch]);
 
-  const exportUsers = useCallback(() => {
-    toast.success('Export feature coming soon');
-  }, []);
+  const exportUsers = useCallback(async () => {
+  try {
+    const response = await exportUsersMutation.mutateAsync('csv');
+    
+    // Create blob and download
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    toast.success('Users exported successfully');
+  } catch (error) {
+    toast.error('Failed to export users');
+  }
+}, [exportUsersMutation]);
 
   const handleCreateUser = useCallback(() => {
     setShowCreateModal(true);
@@ -569,38 +587,45 @@ const UsersManagement = () => {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => handleBulkAction('activate')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
-              >
-                <FiCheckCircle className="h-4 w-4" />
-                <span>Activate</span>
-              </button>
-              <button
-                onClick={() => handleBulkAction('deactivate')}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
-              >
-                <FiUserX className="h-4 w-4" />
-                <span>Deactivate</span>
-              </button>
-              <button
-                onClick={() => handleBulkAction('make_admin')}
-                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
-              >
-                <FiShield className="h-4 w-4" />
-                <span>Make Admin</span>
-              </button>
-              <button
-                onClick={() => {
-                  setUserToDelete({ type: 'bulk', ids: selectedUsers });
-                  setShowDeleteModal(true);
-                }}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
-              >
-                <FiTrash2 className="h-4 w-4" />
-                <span>Delete</span>
-              </button>
-            </div>
+  <button
+    onClick={() => handleBulkAction('activate')}
+    className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+  >
+    <FiCheckCircle className="h-4 w-4" />
+    <span>Activate</span>
+  </button>
+  <button
+    onClick={() => handleBulkAction('deactivate')}
+    className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
+  >
+    <FiUserX className="h-4 w-4" />
+    <span>Deactivate</span>
+  </button>
+  <button
+    onClick={() => handleBulkAction('verify-email')}
+    className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200 flex items-center space-x-1"
+  >
+    <FiShield className="h-4 w-4" />
+    <span>Verify Email</span>
+  </button>
+  <button
+    onClick={() => handleBulkAction('promote-admin')}
+    className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
+  >
+    <FiShield className="h-4 w-4" />
+    <span>Make Admin</span>
+  </button>
+  <button
+    onClick={() => {
+      setUserToDelete({ type: 'bulk', ids: selectedUsers });
+      setShowDeleteModal(true);
+    }}
+    className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+  >
+    <FiTrash2 className="h-4 w-4" />
+    <span>Delete</span>
+  </button>
+</div>
           </div>
         </div>
       )}

@@ -298,22 +298,44 @@ export const useUpdateCategory = () => {
 
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      const response = await adminAPI.updateCategory(id, data);
-      return response;
+      console.log('[USE UPDATE CATEGORY] Updating category:', { id, data });
+      
+      try {
+        const response = await adminAPI.updateCategory(id, data);
+        console.log('[USE UPDATE CATEGORY] Update response:', response.data);
+        return response;
+      } catch (error) {
+        console.error('[USE UPDATE CATEGORY] Error:', error);
+        
+        // Handle version conflict specifically
+        if (error.response?.status === 409 && error.response?.data?.code === 'VERSION_CONFLICT') {
+          throw new Error('This category was modified by another user. Please refresh and try again.');
+        }
+        
+        throw error;
+      }
     },
     onMutate: async ({ id, data }) => {
+      console.log('[USE UPDATE CATEGORY] Optimistic update for category:', id);
+      
       await queryClient.cancelQueries(['admin', 'categories']);
       
       const previousCategories = queryClient.getQueryData(['admin', 'categories']);
       
+      // Optimistically update the category in cache
       queryClient.setQueryData(['admin', 'categories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
         return {
           ...old,
           data: old.data.map(category => 
-            category._id === id 
-              ? { ...category, ...data, updatedAt: new Date().toISOString() }
-              : category
+            category._id === id ? { 
+              ...category, 
+              ...data, 
+              updatedAt: new Date().toISOString(),
+              // Increment version for optimistic update
+              version: (category.version || 1) + 1
+            } : category
           )
         };
       });
@@ -321,15 +343,52 @@ export const useUpdateCategory = () => {
       return { previousCategories };
     },
     onSuccess: (response) => {
-      toast.success('Category updated successfully');
+      console.log('[USE UPDATE CATEGORY] Success:', response.data);
+      
+      if (response.data.success) {
+        toast.success(response.data.message || 'Category updated successfully');
+        
+        // Invalidate and refetch all relevant queries
+        queryClient.invalidateQueries(['admin', 'categories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+        
+        // Also update category in single category query if it exists
+        if (response.data.data?._id) {
+          queryClient.setQueryData(['admin', 'categories', response.data.data._id], response.data.data);
+        }
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
     },
     onError: (error, variables, context) => {
+      console.error('[USE UPDATE CATEGORY] Mutation error:', error);
+      
+      // Revert optimistic update on error
       if (context?.previousCategories) {
         queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
       }
-      toast.error(error.response?.data?.message || 'Failed to update category');
+      
+      // Show specific error message for version conflict
+      if (error.message.includes('modified by another user')) {
+        toast.error(error.message);
+      } else {
+        // Show other errors
+        const errorMessage = error.response?.data?.message || 
+                            error.response?.data?.error || 
+                            error.message || 
+                            'Failed to update category';
+        
+        toast.error(errorMessage);
+      }
+      
+      // Show validation errors if they exist
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      }
     },
-    retry: 1,
+    retry: 0, // Don't retry on version conflicts
     retryDelay: 1000
   });
 };
@@ -393,21 +452,30 @@ export const useDeleteCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => adminAPI.deleteCategory(id),
-    onMutate: async (id) => {
-      await queryClient.cancelQueries(['admin', 'categories']);
+    mutationFn: async ({ id, options = {} }) => {
+      console.log('[USE DELETE CATEGORY] Mutation called with:', { id, options });
       
-      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      // Handle different ID formats
+      let categoryId;
       
-      queryClient.setQueryData(['admin', 'categories'], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          data: old.data.filter(category => category._id !== id)
-        };
-      });
+      if (typeof id === 'object') {
+        // If an object is passed, extract the _id
+        categoryId = id._id || id.id;
+        console.log('[USE DELETE CATEGORY] Extracted ID from object:', categoryId);
+      } else {
+        categoryId = id;
+      }
       
-      return { previousCategories };
+      // Ensure it's a string
+      categoryId = String(categoryId).trim();
+      
+      if (!categoryId || categoryId === 'undefined' || categoryId === 'null') {
+        throw new Error('Invalid category ID');
+      }
+      
+      console.log('[USE DELETE CATEGORY] Calling API with ID:', categoryId);
+      
+      return await adminAPI.deleteCategory(categoryId, options);
     },
     onSuccess: (response) => {
       if (response.data.success) {
@@ -418,11 +486,9 @@ export const useDeleteCategory = () => {
         toast.error(response.data.message || 'Delete failed');
       }
     },
-    onError: (error, variables, context) => {
-      if (context?.previousCategories) {
-        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
-      }
-      toast.error(error.response?.data?.message || 'Delete failed');
+    onError: (error) => {
+      console.error('[USE DELETE CATEGORY] Error:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete category');
     }
   });
 };
@@ -1061,5 +1127,242 @@ export const useBulkSubcategoryOperations = () => {
       }
       toast.error(error.response?.data?.message || 'Bulk operation failed');
     }
+  });
+};
+// In useAdminDashboard.js - Add these missing hooks
+
+// Bulk user operations hook
+export const useBulkUserOperations = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ ids, operation, data = {} }) => 
+      adminAPI.bulkUpdateUsers({ ids, operation, data }),
+    onMutate: async ({ ids, operation, data }) => {
+      await queryClient.cancelQueries(['admin', 'users']);
+      
+      const previousUsers = queryClient.getQueryData(['admin', 'users']);
+      
+      queryClient.setQueryData(['admin', 'users'], (old) => {
+        if (!old || !old.data) return old;
+        
+        return {
+          ...old,
+          data: old.data.map(user => 
+            ids.includes(user._id) 
+              ? { 
+                  ...user, 
+                  ...data,
+                  ...(operation === 'activate' ? { isActive: true } : {}),
+                  ...(operation === 'deactivate' ? { isActive: false } : {}),
+                  ...(operation === 'verify-email' ? { emailVerified: true } : {}),
+                  ...(operation === 'unverify-email' ? { emailVerified: false } : {}),
+                  ...(operation === 'promote-admin' ? { role: 'admin' } : {}),
+                  ...(operation === 'demote-user' ? { role: 'user' } : {})
+                } 
+              : user
+          )
+        };
+      });
+      
+      return { previousUsers };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(response.data.message || 'Bulk operation completed');
+        queryClient.invalidateQueries(['admin', 'users']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Bulk operation failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['admin', 'users'], context.previousUsers);
+      }
+      toast.error(error.response?.data?.message || 'Bulk operation failed');
+    }
+  });
+};
+
+// Export functions hooks
+export const useExportUsers = () => {
+  return useMutation({
+    mutationFn: (format = 'csv') => adminAPI.exportUsers(format),
+    onSuccess: () => {
+      toast.success('Export started successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Export failed');
+    }
+  });
+};
+export const useExportCategories = () => {
+  return useMutation({
+    mutationFn: (format = 'csv') => adminAPI.exportCategories(format),
+    onSuccess: () => {
+      toast.success('Categories export started successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Export failed');
+    }
+  });
+};
+
+export const useExportSubcategories = () => {
+  return useMutation({
+    mutationFn: (format = 'csv') => adminAPI.exportSubcategories(format),
+    onSuccess: () => {
+      toast.success('Subcategories export started successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Export failed');
+    }
+  });
+};
+
+export const useExportServices = () => {
+  return useMutation({
+    mutationFn: (format = 'csv') => adminAPI.exportServices(format),
+    onSuccess: () => {
+      toast.success('Services export started successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Export failed');
+    }
+  });
+};
+
+export const useExportGigs = () => {
+  return useMutation({
+    mutationFn: (format = 'csv') => adminAPI.exportGigs(format),
+    onSuccess: () => {
+      toast.success('Gigs export started successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Export failed');
+    }
+  });
+};
+
+// Stats hooks
+export const useCategoryStats = () => {
+  return useQuery({
+    queryKey: ['admin', 'categories', 'stats'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getCategoryStats();
+        return response.data;
+      } catch (error) {
+        console.error('Category stats error:', error);
+        throw error;
+      }
+    },
+    staleTime: 30000,
+    retry: 2
+  });
+};
+
+export const useSubcategoryStats = () => {
+  return useQuery({
+    queryKey: ['admin', 'subcategories', 'stats'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getSubcategoryStats();
+        return response.data;
+      } catch (error) {
+        console.error('Subcategory stats error:', error);
+        throw error;
+      }
+    },
+    staleTime: 30000,
+    retry: 2
+  });
+};
+
+export const useGigStats = () => {
+  return useQuery({
+    queryKey: ['admin', 'gigs', 'stats'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getGigStats();
+        return response.data;
+      } catch (error) {
+        console.error('Gig stats error:', error);
+        throw error;
+      }
+    },
+    staleTime: 30000,
+    retry: 2
+  });
+};
+
+export const useSystemHealth = () => {
+  return useQuery({
+    queryKey: ['admin', 'system', 'health'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getSystemHealth();
+        return response.data;
+      } catch (error) {
+        console.error('System health error:', error);
+        throw error;
+      }
+    },
+    staleTime: 10000, // 10 seconds for system health
+    retry: 1
+  });
+};
+
+// Additional dashboard data hooks
+export const useRecentActivities = (limit = 10) => {
+  return useQuery({
+    queryKey: ['admin', 'dashboard', 'activities', limit],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getRecentActivities(limit);
+        return response.data;
+      } catch (error) {
+        console.error('Recent activities error:', error);
+        return { data: [] };
+      }
+    },
+    staleTime: 30000,
+    retry: 2
+  });
+};
+
+export const useChartData = (chartType, timeRange = '7d') => {
+  return useQuery({
+    queryKey: ['admin', 'dashboard', 'charts', chartType, timeRange],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getChartData(chartType, timeRange);
+        return response.data;
+      } catch (error) {
+        console.error('Chart data error:', error);
+        return { data: [] };
+      }
+    },
+    staleTime: 60000,
+    retry: 2
+  });
+};
+
+// Subcategories by category hook
+export const useSubcategoriesByCategory = (categoryId, params = {}) => {
+  return useQuery({
+    queryKey: ['admin', 'subcategories', 'by-category', categoryId, params],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getSubcategoriesDropdown(categoryId, params);
+        return response.data;
+      } catch (error) {
+        console.error('Subcategories by category error:', error);
+        return { data: [] };
+      }
+    },
+    enabled: !!categoryId,
+    staleTime: 300000,
   });
 };
