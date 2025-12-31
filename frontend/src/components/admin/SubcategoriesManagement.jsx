@@ -5,12 +5,13 @@ import {
   useCreateSubcategory, 
   useDeleteSubcategory,
   useBulkSubcategoryOperations,
-  useCategoriesForDropdown
+  useCategoriesForDropdown,useExportSubcategories, useSubcategoryStats 
 } from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiFolder,
   FiSearch,
+  FiDownload,
   FiFilter,
   FiEdit2,
   FiTrash2,
@@ -245,7 +246,8 @@ const SubcategoriesManagement = () => {
   const updateSubcategoryMutation = useUpdateSubcategory();
   const deleteSubcategoryMutation = useDeleteSubcategory();
   const bulkOperationsMutation = useBulkSubcategoryOperations();
-  
+  const exportSubcategoriesMutation = useExportSubcategories();
+const { data: subcategoryStatsData } = useSubcategoryStats();
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -404,7 +406,25 @@ const SubcategoriesManagement = () => {
     setSelectedSubcategory(subcategory);
     setShowDeleteModal(true);
   }, []);
-
+const exportSubcategories = useCallback(async () => {
+  try {
+    const response = await exportSubcategoriesMutation.mutateAsync('csv');
+    
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `subcategories_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    toast.success('Subcategories exported successfully');
+  } catch (error) {
+    toast.error('Failed to export subcategories');
+  }
+}, [exportSubcategoriesMutation]);
   const refreshData = useCallback(() => {
     refetch();
     setSelectedSubcategories([]);
@@ -443,6 +463,13 @@ const SubcategoriesManagement = () => {
           <p className="text-gray-600">Organize and manage subcategories within categories</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button
+  onClick={exportSubcategories}
+  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+>
+  <FiDownload className="h-4 w-4" />
+  <span>Export</span>
+</button>
           <button
             onClick={refreshData}
             disabled={isRefetching}
@@ -543,6 +570,30 @@ const SubcategoriesManagement = () => {
           </div>
         </div>
       )}
+      {subcategoryStatsData && (
+  <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <h3 className="text-lg font-semibold text-gray-900 mb-4">Subcategory Distribution</h3>
+    <div className="space-y-3">
+      {subcategoryStatsData?.data?.byCategory?.slice(0, 5).map((item, index) => (
+        <div key={index} className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="h-3 w-3 rounded-full" 
+                 style={{ backgroundColor: `hsl(${index * 60}, 70%, 50%)` }}></div>
+            <span className="text-sm text-gray-700 truncate">
+              {item.category?.name || 'Unknown'}
+            </span>
+          </div>
+          <div className="flex items-center space-x-4">
+            <span className="text-sm font-medium text-gray-900">{item.count}</span>
+            <span className="text-xs text-gray-500">
+              {item.totalServices} services
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 
       {/* Search and Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">

@@ -1,4 +1,3 @@
-// src/layouts/pages/SubcategoryDetailPage.jsx
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -11,13 +10,13 @@ import {
   CheckCircle,
   TrendingUp,
   Users,
-  Award
+  Award,
+  Loader
 } from 'lucide-react';
 import { SeoWrapper } from '../../components/SeoWrapper';
 import { useCategory } from '../../hooks/useCategories';
 import { useSubcategory } from '../../hooks/useSubcategories';
 import { useServicesBySubcategory } from '../../hooks/useServices';
-
 
 const SubcategoryDetailPage = () => {
   const { categoryId, subcategorySlug } = useParams();
@@ -30,23 +29,89 @@ const SubcategoryDetailPage = () => {
   const [priceRange, setPriceRange] = useState([0, 10000]);
   const [deliveryTime, setDeliveryTime] = useState('any');
 
-  // Fetch data
+  // Fetch data with proper loading states
   const { 
     data: categoryData, 
     isLoading: categoryLoading 
-  } = useCategory(categoryId);
+  } = useCategory(categoryId, {
+    enabled: !!categoryId,
+  });
+
 
   const { 
     data: subcategoryData, 
-    isLoading: subcategoryLoading 
-  } = useSubcategory(subcategorySlug);
-
+    isLoading: subcategoryLoading,
+    error: subcategoryError 
+  } = useSubcategory(subcategorySlug, {
+    enabled: !!subcategorySlug,
+  });
   const { 
     data: servicesData,
     isLoading: servicesLoading
-  } = useServicesBySubcategory(subcategorySlug);
+  } = useServicesBySubcategory(subcategoryData?._id, {
+    enabled: !!subcategoryData?._id,
+  });
 
-  
+  // Combined loading state
+  const isLoading = categoryLoading || subcategoryLoading || servicesLoading;
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4">
+            <Loader className="h-8 w-8 mx-auto my-2 text-blue-500" />
+          </div>
+          <p className="text-gray-600">Loading subcategory details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (subcategoryError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md">
+          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Subcategory Not Found</h2>
+          <p className="text-gray-600 mb-4">
+            The subcategory "{subcategorySlug}" does not exist or could not be loaded.
+          </p>
+          <Link
+            to={`/categories/${categoryId}`}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Category
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if data exists
+  if (!categoryData || !subcategoryData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md">
+          <div className="text-gray-400 text-4xl mb-4">🔍</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Not Found</h2>
+          <p className="text-gray-600 mb-4">The requested subcategory could not be found.</p>
+          <Link
+            to="/categories"
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Browse Categories
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Now we can safely destructure
   const category = categoryData;
   const subcategory = subcategoryData;
   const services = servicesData || [];
@@ -85,7 +150,7 @@ const SubcategoryDetailPage = () => {
     }
   });
 
-  // Breadcrumbs
+  // Breadcrumbs - only create after data is loaded
   const breadcrumbs = [
     { name: 'Home', href: '/' },
     { name: 'Categories', href: '/categories' },
@@ -134,7 +199,6 @@ const SubcategoryDetailPage = () => {
             </div>
           </div>
         </nav>
-
         {/* Subcategory Hero */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

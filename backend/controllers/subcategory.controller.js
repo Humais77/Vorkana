@@ -394,7 +394,36 @@ const getSubcategoriesByCategory = async (req, res, next) => {
     next(error);
   }
 };
-
+const getSubcategoryBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    const subcategory = await Subcategory.findOne({ 
+      slug,
+      isActive: true 
+    }).populate('category', 'name slug');
+    
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'NOT_FOUND'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: subcategory
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      code: 'SERVER_ERROR'
+    });
+  }
+};
 // Update Subcategory
 const updateSubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -839,5 +868,6 @@ module.exports = {
   updateSubcategory,
   deleteSubcategory,
   restoreSubcategory,
-  bulkUpdateSubcategories
+  bulkUpdateSubcategories,
+  getSubcategoryBySlug
 };

@@ -29,7 +29,7 @@ const adminLimiter = rateLimit({
 router.get('/', publicLimiter, optionalAuth, controller.getSubcategories);
 router.get('/:id', publicLimiter, optionalAuth, controller.getSubcategoryById);
 router.get('/category/:categoryId', publicLimiter, optionalAuth, controller.getSubcategoriesByCategory);
-
+router.get('/slug/:slug', publicLimiter, optionalAuth, controller.getSubcategoryBySlug);
 // Admin routes
 router.post('/', protect, adminOnly, adminLimiter, controller.createSubcategory);
 router.put('/:id', protect, adminOnly, adminLimiter, controller.updateSubcategory);

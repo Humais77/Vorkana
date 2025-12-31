@@ -194,7 +194,61 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     };
   }
 },
-  
+  getByIdOrSlug: async (identifier) => {
+  try {
+    // First check if it's an ObjectId
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(identifier);
+    
+    let url;
+    if (isObjectId) {
+      url = `/api/subcategories/${identifier}`;
+    } else {
+      // It's a slug - use a different endpoint or modify backend
+      // If your backend doesn't support slug lookup, you'll need to handle it differently
+      url = `/api/subcategories/slug/${identifier}`;
+    }
+    
+    const response = await axiosInstance.get(url);
+    
+    if (response.data?.success) {
+      return response.data.data;
+    }
+    return response.data;
+    
+  } catch (error) {
+    console.error('Get subcategory by ID or slug error:', error);
+    
+    // If the slug endpoint doesn't exist, fall back to fetching all and filtering
+    if (error.response?.status === 404 && !/^[0-9a-fA-F]{24}$/.test(identifier)) {
+      try {
+        // Try to fetch all subcategories and find by slug
+        const allResponse = await axiosInstance.get('/api/subcategories', {
+          params: { activeOnly: true, limit: 100 }
+        });
+        
+        let subcategories = [];
+        if (allResponse.data?.success && Array.isArray(allResponse.data.data)) {
+          subcategories = allResponse.data.data;
+        } else if (Array.isArray(allResponse.data)) {
+          subcategories = allResponse.data;
+        }
+        
+        const foundSubcategory = subcategories.find(sub => 
+          sub.slug === identifier || 
+          sub.name.toLowerCase().replace(/\s+/g, '-') === identifier
+        );
+        
+        if (foundSubcategory) {
+          return foundSubcategory;
+        }
+      } catch (fallbackError) {
+        console.error('Fallback search error:', fallbackError);
+      }
+    }
+    
+    throw error;
+  }
+},
   /**
    * Create subcategory (admin only)
    */

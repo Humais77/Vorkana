@@ -91,24 +91,35 @@ export const useSubcategoriesByCategory = (categoryId, options = {}) => {
 /**
  * Hook to get a single subcategory by ID
  */
-export const useSubcategory = (id, options = {}) => {
+export const useSubcategory = (identifier, options = {}) => {
   // FIXED: Use getState to avoid subscription
   const getCachedSubcategory = useCallback(() => {
-    return useSubcategoryStore.getState().getSubcategoryById(id);
-  }, [id]);
+    const store = useSubcategoryStore.getState();
+    
+    // Try to find by ID first
+    if (/^[0-9a-fA-F]{24}$/.test(identifier)) {
+      return store.getSubcategoryById(identifier);
+    }
+    
+    // Then try to find by slug
+    return store.subcategories.find(sub => 
+      sub.slug === identifier || 
+      sub._id === identifier
+    );
+  }, [identifier]);
   
   return useQuery({
-    queryKey: ['subcategories', id],
+    queryKey: ['subcategories', identifier],
     queryFn: async () => {
       try {
-        const data = await subcategoriesAPI.getById(id);
+        const data = await subcategoriesAPI.getByIdOrSlug(identifier);
         return data;
       } catch (error) {
         console.error('Error fetching subcategory:', error);
         throw error;
       }
     },
-    enabled: !!id,
+    enabled: !!identifier && identifier.trim() !== '',
     staleTime: 10 * 60 * 1000,
     initialData: () => getCachedSubcategory() || undefined,
     refetchOnWindowFocus: false,

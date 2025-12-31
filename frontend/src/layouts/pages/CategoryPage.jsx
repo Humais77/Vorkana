@@ -1,4 +1,4 @@
-// src/layouts/pages/CategoryPage.jsx - UPDATED WITH IMPORTS
+// src/layouts/pages/CategoryPage.jsx - UPDATED WITH COMPACT SUBCATEGORIES
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
@@ -17,24 +17,22 @@ import {
   Music,
   Film,
   Database,
-  TrendingUp
+  TrendingUp,
+  ChevronLeft,
+  Sparkles
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query'; // ADD THIS IMPORT
+import { useQuery } from '@tanstack/react-query';
 import { SeoWrapper } from '../../components/SeoWrapper';
-import { useCategory } from '../../hooks/useCategories'; // You can keep using this if you want
+import { useCategory } from '../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../hooks/useSubcategories';
-import { useServicesByCategory } from '../../hooks/useServices';
 
 const CategoryPage = () => {
-  const { categoryId } = useParams(); // This could be ID or slug
+  const { categoryId } = useParams();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   
-  // Determine if categoryId is an ObjectId or slug
-  const isObjectId = /^[0-9a-fA-F]{24}$/.test(categoryId);
-  
-  // OPTION 1: Use the existing useCategory hook (simpler)
+  // Fetch category data
   const { 
     data: categoryData, 
     isLoading: categoryLoading, 
@@ -43,9 +41,6 @@ const CategoryPage = () => {
     enabled: !!categoryId,
   });
 
-  // OR OPTION 2: Use the custom query (if you want to handle slugs)
-  // But since useCategory might already handle slugs, let's check if it works
-  
   // Fetch subcategories using the category ID
   const { 
     data: subcategoriesData, 
@@ -54,16 +49,10 @@ const CategoryPage = () => {
     enabled: !!categoryData?._id,
   });
 
-  // Fetch services using the category ID
-  const { 
-    data: servicesData,
-    isLoading: servicesLoading
-  } = useServicesByCategory(categoryData?._id, selectedSubcategory, {
-    enabled: !!categoryData?._id,
-  });
+  const isLoading = categoryLoading || subcategoriesLoading 
 
   // Loading state
-  if (categoryLoading || subcategoriesLoading || servicesLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -80,6 +69,7 @@ const CategoryPage = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">Error loading category</h2>
+          <p className="text-red-500 mb-4">{categoryError.message || 'Failed to load category'}</p>
           <Link to="/" className="text-blue-600 hover:underline">
             Return to homepage
           </Link>
@@ -93,7 +83,8 @@ const CategoryPage = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">Category not found</h2>
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Category not found</h2>
+          <p className="text-gray-600 mb-4">The category you're looking for doesn't exist.</p>
           <Link to="/" className="text-blue-600 hover:underline">
             Return to homepage
           </Link>
@@ -104,7 +95,6 @@ const CategoryPage = () => {
 
   const category = categoryData;
   const subcategories = subcategoriesData?.subcategories || [];
-  const services = servicesData || [];
 
   // Breadcrumbs
   const breadcrumbs = [
@@ -134,212 +124,21 @@ const CategoryPage = () => {
     return <Code className="w-5 h-5" />;
   };
 
-  // Sample data structure matching the image - FOR PROGRAMMING & TECH
-  const programmingTechSections = [
-    {
-      title: "Websites",
-      icon: <Globe className="w-5 h-5" />,
-      services: [
-        "Website Development",
-        "Website Maintenance",
-        "WordPress",
-        "Shopify",
-        "Custom Websites"
-      ]
-    },
-    {
-      title: "Application Development",
-      icon: <Code className="w-5 h-5" />,
-      services: [
-        "Full Stack Web Apps",
-        "Desktop Applications",
-        "Game Development",
-        "Chatbot Development",
-        "Browser Extensions"
-      ]
-    },
-    {
-      title: "Software Development",
-      icon: <Cpu className="w-5 h-5" />,
-      services: [
-        "Software Development",
-        "AI Development",
-        "APIs & Integrations",
-        "Scripting",
-        "Plugins Development"
-      ]
-    },
-    {
-      title: "Mobile Apps",
-      icon: <Smartphone className="w-5 h-5" />,
-      services: [
-        "Mobile App Development",
-        "Cross-platform Apps",
-        "Android App Development",
-        "iOS App Development",
-        "Mobile App Maintenance"
-      ]
-    }
-  ];
-
-  // Graphic Design sections
-  const graphicDesignSections = [
-    {
-      title: "Logo & Brand Identity",
-      icon: <Palette className="w-5 h-5" />,
-      services: [
-        "Logo Design",
-        "Brand Identity",
-        "Business Cards",
-        "Stationery Design",
-        "Brand Guidelines"
-      ]
-    },
-    {
-      title: "Web & App Design",
-      icon: <Globe className="w-5 h-5" />,
-      services: [
-        "Website Design",
-        "Mobile App Design",
-        "UI/UX Design",
-        "Wireframing",
-        "Prototyping"
-      ]
-    },
-    {
-      title: "Marketing Design",
-      icon: <TrendingUp className="w-5 h-5" />,
-      services: [
-        "Social Media Graphics",
-        "Banner Ads",
-        "Email Templates",
-        "Presentation Design",
-        "Infographics"
-      ]
-    },
-    {
-      title: "Art & Illustration",
-      icon: <Palette className="w-5 h-5" />,
-      services: [
-        "Illustrations",
-        "Character Design",
-        "Digital Art",
-        "Vector Art",
-        "Cartoons & Comics"
-      ]
-    }
-  ];
-
-  // Digital Marketing sections
-  const digitalMarketingSections = [
-    {
-      title: "Social Media Marketing",
-      icon: <Users className="w-5 h-5" />,
-      services: [
-        "Social Media Management",
-        "Content Strategy",
-        "Community Management",
-        "Social Media Advertising",
-        "Influencer Marketing"
-      ]
-    },
-    {
-      title: "SEO & Content",
-      icon: <TrendingUp className="w-5 h-5" />,
-      services: [
-        "SEO Optimization",
-        "Content Writing",
-        "Blog Writing",
-        "Keyword Research",
-        "Link Building"
-      ]
-    },
-    {
-      title: "Advertising",
-      icon: <Briefcase className="w-5 h-5" />,
-      services: [
-        "Google Ads",
-        "Facebook Ads",
-        "Instagram Ads",
-        "PPC Management",
-        "Ad Campaigns"
-      ]
-    },
-    {
-      title: "Analytics & Strategy",
-      icon: <Database className="w-5 h-5" />,
-      services: [
-        "Marketing Strategy",
-        "Analytics Setup",
-        "Conversion Optimization",
-        "Market Research",
-        "Competitor Analysis"
-      ]
-    }
-  ];
-
-  // Get appropriate sections based on category
+  // Generate sections from real subcategories
   const getCategorySections = () => {
-    const categoryName = category.name.toLowerCase();
-    
-    if (categoryName.includes('programming') || categoryName.includes('tech')) {
-      return programmingTechSections;
-    }
-    
-    if (categoryName.includes('graphic') || categoryName.includes('design')) {
-      return graphicDesignSections;
-    }
-    
-    if (categoryName.includes('digital') && categoryName.includes('marketing')) {
-      return digitalMarketingSections;
-    }
-    
-    // Default: convert subcategories to sections
     if (subcategories.length > 0) {
       return subcategories.map(subcat => ({
         title: subcat.name,
         icon: getCategoryIcon(subcat.name),
-        services: [],
+        description: subcat.description || '',
         subcategoryId: subcat._id,
         slug: subcat.slug
       }));
     }
     
-    // Fallback: use generic sections
-    return [
-      {
-        title: "Popular Services",
-        icon: <TrendingUp className="w-5 h-5" />,
-        services: ["Service 1", "Service 2", "Service 3", "Service 4", "Service 5"]
-      },
-      {
-        title: "Custom Solutions",
-        icon: <Code className="w-5 h-5" />,
-        services: ["Custom 1", "Custom 2", "Custom 3", "Custom 4", "Custom 5"]
-      },
-      {
-        title: "Consultation",
-        icon: <Users className="w-5 h-5" />,
-        services: ["Consult 1", "Consult 2", "Consult 3", "Consult 4", "Consult 5"]
-      },
-      {
-        title: "Support",
-        icon: <Briefcase className="w-5 h-5" />,
-        services: ["Support 1", "Support 2", "Support 3", "Support 4", "Support 5"]
-      }
-    ];
+    return []; // Return empty array if no subcategories
   };
 
-  // Convert subcategories to explore sections format
-  const subcategorySections = subcategories.map(subcat => ({
-    title: subcat.name,
-    icon: getCategoryIcon(subcat.name),
-    services: [], // You can populate this if you have specific services data
-    subcategoryId: subcat._id,
-    slug: subcat.slug
-  }));
-
-  // Use appropriate sections
   const displaySections = getCategorySections();
 
   // Handle service click in explore section
@@ -352,7 +151,6 @@ const CategoryPage = () => {
     if (section.subcategoryId && section.slug) {
       navigate(`/categories/${categoryId}/${section.slug}`);
     } else {
-      // Navigate to search with section title
       navigate(`/search?category=${encodeURIComponent(category.name)}&subcategory=${encodeURIComponent(section.title)}`);
     }
   };
@@ -432,7 +230,7 @@ const CategoryPage = () => {
 
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          {/* Explore Section - Matching the image */}
+          {/* Explore Section - Using real subcategories */}
           <div className="mb-16">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-bold text-gray-900 mb-3">
@@ -441,125 +239,165 @@ const CategoryPage = () => {
               <div className="w-20 h-1 bg-green-500 mx-auto"></div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {displaySections.map((section, index) => (
-                <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 bg-green-50 rounded-lg text-green-600">
-                      {section.icon}
+            {displaySections.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                {displaySections.map((section, index) => (
+                  <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-3 bg-green-50 rounded-lg text-green-600">
+                        {section.icon}
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900">{section.title}</h3>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900">{section.title}</h3>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    {section.services && section.services.length > 0 ? (
-                      section.services.map((service, serviceIndex) => (
-                        <div 
-                          key={serviceIndex} 
-                          onClick={() => handleExploreServiceClick(service)}
-                          className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
+                    
+                    <div className="space-y-4">
+                      {section.services && section.services.length > 0 ? (
+                        section.services.map((service, serviceIndex) => (
+                          <div 
+                            key={serviceIndex} 
+                            onClick={() => handleExploreServiceClick(service)}
+                            className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"></div>
+                            <span className="text-gray-700 group-hover:text-green-600 transition-colors">
+                              {service}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <button
+                          onClick={() => handleSubcategoryClick(section)}
+                          className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors text-gray-600 hover:text-green-600 group"
                         >
-                          <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"></div>
-                          <span className="text-gray-700 group-hover:text-green-600 transition-colors">
-                            {service}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      // If no services, show placeholder or navigate to subcategory
-                      <button
-                        onClick={() => handleSubcategoryClick(section)}
-                        className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors text-gray-600 hover:text-green-600 group"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>Explore {section.title}</span>
-                          <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      </button>
-                    )}
+                          <div className="flex items-center justify-between">
+                            <span>Explore {section.title}</span>
+                            <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  
-                  {/* View All Button */}
-                  {(section.services && section.services.length > 0) && (
-                    <button
-                      onClick={() => handleSubcategoryClick(section)}
-                      className="w-full mt-6 py-3 text-center text-green-600 font-medium border border-green-200 rounded-lg hover:bg-green-50 transition-colors"
-                    >
-                      View All {section.title} Services
-                    </button>
-                  )}
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                <div className="text-gray-400 mb-4">
+                  <Globe className="w-16 h-16 mx-auto" />
                 </div>
-              ))}
-            </div>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">No subcategories found</h3>
+                <p className="text-gray-500">This category doesn't have any subcategories yet.</p>
+              </div>
+            )}
           </div>
 
-          {/* Popular Services Section */}
-          {services.length > 0 && (
+          {/* Subcategories Section - COMPACT VERSION */}
+          {displaySections.length > 0 && (
             <div className="mb-16">
               <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-gray-900">Popular Services</h2>
-                  <p className="text-gray-600 mt-2">Most requested {category.name.toLowerCase()} services</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    All {category.name} Subcategories
+                  </h2>
+                  <p className="text-gray-600">
+                    Browse through all specialized services in {category.name.toLowerCase()}
+                  </p>
                 </div>
-                <Link 
-                  to={`/services?category=${categoryId}`}
-                  className="text-green-600 hover:text-green-700 font-medium flex items-center gap-2"
+                <button
+                  onClick={() => navigate('/categories')}
+                  className="hidden md:flex items-center gap-2 text-green-600 hover:text-green-700 font-medium"
                 >
-                  View All
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
+                  <ChevronLeft className="w-4 h-4" />
+                  Back to Categories
+                </button>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {services.slice(0, 6).map((service) => (
-                  <div
-                    key={service._id}
-                    onClick={() => navigate(`/services/${service._id}`)}
-                    className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer group"
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {displaySections.map((section, index) => (
+                  <div 
+                    key={index}
+                    onClick={() => handleSubcategoryClick(section)}
+                    className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md hover:border-green-300 transition-all duration-200 cursor-pointer group"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                          {service.title}
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-green-50 rounded-md text-green-600 group-hover:bg-green-100 transition-colors">
+                        {section.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-gray-900 mb-1 truncate group-hover:text-green-600 transition-colors">
+                          {section.title}
                         </h3>
-                        <p className="text-gray-600 text-sm line-clamp-2">
-                          {service.description}
-                        </p>
+                        {section.description && (
+                          <p className="text-sm text-gray-500 line-clamp-2">
+                            {section.description.length > 80 
+                              ? `${section.description.substring(0, 80)}...` 
+                              : section.description}
+                          </p>
+                        )}
                       </div>
                     </div>
                     
-                    <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden">
-                          {service.seller?.avatar ? (
-                            <img
-                              src={service.seller.avatar}
-                              alt={service.seller.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-green-100 text-green-600 font-bold">
-                              {service.seller?.name?.charAt(0) || 'S'}
-                            </div>
-                          )}
+                    {/* Stats/Features */}
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                          <Sparkles className="w-3 h-3" />
+                          <span>Popular</span>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {service.seller?.name || 'Seller'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {service.rating || '4.8'} ★
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <span className="text-xl font-bold text-green-600">
-                          ${service.price || service.startingPrice || '99'}
-                        </span>
-                        <p className="text-xs text-gray-500">starting price</p>
+                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-green-600 transition-colors" />
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Mobile Back Button */}
+              <div className="mt-8 md:hidden text-center">
+                <button
+                  onClick={() => navigate('/categories')}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-green-600 hover:text-green-700 font-medium"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back to All Categories
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Featured Services Section */}
+          {displaySections.length > 0 && (
+            <div className="mb-16">
+              <div className="text-center mb-10">
+                <h2 className="text-2xl font-bold text-gray-900 mb-3">
+                  Featured Services in {category.name}
+                </h2>
+                <p className="text-gray-600 max-w-2xl mx-auto">
+                  Discover popular services handpicked by our community
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {displaySections.slice(0, 3).map((section, index) => (
+                  <div key={index} className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border border-green-100">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-3 bg-white rounded-lg text-green-600 shadow-sm">
+                        {section.icon}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-900">{section.title}</h3>
+                        <p className="text-sm text-green-600 font-medium">Top Rated</p>
+                      </div>
+                    </div>
+                    
+                    <p className="text-gray-600 text-sm mb-4">
+                      {section.description?.substring(0, 100) || `Explore professional ${section.title.toLowerCase()} services`}
+                    </p>
+                    
+                    <button
+                      onClick={() => handleSubcategoryClick(section)}
+                      className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                    >
+                      Browse Services
+                    </button>
                   </div>
                 ))}
               </div>
@@ -577,11 +415,17 @@ const CategoryPage = () => {
                 onClick={() => navigate(`/services/create?category=${categoryId}`)}
                 className="px-8 py-4 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-lg"
               >
+                Offer a Service
+              </button>
+              <button
+                onClick={() => navigate(`/gigs/create?category=${categoryId}`)}
+                className="px-8 py-4 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
+              >
                 Post a Project
               </button>
               <button
                 onClick={() => navigate('/services')}
-                className="px-8 py-4 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
+                className="px-8 py-4 bg-white/20 border-2 border-white text-white font-bold rounded-lg hover:bg-white/30 transition-colors"
               >
                 Browse Services
               </button>
