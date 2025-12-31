@@ -1,6 +1,6 @@
 // Dashboard.js - OPTIMIZED VERSION
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/useAuthStore';
 import { 
@@ -196,9 +196,30 @@ const DashboardSkeleton = memo(() => (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header Skeleton */}
       <div className="mb-8">
-        <div className="h-10 bg-gray-200 rounded-lg w-1/3 mb-2 animate-pulse"></div>
-        <div className="h-4 bg-gray-200 rounded w-1/2 animate-pulse"></div>
-      </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <p className="text-gray-600 mt-2">Manage your services, gigs, and track your performance</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Link
+                  to="/what-are-services"
+                  className="inline-flex items-center px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                >
+                  <Info className="w-4 h-4 mr-2" />
+                  What are Services?
+                </Link>
+                <Link
+                  to="/what-are-gigs"
+                  className="inline-flex items-center px-3 py-2 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors border border-green-200"
+                >
+                  <Info className="w-4 h-4 mr-2" />
+                  What are Gigs?
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+     
 
       {/* Stats Skeleton */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -821,6 +842,22 @@ useEffect(() => {
             colorClass="bg-orange-50"
           />
         </div>
+         <div className="flex items-center gap-3">
+  <Link
+    to="/what-are-services"
+    className="inline-flex items-center px-4 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+  >
+    <Info className="w-4 h-4 mr-2" />
+    What are Services?
+  </Link>
+  <Link
+    to="/what-are-gigs"
+    className="inline-flex items-center px-4 py-2 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+  >
+    <Info className="w-4 h-4 mr-2" />
+    What are Gigs?
+  </Link>
+</div>
 
         {/* Main Content */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
