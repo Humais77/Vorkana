@@ -53,7 +53,6 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       />
       <LogoMakerBanner/>
       <CallToAction onSignupClick={() => openAuthModal('signup')} />
-      <FAQSection />
     </div>
   );
 };

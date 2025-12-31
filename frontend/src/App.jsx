@@ -63,6 +63,8 @@ import SubcategoryDetailPage from './layouts/pages/SubcategoryDetailPage';
 import PopularServicesPage from './components/services/PopularService';
 import NotFound from './layouts/pages/NotFound';
 import AdminNotFound from "./layouts/pages/AdminNotFound";
+import GigsInfoPage from './layouts/pages/GigsInfoPage';
+import ServicesInfoPage from './layouts/pages/ServicesInfoPage';
 const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
@@ -139,7 +141,8 @@ const App = () => {
             <Route path="/all-services" element={<AllServicesPage />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
-
+<Route path="/what-are-gigs" element={<GigsInfoPage />} />
+<Route path="/what-are-services" element={<ServicesInfoPage />} />
             <Route path="/verified" element={<VerifiedPage />} />
             <Route path="/verify-email/:token?" element={<VerifyEmail />} />
             <Route path="/verify-email/:token" element={<VerifyEmail />} />

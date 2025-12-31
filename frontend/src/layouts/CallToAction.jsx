@@ -8,7 +8,7 @@ const CallToAction = ({ onSignupClick }) => {
   const handleClick = () => {
     if (isAuthenticated) {
       // user already logged in
-      navigate("/find-work"); // or any page you want
+      navigate("/services"); // or any page you want
     } else {
       // user not logged in → open signup modal
       if (onSignupClick) onSignupClick();
@@ -28,7 +28,7 @@ const CallToAction = ({ onSignupClick }) => {
             onClick={handleClick}
             className="inline-block bg-white text-gray-900 font-medium px-8 py-3 rounded-md shadow hover:bg-gray-100 transition"
           >
-            {isAuthenticated ? "Explore Work" : "Join Vorkana"}
+            {isAuthenticated ? "Explore Services" : "Join Vorkana"}
           </button>
         </div>
       </div>

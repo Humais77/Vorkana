@@ -46,10 +46,10 @@ const MakeItHappen = ({ onSignupClick }) => {
         <div className="text-center">
           {isAuthenticated ? (
             <a
-              href="/services"
+              href="/gigs"
               className="inline-block bg-black text-white px-8 py-3 rounded-md text-sm font-medium hover:bg-gray-800 transition"
             >
-              Explore Services
+              Explore Gigs
             </a>
           ) : (
             <button
