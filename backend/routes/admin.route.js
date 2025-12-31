@@ -142,6 +142,12 @@ router.get('/categories/:categoryId/subcategories/dropdown',
   auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
   adminController.getSubcategoriesDropdown
 );
+router.get('/categories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_CATEGORIES', 'categories'),
+  adminController.exportCategories
+);
 // Get subcategory by ID - FIXED ROUTE
 router.get('/subcategories/:id', 
   verifyAdmin, 
@@ -419,6 +425,37 @@ router.delete('/categories/:id',
   adminApiLimiter, 
   requirePermission('manage_categories'),
   auditLog('DELETE_CATEGORY', 'categories'),
+  async (req, res, next) => {
+    try {
+      console.log('[DELETE CATEGORY] Request received:', {
+        params: req.params,
+        body: req.body,
+        query: req.query,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if it's [object Object]
+      if (req.params.id === '[object Object]') {
+        console.log('[DELETE CATEGORY] Detected object ID, attempting to fix...');
+        
+        if (req.body && req.body.id) {
+          req.params.id = req.body.id;
+          console.log('[DELETE CATEGORY] Fixed ID from body:', req.params.id);
+        } else if (req.query && req.query.id) {
+          req.params.id = req.query.id;
+          console.log('[DELETE CATEGORY] Fixed ID from query:', req.params.id);
+        } else if (req.body && req.body._id) {
+          req.params.id = req.body._id;
+          console.log('[DELETE CATEGORY] Fixed ID from body._id:', req.params.id);
+        }
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[DELETE CATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
   categoryController.deleteCategory
 );
 
@@ -463,7 +500,7 @@ router.get('/services/stats',
   adminApiLimiter,
   requirePermission('view_analytics'),
   auditLog('VIEW_SERVICE_STATS', 'services'),
-  serviceController.getServiceStats
+  adminController.getServiceStats
 );
 router.delete('/services/:id', 
   verifyAdmin, 

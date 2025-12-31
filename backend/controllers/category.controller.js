@@ -1089,15 +1089,24 @@ const updateCategory = async (req, res, next) => {
 
     const { id } = req.params;
     
-    // Security: Validate ID
+    // Security: Validate ID - with better error handling
     if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.error('[UPDATE CATEGORY] Invalid ID:', id);
       return res.status(400).json({
         success: false,
-        message: 'Invalid category ID',
+        message: 'Invalid category ID format',
         code: 'INVALID_ID',
-        requestId
+        requestId,
+        receivedId: id
       });
     }
+
+    // Log the incoming data for debugging
+    console.log('[UPDATE CATEGORY] Update data:', {
+      id,
+      body: req.body,
+      user: req.user._id
+    });
 
     const sanitizedData = sanitizeCategoryInput(req.body);
     
@@ -1204,6 +1213,9 @@ const updateCategory = async (req, res, next) => {
     });
 
   } catch (error) {
+    console.error('[UPDATE CATEGORY ERROR]', error);
+    console.error('[UPDATE CATEGORY ERROR DETAILS]', error.stack);
+    
     // Security: Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(400).json({
@@ -1214,11 +1226,41 @@ const updateCategory = async (req, res, next) => {
       });
     }
     
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+    
+    // Handle cast errors
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data format',
+        code: 'CAST_ERROR',
+        requestId
+      });
+    }
+    
     logAudit('ERROR', 'CATEGORY', 'UPDATE', req.user._id, { 
       id: req.params.id, 
       error: error.message 
     });
-    next(error);
+    
+    // Return a generic error
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update category',
+      code: 'UPDATE_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 

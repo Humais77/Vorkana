@@ -4,11 +4,12 @@ import {
   useUpdateCategory, 
   useCreateCategory, 
   useDeleteCategory,
-  useBulkCategoryOperations
+  useBulkCategoryOperations, useExportCategories, useCategoryStats
 } from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiFolder,
+  FiDownload,
   FiSearch,
   FiFilter,
   FiEdit2,
@@ -253,7 +254,8 @@ const CategoriesManagement = () => {
   const updateCategoryMutation = useUpdateCategory();
   const deleteCategoryMutation = useDeleteCategory();
   const bulkOperationsMutation = useBulkCategoryOperations();
-  
+  const exportCategoriesMutation = useExportCategories();
+const { data: categoryStatsData } = useCategoryStats();
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -358,7 +360,25 @@ const CategoriesManagement = () => {
       toast.error('Failed to duplicate category');
     }
   }, [createCategoryMutation, refetch]);
-
+const exportCategories = useCallback(async () => {
+  try {
+    const response = await exportCategoriesMutation.mutateAsync('csv');
+    
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `categories_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    toast.success('Categories exported successfully');
+  } catch (error) {
+    toast.error('Failed to export categories');
+  }
+}, [exportCategoriesMutation]);
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
       setSelectedCategories(categories.map(cat => cat._id));
@@ -394,9 +414,9 @@ const CategoriesManagement = () => {
   }, []);
 
   const handleDelete = useCallback((category) => {
-    setSelectedCategory(category);
-    setShowDeleteModal(true);
-  }, []);
+  setSelectedCategory(category);
+  setShowDeleteModal(true);
+}, []);
 
   const refreshData = useCallback(() => {
     refetch();
@@ -442,6 +462,13 @@ const CategoriesManagement = () => {
           <p className="text-gray-600">Organize and manage content categories</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button
+  onClick={exportCategories}
+  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+>
+  <FiDownload className="h-4 w-4" />
+  <span>Export</span>
+</button>
           <button
             onClick={refreshData}
             disabled={isRefetching}
@@ -491,26 +518,7 @@ const CategoriesManagement = () => {
             <FiStar className="h-8 w-8 text-purple-600" />
           </div>
         </div>
-        
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Services</p>
-              <p className="text-2xl font-bold text-orange-600">{stats.totalServices}</p>
-            </div>
-            <FiPackage className="h-8 w-8 text-orange-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Subcategories</p>
-              <p className="text-2xl font-bold text-teal-600">{stats.totalSubcategories}</p>
-            </div>
-            <FiFolderPlus className="h-8 w-8 text-teal-600" />
-          </div>
-        </div>
+
         
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
@@ -562,6 +570,7 @@ const CategoriesManagement = () => {
           </div>
         </div>
       )}
+      
 
       {/* Search and Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">

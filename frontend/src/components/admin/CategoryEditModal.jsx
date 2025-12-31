@@ -1,6 +1,6 @@
 // CategoryEditModal.jsx - OPTIMIZED VERSION
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { FiX, FiFolder, FiInfo, FiAlertCircle, FiSave } from 'react-icons/fi';
+import { FiX, FiFolder, FiInfo, FiAlertCircle, FiSave,FiRefreshCw } from 'react-icons/fi';
 import { useCategoriesForDropdown } from '../../hooks/useAdminDashboard';
 
 // Validation rules
@@ -54,6 +54,7 @@ const CategoryEditModal = memo(({
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState({});
   const [originalSlug, setOriginalSlug] = useState('');
+const [refreshKey, setRefreshKey] = useState(0);
 
   const { data: categoriesData } = useCategoriesForDropdown();
   const categories = categoriesData?.data || [];
@@ -107,6 +108,10 @@ const CategoryEditModal = memo(({
       }));
     }
   }, [validateField]);
+const handleRefresh = useCallback(() => {
+  setRefreshKey(prev => prev + 1);
+  toast.success('Refreshed category data');
+}, []);
 
   // Validate entire form
   const validateForm = useCallback(() => {
@@ -128,34 +133,40 @@ const CategoryEditModal = memo(({
 
   // Handle form submission
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    
-    const validationErrors = validateForm();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      
-      // Scroll to first error
-      const firstError = Object.keys(validationErrors)[0];
-      const element = document.querySelector(`[name="${firstError}"]`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        element.focus();
-      }
-      
-      return;
+  e.preventDefault();
+  
+  const validationErrors = validateForm();
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    const firstError = Object.keys(validationErrors)[0];
+    const element = document.querySelector(`[name="${firstError}"]`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.focus();
     }
+    return;
+  }
+  
+  try {
+    // FIX: Send the current version from the modal state
+    const submitData = {
+      ...formData,
+      parentCategory: formData.parentCategory || null,
+      // Don't send version at all, or send the current version
+      // Option 1: Remove version (backend will handle it)
+      // version: undefined
+      // Option 2: Send the current version from state
+      version: formData.version
+    };
     
-    try {
-      const submitData = {
-        ...formData,
-        parentCategory: formData.parentCategory || null
-      };
-      
-      await onSubmit(category._id, submitData);
-    } catch (error) {
-      console.error('Form submission error:', error);
-    }
-  }, [formData, category, validateForm, onSubmit]);
+    // Remove version from the data to avoid conflict
+    delete submitData.version;
+    
+    await onSubmit(submitData);
+  } catch (error) {
+    console.error('Form submission error:', error);
+  }
+}, [formData, category, validateForm, onSubmit]);
 
   // Reset and close modal
   const handleClose = useCallback(() => {
@@ -174,23 +185,32 @@ const CategoryEditModal = memo(({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <FiFolder className="h-5 w-5 text-indigo-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Edit Category</h3>
-                <p className="text-sm text-gray-500">{category.name}</p>
-              </div>
-            </div>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Close modal"
-            >
-              <FiX className="h-5 w-5 text-gray-500" />
-            </button>
-          </div>
+  <div className="flex items-center space-x-3">
+    <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+      <FiFolder className="h-5 w-5 text-indigo-600" />
+    </div>
+    <div>
+      <h3 className="text-lg font-semibold text-gray-900">Edit Category</h3>
+      <p className="text-sm text-gray-500">{category.name}</p>
+    </div>
+  </div>
+  <div className="flex items-center space-x-2">
+    <button
+      onClick={handleRefresh}
+      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+      aria-label="Refresh data"
+    >
+      <FiRefreshCw className="h-5 w-5 text-gray-500" />
+    </button>
+    <button
+      onClick={handleClose}
+      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+      aria-label="Close modal"
+    >
+      <FiX className="h-5 w-5 text-gray-500" />
+    </button>
+  </div>
+</div>
         </div>
 
         {/* Form */}

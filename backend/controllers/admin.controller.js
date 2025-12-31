@@ -305,9 +305,16 @@ const getDashboardStats = async (req, res) => {
   try {
     console.log(`[DASHBOARD STATS] Starting dashboard stats collection for request: ${requestId}`);
     
-    // OPTIMIZATION: Use lean() and minimal field selection for all queries
-    const statsAggregation = await Promise.allSettled([
-      // Users stats - optimized
+    // Run all queries in parallel for better performance
+    const [
+      userStats,
+      categoryStats,
+      subcategoryStats,
+      serviceStats,
+      gigStats,
+      recentActivity
+    ] = await Promise.all([
+      // User stats
       User.aggregate([
         {
           $facet: {
@@ -315,35 +322,54 @@ const getDashboardStats = async (req, res) => {
             activeUsers: [{ $match: { isActive: true } }, { $count: "count" }]
           }
         }
-      ]).then(res => res[0]),
+      ]),
       
-      // Categories stats - optimized
+      // Category stats - FIXED: Simplified query
       Category.aggregate([
-        { $match: { deletedAt: null } },
+        { 
+          $match: { 
+            deletedAt: null,
+            isSubcategory: false
+          } 
+        },
         {
           $group: {
-            _id: '$isSubcategory',
-            total: { $sum: 1 },
-            active: {
-              $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] }
+            _id: null,
+            totalCategories: { $sum: 1 },
+            activeCategories: {
+              $sum: { 
+                $cond: [
+                  { $and: [{ $eq: ["$isActive", true] }, { $ifNull: ["$isActive", true] }] },
+                  1,
+                  0
+                ]
+              }
             }
           }
         }
-      ]).then(res => {
-        const result = { totalCategories: 0, activeCategories: 0, totalSubcategories: 0, activeSubcategories: 0 };
-        res.forEach(item => {
-          if (item._id === false) {
-            result.totalCategories = item.total;
-            result.activeCategories = item.active;
-          } else if (item._id === true) {
-            result.totalSubcategories = item.total;
-            result.activeSubcategories = item.active;
-          }
-        });
-        return result;
-      }),
+      ]),
       
-      // Services stats - simplified
+      // Subcategory stats - FIXED: Use Subcategory model
+      Subcategory.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $group: {
+            _id: null,
+            totalSubcategories: { $sum: 1 },
+            activeSubcategories: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ["$isActive", true] }, { $ifNull: ["$isActive", true] }] },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]),
+      
+      // Service stats
       Service.aggregate([
         { $match: { deletedAt: null } },
         {
@@ -353,7 +379,7 @@ const getDashboardStats = async (req, res) => {
             activeServices: {
               $sum: {
                 $cond: [
-                  {
+                  { 
                     $or: [
                       { $eq: ["$status", "active"] },
                       { $eq: ["$isActive", true] }
@@ -366,12 +392,9 @@ const getDashboardStats = async (req, res) => {
             }
           }
         }
-      ]).then(res => ({
-        totalServices: res[0]?.totalServices || 0,
-        activeServices: res[0]?.activeServices || 0
-      })),
+      ]),
       
-      // Gigs stats - simplified
+      // Gig stats
       Gig.aggregate([
         { $match: { deletedAt: null } },
         {
@@ -394,57 +417,55 @@ const getDashboardStats = async (req, res) => {
             }
           }
         }
-      ]).then(res => ({
-        totalGigs: res[0]?.totalGigs || 0,
-        activeGigs: res[0]?.activeGigs || 0
-      })),
+      ]),
       
-      // Recent activity - optimized with projection
-      User.find({}, { 
+      // Recent activity
+      User.find({ 
+        deletedAt: null
+      }, { 
         name: 1, 
         email: 1, 
         role: 1, 
         picture: 1, 
         createdAt: 1,
-        lastLoginAt: 1
+        lastLoginAt: 1,
+        isActive: 1
       })
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(10)
       .lean()
     ]);
 
-    // Process results with fallbacks
-    const results = statsAggregation.map(p => 
-      p.status === 'fulfilled' ? p.value : null
-    );
-    
-    const userStats = results[0] || { totalUsers: [], activeUsers: [] };
-    const categoryStats = results[1] || { 
-      totalCategories: 0, 
-      activeCategories: 0, 
-      totalSubcategories: 0, 
-      activeSubcategories: 0 
-    };
-    const serviceStats = results[2] || { totalServices: 0, activeServices: 0 };
-    const gigStats = results[3] || { totalGigs: 0, activeGigs: 0 };
-    const recentActivity = results[4] || [];
-
-    // Build response object
+    // Process and format the results
     const stats = {
       overview: {
-        totalUsers: userStats.totalUsers?.[0]?.count || 0,
-        activeUsers: userStats.activeUsers?.[0]?.count || 0
+        totalUsers: userStats[0]?.totalUsers?.[0]?.count || 0,
+        activeUsers: userStats[0]?.activeUsers?.[0]?.count || 0
       },
-      categories: categoryStats,
-      services: serviceStats,
-      gigs: gigStats,
+      categories: {
+        totalCategories: categoryStats[0]?.totalCategories || 0,
+        activeCategories: categoryStats[0]?.activeCategories || 0,
+        totalSubcategories: subcategoryStats[0]?.totalSubcategories || 0,
+        activeSubcategories: subcategoryStats[0]?.activeSubcategories || 0
+      },
+      services: {
+        totalServices: serviceStats[0]?.totalServices || 0,
+        activeServices: serviceStats[0]?.activeServices || 0
+      },
+      gigs: {
+        totalGigs: gigStats[0]?.totalGigs || 0,
+        activeGigs: gigStats[0]?.activeGigs || 0
+      },
       recentActivity: recentActivity.map(user => ({
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        joined: user.createdAt,
-        lastSeen: user.lastLoginAt
+        id: user._id,
+        name: user.name || 'Unknown User',
+        email: user.email || 'No email',
+        role: user.role || 'user',
+        avatar: user.picture || null,
+        joined: user.createdAt ? new Date(user.createdAt).toISOString() : null,
+        lastSeen: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+        isActive: user.isActive || false,
+        isNew: !user.lastLoginAt && user.createdAt > new Date(Date.now() - 24 * 60 * 60 * 1000)
       }))
     };
 
@@ -452,6 +473,13 @@ const getDashboardStats = async (req, res) => {
     const executionTime = endTime - startTime;
     
     console.log(`[DASHBOARD STATS] Completed in ${executionTime}ms for request: ${requestId}`);
+    console.log(`[DASHBOARD STATS] Results:`, {
+      users: stats.overview.totalUsers,
+      categories: stats.categories.totalCategories,
+      subcategories: stats.categories.totalSubcategories,
+      services: stats.services.totalServices,
+      gigs: stats.gigs.totalGigs
+    });
 
     res.json({
       success: true,
@@ -463,41 +491,106 @@ const getDashboardStats = async (req, res) => {
 
   } catch (error) {
     console.error('[DASHBOARD STATS ERROR]', error);
+    console.error('[DASHBOARD STATS ERROR DETAILS]', error.stack);
     
     const endTime = Date.now();
     const executionTime = endTime - startTime;
     
-    console.error(`[DASHBOARD STATS] Failed after ${executionTime}ms for request: ${requestId}`);
-    
-    // Return fast fallback response
-    res.status(200).json({
-      success: true,
-      message: 'Dashboard statistics loaded with minimal data',
-      code: 'DASHBOARD_MINIMAL',
-      requestId,
-      executionTime: `${executionTime}ms`,
-      data: {
+    // Return simplified but accurate stats even on error
+    try {
+      // Fallback to individual counts if aggregation fails
+      const [
+        totalUsers,
+        activeUsers,
+        totalCategories,
+        activeCategories,
+        totalSubcategories,
+        activeSubcategories,
+        totalServices,
+        activeServices,
+        totalGigs,
+        activeGigs
+      ] = await Promise.all([
+        User.countDocuments({ deletedAt: null }),
+        User.countDocuments({ deletedAt: null, isActive: true }),
+        Category.countDocuments({ deletedAt: null, isSubcategory: false }),
+        Category.countDocuments({ deletedAt: null, isSubcategory: false, isActive: true }),
+        Subcategory.countDocuments({ deletedAt: null }),
+        Subcategory.countDocuments({ deletedAt: null, isActive: true }),
+        Service.countDocuments({ deletedAt: null }),
+        Service.countDocuments({ deletedAt: null, $or: [{ status: 'active' }, { isActive: true }] }),
+        Gig.countDocuments({ deletedAt: null }),
+        Gig.countDocuments({ 
+          deletedAt: null, 
+          status: { $in: ['open', 'in_progress', 'assigned'] } 
+        })
+      ]);
+
+      const fallbackStats = {
         overview: {
-          totalUsers: 0,
-          activeUsers: 0
+          totalUsers,
+          activeUsers
         },
         categories: {
-          totalCategories: 0,
-          activeCategories: 0,
-          totalSubcategories: 0,
-          activeSubcategories: 0
+          totalCategories,
+          activeCategories,
+          totalSubcategories,
+          activeSubcategories
         },
         services: {
-          totalServices: 0,
-          activeServices: 0
+          totalServices,
+          activeServices
         },
         gigs: {
-          totalGigs: 0,
-          activeGigs: 0
+          totalGigs,
+          activeGigs
         },
         recentActivity: []
-      }
-    });
+      };
+
+      console.log(`[DASHBOARD STATS] Fallback stats after error:`, fallbackStats);
+      
+      res.json({
+        success: true,
+        message: 'Dashboard statistics loaded with fallback method',
+        code: 'DASHBOARD_FALLBACK',
+        requestId,
+        executionTime: `${executionTime}ms`,
+        data: fallbackStats
+      });
+    } catch (fallbackError) {
+      console.error('[DASHBOARD STATS FALLBACK ERROR]', fallbackError);
+      
+      // Return minimal stats
+      res.status(200).json({
+        success: true,
+        message: 'Dashboard statistics loaded with minimal data',
+        code: 'DASHBOARD_MINIMAL',
+        requestId,
+        executionTime: `${executionTime}ms`,
+        data: {
+          overview: {
+            totalUsers: 0,
+            activeUsers: 0
+          },
+          categories: {
+            totalCategories: 0,
+            activeCategories: 0,
+            totalSubcategories: 0,
+            activeSubcategories: 0
+          },
+          services: {
+            totalServices: 0,
+            activeServices: 0
+          },
+          gigs: {
+            totalGigs: 0,
+            activeGigs: 0
+          },
+          recentActivity: []
+        }
+      });
+    }
   }
 };
 // User Management
@@ -1338,103 +1431,342 @@ const getSystemHealthHandler = async (req, res) => {
     });
   }
 };
+// In admin.controller.js - Fix the getServiceStats function
 const getServiceStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
+    console.log('[SERVICE STATS] Starting stats aggregation');
+    
+    // Simplify the aggregation for better performance
     const stats = await Service.aggregate([
       {
         $facet: {
+          // Overview stats - simplified
           overview: [
             {
               $group: {
                 _id: null,
                 totalServices: { $sum: 1 },
-                activeServices: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
-                draftServices: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
-                pendingServices: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-                pausedServices: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
-                suspendedServices: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
-                featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
-                recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
-                popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                totalViews: { $sum: '$views' },
-                totalLikes: { $sum: '$likes' },
-                avgPrice: { $avg: '$price' },
-                avgRating: { $avg: '$rating' },
-                avgDeliveryTime: { $avg: '$deliveryTime' },
-                totalRevenue: { $sum: { $multiply: ['$price', '$ordersCount'] } }
+                activeServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'active'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                draftServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'draft'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                pendingServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'pending'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                pausedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'paused'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                suspendedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'suspended'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                featuredServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$isFeatured', true] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                recommendedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$isRecommended', true] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                // Use $ifNull to handle null values
+                totalViews: { $sum: { $ifNull: ['$views', 0] } },
+                totalLikes: { $sum: { $ifNull: ['$likes', 0] } },
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                avgRating: { $avg: { $ifNull: ['$rating', 0] } },
+                avgDeliveryTime: { $avg: { $ifNull: ['$deliveryTime', 0] } },
+                // Calculate revenue safely
+                totalRevenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
+                }
               }
             }
           ],
+          
+          // Category stats - simplified
           byCategory: [
-            { $match: { status: 'active', isActive: true } },
+            { 
+              $match: { 
+                status: { $in: ['active', 'published'] },
+                isActive: true,
+                category: { $exists: true, $ne: null }
+              } 
+            },
             {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
-                avgRating: { $avg: '$rating' },
-                avgPrice: { $avg: '$price' }
+                avgRating: { $avg: { $ifNull: ['$rating', 0] } },
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                totalRevenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
+                }
               }
             },
             { $sort: { count: -1 } },
             { $limit: 10 }
           ],
+          
+          // Status breakdown
           byStatus: [
             {
               $group: {
                 _id: '$status',
                 count: { $sum: 1 },
-                avgPrice: { $avg: '$price' },
-                avgOrders: { $avg: '$ordersCount' }
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                avgOrders: { $avg: { $ifNull: ['$ordersCount', 0] } }
               }
             },
             { $sort: { count: -1 } }
           ],
-          byFeatured: [
-            {
-              $group: {
-                _id: '$isFeatured',
-                count: { $sum: 1 },
-                avgOrders: { $avg: '$ordersCount' },
-                avgRating: { $avg: '$rating' }
-              }
-            }
-          ],
+          
+          // Monthly growth
           growth: [
             {
               $group: {
                 _id: {
                   year: { $year: '$createdAt' },
-                  month: { $month: '$createdAt' },
-                  week: { $week: '$createdAt' }
+                  month: { $month: '$createdAt' }
                 },
                 count: { $sum: 1 },
+                revenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
+                }
               }
             },
-            { $sort: { '_id.year': -1, '_id.month': -1, '_id.week': -1 } },
+            { $sort: { '_id.year': 1, '_id.month': 1 } },
             { $limit: 12 }
           ]
         }
       }
     ]);
 
-    const result = stats[0];
+    console.log('[SERVICE STATS] Aggregation completed:', stats.length);
+
+    // Handle empty results
+    const result = stats[0] || {
+      overview: [{
+        totalServices: 0,
+        activeServices: 0,
+        draftServices: 0,
+        pendingServices: 0,
+        pausedServices: 0,
+        suspendedServices: 0,
+        featuredServices: 0,
+        recommendedServices: 0,
+        totalViews: 0,
+        totalLikes: 0,
+        avgPrice: 0,
+        avgRating: 0,
+        avgDeliveryTime: 0,
+        totalRevenue: 0
+      }],
+      byCategory: [],
+      byStatus: [],
+      growth: []
+    };
+
+    // Get category names for byCategory
+    const byCategory = result.byCategory || [];
+    const categoryIds = byCategory.map(item => item._id).filter(id => id);
     
+    let categories = [];
+    if (categoryIds.length > 0) {
+      categories = await Category.find({ _id: { $in: categoryIds } })
+        .select('name slug')
+        .lean();
+    }
+    
+    const categoryMap = {};
+    categories.forEach(cat => {
+      categoryMap[cat._id.toString()] = cat;
+    });
+    
+    // Replace category IDs with names
+    const byCategoryWithNames = byCategory.map(item => ({
+      ...item,
+      category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
+    }));
+
+    // Format dates in growth data
+    const formattedGrowth = (result.growth || []).map(item => ({
+      ...item,
+      period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`
+    }));
+
     res.json({
       success: true,
-      data: result,
+      data: {
+        overview: result.overview[0] || result.overview,
+        byCategory: byCategoryWithNames,
+        byStatus: result.byStatus || [],
+        growth: formattedGrowth
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('[SERVICE STATS ERROR]', error);
+    console.error('[SERVICE STATS ERROR DETAILS]', error.stack);
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch service statistics',
+      message: 'Failed to fetch service statistics: ' + error.message,
       code: 'SERVICE_STATS_ERROR',
       requestId
+    });
+  }
+};
+// In admin.controller.js - Add exportCategories function
+const exportCategories = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { format = 'csv' } = req.query;
+
+    console.log('[EXPORT CATEGORIES] Starting export, format:', format);
+
+    // Get categories with minimal data
+    const categories = await Category.find({ deletedAt: null })
+      .populate('parentCategory', 'name slug')
+      .populate('createdBy', 'name email')
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -metaDescription -metaTitle')
+      .lean();
+
+    console.log(`[EXPORT CATEGORIES] Found ${categories.length} categories`);
+
+    if (format.toLowerCase() === 'csv') {
+      // Prepare CSV headers
+      const headers = [
+        'ID', 'Name', 'Slug', 'Description', 'Parent Category', 
+        'Level', 'Order', 'Active', 'Featured', 'Popular',
+        'Icon', 'Color', 'Services Count', 'Gigs Count',
+        'Subcategories Count', 'Created By', 'Created At', 'Updated At'
+      ];
+
+      // Prepare CSV rows
+      const csvRows = categories.map(cat => [
+        cat._id,
+        `"${(cat.name || '').replace(/"/g, '""')}"`,
+        cat.slug || '',
+        `"${(cat.description || '').replace(/"/g, '""')}"`,
+        cat.parentCategory?.name || '',
+        cat.level || 0,
+        cat.order || 0,
+        cat.isActive ? 'Yes' : 'No',
+        cat.featured ? 'Yes' : 'No',
+        cat.popular ? 'Yes' : 'No',
+        cat.icon || '',
+        cat.color || '',
+        cat.servicesCount || 0,
+        cat.gigsCount || 0,
+        cat.subcategories?.length || 0,
+        cat.createdBy?.name || '',
+        new Date(cat.createdAt).toISOString(),
+        new Date(cat.updatedAt).toISOString()
+      ]);
+
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n');
+
+      console.log(`[EXPORT CATEGORIES] CSV content generated, ${categories.length} rows`);
+
+      // Set proper CSV headers
+      res.set({
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="categories_export_${Date.now()}.csv"`,
+        'X-Request-ID': requestId,
+        'X-Export-Records': categories.length.toString(),
+        'X-Export-Timestamp': new Date().toISOString(),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      
+      return res.send(csvContent);
+    }
+
+    // Default to JSON format
+    console.log(`[EXPORT CATEGORIES] Returning JSON format, ${categories.length} categories`);
+    
+    res.json({
+      success: true,
+      format: 'json',
+      count: categories.length,
+      data: categories,
+      exportedAt: new Date().toISOString(),
+      requestId
+    });
+
+  } catch (error) {
+    console.error('[EXPORT CATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export categories',
+      code: 'EXPORT_ERROR',
+      requestId,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -3526,5 +3858,6 @@ module.exports = {
   bulkUpdateSubcategories,
   getSubcategoryStats,
   exportSubcategories,
-  bulkUpdateUsers
+  bulkUpdateUsers,
+  exportCategories
 };

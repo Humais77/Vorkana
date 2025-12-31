@@ -158,7 +158,8 @@ export const adminAPI = {
   createUser: (data) => adminApi.post('/api/admin/users', data),
   updateUser: (id, data) => adminApi.put(`/api/admin/users/${id}`, data),
   deleteUser: (id) => adminApi.delete(`/api/admin/users/${id}`),
-  bulkUpdateUsers: (data) => adminApi.post('/api/admin/users/bulk', data),
+  bulkUpdateUsers: ({ ids, operation, data = {} }) => 
+  adminApi.post('/api/admin/users/bulk-action', { ids, operation, data }),
   exportUsers: (format = 'csv') => 
     adminApi.get('/api/admin/users/export', { 
       params: { format },
@@ -168,19 +169,33 @@ export const adminAPI = {
   getCategoryById: (id) => adminApi.get(`/api/admin/categories/${id}`),
   createCategory: (data) => adminApi.post('/api/admin/categories', data),
   updateCategory: (id, data) => adminApi.put(`/api/admin/categories/${id}`, data),
-  deleteCategory: (id) => adminApi.delete(`/api/admin/categories/${id}`),
+  deleteCategory: (id, params = {}) => adminApi.delete(`/api/admin/categories/${id}`, { params }),
+  getCategoryStats: () => adminApi.get('/api/admin/categories/analytics'),
+   exportCategories: (format = 'csv') => 
+    adminApi.get('/api/admin/categories/export', { 
+      params: { format },
+      responseType: 'blob'
+    }),
   
   // Fix bulk update categories endpoint
-  bulkUpdateCategories: ({ ids, operation, data = {} }) => 
-    adminApi.post('/api/admin/categories/bulk-action', { ids, operation, data }),
+ bulkUpdateCategories: ({ ids, operation, data = {} }) => 
+  adminApi.post('/api/admin/categories/bulk-action', { ids, operation, data }),
+
   getSubcategories: (params) => adminApi.get('/api/admin/subcategories', { params }),
   getSubcategoryById: (id) => adminApi.get(`/api/admin/subcategories/${id}`),
   createSubcategory: (data) => adminApi.post('/api/admin/subcategories', data),
   updateSubcategory: (id, data) => adminApi.put(`/api/admin/subcategories/${id}`, data),
   deleteSubcategory: (id, params = {}) => adminApi.delete(`/api/admin/subcategories/${id}`, { params }),
   bulkUpdateSubcategories: ({ ids, operation, data = {} }) => 
-    adminApi.post('/api/admin/subcategories/bulk', { ids, operation, data }),
-  
+  adminApi.post('/api/admin/subcategories/bulk', { ids, operation, data }),
+  getSubcategoryStats: () => adminApi.get('/api/admin/subcategories/stats'),
+exportSubcategories: (format = 'csv') => 
+  adminApi.get('/api/admin/subcategories/export', { 
+    params: { format },
+    responseType: 'blob'
+  }),
+  getDashboardSubcategoryStats: () => 
+  adminApi.get('/api/admin/dashboard/subcategories'),
     
 getServices: (params) => adminApi.get('/api/admin/services', { params }),
   getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`),
@@ -188,13 +203,13 @@ getServices: (params) => adminApi.get('/api/admin/services', { params }),
   updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
   deleteService: (id) => adminApi.delete(`/api/admin/services/${id}`),
   bulkUpdateServices: ({ ids, operation, data = {} }) => 
-    adminApi.post('/api/admin/services/bulk', { ids, operation, data }),
+  adminApi.post('/api/admin/services/bulk', { ids, operation, data }),
 exportServices: (format = 'csv') => 
   adminApi.get('/api/services/admin/export', { 
     params: { format },
     responseType: 'blob'
   }),
-getServiceStats: () => adminApi.get('/api/services/admin/stats'),
+getServiceStats: () => adminApi.get('/api/admin/services/stats'),
   // Security
   getSecurityLogs: (params) => adminApi.get('/api/admin/security/logs', { params }),
   getSecurityStats: () => adminApi.get('/api/admin/security/stats'),
@@ -237,10 +252,10 @@ getServiceStats: () => adminApi.get('/api/services/admin/stats'),
 deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { params }),
   bulkUpdateGigs: (data) => adminApi.post('/api/admin/gigs/bulk', data),
   exportGigs: (format = 'csv') => 
-    adminApi.get('/api/admin/gigs/export', { 
-      params: { format },
-      responseType: 'blob'
-    }),
+  adminApi.get('/api/admin/gigs/export', { 
+    params: { format },
+    responseType: 'blob'
+  }),
   getGigStats: () => adminApi.get('/api/admin/gigs/stats'),
   
   // Get categories for dropdowns
@@ -248,7 +263,11 @@ deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { param
     adminApi.get('/api/admin/categories/dropdown', {
       params: { active: true, limit: 100 }
     }),
-    
+     getSubcategoriesDropdown: (categoryId, params = {}) => 
+    adminApi.get(`/api/admin/categories/${categoryId}/subcategories/dropdown`, { params }),
+  
+    getSubcategoriesByCategory: (categoryId, params = {}) => 
+  adminApi.get(`/api/admin/categories/${categoryId}/subcategories/dropdown`, { params }),
   // Get users for dropdown (clients/freelancers)
   getUsersForDropdown: (role = '') => 
     adminApi.get('/api/admin/users/dropdown', {
