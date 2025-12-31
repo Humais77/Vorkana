@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiXCircle, FiPlus, FiTrash2, FiAlertCircle, FiSave } from 'react-icons/fi';
-
+import { useSubcategoriesByCategory } from '../../hooks/useAdminDashboard';
 const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users }) => {
   const [formData, setFormData] = useState({
     title: '',
@@ -26,6 +26,12 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users }) => {
   const [submitting, setSubmitting] = useState(false);
   const [newSkill, setNewSkill] = useState('');
   const [newDeliverable, setNewDeliverable] = useState('');
+const [availableSubcategories, setAvailableSubcategories] = useState([]);
+const [loadingSubcategories, setLoadingSubcategories] = useState(false);
+const { data: subcategoriesData, refetch: refetchSubcategories } = useSubcategoriesByCategory(
+  formData.projectCategory,
+  { activeOnly: true }
+);
 
   useEffect(() => {
     if (gig && isOpen) {
@@ -81,7 +87,21 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users }) => {
       setNewDeliverable('');
     }
   }, [gig, isOpen]);
+useEffect(() => {
+  if (formData.projectCategory) {
+    refetchSubcategories();
+    // Reset subcategory when category changes
+    if (formData.projectCategory !== gig?.projectCategory?._id) {
+      setFormData(prev => ({ ...prev, subcategory: '' }));
+    }
+  }
+}, [formData.projectCategory, refetchSubcategories, gig]);
 
+useEffect(() => {
+  if (subcategoriesData?.data) {
+    setAvailableSubcategories(subcategoriesData.data);
+  }
+}, [subcategoriesData]);
   const validateForm = () => {
     const newErrors = {};
     
@@ -123,14 +143,28 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users }) => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-
+const validateSubcategory = () => {
+  if (formData.subcategory && availableSubcategories.length > 0) {
+    const isValidSubcategory = availableSubcategories.some(
+      sub => sub._id === formData.subcategory
+    );
+    
+    if (!isValidSubcategory) {
+      setErrors(prev => ({
+        ...prev,
+        subcategory: 'Selected subcategory does not belong to the chosen category'
+      }));
+      return false;
+    }
+  }
+  return true;
+};
   // In GigEditModal.jsx - Update the handleSubmit function
 const handleSubmit = async (e) => {
   e.preventDefault();
   console.log('Form submitted:', formData);
-  
-  if (!validateForm()) {
-    console.log('Validation failed:', errors);
+   
+  if (!validateForm() || !validateSubcategory()) {
     return;
   }
   
@@ -326,23 +360,34 @@ const handleSubmit = async (e) => {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Subcategory
-                    </label>
-                    <select
-                      value={formData.subcategory}
-                      onChange={(e) => handleChange('subcategory', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      <option value="">Select subcategory</option>
-                      {categories
-                        .filter(cat => cat.parentCategory === formData.projectCategory)
-                        .map(cat => (
-                          <option key={cat._id} value={cat._id}>{cat.name}</option>
-                        ))
-                      }
-                    </select>
-                  </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Subcategory
+  </label>
+  <select
+  value={formData.subcategory}
+  onChange={(e) => handleChange('subcategory', e.target.value)}
+  disabled={!formData.projectCategory || loadingSubcategories}
+  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+    !formData.projectCategory || loadingSubcategories 
+      ? 'bg-gray-100 cursor-not-allowed' 
+      : 'border-gray-300'
+  }`}
+>
+  <option value="">Select subcategory</option>
+  {loadingSubcategories ? (
+    <option value="" disabled>Loading subcategories...</option>
+  ) : (
+    availableSubcategories.map(sub => (
+      <option key={sub._id} value={sub._id}>
+        {sub.name}
+      </option>
+    ))
+  )}
+</select>
+  {!formData.projectCategory && (
+    <p className="mt-1 text-sm text-gray-500">Select a category first</p>
+  )}
+</div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

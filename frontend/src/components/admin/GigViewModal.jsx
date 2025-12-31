@@ -141,15 +141,18 @@ const GigViewModal = ({ gig, onClose }) => {
                   <h4 className="font-semibold text-gray-900 mb-4">Project Information</h4>
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Category</p>
-                        <p className="font-medium">{gig.projectCategory?.name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Subcategory</p>
-                        <p className="font-medium">{gig.subcategory?.name || 'N/A'}</p>
-                      </div>
-                    </div>
+  <div>
+    <p className="text-sm text-gray-600">Category</p>
+    <p className="font-medium">{gig.projectCategory?.name || 'N/A'}</p>
+  </div>
+  <div>
+    <p className="text-sm text-gray-600">Subcategory</p>
+    <p className="font-medium">{gig.subcategory?.name || 'N/A'}</p>
+    {gig.subcategory?.description && (
+      <p className="text-xs text-gray-500 mt-1">{gig.subcategory.description}</p>
+    )}
+  </div>
+</div>
                     
                     <div>
                       <p className="text-sm text-gray-600">Client</p>

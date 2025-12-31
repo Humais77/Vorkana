@@ -197,8 +197,20 @@ exportSubcategories: (format = 'csv') =>
   getDashboardSubcategoryStats: () => 
   adminApi.get('/api/admin/dashboard/subcategories'),
     
-getServices: (params) => adminApi.get('/api/admin/services', { params }),
-  getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`),
+ getServices: (params) => adminApi.get('/api/admin/services', { 
+  params: {
+    ...params,
+    populateSubcategories: true
+  }
+}),
+  
+  getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`, {
+  params: { 
+    includeCommunication: true,
+    populateSubcategories: true 
+  }
+}),
+  
   createService: (data) => adminApi.post('/api/admin/services', data), // You need to add this route
   updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
   deleteService: (id) => adminApi.delete(`/api/admin/services/${id}`),
@@ -245,8 +257,11 @@ getServiceStats: () => adminApi.get('/api/admin/services/stats'),
   // Analytics
   getAnalytics: (params) => adminApi.get('/api/admin/analytics', { params }),
   
- getGigs: (params) => adminApi.get('/api/admin/gigs', { params }),
-  getGigById: (id) => adminApi.get(`/api/admin/gigs/${id}`),
+getGigs: (params) => adminApi.get('/api/admin/gigs', { params }),
+  getGigById: (id) => adminApi.get(`/api/admin/gigs/${id}`, {
+  params: { includeCommunication: true }
+}),
+
   createGig: (data) => adminApi.post('/api/admin/gigs', data),
   updateGig: (id, data) => adminApi.put(`/api/admin/gigs/${id}`, data),
 deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { params }),

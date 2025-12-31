@@ -6,11 +6,12 @@ import {
   useDeleteGig,
   useBulkGigOperations,
   useCategoriesForDropdown,
-  useUsersForDropdown
+  useUsersForDropdown, useExportGigs, useGigStats
 } from '../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
   FiBriefcase,
+  FiDownload,
   FiSearch,
   FiFilter,
   FiEdit2,
@@ -255,25 +256,39 @@ const GigsManagement = () => {
   
 
   // Use React Query with proper caching
-  const { 
-    data, 
-    isLoading, 
-    refetch, 
-    isRefetching 
-  } = useAdminGigs({
-    page,
-    limit,
-    search: searchTerm,
-    ...filters
-  });
-  
+ const { 
+  data, 
+  isLoading, 
+  refetch, 
+  isRefetching 
+} = useAdminGigs({
+  page,
+  limit,
+  search: searchTerm,
+  ...filters,
+  // Ensure subcategories are populated
+  populateSubcategories: true
+});
   const updateGigMutation = useUpdateGig();
   const deleteGigMutation = useDeleteGig();
   const bulkOperationsMutation = useBulkGigOperations();
   const { data: categoriesData } = useCategoriesForDropdown();
   const { data: usersData } = useUsersForDropdown();
+  const exportGigsMutation = useExportGigs();
+const { data: gigStatsData } = useGigStats();
+  const gigs = useMemo(() => {
+  if (!data?.data) return [];
   
-  const gigs = data?.data || [];
+  return data.data.map(gig => ({
+    ...gig,
+    // Ensure subcategory is properly structured
+    subcategory: gig.subcategory?._id ? {
+      _id: gig.subcategory._id,
+      name: gig.subcategory.name,
+      description: gig.subcategory.description
+    } : null
+  }));
+}, [data]);
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
   const categories = categoriesData?.data || [];
   const users = usersData?.data || [];
@@ -401,7 +416,25 @@ useEffect(() => {
     setSelectedGig(gig);
     setShowDeleteModal(true);
   }, []);
-
+const exportGigs = useCallback(async () => {
+  try {
+    const response = await exportGigsMutation.mutateAsync('csv');
+    
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gigs_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    toast.success('Gigs exported successfully');
+  } catch (error) {
+    toast.error('Failed to export gigs');
+  }
+}, [exportGigsMutation]);
   const refreshData = useCallback(() => {
     refetch();
     setSelectedGigs([]);
@@ -411,16 +444,19 @@ useEffect(() => {
 
   // Memoized stats calculation
   const stats = useMemo(() => {
-    return {
-      total: pagination.total || gigs.length,
-      open: gigs.filter(g => g.status === 'open').length,
-      inProgress: gigs.filter(g => g.status === 'in_progress').length,
-      completed: gigs.filter(g => g.status === 'completed').length,
-      totalBudget: gigs.reduce((sum, g) => sum + (g.budget || 0), 0),
-      avgBudget: gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0
-    };
-  }, [gigs, pagination.total]);
-
+  const gigStats = gigStatsData?.data?.overview?.[0] || {};
+  
+  return {
+    total: gigStats.totalGigs || pagination.total || gigs.length,
+    open: gigStats.openGigs || gigs.filter(g => g.status === 'open').length,
+    inProgress: gigStats.inProgressGigs || gigs.filter(g => g.status === 'in_progress').length,
+    completed: gigStats.completedGigs || gigs.filter(g => g.status === 'completed').length,
+    totalBudget: gigStats.totalBudget || gigs.reduce((sum, g) => sum + (g.budget || 0), 0),
+    avgBudget: gigStats.avgBudget || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0),
+    totalBids: gigStats.totalBids || gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0),
+    avgBidsPerGig: gigStats.avgBidsPerGig || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0) / gigs.length : 0)
+  };
+}, [gigs, pagination.total, gigStatsData]);
   if (isLoading && !gigs.length) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -438,6 +474,14 @@ useEffect(() => {
           <p className="text-gray-600">Manage projects and freelance opportunities</p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button
+  onClick={exportGigs}
+  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+>
+  <FiDownload className="h-4 w-4" />
+  <span>Export</span>
+</button>
+
           <button
             onClick={refreshData}
             disabled={isRefetching}

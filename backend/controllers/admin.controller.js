@@ -1910,7 +1910,7 @@ const getGigs = async (req, res) => {
   }
 };
 
-// Get Gig by ID (Admin)
+// In admin.controller.js - Update getGigById function
 const getGigById = async (req, res) => {
   const requestId = uuidv4();
   
@@ -1929,7 +1929,14 @@ const getGigById = async (req, res) => {
 
     const gig = await Gig.findOne({ _id: id, deletedAt: null })
       .populate('projectCategory', 'name slug icon')
-      .populate('subcategory', 'name slug')
+      .populate({
+        path: 'subcategory',
+        select: 'name slug description icon order category', // Added category field
+        populate: {
+          path: 'category',
+          select: 'name slug'
+        }
+      })
       .populate('createdBy', 'name email picture')
       .populate('assignedTo', 'name email picture')
       .lean();
