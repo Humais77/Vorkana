@@ -293,8 +293,15 @@ const login = asyncHandler(async (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
+    console.log('🔐 Login attempt:', { 
+      email, 
+      passwordLength: password?.length,
+      timestamp: new Date().toISOString() 
+    });
+
     // 1. Basic validations
     if (!email || !password) {
+      console.log('❌ Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Please provide email and password'
@@ -302,24 +309,66 @@ const login = asyncHandler(async (req, res) => {
     }
 
     // 2. Find user (only verified users can login)
+    console.log(`🔍 Looking for user: ${email.toLowerCase()}`);
     const user = await User.findOne({ 
       email: email.toLowerCase(),
       emailVerified: true,
       registrationStatus: 'verified',
       isActive: true
-    }).select('+password');
+    }).select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected');
 
     if (!user) {
+      console.log('❌ User not found or not verified/active');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or account not verified'
       });
     }
 
-    // 3. Verify password
+    console.log('✅ User found:', {
+      id: user._id,
+      email: user.email,
+      hasPassword: !!user.password,
+      passwordStartsWith: user.password?.substring(0, 10),
+      emailVerified: user.emailVerified,
+      registrationStatus: user.registrationStatus,
+      isActive: user.isActive
+    });
+
+    // 3. Check if account is locked
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
+      console.log('🔒 Account locked:', { remainingTime });
+      return res.status(423).json({
+        success: false,
+        message: `Account is locked. Try again in ${remainingTime} minutes.`,
+        code: 'ACCOUNT_LOCKED'
+      });
+    }
+
+    // 4. Verify password
+    console.log('🔑 Verifying password...');
+    console.log('Input password length:', password.length);
+    console.log('Stored password length:', user.password?.length);
+    console.log('Stored password start:', user.password?.substring(0, 10));
+    
     const isPasswordValid = await user.comparePassword(password);
     
+    console.log('Password validation result:', isPasswordValid);
+    
     if (!isPasswordValid) {
+      console.log('❌ Password invalid');
+      
+      // Log failed attempt in background
+      process.nextTick(async () => {
+        try {
+          await user.incrementLoginAttempts();
+          await user.addLoginHistory(ip, userAgent, false);
+        } catch (err) {
+          console.error('Error logging failed attempt:', err.message);
+        }
+      });
+
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -327,16 +376,22 @@ const login = asyncHandler(async (req, res) => {
       });
     }
 
-    // 4. Update last login
+    console.log('✅ Password valid, proceeding with login...');
+
+    // 5. Reset login attempts
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
     user.lastLoginAt = new Date();
     user.lastSeenAt = new Date();
+    user.suspiciousActivityDetected = false;
+    
     await user.save({ validateBeforeSave: false });
 
-    // 5. Generate tokens (ONLY on successful login)
+    // 6. Generate tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // 6. Prepare user response
+    // 7. Prepare user response
     const userResponse = {
       _id: user._id,
       name: user.name,
@@ -352,7 +407,7 @@ const login = asyncHandler(async (req, res) => {
       isOnline: true
     };
 
-    console.log(`✅ Login successful for: ${user.email}`);
+    console.log('🎉 Login successful for:', user.email);
 
     res.json({
       success: true,
@@ -363,7 +418,8 @@ const login = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('🔥 Login error:', error.message);
+    console.error('Error stack:', error.stack);
     
     res.status(500).json({
       success: false,
