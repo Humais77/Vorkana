@@ -427,36 +427,43 @@ const Profile = () => {
     };
   }, [user, formData, isLoadingProfile]);
 
-  useEffect(() => {
-    if (user && !isLoadingProfile) {
-      setFormData({
-        bio: user.bio || '',
-        phoneNumber: user.phoneNumber || '',
-        country: user.country || '',
-        city: user.city || '',
-        languages: user.languages || [],
-        occupation: user.occupation || '',
-        education: user.education || '',
-        gender: user.gender || '',
-        dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '',
-        github: user.github || '',
-        linkedin: user.linkedin || '',
-        website: user.website || '',
-        privacySettings: user.privacySettings || {
-          profileVisibility: 'public',
-          showEmail: false,
-          showPhone: false,
-          showLocation: true,
-          showLastSeen: true
-        }
-      });
-
-      if (profileCompletion < 60) {
-        setShowSetupPrompt(true);
+ useEffect(() => {
+  if (user && !isLoadingProfile) {
+    const initialFormData = {
+      bio: user.bio || '',
+      phoneNumber: user.phoneNumber || '',
+      country: user.country || '',
+      city: user.city || '',
+      languages: user.languages || [],
+      occupation: user.occupation || '',
+      education: user.education || '',
+      gender: user.gender || '',
+      dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '',
+      github: user.github || '',
+      linkedin: user.linkedin || '',
+      website: user.website || '',
+      privacySettings: user.privacySettings || {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
       }
-    }
-  }, [user, isLoadingProfile, profileCompletion]);
+    };
+    
+    // Only update if there's an actual difference
+    setFormData(prev => {
+      if (JSON.stringify(prev) !== JSON.stringify(initialFormData)) {
+        return initialFormData;
+      }
+      return prev;
+    });
 
+    if (profileCompletion < 60) {
+      setShowSetupPrompt(true);
+    }
+  }
+}, [user, isLoadingProfile, profileCompletion]);
   const handleProfilePictureClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -503,14 +510,169 @@ const Profile = () => {
   }, [user, uploadProfilePicture, setUser, refetchProfile]);
 
   const handleSave = useCallback(async (field) => {
-    // ... (same as before, no changes needed here)
-    // Your existing handleSave logic remains unchanged
-  }, [formData, isSaving, updateProfileMutation, profileCompletion, setUser, refetchProfile]);
+  if (isSaving) return;
+  
+  setIsSaving(true);
+  
+  try {
+    // Prepare data based on field
+    let dataToUpdate = {};
+    
+    if (field === 'all') {
+      // Send all form data
+      dataToUpdate = { ...formData };
+    } else {
+      // Send only specific field
+      switch (field) {
+        case 'bio':
+          dataToUpdate = { bio: formData.bio };
+          break;
+        case 'professional':
+          dataToUpdate = { 
+            occupation: formData.occupation,
+            education: formData.education 
+          };
+          break;
+        case 'personal':
+          dataToUpdate = {
+            gender: formData.gender,
+            dateOfBirth: formData.dateOfBirth
+          };
+          break;
+        case 'location':
+          dataToUpdate = {
+            country: formData.country,
+            city: formData.city
+          };
+          break;
+        case 'languages':
+          dataToUpdate = { languages: formData.languages };
+          break;
+        case 'contact':
+          dataToUpdate = {
+            phoneNumber: formData.phoneNumber,
+            privacySettings: formData.privacySettings
+          };
+          break;
+        case 'social':
+          dataToUpdate = {
+            github: formData.github,
+            linkedin: formData.linkedin,
+            website: formData.website
+          };
+          break;
+        case 'privacySettings':
+          dataToUpdate = { privacySettings: formData.privacySettings };
+          break;
+        default:
+          dataToUpdate = { [field]: formData[field] };
+      }
+    }
+    
+    // Validate data before sending
+    if (dataToUpdate.dateOfBirth) {
+      const dob = new Date(dataToUpdate.dateOfBirth);
+      if (isNaN(dob.getTime())) {
+        delete dataToUpdate.dateOfBirth;
+      }
+    }
+    
+    // Remove empty strings
+    Object.keys(dataToUpdate).forEach(key => {
+      if (dataToUpdate[key] === '' || 
+          (Array.isArray(dataToUpdate[key]) && dataToUpdate[key].length === 0)) {
+        delete dataToUpdate[key];
+      }
+    });
+    
+    console.log('Saving data:', { field, dataToUpdate });
+    
+    const response = await updateProfileMutation.mutateAsync(dataToUpdate);
+    
+    if (response.success) {
+      toast.success(response.message || 'Profile updated successfully');
+      setEditingField(null);
+      
+      // Update local user state
+      if (response.user) {
+        setUser(response.user);
+      }
+      
+      // Refetch profile to ensure data consistency
+      await refetchProfile();
+      
+      // Update formData with the latest user data
+      if (response.user) {
+        setFormData({
+          bio: response.user.bio || '',
+          phoneNumber: response.user.phoneNumber || '',
+          country: response.user.country || '',
+          city: response.user.city || '',
+          languages: response.user.languages || [],
+          occupation: response.user.occupation || '',
+          education: response.user.education || '',
+          gender: response.user.gender || '',
+          dateOfBirth: response.user.dateOfBirth ? formatDateForInput(response.user.dateOfBirth) : '',
+          github: response.user.github || '',
+          linkedin: response.user.linkedin || '',
+          website: response.user.website || '',
+          privacySettings: response.user.privacySettings || {
+            profileVisibility: 'public',
+            showEmail: false,
+            showPhone: false,
+            showLocation: true,
+            showLastSeen: true
+          }
+        });
+      }
+    } else {
+      toast.error(response.message || 'Failed to update profile');
+    }
+  } catch (error) {
+    console.error('Error saving profile:', error);
+    toast.error(error.response?.data?.message || 'Failed to save changes');
+  } finally {
+    setIsSaving(false);
+  }
+}, [formData, isSaving, updateProfileMutation, setUser, refetchProfile]);
 
-  const handleCancel = useCallback((specificField = null) => {
-    // ... (same as before)
-  }, [user]);
-
+// Fix handleCancel function
+const handleCancel = useCallback((specificField = null) => {
+  if (user) {
+    // Reset formData to original user data
+    setFormData({
+      bio: user.bio || '',
+      phoneNumber: user.phoneNumber || '',
+      country: user.country || '',
+      city: user.city || '',
+      languages: user.languages || [],
+      occupation: user.occupation || '',
+      education: user.education || '',
+      gender: user.gender || '',
+      dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '',
+      github: user.github || '',
+      linkedin: user.linkedin || '',
+      website: user.website || '',
+      privacySettings: user.privacySettings || {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      }
+    });
+  }
+  
+  if (specificField) {
+    // Cancel specific field
+    if (editingField === specificField) {
+      setEditingField(null);
+    }
+  } else {
+    // Cancel all editing
+    setEditingField(null);
+  }
+}, [user, editingField]);
   const addLanguage = useCallback(() => {
     if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
       setFormData(prev => ({
@@ -562,20 +724,38 @@ const Profile = () => {
     }
   }, [missingFields]);
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!user || isLoadingProfile) return false;
-
-    return (
-      formData.bio !== (user.bio || '') ||
-      formData.occupation !== (user.occupation || '') ||
-      formData.education !== (user.education || '') ||
-      formData.phoneNumber !== (user.phoneNumber || '') ||
-      formData.country !== (user.country || '') ||
-      formData.city !== (user.city || '') ||
-      JSON.stringify(formData.languages) !== JSON.stringify(user.languages || []) ||
-      JSON.stringify(formData.privacySettings) !== JSON.stringify(user.privacySettings || {})
-    );
-  }, [formData, user, isLoadingProfile]);
+ const hasUnsavedChanges = useMemo(() => {
+  if (!user || isLoadingProfile) return false;
+  
+  const userData = {
+    bio: user.bio || '',
+    occupation: user.occupation || '',
+    education: user.education || '',
+    phoneNumber: user.phoneNumber || '',
+    country: user.country || '',
+    city: user.city || '',
+    languages: user.languages || [],
+    gender: user.gender || '',
+    dateOfBirth: user.dateOfBirth || '',
+    github: user.github || '',
+    linkedin: user.linkedin || '',
+    website: user.website || '',
+    privacySettings: user.privacySettings || {
+      profileVisibility: 'public',
+      showEmail: false,
+      showPhone: false,
+      showLocation: true,
+      showLastSeen: true
+    }
+  };
+  
+  // Deep comparison
+  const isEqual = (obj1, obj2) => {
+    return JSON.stringify(obj1) === JSON.stringify(obj2);
+  };
+  
+  return !isEqual(formData, userData);
+}, [formData, user, isLoadingProfile]);
 
   if (isLoadingProfile) return <LoadingSkeleton />;
 

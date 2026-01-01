@@ -515,7 +515,6 @@ const updateProfile = async (req, res) => {
     const { 
       name, 
       email, 
-      picture, 
       phoneNumber, 
       bio, 
       gender, 
@@ -525,11 +524,17 @@ const updateProfile = async (req, res) => {
       languages,
       occupation,
       education,
-      privacySettings,
       github,
       linkedin,
-      website
+      website,
+      privacySettings
     } = req.body;
+
+    console.log('📝 Profile update request:', {
+      userId: req.user._id,
+      fields: Object.keys(req.body),
+      hasPrivacySettings: !!privacySettings
+    });
 
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -539,38 +544,46 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    // Prepare update data
+    // Prepare update data with validation
     const updateData = {};
-    if (name) updateData.name = sanitizeInput(name);
-    if (email && email !== user.email) {
-      // Handle email change with verification
-      if (!validator.isEmail(email)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid email address'
-        });
+    
+    // Only update fields that are provided and pass validation
+    const updateField = (field, value, validationFn = null) => {
+      if (value !== undefined) {
+        if (validationFn && !validationFn(value)) return false;
+        updateData[field] = value;
+        return true;
       }
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
-      if (existingUser && existingUser._id.toString() !== user._id.toString()) {
-        return res.status(409).json({
-          success: false,
-          message: 'Email already taken'
-        });
-      }
-      updateData.email = email.toLowerCase();
-      updateData.emailVerified = false;
-    }
+      return false;
+    };
+
+    // Update basic fields
+    if (name) updateData.name = sanitizeInput(name.trim());
     if (bio !== undefined) updateData.bio = sanitizeInput(bio);
+    
+    // Update contact info
     if (phoneNumber !== undefined) {
-      if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid phone number'
-        });
-      }
       updateData.phoneNumber = phoneNumber || '';
     }
-    if (gender !== undefined) updateData.gender = gender;
+    
+    // Update location
+    if (country !== undefined) updateData.country = country || '';
+    if (city !== undefined) updateData.city = city || '';
+    
+    // Update arrays
+    if (languages !== undefined) {
+      updateData.languages = Array.isArray(languages) ? languages : [];
+    }
+    
+    // Update other fields
+    if (occupation !== undefined) updateData.occupation = occupation || '';
+    if (education !== undefined) updateData.education = education || '';
+    if (github !== undefined) updateData.github = github || '';
+    if (linkedin !== undefined) updateData.linkedin = linkedin || '';
+    if (website !== undefined) updateData.website = website || '';
+    if (gender !== undefined) updateData.gender = gender || '';
+    
+    // Update date of birth with validation
     if (dateOfBirth !== undefined) {
       if (dateOfBirth && !validateDateOfBirth(dateOfBirth)) {
         return res.status(400).json({
@@ -580,16 +593,20 @@ const updateProfile = async (req, res) => {
       }
       updateData.dateOfBirth = dateOfBirth || null;
     }
-    if (country !== undefined) updateData.country = country || '';
-    if (city !== undefined) updateData.city = city || '';
-    if (languages !== undefined) updateData.languages = languages || [];
-    if (occupation !== undefined) updateData.occupation = occupation || '';
-    if (education !== undefined) updateData.education = education || '';
-    if (github !== undefined) updateData.github = github || '';
-    if (linkedin !== undefined) updateData.linkedin = linkedin || '';
-    if (website !== undefined) updateData.website = website || '';
-    if (privacySettings !== undefined) updateData.privacySettings = privacySettings;
     
+    // Update privacy settings
+    if (privacySettings !== undefined) {
+      updateData.privacySettings = {
+        profileVisibility: privacySettings.profileVisibility || 'public',
+        showEmail: !!privacySettings.showEmail,
+        showPhone: !!privacySettings.showPhone,
+        showLocation: !!privacySettings.showLocation,
+        showLastSeen: !!privacySettings.showLastSeen
+      };
+    }
+
+    console.log('✅ Update data prepared:', Object.keys(updateData));
+
     // Update the user
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
@@ -611,35 +628,40 @@ const updateProfile = async (req, res) => {
     // Invalidate cache for this user
     await invalidateUserCache(req.user._id);
 
+    console.log('✅ Profile updated successfully for user:', updatedUser.email);
+
+    // Prepare response
+    const userResponse = {
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      picture: updatedUser.picture,
+      emailVerified: updatedUser.emailVerified,
+      phoneNumber: updatedUser.phoneNumber,
+      bio: updatedUser.bio,
+      gender: updatedUser.gender,
+      dateOfBirth: updatedUser.dateOfBirth,
+      country: updatedUser.country,
+      city: updatedUser.city,
+      languages: updatedUser.languages,
+      occupation: updatedUser.occupation,
+      education: updatedUser.education,
+      github: updatedUser.github,
+      linkedin: updatedUser.linkedin,
+      website: updatedUser.website,
+      privacySettings: updatedUser.privacySettings,
+      rating: updatedUser.rating,
+      isOnline: updatedUser.isOnline,
+      lastSeenAt: updatedUser.lastSeenAt,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt
+    };
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      user: {
-        _id: updatedUser._id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        picture: updatedUser.picture,
-        emailVerified: updatedUser.emailVerified,
-        phoneNumber: updatedUser.phoneNumber,
-        bio: updatedUser.bio,
-        gender: updatedUser.gender,
-        dateOfBirth: updatedUser.dateOfBirth,
-        country: updatedUser.country,
-        city: updatedUser.city,
-        languages: updatedUser.languages,
-        occupation: updatedUser.occupation,
-        education: updatedUser.education,
-        github: updatedUser.github,
-        linkedin: updatedUser.linkedin,
-        website: updatedUser.website,
-        privacySettings: updatedUser.privacySettings,
-        rating: updatedUser.rating,
-        isOnline: updatedUser.isOnline,
-        lastSeenAt: updatedUser.lastSeenAt,
-        createdAt: updatedUser.createdAt,
-        updatedAt: updatedUser.updatedAt
-      }
+      user: userResponse
     });
     
   } catch (error) {
@@ -651,6 +673,13 @@ const updateProfile = async (req, res) => {
         success: false,
         message: 'Validation failed',
         errors: messages
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already taken'
       });
     }
 

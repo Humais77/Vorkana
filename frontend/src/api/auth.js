@@ -210,68 +210,82 @@ register: async (userData) => {
     return response.data;
   },
   
-  // In auth.js - updateProfile function (add more detailed logging)
 updateProfile: async (userData) => {
   try {
-    const token = localStorage.getItem('userToken');
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    
-    console.log('🚀 SENDING UPDATE DATA:', {
-      data: userData,
-      dataType: typeof userData,
-      hasBio: 'bio' in userData,
-      bioLength: userData.bio?.length,
-      hasLanguages: 'languages' in userData,
-      languagesType: Array.isArray(userData.languages) ? 'array' : typeof userData.languages,
-      languagesValue: userData.languages,
-      hasPrivacySettings: 'privacySettings' in userData,
-      privacySettingsType: typeof userData.privacySettings,
-      privacySettingsValue: userData.privacySettings
+    console.log('🚀 Updating profile with data:', {
+      fields: Object.keys(userData),
+      hasPrivacySettings: 'privacySettings' in userData
     });
     
-    const response = await axiosInstance.put('/api/auth/profile', userData, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+    // Clean the data - remove undefined, null, and empty strings
+    const cleanData = {};
+    Object.keys(userData).forEach(key => {
+      const value = userData[key];
+      
+      // Skip undefined and null
+      if (value === undefined || value === null) return;
+      
+      // Handle empty strings for optional fields
+      if (typeof value === 'string' && value.trim() === '') {
+        // For optional fields, you can send empty string or skip
+        // Let's skip for cleaner data
+        return;
       }
+      
+      // Handle arrays
+      if (Array.isArray(value)) {
+        if (value.length > 0) {
+          cleanData[key] = value;
+        }
+        return;
+      }
+      
+      // Handle objects (like privacySettings)
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        const nestedClean = {};
+        Object.keys(value).forEach(nestedKey => {
+          const nestedValue = value[nestedKey];
+          if (nestedValue !== undefined && nestedValue !== null) {
+            nestedClean[nestedKey] = nestedValue;
+          }
+        });
+        if (Object.keys(nestedClean).length > 0) {
+          cleanData[key] = nestedClean;
+        }
+        return;
+      }
+      
+      // For other values (numbers, booleans, non-empty strings)
+      cleanData[key] = value;
     });
     
-    console.log('✅ Update profile SUCCESS:', response.data);
+    console.log('🧹 Cleaned data for API:', cleanData);
+    
+    // SIMPLIFIED - Remove the custom header
+    const response = await axiosInstance.put('/api/auth/profile', cleanData);
+    
+    console.log('✅ Update response:', {
+      success: response.data.success,
+      message: response.data.message,
+      hasUserData: !!response.data.user
+    });
+    
     return response.data;
   } catch (error) {
-    console.error('❌❌❌ FULL UPDATE PROFILE ERROR:', {
-      // Basic error info
-      message: error.message,
-      name: error.name,
-      code: error.code,
-      
-      // Response details (if available)
+    console.error('❌ Update profile error:', {
       status: error.response?.status,
       statusText: error.response?.statusText,
-      responseHeaders: error.response?.headers,
-      
-      // Response data (validation errors)
-      responseData: error.response?.data,
-      
-      // Request details
-      requestURL: error.config?.url,
-      requestMethod: error.config?.method,
-      requestHeaders: error.config?.headers,
-      requestData: error.config?.data ? JSON.parse(error.config.data) : null,
-      
-      // Stack trace
-      stack: error.stack
+      message: error.response?.data?.message,
+      errors: error.response?.data?.errors,
+      data: error.response?.data
     });
     
-    // Re-throw with more context
-    const enhancedError = new Error(
-      `Update failed: ${error.response?.data?.message || error.message}`
-    );
-    enhancedError.response = error.response;
-    enhancedError.config = error.config;
-    throw enhancedError;
+    // Provide better error message
+    const errorMessage = error.response?.data?.message || 
+                       error.response?.statusText || 
+                       'Failed to update profile';
+    
+    throw new Error(errorMessage);
   }
 },
   
