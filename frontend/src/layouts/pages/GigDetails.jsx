@@ -38,15 +38,22 @@ import {
   Building,
   Tag,
   BadgeCheck,
-  Download
+  Download,
+  Edit,
+  Trash2,
+  MoreVertical,
+  Lock,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { Dialog } from '@headlessui/react';
 
 // Import Zustand stores and TanStack Query hooks
 import { useAuthStore } from '../../store/useAuthStore';
 import { useGigStore } from '../../store/useGigStore';
-import { useGig } from '../../hooks/useGigs';
-import { SeoWrapper } from '../../components/SeoWrapper'; // Assuming you have this component
+import { useGig, useDeleteGig } from '../../hooks/useGigs';
+import { SeoWrapper } from '../../components/SeoWrapper';
 
 const GigDetails = () => {
   const { id } = useParams();
@@ -56,15 +63,16 @@ const GigDetails = () => {
   const { user, isAuthenticated } = useAuthStore();
   const { setGigDetails, clearGigDetails } = useGigStore();
   
-  
-  // TanStack Query hook for gig data
+  // TanStack Query hooks
   const { 
     data: gigResponse, 
     isLoading: loading, 
     error, 
     refetch 
   } = useGig(id);
-
+  
+  const deleteGigMutation = useDeleteGig();
+  
   // Extract gig data from response
   const gig = gigResponse?.gig || gigResponse;
   
@@ -73,6 +81,17 @@ const GigDetails = () => {
   const [activeImage, setActiveImage] = useState(0);
   const [viewCount, setViewCount] = useState(0);
   const [imageViewMode, setImageViewMode] = useState('thumbnail');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteOptions, setDeleteOptions] = useState({
+    permanent: false,
+    force: false
+  });
+
+  // Check if current user is the gig owner
+  const isGigOwner = user && gig && gig.createdBy?._id === user._id;
+  const isAdmin = user?.role === 'admin';
 
   // Structured Data for SEO (Schema.org)
   const generateStructuredData = () => {
@@ -162,7 +181,6 @@ const GigDetails = () => {
     if (gig) {
       setGigDetails(gig);
       // Set derived state
-      // Simulate view count (in a real app, this would come from backend)
       setViewCount(Math.floor(Math.random() * 500) + 100);
     }
   }, [gig, setGigDetails]);
@@ -174,11 +192,11 @@ const GigDetails = () => {
     };
   }, [clearGigDetails]);
 
-  // Handle share with enhanced sharing
+  // Handle share
   const handleShare = async () => {
     const url = window.location.href;
-    const title = gig?.title || "Check out this gig on Vorkanna";
-    const text = gig?.description?.substring(0, 150) || "Great opportunity on Vorkanna marketplace";
+    const title = gig?.title || "Check out this gig on Vorkana";
+    const text = gig?.description?.substring(0, 150) || "Great opportunity on Vorkana marketplace";
     
     if (navigator.share && navigator.canShare) {
       try {
@@ -214,13 +232,82 @@ const GigDetails = () => {
     }
   };
 
-  const handleReport = () => {
-    toast.info('Report feature coming soon');
-  };
-
   const handleRefresh = () => {
     refetch();
     toast.success('Refreshing gig details...');
+  };
+
+  // Handle edit gig
+  const handleEditGig = () => {
+    if (!isAuthenticated) {
+      toast.error('Please sign in to edit gigs');
+      return;
+    }
+    
+    if (!isGigOwner && !isAdmin) {
+      toast.error('You can only edit your own gigs');
+      return;
+    }
+    
+    navigate(`/edit-gig/${id}`);
+  };
+
+  // Handle delete gig
+ const handleDeleteGig = async () => {
+  if (!isAuthenticated) {
+    toast.error('Please sign in to delete gigs');
+    return;
+  }
+  
+  if (!isGigOwner && !isAdmin) {
+    toast.error('You can only delete your own gigs');
+    return;
+  }
+
+  setIsDeleting(true);
+  
+  try {
+    await deleteGigMutation.mutateAsync({
+      id: gig._id,
+      // Pass options as query parameters, not in data
+      permanent: deleteOptions.permanent,
+      force: deleteOptions.force
+    }, {
+      onSuccess: () => {
+        toast.success(
+          deleteOptions.permanent 
+            ? 'Gig permanently deleted' 
+            : 'Gig deleted successfully'
+        );
+        navigate('/dashboard');
+      },
+      onError: (error) => {
+        if (error.code === 'GIG_IN_PROGRESS') {
+          toast.error('Cannot delete gig that is in progress');
+          setDeleteOptions(prev => ({ ...prev, force: true }));
+          setShowDeleteDialog(true);
+        } else {
+          toast.error(error.message || 'Failed to delete gig');
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Delete error:', error);
+    toast.error('An error occurred while deleting the gig');
+  } finally {
+    setIsDeleting(false);
+    setShowDeleteDialog(false);
+  }
+};
+
+  const confirmDelete = () => {
+    if (gig.status === 'in_progress' && !deleteOptions.force) {
+      toast.error('This gig is in progress. Force delete is required.');
+      setDeleteOptions(prev => ({ ...prev, force: true }));
+      return;
+    }
+    
+    setShowDeleteDialog(true);
   };
 
   const formatPrice = (price) => {
@@ -286,7 +373,7 @@ const GigDetails = () => {
     };
   };
 
-  // Get gallery images (excluding thumbnail if it's the first image)
+  // Get gallery images
   const getGalleryImages = () => {
     const images = [];
     
@@ -346,7 +433,6 @@ const GigDetails = () => {
     return `${Math.floor(diffInHours / 168)}w ago`;
   };
 
-  // Calculate account age
   const calculateAccountAge = (createdAt) => {
     if (!createdAt) return '';
     const created = new Date(createdAt);
@@ -355,7 +441,6 @@ const GigDetails = () => {
     return `${diffYears} year${diffYears !== 1 ? 's' : ''}`;
   };
 
-  // Check if user is online
   const isUserOnline = (lastSeenAt) => {
     if (!lastSeenAt) return false;
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -439,8 +524,8 @@ const GigDetails = () => {
   
   // SEO meta data
   const seoMetaData = {
-    title: `${gig.title} | ${gig.projectCategory?.name || 'Service'} on Vorkanna`,
-    description: gig.description?.substring(0, 160) || `Find ${gig.title} services on Vorkanna. Budget: ${formatPrice(gig.budget)}, Timeline: ${gig.timeline}.`,
+    title: `${gig.title} | ${gig.projectCategory?.name || 'Service'} on Vorkana`,
+    description: gig.description?.substring(0, 160) || `Find ${gig.title} services on Vorkana. Budget: ${formatPrice(gig.budget)}, Timeline: ${gig.timeline}.`,
     keywords: `${gig.title}, ${gig.projectCategory?.name || ''}, freelance, gig, service, hire, ${gig.skillsRequired?.join(', ') || ''}`,
     canonical: typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`,
     openGraph: {
@@ -449,7 +534,7 @@ const GigDetails = () => {
       type: 'website',
       url: typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`,
       image: thumbnailImage.url,
-      site_name: 'Vorkanna'
+      site_name: 'Vorkana'
     },
     twitter: {
       card: 'summary_large_image',
@@ -459,6 +544,176 @@ const GigDetails = () => {
     }
   };
 
+  // Action buttons for gig owner
+  const renderOwnerActions = () => {
+    if (!isGigOwner && !isAdmin) return null;
+
+    return (
+      <div className="flex items-center space-x-3 ml-3">
+        {/* Edit Button */}
+        <button
+          onClick={handleEditGig}
+          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
+          aria-label="Edit gig"
+          disabled={isDeleting}
+        >
+          <Edit className="h-4 w-4" aria-hidden="true" />
+          Edit
+        </button>
+
+        {/* Delete Button */}
+        <button
+          onClick={confirmDelete}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
+          aria-label="Delete gig"
+          disabled={isDeleting}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Delete
+        </button>
+
+        {/* More Options Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="More options"
+            aria-expanded={showMoreMenu}
+            aria-haspopup="true"
+            disabled={isDeleting}
+          >
+            <MoreVertical className="h-5 w-5 text-gray-600" aria-hidden="true" />
+          </button>
+
+          {showMoreMenu && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
+              <button
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  navigate(`/gig/${id}/analytics`);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Activity className="h-4 w-4" aria-hidden="true" />
+                View Analytics
+              </button>
+              <button
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  handleRefresh();
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Refresh Data
+              </button>
+              <div className="border-t border-gray-200 my-1"></div>
+              <button
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  setDeleteOptions({ permanent: true, force: false });
+                  setShowDeleteDialog(true);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+              >
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                Permanent Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Delete Confirmation Dialog
+  const renderDeleteDialog = () => (
+    <Dialog
+      open={showDeleteDialog}
+      onClose={() => setShowDeleteDialog(false)}
+      className="relative z-50"
+    >
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-xl">
+          <Dialog.Title className="text-2xl font-bold text-gray-900 mb-4">
+            {deleteOptions.permanent ? 'Permanently Delete Gig?' : 'Delete Gig?'}
+          </Dialog.Title>
+          
+          <Dialog.Description className="text-gray-600 mb-6">
+            {deleteOptions.permanent ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                  <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-red-800">Warning: This action cannot be undone!</p>
+                    <p className="text-sm text-red-700 mt-1">
+                      All gig data including images, milestones, and communication history will be permanently deleted.
+                    </p>
+                  </div>
+                </div>
+                <p>Are you sure you want to permanently delete this gig?</p>
+              </div>
+            ) : gig.status === 'in_progress' ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-orange-800">Gig is in progress</p>
+                    <p className="text-sm text-orange-700 mt-1">
+                      This gig is currently in progress. Deleting it may affect active collaborations.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="forceDelete"
+                    checked={deleteOptions.force}
+                    onChange={(e) => setDeleteOptions(prev => ({ ...prev, force: e.target.checked }))}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <label htmlFor="forceDelete" className="text-sm text-gray-700">
+                    Force delete (ignore status checks)
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <p>This gig will be moved to trash. You can restore it later if needed.</p>
+            )}
+          </Dialog.Description>
+
+          <div className="flex justify-end space-x-4">
+            <button
+              onClick={() => setShowDeleteDialog(false)}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+              disabled={isDeleting}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteGig}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  {deleteOptions.permanent ? 'Permanently Delete' : 'Delete Gig'}
+                </>
+              )}
+            </button>
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
   return (
     <SeoWrapper
       title={seoMetaData.title}
@@ -473,6 +728,9 @@ const GigDetails = () => {
           {JSON.stringify(structuredData[1])}
         </script>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      {renderDeleteDialog()}
 
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
         {/* Breadcrumb */}
@@ -513,13 +771,16 @@ const GigDetails = () => {
                 </span>
               </nav>
               
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
-                aria-label="Refresh gig details"
-              >
-                Refresh Page
-              </button>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleRefresh}
+                  className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
+                  aria-label="Refresh gig details"
+                >
+                  Refresh Page
+                </button>
+                {renderOwnerActions()}
+              </div>
             </div>
           </div>
         </div>
@@ -534,51 +795,83 @@ const GigDetails = () => {
                 <meta itemProp="image" content={thumbnailImage.url} />
                 
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
-                  <div>
-                    <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2" itemProp="name">
-                      {gig.title}
-                    </h1>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(gig.status)}`} itemProp="availability">
-                        {gig.status.replace('_', ' ').toUpperCase()}
-                      </span>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getUrgencyColor(gig.urgency)}`}>
-                        {gig.urgency.toUpperCase()} PRIORITY
-                      </span>
-                      
+                  <div className="flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                      <div>
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2" itemProp="name">
+                          {gig.title}
+                        </h1>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(gig.status)}`} itemProp="availability">
+                            {gig.status.replace('_', ' ').toUpperCase()}
+                          </span>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getUrgencyColor(gig.urgency)}`}>
+                            {gig.urgency.toUpperCase()} PRIORITY
+                          </span>
+                          {isGigOwner && (
+                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                              <Lock className="inline h-3 w-3 mr-1" aria-hidden="true" />
+                              Your Gig
+                            </span>
+                          )}
+                          {isAdmin && !isGigOwner && (
+                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                              <Shield className="inline h-3 w-3 mr-1" aria-hidden="true" />
+                              Admin View
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => setIsLiked(!isLiked)}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label={isLiked ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      <Heart
-                        className={`h-6 w-6 ${
-                          isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
-                        }`}
-                        aria-hidden="true"
-                      />
-                    </button>
-                    <button
-                      onClick={handleShare}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label="Share this gig"
-                    >
-                      <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
-                    </button>
-                    <button
-                      onClick={handleReport}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label="Report this gig"
-                    >
-                      <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
-                    </button>
                   </div>
                 </div>
 
-                {/* Enhanced User Info - Now Clickable */}
+                {/* Owner Notice */}
+                {isGigOwner && (
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <User className="h-5 w-5 text-blue-600" aria-hidden="true" />
+                        </div>
+                      </div>
+                      <div className="ml-3 flex-1">
+                        <h3 className="font-semibold text-blue-800">You are the owner of this gig</h3>
+                        <p className="text-sm text-blue-700 mt-1">
+                          You can edit gig details, manage images, or delete this gig using the buttons above.
+                        </p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <button
+                            onClick={handleEditGig}
+                            className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                            aria-label="Edit gig details"
+                          >
+                            <Edit className="h-3 w-3" aria-hidden="true" />
+                            Edit Details
+                          </button>
+                          <button
+                            onClick={() => navigate(`/gig/${id}/manage-images`)}
+                            className="text-sm bg-white hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-300 flex items-center gap-1.5"
+                            aria-label="Manage gig images"
+                          >
+                            <ImageIcon className="h-3 w-3" aria-hidden="true" />
+                            Manage Images
+                          </button>
+                          <button
+                            onClick={() => navigate(`/gig/${id}/analytics`)}
+                            className="text-sm bg-white hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-300 flex items-center gap-1.5"
+                            aria-label="View gig analytics"
+                          >
+                            <Activity className="h-3 w-3" aria-hidden="true" />
+                            View Analytics
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Enhanced User Info */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                   <Link 
                     to={`/profile/${gigUser?._id}`}
@@ -1104,44 +1397,6 @@ const GigDetails = () => {
                   </div>
                 )}
 
-                {/* Milestones (if any) */}
-                {gig.milestones && gig.milestones.length > 0 && (
-                  <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                      <Package className="h-6 w-6 text-emerald-600" aria-hidden="true" />
-                      Project Milestones
-                    </h2>
-                    <div className="space-y-4" role="list">
-                      {gig.milestones.map((milestone, index) => (
-                        <div key={index} className="bg-gray-50 p-6 rounded-xl border border-gray-100" role="listitem">
-                          <div className="flex justify-between items-center mb-3">
-                            <h3 className="font-semibold text-gray-900">{milestone.title}</h3>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              milestone.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              milestone.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                              milestone.status === 'paid' ? 'bg-purple-100 text-purple-800' :
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {milestone.status.replace('_', ' ').toUpperCase()}
-                            </span>
-                          </div>
-                          {milestone.description && (
-                            <p className="text-gray-600 mb-3">{milestone.description}</p>
-                          )}
-                          <div className="flex justify-between items-center text-sm text-gray-500">
-                            <span>Amount: {formatPrice(milestone.amount)}</span>
-                            {milestone.dueDate && (
-                              <time dateTime={milestone.dueDate}>
-                                Due: {new Date(milestone.dueDate).toLocaleDateString()}
-                              </time>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Last Updated */}
                 <footer className="pt-6 border-t border-gray-200">
                   <div className="flex flex-wrap justify-between items-center gap-4">
@@ -1180,9 +1435,9 @@ const GigDetails = () => {
             </div>
 
             {/* Right Column - Gig Info & Actions */}
-            <aside className="lg:col-span-1">
-              <div className=" top-8 space-y-8">
-
+           <aside className="lg:col-span-1">
+              <div className="top-8 space-y-8">
+                
                 {/* Project Quick Stats */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
                   <h3 className="text-xl font-bold text-gray-900 mb-6">Project Stats</h3>

@@ -226,43 +226,13 @@ export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, data, files = null }) => {
-      // Validate subcategory is required if provided
-      if (data && !(data instanceof FormData) && data.subcategory === '') {
-        throw {
-          message: 'Subcategory is required',
-          code: 'SUBCATEGORY_REQUIRED',
-          status: 400
-        };
-      }
-      
-      // If there are files, use FormData
-      if (files) {
-        const formData = new FormData();
-        
-        // Append all data
-        Object.keys(data).forEach(key => {
-          if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
-            if (typeof data[key] === 'object') {
-              formData.append(key, JSON.stringify(data[key]));
-            } else {
-              formData.append(key, data[key]);
-            }
-          }
-        });
-        
-        // Append files
-        if (files.thumbnail) {
-          formData.append('thumbnail', files.thumbnail);
-        }
-        if (files.images) {
-          files.images.forEach(img => {
-            formData.append('images', img);
-          });
-        }
-        
-        return gigsAPI.update(id, formData);
+    mutationFn: async ({ id, data }) => {
+      // If FormData, append version separately
+      if (data instanceof FormData) {
+        // Don't need to modify FormData - version will be appended by the frontend
+        return gigsAPI.update(id, data);
       } else {
+        // For JSON data, ensure version is included
         return gigsAPI.update(id, data);
       }
     },

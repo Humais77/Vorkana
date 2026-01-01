@@ -420,54 +420,74 @@ export const gigsAPI = {
     }
   },
   
-  delete: async (id, options = {}) => {
-    try {
-      console.log('[GIGS API] Deleting gig with ID:', id);
-      console.log('[GIGS API] Delete options:', options);
-      
-      let gigId;
-      
-      if (typeof id === 'object') {
-        if (id._id) {
-          gigId = id._id;
-        } else if (id.id) {
-          gigId = id.id;
-        } else {
-          gigId = JSON.stringify(id);
-        }
-        console.log('[GIGS API] Converted object ID to string:', gigId);
+ delete: async (id, options = {}) => {
+  try {
+    console.log('[GIGS API] Deleting gig with ID:', id);
+    console.log('[GIGS API] Delete options:', options);
+    
+    let gigId;
+    
+    if (typeof id === 'object') {
+      if (id._id) {
+        gigId = id._id;
+      } else if (id.id) {
+        gigId = id.id;
       } else {
-        gigId = String(id).trim();
+        gigId = JSON.stringify(id);
       }
-      
-      if (!gigId || gigId === 'undefined' || gigId === 'null' || gigId === '[object Object]') {
-        console.error('[GIGS API] Invalid ID after processing:', gigId);
-        throw {
-          success: false,
-          message: 'Invalid gig ID',
-          code: 'INVALID_ID',
-          status: 400
-        };
-      }
-      
-      const config = {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      };
-      
-      const response = await axiosInstance.delete(`/api/admin/gigs/${gigId}`, {
-        data: { id: gigId, ...options }
-      });
-      
-      return response;
-      
-    } catch (error) {
-      console.error('[GIGS API] Delete error:', error);
-      throw error;
+      console.log('[GIGS API] Converted object ID to string:', gigId);
+    } else {
+      gigId = String(id).trim();
     }
-  },
-  
+    
+    if (!gigId || gigId === 'undefined' || gigId === 'null' || gigId === '[object Object]') {
+      console.error('[GIGS API] Invalid ID after processing:', gigId);
+      throw {
+        success: false,
+        message: 'Invalid gig ID',
+        code: 'INVALID_ID',
+        status: 400
+      };
+    }
+    
+    const config = {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    // ✅ FIX: Use regular user endpoint, not admin endpoint
+    // Check if user is admin (you need to get this from your auth store)
+    const token = localStorage.getItem('userToken') || localStorage.getItem('token');
+    let isAdmin = false;
+    
+    if (token) {
+      try {
+        // Decode token to check role
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        isAdmin = payload.role === 'admin';
+      } catch (err) {
+        console.warn('[GIGS API] Could not decode token:', err);
+      }
+    }
+    
+    // Use different endpoint based on user role
+    const endpoint = isAdmin 
+      ? `/api/admin/gigs/${gigId}` 
+      : `/api/gigs/${gigId}`;
+    
+    const response = await axiosInstance.delete(endpoint, {
+      data: { id: gigId, ...options },
+      ...config
+    });
+    
+    return response;
+    
+  } catch (error) {
+    console.error('[GIGS API] Delete error:', error);
+    throw error;
+  }
+},
   getStats: async () => {
     try {
       const response = await axiosInstance.get('/api/gigs/stats');

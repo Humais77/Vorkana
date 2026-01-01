@@ -325,19 +325,20 @@ const createGig = async (req, res, next) => {
 
     // Validate subcategory exists, is active, and belongs to the selected category
     const subcategory = await Subcategory.findOne({ 
-      _id: sanitizedData.subcategory,
-      category: sanitizedData.projectCategory,
-      isActive: true
-    });
+  _id: sanitizedData.subcategory,
+  category: sanitizedData.projectCategory,
+  isActive: true
+});
+
     
     if (!subcategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subcategory not found, inactive, or does not belong to the selected category',
-        code: 'SUBCATEGORY_NOT_FOUND',
-        requestId
-      });
-    }
+  return res.status(400).json({
+    success: false,
+    message: 'Subcategory not found, inactive, or does not belong to the selected category',
+    code: 'SUBCATEGORY_NOT_FOUND',
+    requestId
+  });
+}
 
     const gigData = {
       ...sanitizedData,
@@ -1205,31 +1206,36 @@ const updateGig = async (req, res, next) => {
         });
       }
     }
-if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?.toString() || '')) {
-      const subcategory = await Category.findOne({ 
-        _id: sanitizedData.subcategory,
-        parentCategory: sanitizedData.projectCategory || gig.projectCategory 
+if (sanitizedData.subcategory !== undefined) {
+  if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
+    // Allow clearing subcategory if needed
+    sanitizedData.subcategory = null;
+  } else {
+    // Validate subcategory exists and belongs to the correct category
+    const subcategory = await Subcategory.findOne({ 
+      _id: sanitizedData.subcategory,
+      category: sanitizedData.projectCategory || gig.projectCategory,
+      isActive: true
+    });
+    
+    if (!subcategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory not found, inactive, or does not belong to the selected category',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
       });
-      
-      if (!subcategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory not found or does not belong to the category',
-          code: 'SUBCATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
-    } else if (sanitizedData.subcategory === undefined) {
-      // If subcategory is not being updated, ensure it exists
-      if (!gig.subcategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory is required',
-          code: 'SUBCATEGORY_REQUIRED',
-          requestId
-        });
-      }
     }
+  }
+} else if (!gig.subcategory) {
+  // If subcategory is not being updated but gig doesn't have one
+  return res.status(400).json({
+    success: false,
+    message: 'Subcategory is required',
+    code: 'SUBCATEGORY_REQUIRED',
+    requestId
+  });
+}
 
     const currentVersion = sanitizedData.version;
     delete sanitizedData.version;
