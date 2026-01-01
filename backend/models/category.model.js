@@ -4,32 +4,70 @@ const Service = require('./services.model');
 const Gig = require('./gig.model');
 
 const categorySchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Category name is required'],
-    unique: true,
-    trim: true,
-    minlength: [2, 'Category name must be at least 2 characters'],
-    maxlength: [50, 'Category name cannot exceed 50 characters'],
-    index: true,
-    validate: {
-      validator: function(v) {
-        const criticalPatterns = [
-          /<script/i,
-          /javascript:/i,
-          /on\w+\s*=/i
-        ];
-        return !criticalPatterns.some(pattern => pattern.test(v));
-      },
-      message: 'Category name contains dangerous HTML/JavaScript code'
-    }
-  },
+ name: {
+  type: String,
+  required: [true, 'Category name is required'],
+  unique: true,
+  trim: true,
+  minlength: [2, 'Category name must be at least 2 characters'],
+  maxlength: [50, 'Category name cannot exceed 50 characters'],
+  index: true,
+  validate: {
+    validator: function(v) {
+      // Strict XSS prevention patterns
+      const criticalPatterns = [
+        /<script/i,
+        /javascript:/i,
+        /data:/i,
+        /vbscript:/i,
+        /on\w+\s*=/i,
+        /expression\s*\(/i,
+        /url\s*\(/i,
+        /@import/i,
+        /alert\s*\(/i,
+        /confirm\s*\(/i,
+        /prompt\s*\(/i,
+        /eval\s*\(/i,
+        /document\./i,
+        /window\./i,
+        /\$where/i,
+        /\$ne/i,
+        /\$regex/i,
+        /union.*select/i,
+        /select.*from/i,
+        /insert.*into/i,
+        /'|"|`|--|;|\/\*|\*\//,
+        /\x00|\x1a|\x0d|\x0c|\x0b/
+      ];
+      
+      return !criticalPatterns.some(pattern => pattern.test(v));
+    },
+    message: 'Category name contains dangerous content'
+  }
+},
   description: {
-    type: String,
-    default: '',
-    trim: true,
-    maxlength: [1000, 'Description cannot exceed 1000 characters'],
-  },
+  type: String,
+  default: '',
+  trim: true,
+  maxlength: [1000, 'Description cannot exceed 1000 characters'],
+  validate: {
+    validator: function(v) {
+      if (!v) return true;
+      const dangerousPatterns = [
+        /<script/i,
+        /javascript:/i,
+        /data:/i,
+        /vbscript:/i,
+        /on\w+\s*=/i,
+        /alert\s*\(/i,
+        /confirm\s*\(/i,
+        /prompt\s*\(/i
+      ];
+      return !dangerousPatterns.some(pattern => pattern.test(v));
+    },
+    message: 'Description contains dangerous content'
+  }
+},
   
   parentCategory: {
     type: mongoose.Schema.Types.ObjectId,
