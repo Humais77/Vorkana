@@ -146,7 +146,6 @@ export const useLogin = () => {
 
 // Update the useRegister hook as well
 export const useRegister = () => {
-  const setAuth = useAuthStore((state) => state.setAuth);
   const setLoading = useAuthStore((state) => state.setLoading);
   const setError = useAuthStore((state) => state.setError);
   const navigate = useNavigate();
@@ -159,17 +158,12 @@ export const useRegister = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
-        // setAuth(data.user, data.token, data.refreshToken);
-        toast.success(data.message || 'Registration successful!');
-        localStorage.removeItem('userToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('userInfo');
-        
-        // Navigate to verify email page
+        toast.success(data.message || 'Registration initiated!');
+        // Redirect to verification page with email
         navigate('/verify-email', { 
           state: { 
             email: data.user?.email,
-            message: data.message 
+            message: 'Please check your email to verify your account' 
           }
         });
       } else {
@@ -188,20 +182,11 @@ export const useRegister = () => {
           errorMessage = backendError.message;
         } else if (backendError.errors && Array.isArray(backendError.errors)) {
           errorMessage = backendError.errors.join(', ');
-        } else if (typeof backendError === 'string') {
-          errorMessage = backendError;
         }
         
-        // Handle specific HTTP status codes
         if (error.response.status === 409) {
           errorMessage = errorMessage || 'Email already exists. Please use a different email.';
-        } else if (error.response.status === 400) {
-          errorMessage = errorMessage || 'Please check your registration details.';
         }
-      } else if (error.request) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error.message || 'Registration failed';
       }
       
       setError(errorMessage);
@@ -462,6 +447,18 @@ export const useVerifyEmail = () => {
       } else {
         toast.error(errorMessage);
       }
+    },
+  });
+};
+// hooks/useAuth.js - Add this hook
+export const useCheckResetToken = () => {
+  return useMutation({
+    mutationFn: async (token) => {
+      const response = await axiosInstance.get(`/api/auth/validate-reset-token/${token}`);
+      return response.data;
+    },
+    onError: (error) => {
+      console.error('Token validation error:', error);
     },
   });
 };

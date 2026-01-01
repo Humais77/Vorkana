@@ -130,7 +130,8 @@ class EmailService {
   }
 
   async sendPasswordResetEmail(user, token) {
-  const resetUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/reset/redirect/${token}`;
+  // Use frontend reset password page directly
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
   
   return this.sendEmail(
     user.email,
@@ -234,22 +235,22 @@ class EmailService {
   }
   // In email.service.js, update sendVerificationEmail:
 
-async sendVerificationEmail(user, token) {
-  // Use the redirect endpoint instead of direct frontend URL
-  const verificationUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/verify/${token}`;
-  
-  return this.sendEmail(
-    user.email,
-    'Verify Your Email Address - Vorkana',
-    'verify-email',
-    {
-      name: user.name,
-      verificationUrl, // This will open the redirect page
-      expiresIn: '24 hours',
-      buttonText: 'Verify Email Address'
-    }
-  );
-}
+async sendVerificationEmail(email, name, token) {
+    // Use frontend verification page
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${token}`;
+    
+    return this.sendEmail(
+      email,
+      'Verify Your Email Address - Vorkana',
+      'verify-email',
+      {
+        name: name || 'User',
+        verificationUrl,
+        expiresIn: '24 hours',
+        buttonText: 'Verify Email Address'
+      }
+    );
+  }
 async sendSubscriptionVerificationEmail(email, verificationUrl) {
     return this.sendEmail(
       email,

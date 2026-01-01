@@ -177,13 +177,10 @@ const optimizeDatabase = async () => {
 
 // Register new user
 const register = asyncHandler(async (req, res) => {
-  const startTime = performance.now();
-  const ip = req.ip || req.connection.remoteAddress;
-  
   try {
     const { name, email, password, phoneNumber, dateOfBirth, gender, country, city } = req.body;
 
-    // 1. Quick validations first (fast checks)
+    // 1. Basic validations
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -191,16 +188,13 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
-    // 2. Email validation (fast regex check before database)
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!validator.isEmail(email)) {
       return res.status(400).json({
         success: false,
         message: 'Please provide a valid email address'
       });
     }
 
-    // 3. Password strength validation (fast checks)
     if (password.length < 8) {
       return res.status(400).json({
         success: false,
@@ -208,116 +202,75 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
-    // 4. Check for existing user (database call - optimize with lean)
-    const existingUser = await User.findOne({ email: email.toLowerCase() })
-      .select('_id')
-      .lean()
-      .maxTimeMS(5000); // Timeout after 5 seconds
-
+    // 2. Check for existing user
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    
     if (existingUser) {
-      // Constant-time delay to prevent timing attacks
-      await fakeCompare();
+      // If user exists and is verified
+      if (existingUser.emailVerified) {
+        return res.status(409).json({
+          success: false,
+          message: 'User already exists with this email'
+        });
+      }
       
-      return res.status(409).json({
-        success: false,
-        message: 'User already exists with this email'
-      });
+      // If user exists but is pending, delete it
+      if (existingUser.registrationStatus === 'pending') {
+        await User.deleteOne({ _id: existingUser._id });
+      }
     }
 
-    // 5. Prepare user data (avoid unnecessary operations)
-    const userData = {
-      name: name.trim().substring(0, 50), // Limit length
+    // 3. Prepare registration data
+    const registrationData = {
+      name: name.trim(),
       email: email.toLowerCase().trim(),
-      password,
-      role: 'user',
-      privacySettings: {
-        profileVisibility: 'public',
-        showEmail: false,
-        showPhone: false,
-        showLocation: true,
-        showLastSeen: true
-      }
+      password: password,
+      phoneNumber: phoneNumber || '',
+      dateOfBirth: dateOfBirth || null,
+      gender: gender || '',
+      country: country || '',
+      city: city || '',
+      role: 'user'
     };
 
-    // Only add optional fields if they exist and are valid
-    if (phoneNumber && phoneNumber.trim()) {
-      userData.phoneNumber = phoneNumber.trim().substring(0, 20);
-    }
-    
-    if (dateOfBirth) {
-      const dob = new Date(dateOfBirth);
-      if (!isNaN(dob.getTime())) {
-        userData.dateOfBirth = dob;
-      }
-    }
-    
-    if (gender && ['male', 'female', 'other', 'prefer-not-to-say'].includes(gender)) {
-      userData.gender = gender;
-    }
-    
-    if (country && country.trim()) {
-      userData.country = country.trim().substring(0, 100);
-    }
-    
-    if (city && city.trim()) {
-      userData.city = city.trim().substring(0, 100);
-    }
-
-    // 6. Create user (password hashing happens in pre-save middleware)
-    const user = await User.create(userData);
-
-    // 7. Generate verification token (don't wait for email)
-    const verificationToken = user.createEmailVerificationToken();
-    
-    // Save user without waiting for email
-    user.save({ validateBeforeSave: false }).catch(err => {
-      console.error('Error saving user after creation:', err.message);
+    // 4. Create minimal user document
+    const user = new User({
+      email: registrationData.email,
+      registrationData: registrationData,
+      registrationStatus: 'pending',
+      emailVerified: false,
+      isActive: false,
+      // Don't set other fields yet
     });
 
-    // 8. Send verification email in background (non-blocking)
-    if (EmailService && typeof EmailService.sendVerificationEmail === 'function') {
-      process.nextTick(async () => {
-        try {
-          await EmailService.sendVerificationEmail(user, verificationToken);
-        } catch (emailError) {
-          console.error('Background email error:', emailError.message);
-        }
-      });
+    // 5. Generate verification token
+    const verificationToken = user.generateVerificationToken();
+    
+    // 6. Save user with pending status
+    await user.save({ validateBeforeSave: false });
+
+    // 7. Send verification email
+    try {
+      await EmailService.sendVerificationEmail(user.email, user.registrationData.name, verificationToken);
+    } catch (emailError) {
+      console.error('Email sending error:', emailError.message);
+      // Don't fail registration if email fails
     }
 
-    // 9. Response (immediate)
-    const endTime = performance.now();
-    const processingTime = endTime - startTime;
-    
-    console.log(`✅ Registration completed in ${processingTime.toFixed(2)}ms`);
+    console.log(`✅ Registration initiated for: ${email}`);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful. Please check your email to verify your account.',
+      message: 'Registration successful! Please check your email to verify your account.',
       requiresVerification: true,
-      processingTime: processingTime.toFixed(2),
       user: {
-        _id: user._id,
-        name: user.name,
         email: user.email,
-        role: user.role,
-        emailVerified: user.emailVerified
+        registrationStatus: 'pending'
       }
     });
 
   } catch (error) {
-    const endTime = performance.now();
-    console.error(`❌ Registration error (${(endTime - startTime).toFixed(2)}ms):`, error.message);
-
-    // Handle specific errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: messages
-      });
-    }
+    console.error('Registration error:', error.message);
 
     if (error.code === 11000) {
       return res.status(409).json({
@@ -326,7 +279,6 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
-    // Generic error
     res.status(500).json({
       success: false,
       message: 'Server error during registration',
@@ -335,15 +287,13 @@ const register = asyncHandler(async (req, res) => {
   }
 });
 
-// Optimized login function
 const login = asyncHandler(async (req, res) => {
-  const startTime = performance.now();
-  const { email, password, deviceToken, deviceType } = req.body;
-  const ip = req.ip || req.connection.remoteAddress;
-  const userAgent = req.headers['user-agent'];
-
   try {
-    // 1. Quick validations
+    const { email, password, deviceToken, deviceType } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+
+    // 1. Basic validations
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -351,59 +301,25 @@ const login = asyncHandler(async (req, res) => {
       });
     }
 
-    // 2. Find user with optimized query
-    const user = await User.findOne({ email: email.toLowerCase() })
-      .select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected +emailVerified')
-      .maxTimeMS(5000);
+    // 2. Find user (only verified users can login)
+    const user = await User.findOne({ 
+      email: email.toLowerCase(),
+      emailVerified: true,
+      registrationStatus: 'verified',
+      isActive: true
+    }).select('+password');
 
     if (!user) {
-      // Constant-time delay for security
-      await fakeCompare();
-      
-      const endTime = performance.now();
-      console.log(`❌ Login failed - user not found (${(endTime - startTime).toFixed(2)}ms)`);
-      
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid credentials or account not verified'
       });
     }
 
-    // 3. Check account status (fast checks)
-    if (user.lockUntil && user.lockUntil > Date.now()) {
-      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
-      return res.status(423).json({
-        success: false,
-        message: `Account is locked. Try again in ${remainingTime} minutes.`,
-        code: 'ACCOUNT_LOCKED'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated',
-        code: 'ACCOUNT_DEACTIVATED'
-      });
-    }
-
-    // 4. Verify password
+    // 3. Verify password
     const isPasswordValid = await user.comparePassword(password);
     
     if (!isPasswordValid) {
-      // Log failed attempt in background
-      process.nextTick(async () => {
-        try {
-          await user.incrementLoginAttempts();
-          await user.addLoginHistory(ip, userAgent, false);
-        } catch (err) {
-          console.error('Error logging failed attempt:', err.message);
-        }
-      });
-
-      // Constant-time delay
-      await fakeCompare();
-      
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -411,39 +327,16 @@ const login = asyncHandler(async (req, res) => {
       });
     }
 
-    // 5. Check email verification
-    if (!user.emailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your email before logging in.',
-        requiresVerification: true,
-        code: 'EMAIL_NOT_VERIFIED'
-      });
-    }
+    // 4. Update last login
+    user.lastLoginAt = new Date();
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
 
-    // 6. Reset login attempts in background
-    process.nextTick(async () => {
-      try {
-        await user.resetLoginAttempts();
-        await user.addLoginHistory(ip, userAgent, true);
-        
-        if (deviceToken) {
-          await user.addDeviceToken(deviceToken, deviceType);
-        }
-        
-        user.lastLoginAt = new Date();
-        user.lastSeenAt = new Date();
-        await user.save({ validateBeforeSave: false });
-      } catch (err) {
-        console.error('Error updating user after login:', err.message);
-      }
-    });
-
-    // 7. Generate tokens
+    // 5. Generate tokens (ONLY on successful login)
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // 8. Prepare response (lean user object)
+    // 6. Prepare user response
     const userResponse = {
       _id: user._id,
       name: user.name,
@@ -459,52 +352,18 @@ const login = asyncHandler(async (req, res) => {
       isOnline: true
     };
 
-    // 9. Cache public profile in background
-    process.nextTick(async () => {
-      try {
-        const publicProfile = {
-          _id: user._id,
-          name: user.name,
-          picture: user.picture,
-          bio: user.bio,
-          rating: user.rating,
-          totalReviews: user.totalReviews,
-          responseRate: user.responseRate,
-          responseTime: user.responseTime,
-          occupation: user.occupation,
-          education: user.education,
-          languages: user.languages,
-          createdAt: user.createdAt,
-          isOnline: true,
-          accountType: user.accountType,
-          country: user.privacySettings.showLocation ? user.country : undefined,
-          city: user.privacySettings.showLocation ? user.city : undefined
-        };
-        
-        const userCacheKey = `user:${user._id}:public`;
-        if (cache && typeof cache.set === 'function') {
-          await cache.set(userCacheKey, publicProfile, 300);
-        }
-      } catch (err) {
-        console.error('Error caching user profile:', err.message);
-      }
-    });
-
-    const endTime = performance.now();
-    console.log(`✅ Login completed in ${(endTime - startTime).toFixed(2)}ms`);
+    console.log(`✅ Login successful for: ${user.email}`);
 
     res.json({
       success: true,
       message: 'Login successful',
       token,
       refreshToken,
-      processingTime: (endTime - startTime).toFixed(2),
       user: userResponse
     });
 
   } catch (error) {
-    const endTime = performance.now();
-    console.error(`❌ Login error (${(endTime - startTime).toFixed(2)}ms):`, error.message);
+    console.error('Login error:', error.message);
     
     res.status(500).json({
       success: false,
@@ -888,10 +747,10 @@ const changePassword = async (req, res) => {
 };
 
 // Verify email with token validation
-const verifyEmail = async (req, res) => {
+// auth.controller.js - Updated verifyEmail function
+const verifyEmail = asyncHandler(async (req, res) => {
   try {
-    const { token } = req.params;  // ❌ This is const
-    const ip = req.ip || req.connection.remoteAddress;
+    const { token } = req.params;
     
     if (!token || token.length !== 64) {
       return res.status(400).json({
@@ -900,10 +759,50 @@ const verifyEmail = async (req, res) => {
       });
     }
 
+    // Find user by verification token OR check if already verified
     const user = await User.findByVerificationToken(token);
+    
     if (!user) {
-      logSecurityEvent('EMAIL_VERIFICATION_FAILED', null, ip, { reason: 'invalid_token' });
+      // Check if user might already be verified
+      // Try to find the user by email (from token hash)
+      const crypto = require('crypto');
+      const hashedToken = crypto
+        .createHash('sha256')
+        .update(token)
+        .digest('hex');
       
+      // Find any user who had this token (even if cleared)
+      const potentialUser = await User.findOne({
+        $or: [
+          { verificationToken: hashedToken },
+          { 'registrationData.email': { $exists: true } }
+        ]
+      });
+      
+      if (potentialUser) {
+        // Check if user is already verified
+        if (potentialUser.emailVerified && potentialUser.registrationStatus === 'verified') {
+          console.log(`✅ User already verified: ${potentialUser.email}`);
+          return res.json({
+            success: true,
+            message: 'Email is already verified. You can now login to your account.',
+            alreadyVerified: true,
+            email: potentialUser.email,
+            redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin?verified=true&email=${encodeURIComponent(potentialUser.email)}`
+          });
+        }
+        
+        // Check if registration expired
+        if (potentialUser.registrationExpiresAt && potentialUser.registrationExpiresAt < Date.now()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Verification link has expired. Please register again.',
+            code: 'VERIFICATION_EXPIRED'
+          });
+        }
+      }
+      
+      console.log('Verification failed: Invalid token or expired');
       return res.status(400).json({
         success: false,
         message: 'Invalid or expired verification token',
@@ -911,60 +810,25 @@ const verifyEmail = async (req, res) => {
       });
     }
 
-    // Check if already verified
-    if (user.emailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is already verified',
-        code: 'ALREADY_VERIFIED'
-      });
-    }
+    console.log(`Found user for verification: ${user.email}`);
 
-    user.emailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.suspiciousActivityDetected = false;
-    await user.save();
-    
-    // ✅ FIX: Use different variable names
-    const authToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-    
-    // Invalidate cache for this user
-    await invalidateUserCache(user._id);
-    
-    // Send welcome email
-    try {
-      await EmailService.sendWelcomeEmail(user);
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail verification if email fails
-    }
+    // Complete the registration process
+    await user.verifyAndCompleteRegistration();
+    await user.save({ validateBeforeSave: false });
 
-    // Log verification
-    logSecurityEvent('EMAIL_VERIFIED', user._id, ip, { email: user.email });
+    console.log(`✅ Email verified for: ${user.email}`);
 
+    // Return success response
     res.json({
       success: true,
-      message: 'Email verified successfully',
-      token: authToken,  // ✅ FIX: Use the new variable
-      refreshToken: refreshToken,  // ✅ FIX: Use the new variable
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified,
-        phoneNumber: user.phoneNumber,
-        country: user.country,
-        city: user.city,
-        privacySettings: user.privacySettings
-      },
-      redirectUrl: `${process.env.FRONTEND_URL}/dashboard`
+      message: 'Email verified successfully! You can now login to your account.',
+      verified: true,
+      email: user.email,
+      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin?verified=true&email=${encodeURIComponent(user.email)}`
     });
+
   } catch (error) {
     console.error('Verify email error:', error);
-    logSecurityEvent('EMAIL_VERIFICATION_ERROR', null, req.ip, { error: error.message });
     
     res.status(500).json({
       success: false,
@@ -972,74 +836,41 @@ const verifyEmail = async (req, res) => {
       code: 'VERIFICATION_ERROR'
     });
   }
-};
+});
 
-// Resend verification email with rate limiting
-const resendVerificationEmail = async (req, res) => {
+const resendVerificationEmail = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
-    const ip = req.ip || req.connection.remoteAddress;
     
-    const user = await User.findOne({ email: email.toLowerCase() });
+    // Find pending registration
+    const user = await User.findOne({ 
+      email: email.toLowerCase(),
+      registrationStatus: 'pending',
+      emailVerified: false
+    });
     
-    // Don't reveal if user exists (security through obscurity)
     if (!user) {
-      // Still return success to prevent email enumeration
+      // Don't reveal if user exists
       return res.json({
         success: true,
-        message: 'If an account exists with this email, you will receive a verification email'
+        message: 'If a registration exists with this email, you will receive a verification email'
       });
-    }
-
-    // Check if already verified
-    if (user.emailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is already verified'
-      });
-    }
-
-    // Rate limiting check (max 3 attempts per hour)
-    const lastVerificationAttempt = user.loginHistory
-      ?.filter(log => log.success === false && log.userAgent?.includes('verification-resend'))
-      .sort((a, b) => b.timestamp - a.timestamp)[0];
-    
-    if (lastVerificationAttempt) {
-      const hoursSinceLastAttempt = (Date.now() - lastVerificationAttempt.timestamp) / (1000 * 60 * 60);
-      if (hoursSinceLastAttempt < 1) {
-        return res.status(429).json({
-          success: false,
-          message: 'Please wait before requesting another verification email',
-          retryAfter: 3600 - Math.floor(hoursSinceLastAttempt * 3600)
-        });
-      }
     }
 
     // Generate new verification token
-    const verificationToken = user.createEmailVerificationToken();
+    const verificationToken = user.generateVerificationToken();
     await user.save({ validateBeforeSave: false });
-
-    // Log resend attempt
-    await user.addLoginHistory(ip, 'verification-resend', true);
 
     // Send verification email
     try {
-      await EmailService.sendVerificationEmail(user, verificationToken);
+      await EmailService.sendVerificationEmail(user.email, user.registrationData?.name || 'User', verificationToken);
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError);
-      logSecurityEvent('VERIFICATION_EMAIL_SEND_FAILED', user._id, ip, { 
-        email: user.email,
-        error: emailError.message 
-      });
-      
       return res.status(500).json({
         success: false,
         message: 'Failed to send verification email. Please try again later.'
       });
     }
-
-    // Log event
-    logSecurityEvent('VERIFICATION_EMAIL_RESENT', user._id, ip, { email: user.email });
 
     res.json({
       success: true,
@@ -1047,17 +878,47 @@ const resendVerificationEmail = async (req, res) => {
     });
   } catch (error) {
     console.error('Resend verification error:', error);
-    logSecurityEvent('VERIFICATION_RESEND_ERROR', null, req.ip, { error: error.message });
     
     res.status(500).json({
       success: false,
       message: 'Server error sending verification email'
     });
   }
-};
+});
+
+// ========== CHECK VERIFICATION STATUS ==========
+const checkVerificationStatus = asyncHandler(async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('emailVerified registrationStatus name')
+      .lean();
+
+    res.json({
+      success: true,
+      isVerified: user?.emailVerified || false,
+      registrationStatus: user?.registrationStatus || 'none',
+      name: user?.name || null
+    });
+  } catch (error) {
+    console.error('Check verification status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error checking verification status'
+    });
+  }
+});
 
 // Forgot password with enhanced security
-const forgotPassword = async (req, res) => {
+const forgotPassword = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
@@ -1068,7 +929,6 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       logSecurityEvent('PASSWORD_RESET_REQUEST_UNKNOWN_EMAIL', null, ip, { email });
       
-      // Return success to prevent email enumeration
       return res.json({
         success: true,
         message: 'If an account exists with this email, you will receive a password reset link'
@@ -1079,27 +939,19 @@ const forgotPassword = async (req, res) => {
     if (!user.isActive) {
       logSecurityEvent('PASSWORD_RESET_REQUEST_INACTIVE_ACCOUNT', user._id, ip, { email: user.email });
       
-      // Still return success to prevent enumeration
       return res.json({
         success: true,
         message: 'If an account exists with this email, you will receive a password reset link'
       });
     }
 
-    // Rate limiting check (max 3 reset requests per day)
-    const resetAttemptsToday = user.loginHistory
-      ?.filter(log => 
-        log.userAgent?.includes('password-reset') && 
-        new Date(log.timestamp).toDateString() === new Date().toDateString()
-      ).length || 0;
-    
-    if (resetAttemptsToday >= 3) {
-      logSecurityEvent('PASSWORD_RESET_RATE_LIMIT_EXCEEDED', user._id, ip, { email: user.email });
+    // Check if user is verified
+    if (!user.emailVerified || user.registrationStatus !== 'verified') {
+      logSecurityEvent('PASSWORD_RESET_REQUEST_UNVERIFIED_ACCOUNT', user._id, ip, { email: user.email });
       
-      return res.status(429).json({
-        success: false,
-        message: 'Too many password reset attempts. Please try again tomorrow.',
-        code: 'RESET_RATE_LIMIT'
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a password reset link'
       });
     }
 
@@ -1107,18 +959,13 @@ const forgotPassword = async (req, res) => {
     const resetToken = user.createPasswordResetToken();
     await user.save({ validateBeforeSave: false });
 
-    // Log reset request
-    await user.addLoginHistory(ip, 'password-reset', true);
+    console.log(`Generated reset token for user: ${user.email}`);
 
     // Send password reset email
     try {
       await EmailService.sendPasswordResetEmail(user, resetToken);
     } catch (emailError) {
       console.error('Failed to send password reset email:', emailError);
-      logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', user._id, ip, { 
-        email: user.email,
-        error: emailError.message 
-      });
       
       // Rollback token generation
       user.resetPasswordToken = undefined;
@@ -1131,53 +978,79 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // Log security event
-    logSecurityEvent('PASSWORD_RESET_REQUESTED', user._id, ip, { email: user.email });
-
     res.json({
       success: true,
       message: 'Password reset email sent'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
-    logSecurityEvent('PASSWORD_RESET_ERROR', null, req.ip, { error: error.message });
     
     res.status(500).json({
       success: false,
       message: 'Server error processing password reset'
     });
   }
-};
+});
 
 // Reset password with token validation
-const resetPassword = async (req, res) => {
+const resetPassword = asyncHandler(async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
     
+    console.log('Reset password request received:', { 
+      tokenLength: token?.length,
+      hasPassword: !!newPassword 
+    });
+    
     if (!token || token.length !== 64) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid reset token'
+        message: 'Invalid reset token format'
       });
     }
 
     // Validate new password
-    if (!validatePassword(newPassword)) {
+    if (!newPassword || newPassword.length < 8) {
       return res.status(400).json({
         success: false,
-        message: 'New password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)'
+        message: 'Password must be at least 8 characters'
       });
     }
 
-    // Find user with valid token
-    const user = await User.findByResetToken(token);
-    if (!user) {
-      logSecurityEvent('PASSWORD_RESET_FAILED', null, ip, { reason: 'invalid_token' });
-      
+    // Password strength validation
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumbers = /\d/.test(newPassword);
+    const hasSpecialChar = /[@$!%*?&]/.test(newPassword);
+    
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired token'
+        message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character (@$!%*?&)'
+      });
+    }
+
+    // Find user with valid reset token
+    console.log('Looking for user with reset token...');
+    const user = await User.findByResetToken(token);
+    
+    if (!user) {
+      console.log('No user found with valid reset token');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+
+    console.log(`Found user for password reset: ${user.email}`);
+
+    // Check if new password is same as current password
+    const isSamePassword = await user.comparePassword(newPassword);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password'
       });
     }
 
@@ -1186,33 +1059,57 @@ const resetPassword = async (req, res) => {
       const lastThreePasswords = user.passwordHistory.slice(-3);
       
       for (const oldPassword of lastThreePasswords) {
-        const isOldPassword = await bcrypt.compare(newPassword, oldPassword.password);
-        if (isOldPassword) {
-          return res.status(400).json({
-            success: false,
-            message: 'You cannot reuse your last 3 passwords',
-            code: 'PASSWORD_REUSE'
-          });
+        try {
+          const isOldPassword = await bcrypt.compare(newPassword, oldPassword.password);
+          if (isOldPassword) {
+            return res.status(400).json({
+              success: false,
+              message: 'You cannot reuse your last 3 passwords',
+              code: 'PASSWORD_REUSE'
+            });
+          }
+        } catch (bcryptError) {
+          console.error('Error comparing passwords:', bcryptError);
         }
       }
     }
 
-    // Set new password
+    // Store old password in history before updating
+    if (!user.passwordHistory) {
+      user.passwordHistory = [];
+    }
+    
+    // Keep only last 5 passwords
+    if (user.passwordHistory.length >= 5) {
+      user.passwordHistory.shift();
+    }
+    
+    // Add current password to history before changing it
+    if (user.password) {
+      user.passwordHistory.push({
+        password: user.password,
+        changedAt: new Date()
+      });
+    }
+
+    // Set new password (will be hashed in pre-save middleware)
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     user.suspiciousActivityDetected = false;
+    user.lastPasswordChangeAt = new Date();
     
-    await user.save();
+    // Save the user (password will be hashed automatically)
+    await user.save({ validateBeforeSave: false });
 
-    // Invalidate cache for this user
-    await invalidateUserCache(user._id);
+    // Clear reset-related fields after save
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save({ validateBeforeSave: false });
 
-    // Generate new tokens
-    const authToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    console.log(`✅ Password reset successful for: ${user.email}`);
 
     // Log password reset
     logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
@@ -1225,11 +1122,10 @@ const resetPassword = async (req, res) => {
       // Don't fail the reset if email fails
     }
 
+    // Return success WITHOUT tokens (user should login separately)
     res.json({
       success: true,
-      message: 'Password reset successful',
-      token: authToken,
-      refreshToken,
+      message: 'Password reset successful! Please login with your new password.',
       user: {
         _id: user._id,
         name: user.name,
@@ -1238,16 +1134,27 @@ const resetPassword = async (req, res) => {
         emailVerified: user.emailVerified
       }
     });
+
   } catch (error) {
     console.error('Reset password error:', error);
-    logSecurityEvent('PASSWORD_RESET_ERROR', null, req.ip, { error: error.message });
     
+    // Handle specific errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Password validation failed',
+        errors: messages
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Server error resetting password'
+      message: 'Server error resetting password',
+      code: 'RESET_ERROR'
     });
   }
-};
+});
 
 // Enhanced logout
 const logout = async (req, res) => {
@@ -2377,5 +2284,6 @@ module.exports = {
   generateRefreshToken,
   verifyEmailRedirect,
   resetPasswordRedirect,
-  handleJSONErrors
+  handleJSONErrors,
+  checkVerificationStatus
 };

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useResetPassword } from '../hooks/useAuth';
+import { useResetPassword, useCheckResetToken } from '../hooks/useAuth';
 import { validatePassword } from '../api/auth';
 import { 
   Lock, 
@@ -9,12 +9,13 @@ import {
   AlertCircle, 
   Eye, 
   EyeOff,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const ResetPassword = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const resetPassword = useResetPassword();
   
@@ -28,35 +29,48 @@ const ResetPassword = () => {
   const [passwordStrength, setPasswordStrength] = useState('');
   const [tokenValid, setTokenValid] = useState(null); // null = loading, true = valid, false = invalid
   const [token, setToken] = useState('');
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+  const hasValidated = useRef(false);
 
   useEffect(() => {
-    // Check for token in multiple locations
-    const urlToken = searchParams.get('token');
-    const localStorageToken = localStorage.getItem('resetToken');
-    
-    const finalToken = urlToken || localStorageToken;
-    
-    if (!finalToken) {
-      setTokenValid(false);
-      toast.error('No reset token found');
-      return;
-    }
-    
-    setToken(finalToken);
-    
-    // Validate token format
-    if (finalToken.length !== 64) {
-      setTokenValid(false);
-      toast.error('Invalid reset token format');
-      return;
-    }
-    
-    // Clean up localStorage
-    if (localStorageToken) {
-      localStorage.removeItem('resetToken');
-    }
-    
-    setTokenValid(true);
+    const validateToken = async () => {
+      if (hasValidated.current) return;
+      
+      const urlToken = searchParams.get('token');
+      const localStorageToken = localStorage.getItem('resetToken');
+      
+      const finalToken = urlToken || localStorageToken;
+      
+      if (!finalToken) {
+        setTokenValid(false);
+        setIsValidatingToken(false);
+        toast.error('No reset token found');
+        return;
+      }
+      
+      // Validate token format
+      if (finalToken.length !== 64) {
+        setTokenValid(false);
+        setIsValidatingToken(false);
+        toast.error('Invalid reset token format');
+        return;
+      }
+      
+      setToken(finalToken);
+      
+      // Clean up localStorage
+      if (localStorageToken) {
+        localStorage.removeItem('resetToken');
+      }
+      
+      // You can add an API call here to validate the token
+      // For now, we'll just accept the token format
+      setTokenValid(true);
+      setIsValidatingToken(false);
+      hasValidated.current = true;
+    };
+
+    validateToken();
   }, [searchParams]);
 
   const handleChange = (e) => {
@@ -118,21 +132,55 @@ const ResetPassword = () => {
 
       if (result.success) {
         toast.success('Password reset successfully!');
+        
+        // Clear the form
+        setFormData({ password: '', confirmPassword: '' });
+        
+        // Redirect to login after 2 seconds
         setTimeout(() => {
-          navigate('/signin');
+          navigate('/signin', { 
+            state: { 
+              message: 'Password reset successful! Please login with your new password.',
+              autoClear: true
+            }
+          });
         }, 2000);
       }
     } catch (error) {
       console.error('Reset password error:', error);
+      
+      // Handle specific error cases
+      if (error.response?.status === 400) {
+        const errorMessage = error.response?.data?.message;
+        if (errorMessage?.includes('expired')) {
+          toast.error('Reset link has expired. Please request a new one.');
+          setTimeout(() => {
+            navigate('/forgot-password');
+          }, 1500);
+        } else if (errorMessage?.includes('Invalid')) {
+          toast.error('Invalid reset link. Please request a new one.');
+          setTimeout(() => {
+            navigate('/forgot-password');
+          }, 1500);
+        } else if (errorMessage?.includes('Password must contain')) {
+          // Password validation error - already shown in form
+        } else {
+          toast.error(errorMessage || 'Failed to reset password');
+        }
+      } else if (error.response?.status === 429) {
+        toast.error('Too many attempts. Please try again later.');
+      } else {
+        toast.error('Failed to reset password. Please try again.');
+      }
     }
   };
 
-  if (tokenValid === null) {
+  if (isValidatingToken) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-emerald-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-emerald-100 flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-3">
             Verifying Reset Link
@@ -190,6 +238,8 @@ const ResetPassword = () => {
     { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(formData.password) },
   ];
 
+  const allRequirementsMet = passwordRequirements.every(req => req.met);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-emerald-50 flex items-center justify-center p-4">
       <motion.div
@@ -227,7 +277,7 @@ const ResetPassword = () => {
                 onChange={handleChange}
                 className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors pr-10 ${
                   errors.password ? 'border-red-500' : 'border-gray-300'
-                }`}
+                } ${formData.password && allRequirementsMet ? 'border-green-500' : ''}`}
                 placeholder="Enter new password"
                 disabled={resetPassword.isPending}
                 autoFocus
@@ -236,6 +286,7 @@ const ResetPassword = () => {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                disabled={resetPassword.isPending}
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
@@ -245,10 +296,16 @@ const ResetPassword = () => {
               <div className={`mt-2 p-2 rounded text-sm ${
                 errors.password 
                   ? 'bg-red-50 text-red-700 border border-red-200' 
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : allRequirementsMet
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
               }`}>
                 <div className="flex items-center">
-                  <AlertCircle className="w-4 h-4 mr-2" />
+                  {allRequirementsMet ? (
+                    <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                  )}
                   {passwordStrength}
                 </div>
               </div>
@@ -265,7 +322,9 @@ const ResetPassword = () => {
             <div className="mt-3 space-y-1">
               {passwordRequirements.map((req, index) => (
                 <div key={index} className="flex items-center text-sm">
-                  <div className={`w-2 h-2 rounded-full mr-2 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
+                  <div className={`w-3 h-3 rounded-full mr-2 flex items-center justify-center ${req.met ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    {req.met && <CheckCircle className="w-2 h-2 text-white" />}
+                  </div>
                   <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
                     {req.text}
                   </span>
@@ -286,7 +345,7 @@ const ResetPassword = () => {
                 onChange={handleChange}
                 className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors pr-10 ${
                   errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                }`}
+                } ${formData.confirmPassword && formData.password === formData.confirmPassword ? 'border-green-500' : ''}`}
                 placeholder="Confirm new password"
                 disabled={resetPassword.isPending}
               />
@@ -294,10 +353,17 @@ const ResetPassword = () => {
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                disabled={resetPassword.isPending}
               >
                 {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
+            {formData.confirmPassword && formData.password === formData.confirmPassword && (
+              <p className="mt-2 text-sm text-green-600 flex items-center">
+                <CheckCircle className="w-4 h-4 mr-1" />
+                Passwords match
+              </p>
+            )}
             {errors.confirmPassword && (
               <p className="mt-2 text-sm text-red-600 flex items-center">
                 <AlertCircle className="w-4 h-4 mr-1" />
@@ -308,12 +374,12 @@ const ResetPassword = () => {
 
           <button
             type="submit"
-            disabled={resetPassword.isPending}
-            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center justify-center disabled:opacity-50"
+            disabled={resetPassword.isPending || !allRequirementsMet || formData.password !== formData.confirmPassword}
+            className="w-full py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {resetPassword.isPending ? (
               <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                 Resetting Password...
               </>
             ) : (

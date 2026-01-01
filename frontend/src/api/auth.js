@@ -169,10 +169,8 @@ export const sanitizeInput = (input) => {
 export const authAPI = {
   // Authentication
   login: async (userData) => {
-  try {
     const response = await axiosInstance.post('/api/auth/login', userData);
     
-    // Only store tokens if login was successful
     if (response.data.token && response.data.refreshToken) {
       localStorage.setItem('userToken', response.data.token);
       localStorage.setItem('refreshToken', response.data.refreshToken);
@@ -183,22 +181,11 @@ export const authAPI = {
     }
     
     return response.data;
-  } catch (error) {
-    // For login errors, clear any existing tokens first
-    localStorage.removeItem('userToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('userInfo');
-    
-    // Re-throw the error so the caller can handle it
-    throw error;
-  }
-},
-  
-  register: async (userData) => {
+  },
+register: async (userData) => {
     const response = await axiosInstance.post('/api/auth/register', userData);
     return response.data;
   },
-  
   logout: async (deviceToken = null) => {
     try {
       await axiosInstance.post('/api/auth/logout', { deviceToken });
@@ -297,12 +284,14 @@ updateProfile: async (userData) => {
   },
   
   // Email verification
-  verifyEmail: async (token) => {
+ verifyEmail: async (token) => {
     const response = await axiosInstance.get(`/api/auth/verify-email/${token}`);
-    if (response.data.success && response.data.token) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-    }
+    return response.data;
+  },
+  
+  // Check verification status
+  checkVerificationStatus: async (email) => {
+    const response = await axiosInstance.get(`/api/auth/check-verification?email=${email}`);
     return response.data;
   },
   

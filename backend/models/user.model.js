@@ -14,19 +14,20 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
-      required: [true, 'Name is required'],
       minlength: [2, 'Name must be at least 2 characters'],
-      maxlength: [50, 'Name cannot exceed 50 characters']
+      maxlength: [50, 'Name cannot exceed 50 characters'],
+      default: '' // Make not required for pending registrations
     },
     password: {
       type: String,
       select: false,
       minlength: [8, 'Password must be at least 8 characters'],
       required: function () {
-        return !this.googleId;
+        return !this.googleId && this.registrationStatus === 'verified';
       },
       validate: {
         validator: function (v) {
+          if (!v) return true; // Allow empty for pending registrations
           if (v.startsWith('$2a$') || v.startsWith('$2b$')) {
             return true;
           }
@@ -50,6 +51,32 @@ const userSchema = new mongoose.Schema(
       }
     },
     
+    // ========== REGISTRATION VERIFICATION FIELDS ==========
+    registrationStatus: {
+      type: String,
+      enum: ['pending', 'verified', 'expired', 'cancelled'],
+      default: 'pending',
+      index: true
+    },
+    registrationData: {
+      type: mongoose.Schema.Types.Mixed,
+      select: false,
+      default: null
+    },
+    verificationToken: {
+      type: String,
+      select: false,
+      index: true
+    },
+    verificationTokenExpires: {
+      type: Date,
+      select: false
+    },
+    registrationExpiresAt: {
+      type: Date,
+      select: false
+    },
+    
     // ========== PROFILE INFORMATION (Visible to other users) ==========
     picture: {
       type: String,
@@ -65,11 +92,11 @@ const userSchema = new mongoose.Schema(
       }
     },
     pictureHistory: [{
-  url: String,
-  public_id: String,
-  uploadedAt: Date,
-  _id: false
-}],
+      url: String,
+      public_id: String,
+      uploadedAt: Date,
+      _id: false
+    }],
     bio: {
       type: String,
       trim: true,
@@ -77,26 +104,27 @@ const userSchema = new mongoose.Schema(
       default: ''
     },
     phoneNumber: {
-  type: String,
-  trim: true,
-  validate: {
-    validator: function (v) {
-      if (!v || v.trim() === '') return true; // optional
-      
-      const phoneStr = v.toString().trim();
-      
-      // Basic validation - accept any format that starts with + and has digits
-      const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
-      const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
-      
-      // Check if it starts with + and has reasonable length
-      return phoneRegex.test(phoneStr) && 
-             cleanPhone.length >= 8 && 
-             cleanPhone.length <= 16;
+      type: String,
+      trim: true,
+      default: '',
+      validate: {
+        validator: function (v) {
+          if (!v || v.trim() === '') return true; // optional
+          
+          const phoneStr = v.toString().trim();
+          
+          // Basic validation - accept any format that starts with + and has digits
+          const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
+          const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
+          
+          // Check if it starts with + and has reasonable length
+          return phoneRegex.test(phoneStr) && 
+                 cleanPhone.length >= 8 && 
+                 cleanPhone.length <= 16;
+        },
+        message: 'Phone number should start with + and have 7-15 digits (e.g., +15551234567)'
+      }
     },
-    message: 'Phone number should start with + and have 7-15 digits (e.g., +15551234567)'
-  }
-},
     gender: {
       type: String,
       enum: ['male', 'female', 'other', 'prefer-not-to-say', ''],
@@ -104,6 +132,7 @@ const userSchema = new mongoose.Schema(
     },
     dateOfBirth: {
       type: Date,
+      default: null,
       validate: {
         validator: function (v) {
           if (!v) return true;
@@ -154,7 +183,10 @@ const userSchema = new mongoose.Schema(
     },
     isActive: {
       type: Boolean,
-      default: true,
+      default: function() {
+        // Only active if verified
+        return this.registrationStatus === 'verified';
+      },
       index: true
     },
     emailVerified: {
@@ -163,7 +195,8 @@ const userSchema = new mongoose.Schema(
       index: true
     },
     lastLoginAt: {
-      type: Date
+      type: Date,
+      default: null
     },
     lastSeenAt: {
       type: Date,
@@ -172,27 +205,36 @@ const userSchema = new mongoose.Schema(
     
     // ========== SECURITY & PRIVACY FIELDS ==========
     privacySettings: {
-      profileVisibility: {
-        type: String,
-        enum: ['public', 'registered', 'private'],
-        default: 'public'
+      type: {
+        profileVisibility: {
+          type: String,
+          enum: ['public', 'registered', 'private'],
+          default: 'public'
+        },
+        showEmail: {
+          type: Boolean,
+          default: false
+        },
+        showPhone: {
+          type: Boolean,
+          default: false
+        },
+        showLocation: {
+          type: Boolean,
+          default: true
+        },
+        showLastSeen: {
+          type: Boolean,
+          default: true
+        }
       },
-      showEmail: {
-        type: Boolean,
-        default: false
-      },
-      showPhone: {
-        type: Boolean,
-        default: false
-      },
-      showLocation: {
-        type: Boolean,
-        default: true
-      },
-      showLastSeen: {
-        type: Boolean,
-        default: true
-      }
+      default: () => ({
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      })
     },
     
     // ========== ACCOUNT METADATA ==========
@@ -221,10 +263,6 @@ const userSchema = new mongoose.Schema(
     },
     lockUntil: {
       type: Date,
-      select: false
-    },
-    emailVerificationToken: {
-      type: String,
       select: false
     },
     twoFactorEnabled: {
@@ -293,58 +331,56 @@ const userSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: {
-  virtuals: true,
-  transform: (doc, ret) => {
-    // Remove sensitive fields
-    delete ret.__v;
-    delete ret.password;
-    delete ret.resetPasswordToken;
-    delete ret.resetPasswordExpires;
-    delete ret.failedLoginAttempts;
-    delete ret.lockUntil;
-    delete ret.twoFactorSecret;
-    delete ret.emailVerificationToken;
-    delete ret.passwordHistory;
-    delete ret.deviceTokens;
-    delete ret.loginHistory;
-    delete ret.suspiciousActivityDetected;
-    
-    // Apply privacy settings - FIXED VERSION
-    if (ret.privacySettings) {
-      // Only show email if privacy settings allow it AND the field exists
-      if (!ret.privacySettings.showEmail && ret.hasOwnProperty('email')) {
-        delete ret.email;
+      virtuals: true,
+      transform: (doc, ret) => {
+        // Remove sensitive fields
+        delete ret.__v;
+        delete ret.password;
+        delete ret.resetPasswordToken;
+        delete ret.resetPasswordExpires;
+        delete ret.failedLoginAttempts;
+        delete ret.lockUntil;
+        delete ret.twoFactorSecret;
+        delete ret.verificationToken;
+        delete ret.verificationTokenExpires;
+        delete ret.registrationData;
+        delete ret.registrationExpiresAt;
+        delete ret.passwordHistory;
+        delete ret.deviceTokens;
+        delete ret.loginHistory;
+        delete ret.suspiciousActivityDetected;
+        
+        // Apply privacy settings
+        if (ret.privacySettings) {
+          if (!ret.privacySettings.showEmail && ret.hasOwnProperty('email')) {
+            delete ret.email;
+          }
+          
+          if (!ret.privacySettings.showPhone && ret.hasOwnProperty('phoneNumber')) {
+            delete ret.phoneNumber;
+          }
+          
+          if (!ret.privacySettings.showLocation) {
+            if (ret.hasOwnProperty('country')) delete ret.country;
+            if (ret.hasOwnProperty('city')) delete ret.city;
+          }
+          
+          if (!ret.privacySettings.showLastSeen && ret.hasOwnProperty('lastSeenAt')) {
+            delete ret.lastSeenAt;
+          }
+        } else {
+          if (ret.hasOwnProperty('email')) delete ret.email;
+          if (ret.hasOwnProperty('phoneNumber')) delete ret.phoneNumber;
+        }
+        
+        // Format dates
+        if (ret.dateOfBirth) {
+          ret.dateOfBirth = ret.dateOfBirth.toISOString().split('T')[0];
+        }
+        
+        return ret;
       }
-      
-      // Only show phone if privacy settings allow it AND the field exists
-      if (!ret.privacySettings.showPhone && ret.hasOwnProperty('phoneNumber')) {
-        delete ret.phoneNumber;
-      }
-      
-      // Only show location if privacy settings allow it AND the fields exist
-      if (!ret.privacySettings.showLocation) {
-        if (ret.hasOwnProperty('country')) delete ret.country;
-        if (ret.hasOwnProperty('city')) delete ret.city;
-      }
-      
-      // Only show last seen if privacy settings allow it
-      if (!ret.privacySettings.showLastSeen && ret.hasOwnProperty('lastSeenAt')) {
-        delete ret.lastSeenAt;
-      }
-    } else {
-      // If no privacy settings object exists, hide sensitive info by default
-      if (ret.hasOwnProperty('email')) delete ret.email;
-      if (ret.hasOwnProperty('phoneNumber')) delete ret.phoneNumber;
-    }
-    
-    // Format dates
-    if (ret.dateOfBirth) {
-      ret.dateOfBirth = ret.dateOfBirth.toISOString().split('T')[0];
-    }
-    
-    return ret;
-  }
-},
+    },
     toObject: {
       virtuals: true,
       transform: (doc, ret) => {
@@ -356,7 +392,10 @@ const userSchema = new mongoose.Schema(
         delete ret.failedLoginAttempts;
         delete ret.lockUntil;
         delete ret.twoFactorSecret;
-        delete ret.emailVerificationToken;
+        delete ret.verificationToken;
+        delete ret.verificationTokenExpires;
+        delete ret.registrationData;
+        delete ret.registrationExpiresAt;
         delete ret.passwordHistory;
         delete ret.deviceTokens;
         delete ret.loginHistory;
@@ -375,6 +414,8 @@ userSchema.index({ rating: -1 });
 userSchema.index({ country: 1, city: 1 });
 userSchema.index({ occupation: 1 });
 userSchema.index({ languages: 1 });
+userSchema.index({ registrationStatus: 1 });
+userSchema.index({ verificationToken: 1 });
 
 // ========== VIRTUALS ==========
 userSchema.virtual('isLocked').get(function () {
@@ -415,6 +456,11 @@ userSchema.virtual('fullLocation').get(function () {
 
 // ========== MIDDLEWARE ==========
 userSchema.pre('save', async function () {
+  // Don't hash password for pending registrations
+  if (this.registrationStatus === 'pending') {
+    return;
+  }
+
   if (!this.isModified('password') || !this.password) return;
 
   if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$')) {
@@ -423,44 +469,12 @@ userSchema.pre('save', async function () {
 
   try {
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(this.password, salt);
-    
-    // Store old password in history before updating
-    if (this.passwordHistory && this.passwordHistory.length > 0) {
-      // Keep only last 5 passwords
-      if (this.passwordHistory.length >= 5) {
-        this.passwordHistory.shift();
-      }
-    } else {
-      this.passwordHistory = [];
-    }
-    
-    this.passwordHistory.push({
-      password: this.password,
-      changedAt: new Date()
-    });
-    
-    this.password = hashedPassword;
-    this.lastPasswordChangeAt = new Date();
+    this.password = await bcrypt.hash(this.password, salt);
   } catch (error) {
     throw error;
   }
 });
 
-userSchema.pre('findOneAndUpdate',async function () {
-  this.set({ updatedAt: new Date() });
-});
-
-userSchema.pre('findOne', async function () {
-  const query = this.getQuery();
-  
-  if (query._id) {
-    await this.model.updateOne(
-      { _id: query._id },
-      { $set: { lastSeenAt: new Date() } }
-    );
-  }
-});
 // ========== INSTANCE METHODS ==========
 userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.password) return false;
@@ -470,6 +484,65 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   } catch (error) {
     return false;
   }
+};
+
+userSchema.methods.generateVerificationToken = function () {
+  const crypto = require('crypto');
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  
+  this.verificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+    
+  this.verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  this.registrationExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  
+  return verificationToken;
+};
+
+userSchema.methods.verifyAndCompleteRegistration = async function () {
+  // Move registration data to actual user fields
+  if (this.registrationData) {
+    const { password, ...restData } = this.registrationData;
+    
+    // Update user fields with registration data
+    for (const [key, value] of Object.entries(restData)) {
+      if (key !== 'password' && value !== undefined && value !== '') {
+        this[key] = value;
+      }
+    }
+    
+    // Hash and set the password
+    if (password) {
+      const salt = await bcrypt.genSalt(12);
+      this.password = await bcrypt.hash(password, salt);
+    }
+    
+    // Clear temporary data
+    this.registrationData = undefined;
+    this.verificationToken = undefined;
+    this.verificationTokenExpires = undefined;
+    this.registrationExpiresAt = undefined;
+    
+    // Update status
+    this.registrationStatus = 'verified';
+    this.emailVerified = true;
+    this.isActive = true;
+    
+    // Set default privacy settings if not provided
+    if (!this.privacySettings) {
+      this.privacySettings = {
+        profileVisibility: 'public',
+        showEmail: false,
+        showPhone: false,
+        showLocation: true,
+        showLastSeen: true
+      };
+    }
+  }
+  
+  return this;
 };
 
 userSchema.methods.incrementLoginAttempts = async function () {
@@ -518,18 +591,6 @@ userSchema.methods.createPasswordResetToken = function () {
   return resetToken;
 };
 
-userSchema.methods.createEmailVerificationToken = function () {
-  const crypto = require('crypto');
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-
-  this.emailVerificationToken = crypto
-    .createHash('sha256')
-    .update(verificationToken)
-    .digest('hex');
-
-  return verificationToken;
-};
-
 userSchema.methods.addLoginHistory = async function (ip, userAgent, success) {
   const loginEntry = {
     ip,
@@ -546,52 +607,10 @@ userSchema.methods.addLoginHistory = async function (ip, userAgent, success) {
   return await this.save();
 };
 
-userSchema.methods.addDeviceToken = async function (token, deviceType) {
-  const existing = this.deviceTokens.find(dt => dt.token === token);
-  
-  if (existing) {
-    existing.lastUsed = new Date();
-  } else {
-    if (this.deviceTokens.length >= 10) {
-      // Remove oldest device
-      this.deviceTokens.sort((a, b) => a.lastUsed - b.lastUsed);
-      this.deviceTokens.shift();
-    }
-    
-    this.deviceTokens.push({
-      token,
-      deviceType: deviceType || 'unknown',
-      lastUsed: new Date()
-    });
-  }
-  
-  return await this.save();
-};
-
-userSchema.methods.removeDeviceToken = async function (token) {
-  this.deviceTokens = this.deviceTokens.filter(dt => dt.token !== token);
-  return await this.save();
-};
-
 // ========== STATIC METHODS ==========
-userSchema.statics.findByResetToken = function (token) {
-  const crypto = require('crypto');
-  const hashedToken = crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
-
-  return this.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpires: { $gt: Date.now() }
-  }).select('+password');
-};
-
-// Update the findByVerificationToken method in user.model.js
 userSchema.statics.findByVerificationToken = function (token) {
   const crypto = require('crypto');
   
-  // Check if token is valid hex string
   if (!token || token.length !== 64 || !/^[0-9a-fA-F]+$/.test(token)) {
     return null;
   }
@@ -603,13 +622,65 @@ userSchema.statics.findByVerificationToken = function (token) {
       .digest('hex');
 
     return this.findOne({
-      emailVerificationToken: hashedToken,
-      emailVerified: false // Only find unverified users
-    });
+      verificationToken: hashedToken,
+      verificationTokenExpires: { $gt: Date.now() },
+      registrationStatus: 'pending',
+      emailVerified: false
+    }).select('+verificationToken +verificationTokenExpires +registrationData');
   } catch (error) {
     console.error('Error in findByVerificationToken:', error);
     return null;
   }
+};
+// user.model.js - Add this static method in the STATIC METHODS section
+userSchema.statics.findByResetToken = function (token) {
+  const crypto = require('crypto');
+  
+  if (!token || token.length !== 64) {
+    return null;
+  }
+  
+  try {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    return this.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    }).select('+password +resetPasswordToken +resetPasswordExpires +passwordHistory');
+  } catch (error) {
+    console.error('Error in findByResetToken:', error);
+    return null;
+  }
+};
+// Add a new method to find by token hash (even if expired/cleared)
+userSchema.statics.findByTokenHash = function (tokenHash) {
+  return this.findOne({
+    $or: [
+      { verificationToken: tokenHash },
+      { resetPasswordToken: tokenHash }
+    ]
+  });
+};
+
+userSchema.statics.findPendingByEmail = function (email) {
+  return this.findOne({ 
+    email: email.toLowerCase(),
+    registrationStatus: 'pending',
+    emailVerified: false
+  });
+};
+
+userSchema.statics.cleanupExpiredRegistrations = async function () {
+  const expiredCutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+  
+  return this.deleteMany({
+    registrationStatus: 'pending',
+    emailVerified: false,
+    registrationExpiresAt: { $lt: expiredCutoff }
+  });
 };
 
 userSchema.statics.findByEmail = function (email) {
@@ -620,20 +691,15 @@ userSchema.statics.findPublicProfiles = function (filter = {}) {
   return this.find({
     ...filter,
     'privacySettings.profileVisibility': 'public',
-    isActive: true
+    isActive: true,
+    registrationStatus: 'verified'
   }).select('-email -phoneNumber -privacySettings -loginHistory -deviceTokens -passwordHistory');
 };
 
 // ========== HOOKS ==========
 userSchema.post('save', function (doc) {
   if (doc.isNew) {
-    console.log(`✅ New user registered: ${doc.email} (${doc.role})`);
-  }
-});
-
-userSchema.post('findOneAndUpdate', function (doc) {
-  if (doc) {
-    console.log(`📝 User updated: ${doc.email}`);
+    console.log(`✅ User document created: ${doc.email} (${doc.registrationStatus})`);
   }
 });
 

@@ -1,4 +1,4 @@
-// App.jsx
+// App.jsx - UPDATED VERSION
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 
@@ -65,10 +65,13 @@ import NotFound from './layouts/pages/NotFound';
 import AdminNotFound from "./layouts/pages/AdminNotFound";
 import GigsInfoPage from './layouts/pages/GigsInfoPage';
 import ServicesInfoPage from './layouts/pages/ServicesInfoPage';
+
+// Import the VerificationWrapper
+import VerificationWrapper from './components/VerificationWrapper';
+
 const App = () => {
   useAuthSync();
   const { isAuthenticated } = useAuthStore();
-
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
@@ -136,16 +139,34 @@ const App = () => {
             <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/services" element={<ServiceListingPage />} />
             <Route path="/popular-services" element={<PopularServicesPage />} />
-<Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
+            <Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
             <Route path="/all-gigs" element={<AllGigsPage />} />
             <Route path="/all-services" element={<AllServicesPage />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
-            <Route path="/verify-email" element={<VerifyEmail />} />
-<Route path="/what-are-gigs" element={<GigsInfoPage />} />
-<Route path="/what-are-services" element={<ServicesInfoPage />} />
+            
+            {/* Wrap VerifyEmail with VerificationWrapper */}
+            <Route path="/verify-email" element={
+              <VerificationWrapper>
+                <VerifyEmail />
+              </VerificationWrapper>
+            } />
+            
+            <Route path="/what-are-gigs" element={<GigsInfoPage />} />
+            <Route path="/what-are-services" element={<ServicesInfoPage />} />
             <Route path="/verified" element={<VerifiedPage />} />
-            <Route path="/verify-email/:token?" element={<VerifyEmail />} />
-            <Route path="/verify-email/:token" element={<VerifyEmail />} />
+            
+            {/* Also wrap the token-based verify email routes */}
+            <Route path="/verify-email/:token?" element={
+              <VerificationWrapper>
+                <VerifyEmail />
+              </VerificationWrapper>
+            } />
+            <Route path="/verify-email/:token" element={
+              <VerificationWrapper>
+                <VerifyEmail />
+              </VerificationWrapper>
+            } />
+            
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/account-deactivated" element={<AccountDeactivated />} />
@@ -168,7 +189,6 @@ const App = () => {
             <Route path="/faq" element={<FaqPage />} />
             <Route path="/search" element={<SearchResults />} />
             <Route path="*" element={<NotFound />} />
-
           </Route>
 
           <Route path="/admin/*" element={

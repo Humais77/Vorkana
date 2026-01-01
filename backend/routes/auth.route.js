@@ -16,7 +16,7 @@ const {
   getPublicProfile,
   deactivateAccount,
   reactivateAccount,
-  verifyEmailRedirect
+  verifyEmailRedirect,checkVerificationStatus, resetPasswordRedirect, 
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -177,7 +177,7 @@ router.get("/verified-status", (req, res) => {
   
   res.send(html);
 });
-
+router.get("/check-verification", checkVerificationStatus);
 // ========== PASSWORD MANAGEMENT ROUTES ==========
 router.post("/forgot-password", 
   passwordResetLimiter,
@@ -185,6 +185,7 @@ router.post("/forgot-password",
   forgotPassword
 );
 
+router.get("/reset/redirect/:token", resetPasswordRedirect); // Add this line
 router.post("/reset-password", 
   passwordResetLimiter,
   resetPasswordValidation,
