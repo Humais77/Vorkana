@@ -77,15 +77,15 @@ const PopularCategoriesSection = () => {
   };
 
   return (
-    <section className="py-10 px-4 bg-white">
+    <section className="py-10 px-4 bg-white mb-16">
       <div className="max-w-7xl mx-auto">
         {/* Header - Left Aligned */}
         <div className="text-left mb-6">
           <h2 className="text-4xl font-bold text-gray-900 mb-2">
-            Popular Categories
+            Popular Services
           </h2>
           <p className="text-gray-600 text-lg">
-            Browse our most popular categories
+            Browse our most popular services
           </p>
         </div>
 

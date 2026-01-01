@@ -8,6 +8,7 @@ import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
 import default_pp from '../assets/default_pp-modified.png'
 import SearchComponent from "../components/Search/SearchComponent";
+import { useParentCategories } from "../hooks/useCategories"; // Import the hook
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
@@ -23,22 +24,37 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   const isHomePage = location.pathname === "/";
   const isAdminUser = isAuthenticated && (user?.role === 'admin' || user?.isAdmin === true);
 
+  // Fetch real categories from database
+  const { 
+    data: categoriesData = [], 
+    isLoading: categoriesLoading,
+    error: categoriesError 
+  } = useParentCategories();
+
   // Refs for dropdowns
   const profileRef = useRef(null);
   const exploreRef = useRef(null);
 
-  // Memoized data
-  const categories = useMemo(() => [
-    { name: "Web Development" },
-    { name: "Graphic Design" },
-    { name: "Digital Marketing" },
-    { name: "Writing & Translation" },
-    { name: "Video & Animation" },
-    { name: "Music & Audio" },
-    { name: "Business" },
-    { name: "Lifestyle" }
-  ], []);
+  // Memoized categories from database
+  const categories = useMemo(() => {
+    if (!categoriesData || !Array.isArray(categoriesData)) {
+      return [];
+    }
+    
+    return categoriesData.map(category => ({
+      _id: category._id,
+      name: category.name,
+      description: category.description || '',
+      slug: category.slug || category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
+      parentCategory: category.parentCategory,
+      children: category.children || [],
+      level: category.level || 0,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt
+    }));
+  }, [categoriesData]);
 
+  // Memoized quick links
   const quickLinks = useMemo(() => [
     { name: "Browse All Gigs", icon: <ShoppingBag className="w-4 h-4" />, path: "/gigs" },
     { name: "Browse All Services", icon: <Briefcase className="w-4 h-4" />, path: "/services" },
@@ -147,7 +163,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     exit: { opacity: 0, transition: { duration: 0.2 } }
   }), []);
 
-  if (loading) {
+  // Loading state
+  if (loading || categoriesLoading) {
     return (
       <nav className="w-full bg-white border-b shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-4">
@@ -195,11 +212,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             {/* Desktop: Search */}
             <div className="hidden lg:flex items-center ml-6 mr-auto">
               <div>
-                  <SearchComponent 
-                    placeholder="What service are you looking for today?"
-                    className="w-[400px] xl:w-[480px]" 
-                  />
-                </div>
+                <SearchComponent 
+                  placeholder="What service are you looking for today?"
+                  className="w-[400px] xl:w-[480px]" 
+                />
+              </div>
             </div>
 
             {/* Center: Logo (Mobile only) */}
@@ -255,6 +272,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 <button
                   onClick={() => toggleDropdown('explore')}
                   className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150"
+                  disabled={categoriesLoading}
                 >
                   <Globe className="w-5 h-5" />
                   <span className="font-medium">Explore</span>
@@ -274,16 +292,22 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <div className="mb-4">
                           <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Browse Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {categories.map((category) => (
-                              <Link
-                                key={category.name}
-                                to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
-                                onClick={closeAllDropdowns}
-                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150 group"
-                              >
-                                <span className="truncate">{category.name}</span>
-                              </Link>
-                            ))}
+                            {categories.length > 0 ? (
+                              categories.slice(0, 8).map((category) => (
+                                <Link
+                                  key={category._id}
+                                  to={`/categories/${category.slug}`}
+                                  onClick={closeAllDropdowns}
+                                  className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150 group"
+                                >
+                                  <span className="truncate">{category.name}</span>
+                                </Link>
+                              ))
+                            ) : (
+                              <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
+                                No categories found
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -308,7 +332,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   )}
                 </AnimatePresence>
               </div>
-
 
               {isAuthenticated ? (
                 <div className="flex items-center space-x-3">
@@ -497,7 +520,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <Home className="w-5 h-5 text-gray-600" />
                         <span className="font-medium text-gray-800">Home</span>
                       </Link>
-
                     </div>
 
                     {/* Explore Section */}
@@ -511,16 +533,22 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <div>
                           <h4 className="text-sm font-semibold text-gray-900 mb-2 px-3">Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {categories.slice(0, 6).map((category) => (
-                              <Link
-                                key={category.name}
-                                to={`/categories/${category.name.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-')}`}
-                                onClick={() => setMobileMenuOpen(false)}
-                                className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150"
-                              >
-                                <span className="truncate">{category.name}</span>
-                              </Link>
-                            ))}
+                            {categories.length > 0 ? (
+                              categories.slice(0, 6).map((category) => (
+                                <Link
+                                  key={category._id}
+                                  to={`/categories/${category.slug}`}
+                                  onClick={() => setMobileMenuOpen(false)}
+                                  className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150"
+                                >
+                                  <span className="truncate">{category.name}</span>
+                                </Link>
+                              ))
+                            ) : (
+                              <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
+                                No categories available
+                              </div>
+                            )}
                           </div>
                         </div>
 
