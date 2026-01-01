@@ -1,14 +1,28 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
+import { toast } from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
-const subscribeApi = async (data) => {
-  const response = await axios.post(`${API_URL}/api/subscribe-email/subscribe`, data);
+const subscribeApi = async (email) => {
+  const response = await axios.post(`${API_URL}/api/subscribe-email/subscribe`, { email });
   return response.data;
 };
 
-const getSubscriberStatusApi = async (email) => {
+const unsubscribeApi = async (email, unsubscribeToken = null) => {
+  const response = await axios.post(`${API_URL}/api/subscribe-email/unsubscribe`, { 
+    email,
+    ...(unsubscribeToken && { unsubscribeToken })
+  });
+  return response.data;
+};
+
+const toggleApi = async (email) => {
+  const response = await axios.post(`${API_URL}/api/subscribe-email/toggle`, { email });
+  return response.data;
+};
+
+const getStatusApi = async (email) => {
   const response = await axios.get(`${API_URL}/api/subscribe-email/status/${email}`);
   return response.data;
 };
@@ -16,75 +30,54 @@ const getSubscriberStatusApi = async (email) => {
 export const useSubscribe = () => {
   return useMutation({
     mutationFn: subscribeApi,
-    onError: (error) => {
-      console.error('Subscription error:', error);
-    },
-  });
-};
-
-export const useSubscriberStatus = (email) => {
-  return useQuery({
-    queryKey: ['subscription', email],
-    queryFn: () => getSubscriberStatusApi(email),
-    enabled: !!email && email.includes('@'),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-};
-const getUserSubscriptionsApi = async () => {
-  const response = await axios.get(`${API_URL}/api/subscribe-email/user-subscriptions`, {
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('userToken')}`
-    }
-  });
-  return response.data;
-};
-
-const linkEmailApi = async (email) => {
-  const response = await axios.post(`${API_URL}/api/subscribe-email/link-email`, 
-    { email },
-    {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('userToken')}`
-      }
-    }
-  );
-  return response.data;
-};
-
-const checkEmailOwnershipApi = async (email) => {
-  const response = await axios.get(`${API_URL}/api/subscribe-email/check-email/${email}`);
-  return response.data;
-};
-
-// Add to your export
-export const useUserSubscriptions = () => {
-  return useQuery({
-    queryKey: ['userSubscriptions'],
-    queryFn: getUserSubscriptionsApi,
-    enabled: !!localStorage.getItem('userToken'),
-    retry: 2
-  });
-};
-
-export const useLinkEmail = () => {
-  return useMutation({
-    mutationFn: linkEmailApi,
     onSuccess: (data) => {
       if (data.success) {
         toast.success(data.message);
       }
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to link email');
-    }
+      const message = error.response?.data?.message || 'Failed to subscribe';
+      toast.error(message);
+    },
   });
 };
 
-export const useCheckEmailOwnership = (email) => {
+export const useUnsubscribe = () => {
+  return useMutation({
+    mutationFn: unsubscribeApi,
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message);
+      }
+    },
+    onError: (error) => {
+      const message = error.response?.data?.message || 'Failed to unsubscribe';
+      toast.error(message);
+    },
+  });
+};
+
+export const useToggleSubscription = () => {
+  return useMutation({
+    mutationFn: toggleApi,
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message);
+      }
+    },
+    onError: (error) => {
+      const message = error.response?.data?.message || 'Failed to update subscription';
+      toast.error(message);
+    },
+  });
+};
+
+export const useSubscriptionStatus = (email) => {
   return useQuery({
-    queryKey: ['emailOwnership', email],
-    queryFn: () => checkEmailOwnershipApi(email),
+    queryKey: ['subscriptionStatus', email],
+    queryFn: () => getStatusApi(email),
     enabled: !!email && email.includes('@'),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
   });
 };

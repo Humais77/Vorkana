@@ -3,6 +3,7 @@ import { Pause, Play } from "lucide-react";
 import HeroSearch from "../components/Search/HeroSearch";
 import { useNavigate } from "react-router-dom";
 import useVideoStore from '../store/useVideoStore';
+
 const Hero = ({ isAuthModalOpen = false }) => {
   const [paused, setPaused] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -10,7 +11,7 @@ const Hero = ({ isAuthModalOpen = false }) => {
   const videoRef = useRef(null);
   const wasPlayingBeforeModal = useRef(false); // Track if video was playing before modal
   const navigate = useNavigate();
-const { isVideoPaused } = useVideoStore();
+  const { isVideoPaused } = useVideoStore();
 
   // Cloudinary config
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
@@ -28,59 +29,80 @@ const { isVideoPaused } = useVideoStore();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-useEffect(() => {
-  if (!videoRef.current || isMobile) return;
-  
-  if (isVideoPaused && !videoRef.current.paused) {
-    videoRef.current.pause();
-    setPaused(true);
-  }
-}, [isVideoPaused, isMobile]);
+
+  // Sync with global video pause state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || isMobile) return;
+    
+    if (isVideoPaused && !video.paused) {
+      video.pause();
+      setPaused(true);
+    }
+  }, [isVideoPaused, isMobile]);
+
   // Handle auth modal open/close
   useEffect(() => {
-    if (!videoRef.current || isMobile) return;
+    const video = videoRef.current;
+    if (!video || isMobile) return;
 
     if (isAuthModalOpen) {
       // When modal opens, remember if video was playing
-      wasPlayingBeforeModal.current = !videoRef.current.paused;
-      videoRef.current.pause();
+      wasPlayingBeforeModal.current = !video.paused;
+      video.pause();
     } else {
       // When modal closes, resume only if video was playing before
       if (wasPlayingBeforeModal.current) {
-        videoRef.current.play()
+        video.play()
           .then(() => setPaused(false))
           .catch(err => console.log("Autoplay prevented:", err));
       }
     }
   }, [isAuthModalOpen, isMobile]);
 
-  // Sync paused state with video element
+  // Sync paused state with video element - SAFE VERSION
   useEffect(() => {
-    if (!videoRef.current || isMobile) return;
+    const video = videoRef.current;
+    if (!video || isMobile) return;
     
     const updatePausedState = () => {
-      setPaused(videoRef.current.paused);
+      // Check if video still exists
+      if (videoRef.current) {
+        setPaused(videoRef.current.paused);
+      }
     };
     
-    videoRef.current.addEventListener('play', updatePausedState);
-    videoRef.current.addEventListener('pause', updatePausedState);
+    const handlePlay = () => updatePausedState();
+    const handlePause = () => updatePausedState();
+    
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    
+    // Initialize paused state
+    updatePausedState();
     
     return () => {
+      // Safely remove event listeners
       if (videoRef.current) {
-        videoRef.current.removeEventListener('play', updatePausedState);
-        videoRef.current.removeEventListener('pause', updatePausedState);
+        videoRef.current.removeEventListener('play', handlePlay);
+        videoRef.current.removeEventListener('pause', handlePause);
       }
     };
   }, [isMobile]);
 
   const handleToggle = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-    } else {
-      videoRef.current.pause();
+    const video = videoRef.current;
+    if (!video) return;
+    
+    try {
+      if (video.paused) {
+        video.play().catch(err => console.log("Play failed:", err));
+      } else {
+        video.pause();
+      }
+    } catch (error) {
+      console.error("Video toggle error:", error);
     }
-    // State will be updated by event listeners above
   };
 
   const handleCategoryClick = (name) => {
@@ -166,6 +188,7 @@ useEffect(() => {
         <button
           onClick={handleToggle}
           className="absolute bottom-6 right-6 bg-white/20 hover:bg-white/30 p-3 rounded-full backdrop-blur-md hidden md:flex"
+          aria-label={paused ? "Play video" : "Pause video"}
         >
           {paused ? <Play /> : <Pause />}
         </button>

@@ -1,26 +1,17 @@
 const express = require('express');
 const { 
   subscribe,
-  verifyEmail,
   unsubscribe,
-  updatePreferences,
-  getStats,
-  getSubscriberStatus
+  getSubscriptionStatus,
+  toggleSubscription
 } = require('../controllers/subscribe.controller');
-const { protect } = require('../middleware/auth.middleware');
-const { verifyAdmin } = require('../middleware/admin.middleware');
+
 const router = express.Router();
 
-// Public routes
+// Simple subscription routes
 router.post('/subscribe', subscribe);
-router.get('/verify/:token', verifyEmail);
-router.get('/unsubscribe/:token', unsubscribe);
-router.get('/status/:email', getSubscriberStatus); // Made public for checking status
-
-// Protected routes (for logged-in users to update preferences)
-router.patch('/preferences', protect, updatePreferences);
-
-// Admin routes
-router.get('/stats', protect, verifyAdmin, getStats);
+router.post('/unsubscribe', unsubscribe);
+router.post('/toggle', toggleSubscription); // One endpoint for both actions
+router.get('/status/:email', getSubscriptionStatus);
 
 module.exports = router;

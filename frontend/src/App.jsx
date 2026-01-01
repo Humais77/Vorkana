@@ -68,6 +68,8 @@ import ServicesInfoPage from './layouts/pages/ServicesInfoPage';
 
 // Import the VerificationWrapper
 import VerificationWrapper from './components/VerificationWrapper';
+import GigEdit from './layouts/pages/GigEdit';
+import EditService from './layouts/pages/EditService';
 
 const App = () => {
   useAuthSync();
@@ -128,6 +130,8 @@ const App = () => {
             
             <Route path="/create-gig" element={<GigCreate />} />
             <Route path="/gig/:id" element={<GigDetails />} />
+            <Route path="/edit-gig/:id" element={<GigEdit />} />
+            <Route path="/edit-service/:id/" element={<EditService/>} />
             <Route path="/categories/:categoryId" element={<CategoryPage />} />
             <Route path="/categories/:categoryId/:subcategorySlug" element={<SubcategoryDetailPage />} />
             <Route path="/popular-services" element={<PopularServices />} />

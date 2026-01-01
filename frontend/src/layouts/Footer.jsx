@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState ,useEffect} from "react";
 import {
   FaFacebook,
   FaInstagram,
@@ -12,12 +12,14 @@ import {
 import TrackedLink from '../components/TrackedLink';
 import { motion, AnimatePresence } from "framer-motion";
 import { useParentCategories } from "../hooks/useCategories";
-import { useSubscribe } from "../hooks/useSubscribe";
+import { useSubscribe,useSubscriptionStatus ,useToggleSubscription} from "../hooks/useSubscribe";
 
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [email, setEmail] = useState("");
+   const [emailError, setEmailError] = useState("");
+  const [localStatus, setLocalStatus] = useState(null);
   const [preferences, setPreferences] = useState({
     frequency: "weekly",
     categories: ["tech", "design"]
@@ -38,7 +40,10 @@ const Footer = () => {
   // Limit to 10 categories for initial display
   const initialCategories = categoriesData.slice(0, 10);
   const remainingCategories = categoriesData.slice(10);
-
+ const { data: statusData, refetch } = useSubscriptionStatus(email);
+  
+  // Toggle subscription
+  const { mutate: toggleSubscription, isLoading } = useToggleSubscription();
   const footerLinks = {
     categories: {
       title: "Categories",
@@ -77,6 +82,77 @@ const Footer = () => {
   const toggleDropdown = (section) => {
     setOpenDropdown(openDropdown === section ? null : section);
   };
+useEffect(() => {
+    if (statusData?.success && email) {
+      setLocalStatus(statusData.data);
+    } else {
+      setLocalStatus(null);
+    }
+  }, [statusData, email]);
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value;
+    setEmail(value);
+    
+    if (value && !validateEmail(value)) {
+      setEmailError("Please enter a valid email");
+    } else {
+      setEmailError("");
+    }
+    
+    // Clear local status if email changes
+    if (value !== email) {
+      setLocalStatus(null);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    if (!email) {
+      setEmailError("Email is required");
+      return;
+    }
+    
+    if (!validateEmail(email)) {
+      setEmailError("Please enter a valid email");
+      return;
+    }
+    
+    // Check current status before toggling
+    if (localStatus?.isSubscribed) {
+      // If already subscribed, just show message
+      toast("You're already subscribed!", {
+        icon: "📧"
+      });
+      return;
+    }
+    
+    toggleSubscription(email, {
+      onSuccess: (data) => {
+        if (data.success) {
+          setLocalStatus(data.data);
+          refetch(); // Refresh status
+        }
+      }
+    });
+  };
+
+  const handleUnsubscribe = () => {
+    if (!email || !localStatus?.isSubscribed) return;
+    
+    toggleSubscription(email, {
+      onSuccess: (data) => {
+        if (data.success) {
+          setLocalStatus(data.data);
+          refetch(); // Refresh status
+        }
+      }
+    });
+  };
+
+  // Check if we should show unsubscribe button
+  const showUnsubscribe = localStatus?.isSubscribed && email === localStatus.email;
 
   // Handle subscription
   const handleSubscribe = async (e) => {
@@ -315,120 +391,90 @@ const Footer = () => {
               </p>
             </div>
             
-            <form onSubmit={handleSubscribe} className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div className="flex-1 relative">
-                  <motion.input
-                    type="email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      resetSubscription();
-                    }}
-                    placeholder="Enter your email address"
-                    className={`w-full px-4 md:px-5 py-3 md:py-3.5 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-black placeholder-gray-500 text-sm md:text-base transition-all duration-200 ${
-                      subscribeError 
-                        ? "border-red-500 focus:border-red-500 focus:ring-red-200" 
-                        : "border-gray-300 focus:border-black focus:ring-gray-200"
-                    }`}
-                    disabled={subscribeLoading || subscribeSuccess}
-                    whileFocus={{ scale: 1.01 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                    required
-                  />
-                  
-                  {subscribeSuccess && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                    >
-                      <FaCheck className="w-5 h-5 text-green-500" />
-                    </motion.div>
-                  )}
-                  
-                  {subscribeError && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                    >
-                      <FaCircleExclamation className="w-5 h-5 text-red-500" />
-                    </motion.div>
-                  )}
-                </div>
-                
-                <motion.button
-                  type="submit"
-                  disabled={subscribeLoading || subscribeSuccess || !validateEmail(email)}
-                  className={`px-6 md:px-8 py-3 md:py-3.5 text-white font-medium rounded-lg transition-all duration-200 text-sm md:text-base ${
-                    subscribeLoading 
-                      ? "bg-gray-400 cursor-not-allowed" 
-                      : subscribeSuccess 
-                        ? "bg-green-600 hover:bg-green-700" 
-                        : "bg-black hover:bg-gray-900"
+            <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={handleEmailChange}
+                  placeholder="Enter your email address"
+                  className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-black placeholder-gray-500 transition-all ${
+                    emailError 
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-200" 
+                      : "border-gray-300 focus:border-black focus:ring-gray-200"
                   }`}
-                  whileHover={!subscribeLoading && !subscribeSuccess ? { scale: 1.05 } : {}}
-                  whileTap={!subscribeLoading && !subscribeSuccess ? { scale: 0.95 } : {}}
-                >
-                  {subscribeLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Subscribing...
-                    </span>
-                  ) : subscribeSuccess ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <FaCheck className="w-4 h-4" />
-                      Subscribed!
-                    </span>
-                  ) : (
-                    "Subscribe"
-                  )}
-                </motion.button>
+                  disabled={isLoading}
+                />
+                {emailError && (
+                  <p className="text-red-500 text-sm mt-1">{emailError}</p>
+                )}
               </div>
               
-              {/* Status Messages */}
-              {subscribeSuccess && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="p-3 bg-green-50 border border-green-200 rounded-lg"
-                >
-                  <p className="text-sm text-green-700">
-                    ✅ Please check your email to verify your subscription!
-                  </p>
-                </motion.div>
-              )}
-              
-              {subscribeError && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="p-3 bg-red-50 border border-red-200 rounded-lg"
-                >
-                  <p className="text-sm text-red-700">
-                    ❌ {subscribeError.message || "Failed to subscribe. Please try again."}
-                  </p>
-                </motion.div>
-              )}
-              
-              <p className="text-gray-500 text-xs">
-                By subscribing, you agree to our{" "}
-                <TrackedLink 
-                  to="/privacy" 
-                  source="footer" 
-                  medium="website" 
-                  campaign="privacy_footer"
-                  className="text-gray-600 hover:text-black underline"
-                >
-                  Privacy Policy
-                </TrackedLink>
-                {" "}and understand you can unsubscribe at any time.
-              </p>
-            </form>
+              <motion.button
+                type="submit"
+                disabled={isLoading || !email || emailError}
+                className={`px-6 py-3 text-white font-medium rounded-lg transition-all ${
+                  isLoading 
+                    ? "bg-gray-400 cursor-not-allowed" 
+                    : showUnsubscribe
+                      ? "bg-gray-600 hover:bg-gray-700"
+                      : "bg-black hover:bg-gray-900"
+                }`}
+                whileHover={!isLoading ? { scale: 1.05 } : {}}
+                whileTap={!isLoading ? { scale: 0.95 } : {}}
+              >
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : showUnsubscribe ? (
+                  "Unsubscribe"
+                ) : (
+                  "Subscribe"
+                )}
+              </motion.button>
+            </div>
+            
+            {/* Status Messages */}
+            {localStatus && (
+              <div className={`p-3 border rounded-lg ${
+                localStatus.isSubscribed 
+                  ? "bg-green-50 border-green-200" 
+                  : "bg-blue-50 border-blue-200"
+              }`}>
+                <p className={`text-sm ${
+                  localStatus.isSubscribed ? "text-green-700" : "text-blue-700"
+                }`}>
+                  {localStatus.isSubscribed
+                    ? `✓ Subscribed to newsletter as ${localStatus.email}`
+                    : `✓ Unsubscribed from newsletter`}
+                </p>
+                {localStatus.isSubscribed && (
+                  <button
+                    onClick={handleUnsubscribe}
+                    className="text-sm text-gray-600 hover:text-black mt-2 underline"
+                    disabled={isLoading}
+                  >
+                    Click here to unsubscribe
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {/* Privacy Notice */}
+            <p className="text-gray-500 text-xs">
+              By subscribing, you agree to our{" "}
+              <a href="/privacy" className="text-gray-600 hover:text-black underline">
+                Privacy Policy
+              </a>
+              . One-click unsubscribe anytime.
+            </p>
+          </form>
             
             {/* Preference Toggle (Optional) */}
             <div className="pt-4 border-t border-gray-100">

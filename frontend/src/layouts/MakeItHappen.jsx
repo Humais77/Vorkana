@@ -25,7 +25,7 @@ const MakeItHappen = ({ onSignupClick }) => {
   const { isAuthenticated } = useAuthStore();
   
   return (
-    <section className="bg-white py-20">
+    <section className="bg-white mb-4">
       <div className="max-w-7xl mx-auto px-6">
         <h2 className="text-3xl md:text-5xl text-gray-600 mb-14 text-left">
           Make it all happen with freelancers
