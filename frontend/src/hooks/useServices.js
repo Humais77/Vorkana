@@ -11,35 +11,42 @@ export const useMyServices = (filters = {}) => {
         const result = await servicesAPI.getMyServices(filters);
         return result;
       } catch (error) {
-        throw error;
+        // Return empty structure on error
+        return {
+          success: false,
+          data: [],
+          pagination: {
+            page: filters.page || 1,
+            limit: filters.limit || 20,
+            total: 0,
+            totalPages: 0
+          },
+          error: error.message
+        };
       }
     },
+    enabled: !!localStorage.getItem('userToken') || !!localStorage.getItem('token'),
     refetchOnWindowFocus: false,
     retry: 1,
     onError: (error) => {
-      toast.error(error.message || 'Failed to load your services');
+      console.error('useMyServices error:', error);
+      // Don't show toast if it's a 401 (user not logged in)
+      if (!error.message.includes('Please login')) {
+        toast.error(error.message || 'Failed to load your services');
+      }
     },
   });
 };
 
+// Update useServices hook
 export const useServices = (filters = {}) => {
   return useQuery({
     queryKey: ['services', filters],
     queryFn: async () => {
       try {
         const result = await servicesAPI.getAll(filters);
-        return result || {
-          success: true,
-          data: [],
-          pagination: {
-            page: filters.page || 1,
-            limit: filters.limit || 12,
-            total: 0,
-            totalPages: 0
-          }
-        };
+        return result;
       } catch (error) {
-        console.error('Services API error:', error);
         return {
           success: false,
           data: [],
@@ -54,8 +61,12 @@ export const useServices = (filters = {}) => {
       }
     },
     refetchOnWindowFocus: false,
+    staleTime: 2 * 60 * 1000, // 2 minutes cache
     onError: (error) => {
-      toast.error(error.message || 'Failed to load services');
+      console.error('useServices error:', error);
+      if (process.env.NODE_ENV === 'development') {
+        toast.error(error.message || 'Failed to load services');
+      }
     },
   });
 };
@@ -220,14 +231,22 @@ export const useCreateService = () => {
   const navigate = useNavigate();
   
   return useMutation({
-    mutationFn: async ({ serviceData, files = null }) => {
-      const result = await servicesAPI.create(serviceData, files);
-      return result;
+    mutationFn: async (formData) => {
+      // If formData is already FormData, use it directly
+      if (formData instanceof FormData) {
+        return servicesAPI.create({}, formData);
+      }
+      
+      // Otherwise, extract serviceData and files
+      const { serviceData, files = null } = formData || {};
+      return servicesAPI.create(serviceData, files);
     },
     onSuccess: (data) => {
       if (data.success) {
         queryClient.invalidateQueries(['myServices']);
         queryClient.invalidateQueries(['services']);
+        queryClient.invalidateQueries(['popularServices']);
+        queryClient.invalidateQueries(['popularServicesByCategory']);
         navigate('/profile?tab=services');
         toast.success(data.message || 'Service created successfully!');
       } else {
@@ -452,6 +471,149 @@ export const useSetThumbnail = () => {
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to set thumbnail');
+    },
+  });
+};
+export const useServicesByCategoryId = (categoryId, params = {}, options = {}) => {
+  return useQuery({
+    queryKey: ['services', 'category', categoryId, params],
+    queryFn: async () => {
+      if (!categoryId) return { success: true, data: [] };
+      
+      try {
+        const result = await servicesAPI.getByCategoryId(categoryId, params);
+        return {
+          success: true,
+          data: Array.isArray(result) ? result : (result?.data || []),
+          pagination: result?.pagination || {
+            page: params.page || 1,
+            limit: params.limit || 12,
+            total: Array.isArray(result) ? result.length : (result?.data || []).length,
+            totalPages: Math.ceil((Array.isArray(result) ? result.length : (result?.data || []).length) / (params.limit || 12))
+          }
+        };
+      } catch (error) {
+        console.error('Error fetching services by category ID:', error);
+        return {
+          success: false,
+          data: [],
+          error: error.message
+        };
+      }
+    },
+    enabled: !!categoryId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
+
+// Hook for services by subcategory ID
+export const useServicesBySubcategoryId = (subcategoryId, params = {}, options = {}) => {
+  return useQuery({
+    queryKey: ['services', 'subcategory', 'id', subcategoryId, params],
+    queryFn: async () => {
+      if (!subcategoryId) return { success: true, data: [] };
+      
+      try {
+        const result = await servicesAPI.getBySubcategoryId(subcategoryId, params);
+        return {
+          success: true,
+          data: Array.isArray(result) ? result : (result?.data || []),
+          pagination: result?.pagination || {
+            page: params.page || 1,
+            limit: params.limit || 12,
+            total: Array.isArray(result) ? result.length : (result?.data || []).length,
+            totalPages: Math.ceil((Array.isArray(result) ? result.length : (result?.data || []).length) / (params.limit || 12))
+          }
+        };
+      } catch (error) {
+        console.error('Error fetching services by subcategory ID:', error);
+        return {
+          success: false,
+          data: [],
+          error: error.message
+        };
+      }
+    },
+    enabled: !!subcategoryId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
+
+// Hook for services by subcategory slug
+export const useServicesBySubcategorySlug = (subcategorySlug, params = {}, options = {}) => {
+  return useQuery({
+    queryKey: ['services', 'subcategory', 'slug', subcategorySlug, params],
+    queryFn: async () => {
+      if (!subcategorySlug) return { success: true, data: [] };
+      
+      try {
+        const result = await servicesAPI.getBySubcategorySlug(subcategorySlug, params);
+        return {
+          success: true,
+          data: Array.isArray(result) ? result : (result?.data || []),
+          pagination: result?.pagination || {
+            page: params.page || 1,
+            limit: params.limit || 12,
+            total: Array.isArray(result) ? result.length : (result?.data || []).length,
+            totalPages: Math.ceil((Array.isArray(result) ? result.length : (result?.data || []).length) / (params.limit || 12))
+          }
+        };
+      } catch (error) {
+        console.error('Error fetching services by subcategory slug:', error);
+        return {
+          success: false,
+          data: [],
+          error: error.message
+        };
+      }
+    },
+    enabled: !!subcategorySlug,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
+
+// Hook for admin services
+export const useAdminServices = (filters = {}) => {
+  return useQuery({
+    queryKey: ['adminServices', filters],
+    queryFn: async () => {
+      try {
+        const result = await servicesAPI.getAdminServices(filters);
+        return result || {
+          success: false,
+          data: [],
+          pagination: {
+            page: filters.page || 1,
+            limit: filters.limit || 12,
+            total: 0,
+            totalPages: 0
+          }
+        };
+      } catch (error) {
+        console.error('Admin services API error:', error);
+        return {
+          success: false,
+          data: [],
+          pagination: {
+            page: filters.page || 1,
+            limit: filters.limit || 12,
+            total: 0,
+            totalPages: 0
+          },
+          error: error.message
+        };
+      }
+    },
+    enabled: !!localStorage.getItem('userToken') || !!localStorage.getItem('token'),
+    refetchOnWindowFocus: false,
+    onError: (error) => {
+      toast.error(error.message || 'Failed to load admin services');
     },
   });
 };

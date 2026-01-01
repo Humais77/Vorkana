@@ -226,7 +226,27 @@ router.get('/popular/category',
   serviceLimiter, 
   controller.getPopularServicesByCategory
 );
+router.get('/all/active', 
+  protect, 
+  controller.getAllActiveServices
+);
+router.get('/category/:categoryId', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getServicesByCategory
+);
+router.get('/subcategory/:subcategoryId', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getServicesBySubcategory
+);
 
+// Get services by subcategory slug
+router.get('/subcategory/slug/:slug', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getServicesBySubcategorySlug
+);
 // Toggle popular status (admin only)
 
 // ============================================
@@ -247,7 +267,7 @@ router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 router.post('/', 
   protect, 
   serviceLimiter, 
-  uploadWithThumbnail, // This handles both thumbnail and images
+  uploadWithThumbnail, 
   handleMulterError, 
   validateCreate, 
   controller.createService

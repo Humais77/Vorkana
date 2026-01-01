@@ -42,92 +42,173 @@ axiosInstance.interceptors.response.use(
 
 export const servicesAPI = {
 getAll: async (filters = {}) => {
-  try {
-    // Clean filters - remove undefined/null/empty values
-    const cleanFilters = {};
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && 
-          filters[key] !== null && 
-          filters[key] !== '' && 
-          filters[key] !== 'undefined') {
-        cleanFilters[key] = filters[key];
-      }
-    });
+    try {
+      // Clean filters - remove undefined/null/empty values
+      const cleanFilters = {};
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && 
+            filters[key] !== null && 
+            filters[key] !== '' && 
+            filters[key] !== 'undefined') {
+          cleanFilters[key] = filters[key];
+        }
+      });
 
-    console.log('Fetching services with filters:', cleanFilters);
-    
-    // Build query string
-    const queryString = new URLSearchParams(cleanFilters).toString();
-    const url = `/api/services${queryString ? '?' + queryString : ''}`;
-    
-    console.log('API URL:', url);
-    
-    const response = await axiosInstance.get(url);
-    
-    console.log('API Response status:', response.status);
-    console.log('API Response data structure:', {
-      hasData: !!response.data,
-      hasDataData: !!response.data?.data,
-      isArray: Array.isArray(response.data?.data),
-      dataType: typeof response.data?.data,
-      keys: Object.keys(response.data || {})
-    });
-    
-    // Handle response - return the full response object
-    if (response.data) {
-      // Ensure data is always an array
-      let dataArray = [];
+      console.log('Fetching services with filters:', cleanFilters);
       
-      if (response.data.data && Array.isArray(response.data.data)) {
-        dataArray = response.data.data;
-      } else if (Array.isArray(response.data)) {
-        dataArray = response.data;
+      // Build query string
+      const queryString = new URLSearchParams(cleanFilters).toString();
+      const url = `/api/services${queryString ? '?' + queryString : ''}`;
+      
+      console.log('API URL:', url);
+      
+      const response = await axiosInstance.get(url);
+      
+      console.log('API Response status:', response.status);
+      console.log('API Response:', response.data);
+      
+      // Handle response
+      if (response.data) {
+        // Ensure consistent response structure
+        return {
+          success: response.data.success !== false,
+          data: response.data.data || response.data.services || [],
+          pagination: response.data.pagination || {
+            page: filters.page || 1,
+            limit: filters.limit || 12,
+            total: (response.data.data || response.data.services || []).length,
+            totalPages: Math.ceil((response.data.data || response.data.services || []).length / (filters.limit || 12))
+          },
+          message: response.data.message,
+          ...response.data
+        };
       }
       
-      // Return consistent structure
+      console.warn('No data in response');
       return {
-        success: true,
-        data: dataArray,
-        pagination: response.data.pagination || {
+        success: false,
+        data: [],
+        pagination: {
           page: filters.page || 1,
           limit: filters.limit || 12,
-          total: dataArray.length,
-          totalPages: Math.ceil(dataArray.length / (filters.limit || 12))
+          total: 0,
+          totalPages: 0
         },
-        ...response.data
+        message: 'No data received'
+      };
+      
+    } catch (error) {
+      console.error('Services API getAll error:', error.message);
+      console.error('Error response:', error.response?.data);
+      
+      // Return empty data structure on error
+      return {
+        success: false,
+        data: [],
+        pagination: {
+          page: filters.page || 1,
+          limit: filters.limit || 12,
+          total: 0,
+          totalPages: 0
+        },
+        error: error.message,
+        message: 'Failed to fetch services'
       };
     }
-    
-    console.warn('No data in response');
-    return {
-      success: true,
-      data: [],
-      pagination: {
-        page: filters.page || 1,
-        limit: filters.limit || 12,
-        total: 0,
-        totalPages: 0
+  },
+  
+getByCategoryId: async (categoryId, params = {}) => {
+    try {
+      const cleanParams = {
+        category: categoryId,
+        isActive: true,
+        status: 'active',
+        ...params
+      };
+      
+      // Filter out undefined/null/empty values
+      Object.keys(cleanParams).forEach(key => {
+        if (cleanParams[key] === undefined || cleanParams[key] === null || cleanParams[key] === '') {
+          delete cleanParams[key];
+        }
+      });
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const response = await axiosInstance.get(`/api/services/category/${categoryId}${queryString ? '?' + queryString : ''}`);
+      
+      if (response.data && response.data.success) {
+        return response.data.data || [];
       }
-    };
-    
-  } catch (error) {
-    console.error('Services API getAll error:', error.message);
-    console.error('Error response:', error.response?.data);
-    
-    // Return empty data structure on error
-    return {
-      success: false,
-      data: [],
-      pagination: {
-        page: filters.page || 1,
-        limit: filters.limit || 12,
-        total: 0,
-        totalPages: 0
-      },
-      error: error.message
-    };
-  }
-},
+      
+      return response.data || [];
+      
+    } catch (error) {
+      console.error('Error fetching services by category:', error);
+      return [];
+    }
+  },
+  
+  getBySubcategoryId: async (subcategoryId, params = {}) => {
+    try {
+      const cleanParams = {
+        subcategory: subcategoryId,
+        isActive: true,
+        status: 'active',
+        ...params
+      };
+      
+      // Filter out undefined/null/empty values
+      Object.keys(cleanParams).forEach(key => {
+        if (cleanParams[key] === undefined || cleanParams[key] === null || cleanParams[key] === '') {
+          delete cleanParams[key];
+        }
+      });
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const response = await axiosInstance.get(`/api/services/subcategory/${subcategoryId}${queryString ? '?' + queryString : ''}`);
+      
+      if (response.data && response.data.success) {
+        return response.data.data || [];
+      }
+      
+      return response.data || [];
+      
+    } catch (error) {
+      console.error('Error fetching services by subcategory ID:', error);
+      return [];
+    }
+  },
+  
+  getBySubcategorySlug: async (subcategorySlug, params = {}) => {
+    try {
+      const cleanParams = {
+        isActive: true,
+        status: 'active',
+        ...params
+      };
+      
+      // Filter out undefined/null/empty values
+      Object.keys(cleanParams).forEach(key => {
+        if (cleanParams[key] === undefined || cleanParams[key] === null || cleanParams[key] === '') {
+          delete cleanParams[key];
+        }
+      });
+      
+      const queryString = new URLSearchParams(cleanParams).toString();
+      const response = await axiosInstance.get(`/api/services/subcategory/slug/${encodeURIComponent(subcategorySlug)}${queryString ? '?' + queryString : ''}`);
+      
+      if (response.data && response.data.success) {
+        return response.data.data || [];
+      }
+      
+      return response.data || [];
+      
+    } catch (error) {
+      console.error('Error fetching services by subcategory slug:', error);
+      return [];
+    }
+  },
+  
   
   getMyServices: async (filters = {}) => {
   try {
@@ -140,42 +221,64 @@ getAll: async (filters = {}) => {
     
     const queryString = new URLSearchParams(cleanFilters).toString();
     
-    // DEBUG: Log the URL
-    console.log('Fetching serivces with filters:',cleanFilters);
+    console.log('Fetching my services with filters:', cleanFilters);
+    console.log('URL: /api/services/my-services' + (queryString ? '?' + queryString : ''));
     
     const response = await axiosInstance.get(`/api/services/my-services${queryString ? '?' + queryString : ''}`);
     
     console.log('Response status:', response.status);
-    console.log('Response data:', response.data);
+    console.log('Response data structure:', {
+      success: response.data?.success,
+      hasData: !!response.data?.data,
+      dataType: typeof response.data?.data,
+      isArray: Array.isArray(response.data?.data),
+      message: response.data?.message
+    });
     
-    if (response.data && response.data.success) {
+    if (response.data) {
       return {
-        success: true,
+        success: response.data.success !== false,
         data: response.data.data || [],
-        pagination: response.data.pagination || null
+        pagination: response.data.pagination || {
+          page: filters.page || 1,
+          limit: filters.limit || 20,
+          total: (response.data.data || []).length,
+          totalPages: Math.ceil((response.data.data || []).length / (filters.limit || 20))
+        },
+        message: response.data.message,
+        ...response.data
       };
     }
     
-    return response.data || { success: false, data: [] };
+    return {
+      success: false,
+      data: [],
+      pagination: {
+        page: filters.page || 1,
+        limit: filters.limit || 20,
+        total: 0,
+        totalPages: 0
+      },
+      message: 'No data received'
+    };
     
   } catch (error) {
     console.error('Error fetching my services:', error);
-    console.error('Error response:', error.response);
+    console.error('Error response:', error.response?.data);
     
     let errorMessage = 'Failed to fetch your services';
     if (error.response) {
       if (error.response.status === 401) {
         errorMessage = 'Please login to view your services';
       } else if (error.response.status === 404) {
-        // This indicates route not found
-        errorMessage = 'Services endpoint not found. Please contact support.';
+        errorMessage = 'Services endpoint not found';
       } else {
         errorMessage = error.response.data?.message || errorMessage;
       }
     }
     
     throw new Error(errorMessage);
-  }
+  };
 },
 getAllActive: async (params = {}) => {
     try {
@@ -250,19 +353,48 @@ getByCategory: async (categoryIdentifier, params = {}) => {
 },
   create: async (serviceData, files = null) => {
   try {
-    let response;
+    console.log('Creating service with data:', serviceData);
     
-    // If files is FormData (already contains all data)
+    let formData;
+    
     if (files instanceof FormData) {
-      response = await axiosInstance.post('/api/services', files, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      // If files is already FormData, use it
+      formData = files;
     } else {
-      // If no files, just send JSON
-      response = await axiosInstance.post('/api/services', serviceData);
+      // Create new FormData
+      formData = new FormData();
+      
+      // Append service data as JSON
+      formData.append('data', JSON.stringify(serviceData));
+      
+      // Append thumbnail if provided
+      if (serviceData.thumbnailFile) {
+        formData.append('thumbnail', serviceData.thumbnailFile);
+        delete serviceData.thumbnailFile;
+      }
+      
+      // Append images if provided
+      if (serviceData.imageFiles && Array.isArray(serviceData.imageFiles)) {
+        serviceData.imageFiles.forEach(file => {
+          formData.append('images', file);
+        });
+        delete serviceData.imageFiles;
+      }
     }
+    
+    // Debug: Log FormData contents
+    console.log('FormData entries:');
+    for (let pair of (formData?.entries() || [])) {
+      console.log(pair[0], pair[1]);
+    }
+    
+    const response = await axiosInstance.post('/api/services', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    console.log('Create service response:', response.data);
     
     if (response.data && response.data.success) {
       return {
@@ -277,16 +409,23 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     return response.data;
       
   } catch (error) {
+    console.error('Create service error:', error);
     let errorMessage = 'Failed to create service';
     
     if (error.response) {
       const { data, status } = error.response;
       
       if (status === 400) {
-        if (data.code === 'CATEGORY_NOT_FOUND') {
+        if (data.code === 'CATEGORY_REQUIRED') {
+          errorMessage = 'Please select a category.';
+        } else if (data.code === 'SUBCATEGORY_REQUIRED') {
+          errorMessage = 'Please select a subcategory.';
+        } else if (data.code === 'THUMBNAIL_REQUIRED') {
+          errorMessage = 'Please upload a thumbnail image.';
+        } else if (data.code === 'CATEGORY_NOT_FOUND') {
           errorMessage = 'Invalid category selected.';
         } else if (data.code === 'SUBCATEGORY_NOT_FOUND') {
-          errorMessage = 'Invalid subcategory selected.';
+          errorMessage = 'Invalid subcategory selected or subcategory does not belong to the category.';
         } else if (data.errors) {
           const validationErrors = data.errors.map(err => err.message).join(', ');
           errorMessage = `Validation failed: ${validationErrors}`;
@@ -303,6 +442,26 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     throw new Error(errorMessage);
   }
 },
+  
+  // Add method to get admin services
+  getAdminServices: async (filters = {}) => {
+    try {
+      const cleanFilters = {};
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          cleanFilters[key] = filters[key];
+        }
+      });
+      
+      const queryString = new URLSearchParams(cleanFilters).toString();
+      const response = await axiosInstance.get(`/api/services/admin/services${queryString ? '?' + queryString : ''}`);
+      
+      return response.data || { success: false, data: [] };
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to fetch admin services');
+    }
+  },
   
   update: async (id, updateData, files = null) => {
     try {

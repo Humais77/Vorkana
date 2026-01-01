@@ -41,13 +41,15 @@ import {
   AlertTriangle,
   FileWarning,
   ShieldCheck,
-  Timer
+  Timer,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 // Import Zustand stores and TanStack Query hooks
 import { useAuthStore } from '../../store/useAuthStore';
-import { useService } from '../../hooks/useServices';
+import { useService ,useDeleteService } from '../../hooks/useServices';
 import { SeoWrapper } from '../../components/SeoWrapper';
 
 // Helper functions
@@ -205,7 +207,10 @@ const ServiceDetails = () => {
   const [activeImage, setActiveImage] = useState(0);
   const [viewCount, setViewCount] = useState(0);
   const [imageViewMode, setImageViewMode] = useState('thumbnail');
-
+const [showDeleteModal, setShowDeleteModal] = useState(false);
+const [isDeleting, setIsDeleting] = useState(false);
+const [deleteStatus, setDeleteStatus] = useState(null);
+const deleteServiceMutation = useDeleteService();
   
 
   // Helper functions
@@ -264,6 +269,91 @@ const ServiceDetails = () => {
       minimumFractionDigits: 0,
     }).format(price);
   };
+const handleDeleteClick = () => {
+  setShowDeleteModal(true);
+};
+
+const handleConfirmDelete = async () => {
+  if (!service || !user) {
+    toast.error('You must be logged in to delete services');
+    return;
+  }
+
+  // Check if user is owner or admin
+  const isOwner = service.createdBy?._id === user._id;
+  const isAdmin = user.role === 'admin';
+
+  if (!isOwner && !isAdmin) {
+    toast.error('You can only delete your own services');
+    return;
+  }
+
+  setIsDeleting(true);
+  
+  try {
+    await deleteServiceMutation.mutateAsync({
+      id: service._id,
+      options: {
+        permanent: false // Soft delete by default
+      }
+    });
+
+    setDeleteStatus('success');
+    toast.success('Service deleted successfully');
+    
+    // Redirect after delay
+    setTimeout(() => {
+      navigate('/profile?tab=services');
+    }, 2000);
+  } catch (error) {
+    setDeleteStatus('error');
+    toast.error(error.message || 'Failed to delete service');
+    setIsDeleting(false);
+  }
+};
+
+const handlePermanentDelete = async () => {
+  if (!user || user.role !== 'admin') {
+    toast.error('Only admins can permanently delete services');
+    return;
+  }
+
+  if (!confirm('⚠️ Warning: This will permanently delete the service. This action cannot be undone. Are you sure?')) {
+    return;
+  }
+
+  setIsDeleting(true);
+  
+  try {
+    await deleteServiceMutation.mutateAsync({
+      id: service._id,
+      options: {
+        permanent: true,
+        force: true
+      }
+    });
+
+    toast.success('Service permanently deleted');
+    navigate('/admin/services');
+  } catch (error) {
+    toast.error(error.message || 'Failed to permanently delete service');
+    setIsDeleting(false);
+  }
+};
+
+const handleRestoreService = async () => {
+  try {
+    // You'll need to add a restore API endpoint
+    const response = await servicesAPI.restore(service._id);
+    if (response.success) {
+      toast.success('Service restored successfully');
+      refetch();
+      setDeleteStatus(null);
+    }
+  } catch (error) {
+    toast.error('Failed to restore service');
+  }
+};
 
   const renderStars = (rating) => {
     if (!rating) rating = 0;
@@ -614,6 +704,67 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
               </button>
             </div>
           </div>
+          {showDeleteModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl max-w-md w-full p-6">
+      <div className="text-center">
+        <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Service</h3>
+        <p className="text-gray-600 mb-6">
+          Are you sure you want to delete "{service.title}"? 
+          {user?.role === 'admin' ? (
+            <span className="block mt-2 text-sm text-red-600">
+              Admin: You can choose between soft delete (reversible) or permanent delete.
+            </span>
+          ) : (
+            <span className="block mt-2 text-sm text-gray-500">
+              This will deactivate your service but you can restore it later.
+            </span>
+          )}
+        </p>
+        
+        <div className="flex flex-col gap-3">
+          {deleteStatus === 'success' ? (
+            <div className="text-center">
+              <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
+              <p className="text-green-600 font-medium">Service deleted successfully!</p>
+              <p className="text-gray-500 text-sm mt-2">Redirecting to your services...</p>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Service'}
+              </button>
+              
+              {user?.role === 'admin' && (
+                <button
+                  onClick={handlePermanentDelete}
+                  disabled={isDeleting}
+                  className="w-full px-4 py-3 bg-red-800 text-white rounded-lg hover:bg-red-900 disabled:opacity-50 font-medium text-sm"
+                >
+                  {isDeleting ? 'Deleting...' : 'Permanent Delete (Admin Only)'}
+                </button>
+              )}
+              
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -670,6 +821,24 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     >
                       <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
                     </button>
+                    {(user?.role === 'admin' || service.createdBy?._id === user?._id) && (
+    <>
+      <Link
+        to={`/edit-service/${service._id}`}
+        className="p-3 hover:bg-gray-50 rounded-xl transition-colors text-emerald-600"
+        aria-label="Edit service"
+      >
+        <Edit className="h-6 w-6" />
+      </Link>
+      <button
+        onClick={handleDeleteClick}
+        className="p-3 hover:bg-gray-50 rounded-xl transition-colors text-red-600"
+        aria-label="Delete service"
+      >
+        <Trash2 className="h-6 w-6" />
+      </button>
+    </>
+  )}
                   </div>
                 </div>
 
