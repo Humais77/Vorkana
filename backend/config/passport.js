@@ -3,9 +3,6 @@ const passport = require("passport");
 const User = require("../models/user.model.js");
 const jwt = require("jsonwebtoken");
 
-console.log("GOOGLE CLIENT:", process.env.GOOGLE_CLIENT_ID);
-console.log("GOOGLE SECRET:", process.env.GOOGLE_CLIENT_SECRET);
-
 // For JWT-based authentication, we don't need passport sessions
 passport.serializeUser((user, done) => {
   done(null, user);
