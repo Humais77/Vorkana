@@ -74,7 +74,7 @@ const AffiliatesPage = () => {
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-8 mb-8">
               <h3 className="font-semibold text-xl text-blue-800 mb-4">Ready to Start Earning?</h3>
               <p className="text-blue-700 mb-6">
-                Join thousands of affiliates who are already earning with Vorkana
+                Join thousands of affiliates who are already earning with Vorkanna
               </p>
               <button className="px-8 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-lg hover:shadow-xl">
                 Apply Now

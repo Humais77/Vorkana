@@ -352,14 +352,14 @@ const ServiceListingPage = () => {
   // SEO
   const seoTitle = useMemo(() => {
     const categoryName = getCurrentCategoryName();
-    const baseTitle = "Browse Freelance Services | Vorkana Marketplace";
+    const baseTitle = "Browse Freelance Services | Vorkanna Marketplace";
     
     if (debouncedSearchTerm && categoryName) {
-      return `${debouncedSearchTerm} - ${categoryName} Services | Vorkana`;
+      return `${debouncedSearchTerm} - ${categoryName} Services | Vorkanna`;
     } else if (debouncedSearchTerm) {
-      return `Search: ${debouncedSearchTerm} | Freelance Services | Vorkana`;
+      return `Search: ${debouncedSearchTerm} | Freelance Services | Vorkanna`;
     } else if (categoryName) {
-      return `${categoryName} Services - Professional Freelancers | Vorkana`;
+      return `${categoryName} Services - Professional Freelancers | Vorkanna`;
     }
     
     return baseTitle;

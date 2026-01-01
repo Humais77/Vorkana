@@ -168,7 +168,7 @@ const SubcategoryDetailPage = () => {
 
   return (
     <SeoWrapper
-      title={`${subcategory.name} Services - ${category.name} | Vorkana`}
+      title={`${subcategory.name} Services - ${category.name} | Vorkanna`}
       description={subcategory.description || `Professional ${subcategory.name.toLowerCase()} services`}
       keywords={[subcategory.name, category.name, 'services']}
       canonical={`/categories/${categoryId}/${subcategorySlug}`}

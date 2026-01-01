@@ -182,12 +182,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
                 <img
                   src={Logo2}
-                  alt="Vorkana Logo"
+                  alt="Vorkanna Logo"
                   className="h-8 lg:h-10 w-auto"
                   loading="eager"
                 />
                 <span className="text-xl lg:text-2xl font-black text-black">
-                  Vorkana
+                  Vorkanna
                 </span>
               </Link>
             </div>
@@ -207,12 +207,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               <Link to="/" className="flex items-center shrink-0 gap-1" onClick={closeAllDropdowns}>
                 <img
                   src={Logo2}
-                  alt="Vorkana Logo"
+                  alt="Vorkanna Logo"
                   className="h-8 w-auto"
                   loading="eager"
                 />
                 <span className="text-xl font-black text-black">
-                  Vorkana
+                  Vorkanna
                 </span>
               </Link>
             </div>
@@ -437,8 +437,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-1">
-                        <img src={Logo} alt="Vorkana" className="h-7 w-auto" loading="eager" />
-                        <span className="text-2xl font-black text-black">Vorkana</span>
+                        <img src={Logo} alt="Vorkanna" className="h-7 w-auto" loading="eager" />
+                        <span className="text-2xl font-black text-black">Vorkanna</span>
                       </div>
                       <button
                         onClick={() => setMobileMenuOpen(false)}

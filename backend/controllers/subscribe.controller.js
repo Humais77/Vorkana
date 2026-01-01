@@ -254,7 +254,7 @@ const unsubscribe = async (req, res) => {
     try {
       await EmailService.sendEmail(
         subscriber.email,
-        'Unsubscribed from Vorkana Newsletter',
+        'Unsubscribed from Vorkanna Newsletter',
         'unsubscribe-confirm',
         {
           name: 'Subscriber',

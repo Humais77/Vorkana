@@ -77,7 +77,7 @@ const PopularCategoriesSection = () => {
   };
 
   return (
-    <section className="py-6 px-4 bg-white">
+    <section className="py-10 px-4 bg-white">
       <div className="max-w-7xl mx-auto">
         {/* Header - Left Aligned */}
         <div className="text-left mb-6">

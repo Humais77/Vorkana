@@ -249,7 +249,7 @@ const ResetPassword = () => {
       >
         <div className="flex items-center justify-center mb-8">
           <Shield className="w-10 h-10 text-emerald-600 mr-2" />
-          <span className="text-2xl font-bold text-gray-900">Vorkana</span>
+          <span className="text-2xl font-bold text-gray-900">Vorkanna</span>
         </div>
 
         <div className="text-center mb-8">

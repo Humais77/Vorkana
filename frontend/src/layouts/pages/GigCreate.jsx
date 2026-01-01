@@ -50,8 +50,8 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 const gigCreationStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Create a Gig on Vorkana",
-  "description": "Post your project and find qualified freelancers on Vorkana. Create a detailed gig with our step-by-step form to get matched with top talent.",
+  "name": "Create a Gig on Vorkanna",
+  "description": "Post your project and find qualified freelancers on Vorkanna. Create a detailed gig with our step-by-step form to get matched with top talent.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/create-gig` : '/create-gig',
   "breadcrumb": {
     "@type": "BreadcrumbList",
@@ -844,8 +844,8 @@ const validateStep = useCallback((step) => {
 
   return (
     <SeoWrapper
-      title="Create a Gig on Vorkana | Find Freelancers for Your Project"
-      description="Post your project and find qualified freelancers on Vorkana. Create a detailed gig with our step-by-step form to get matched with top talent. Free to post, pay only when you hire."
+      title="Create a Gig on Vorkanna | Find Freelancers for Your Project"
+      description="Post your project and find qualified freelancers on Vorkanna. Create a detailed gig with our step-by-step form to get matched with top talent. Free to post, pay only when you hire."
       keywords="create gig, post project, find freelancers, hire freelancers, freelance work, project posting, gig creation, online marketplace"
       canonical={`${window.location.origin}/create-gig`}
       structuredData={gigCreationStructuredData}

@@ -177,7 +177,7 @@ const SearchResults = () => {
   if (isError) {
     return (
       <SeoWrapper
-        title="Search Error | Vorkana"
+        title="Search Error | Vorkanna"
         description="There was an error loading search results."
         canonical="/search"
       >
@@ -206,15 +206,15 @@ const SearchResults = () => {
 
   // Generate SEO data
   const getSeoTitle = () => {
-    if (!query) return "Search Services | Vorkana Marketplace";
-    return `${totalResults} Results for "${query}" - Find Services | Vorkana`;
+    if (!query) return "Search Services | Vorkanna Marketplace";
+    return `${totalResults} Results for "${query}" - Find Services | Vorkanna`;
   };
 
   const getSeoDescription = () => {
     if (totalResults === 0) {
-      return `Search results for "${query}". Browse professional freelance services on Vorkana marketplace.`;
+      return `Search results for "${query}". Browse professional freelance services on Vorkanna marketplace.`;
     }
-    return `Find ${formatNumber(totalResults)}+ professional services for "${query}" on Vorkana. Browse top-rated freelancers, competitive prices, and fast delivery times.`;
+    return `Find ${formatNumber(totalResults)}+ professional services for "${query}" on Vorkanna. Browse top-rated freelancers, competitive prices, and fast delivery times.`;
   };
 
   const getSeoKeywords = () => {

@@ -17,8 +17,8 @@ const generateAdminToken = (userId) => {
     { 
       id: userId,
       type: 'admin',
-      aud: 'vorkana-admin',
-      iss: 'vorkana'
+      aud: 'Vorkanna-admin',
+      iss: 'Vorkanna'
     },
     process.env.JWT_ADMIN_SECRET || process.env.JWT_SECRET,
     {
@@ -33,8 +33,8 @@ const generateToken = (id) => {
     process.env.JWT_SECRET, 
     {
       expiresIn: '7d',
-      issuer: 'vorkana',
-      audience: 'vorkana-web'
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
     }
   );
 };
@@ -45,8 +45,8 @@ const generateRefreshToken = (id) => {
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: '30d',
-      issuer: 'vorkana',
-      audience: 'vorkana-web'
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
     }
   );
 };

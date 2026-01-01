@@ -56,8 +56,8 @@ import { SeoWrapper } from '../../components/SeoWrapper';
 const getServiceCreationStructuredData = () => ({
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Create a Service on Vorkana",
-  "description": "List your freelance services and start earning on Vorkana. Create a detailed service listing with our step-by-step form to attract clients worldwide.",
+  "name": "Create a Service on Vorkanna",
+  "description": "List your freelance services and start earning on Vorkanna. Create a detailed service listing with our step-by-step form to attract clients worldwide.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/create-service` : '/create-service',
   "breadcrumb": {
     "@type": "BreadcrumbList",
@@ -2108,8 +2108,8 @@ useEffect(() => {
 
   return (
     <SeoWrapper
-      title="Create a Service on Vorkana | List Your Freelance Skills"
-      description="List your freelance services and start earning on Vorkana. Create a detailed service listing with our step-by-step form to attract clients worldwide."
+      title="Create a Service on Vorkanna | List Your Freelance Skills"
+      description="List your freelance services and start earning on Vorkanna. Create a detailed service listing with our step-by-step form to attract clients worldwide."
       keywords="create freelance service, list services, sell skills online, freelance marketplace, service creation, gig setup, service listing"
       canonical={`${window.location.origin}/create-service`}
       structuredData={structuredData}

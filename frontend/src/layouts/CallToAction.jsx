@@ -28,7 +28,7 @@ const CallToAction = ({ onSignupClick }) => {
             onClick={handleClick}
             className="inline-block bg-white text-gray-900 font-medium px-8 py-3 rounded-md shadow hover:bg-gray-100 transition"
           >
-            {isAuthenticated ? "Explore Services" : "Join Vorkana"}
+            {isAuthenticated ? "Explore Services" : "Join Vorkanna"}
           </button>
         </div>
       </div>

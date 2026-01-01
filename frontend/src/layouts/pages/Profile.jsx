@@ -608,7 +608,7 @@ const Profile = () => {
 
   return (
     <SeoWrapper
-      title={`${user?.name}'s Profile | Vorkana Freelancer`}
+      title={`${user?.name}'s Profile | Vorkanna Freelancer`}
       description={`View ${user?.name}'s professional profile. ${formData.occupation ? `${formData.occupation} ` : ''}${formData.bio ? formData.bio.substring(0, 150) + '...' : 'Complete your profile to showcase your skills.'}`}
       canonical="/profile"
     >

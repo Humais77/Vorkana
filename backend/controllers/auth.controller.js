@@ -31,8 +31,8 @@ const generateToken = (id) => {
     process.env.JWT_SECRET, 
     {
       expiresIn: '7d',
-      issuer: 'vorkana',
-      audience: 'vorkana-web'
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
     }
   );
 };
@@ -43,8 +43,8 @@ const generateRefreshToken = (id) => {
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: '30d',
-      issuer: 'vorkana',
-      audience: 'vorkana-web'
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
     }
   );
 };
@@ -1648,7 +1648,7 @@ const verifyEmailRedirect = async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Invalid Token - Vorkana</title>
+          <title>Invalid Token - Vorkanna</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
             body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
@@ -1675,7 +1675,7 @@ const verifyEmailRedirect = async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Invalid Token - Vorkana</title>
+          <title>Invalid Token - Vorkanna</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
             body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
@@ -1729,7 +1729,7 @@ const verifyEmailRedirect = async (req, res) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Email Verified - Vorkana</title>
+        <title>Email Verified - Vorkanna</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           body {
@@ -1819,7 +1819,7 @@ const verifyEmailRedirect = async (req, res) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Error - Vorkana</title>
+        <title>Error - Vorkanna</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           body { 
@@ -1892,7 +1892,7 @@ const resetPasswordRedirect = async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Invalid Reset Link - Vorkana</title>
+          <title>Invalid Reset Link - Vorkanna</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="refresh" content="3;url=${process.env.FRONTEND_URL}/forgot-password">
           <style>
@@ -1978,7 +1978,7 @@ const resetPasswordRedirect = async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Expired Reset Link - Vorkana</title>
+          <title>Expired Reset Link - Vorkanna</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="refresh" content="3;url=${process.env.FRONTEND_URL}/forgot-password">
           <style>
@@ -2069,7 +2069,7 @@ const resetPasswordRedirect = async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Link Expired - Vorkana</title>
+          <title>Link Expired - Vorkanna</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="refresh" content="5;url=${process.env.FRONTEND_URL}/forgot-password">
           <style>
@@ -2163,7 +2163,7 @@ const resetPasswordRedirect = async (req, res) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Reset Password - Vorkana</title>
+        <title>Reset Password - Vorkanna</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           body {
@@ -2248,7 +2248,7 @@ const resetPasswordRedirect = async (req, res) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Error - Vorkana</title>
+        <title>Error - Vorkanna</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           body { 

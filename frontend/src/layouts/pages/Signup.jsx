@@ -22,8 +22,8 @@ import { SeoWrapper } from "../../components/SeoWrapper";
 const signupStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Sign Up for Vorkana | Create Your Account",
-  "description": "Create your Vorkana account today. Join our global marketplace with over 100 service categories. Connect with talent and businesses worldwide.",
+  "name": "Sign Up for Vorkanna | Create Your Account",
+  "description": "Create your Vorkanna account today. Join our global marketplace with over 100 service categories. Connect with talent and businesses worldwide.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/signup` : '/signup',
   "breadcrumb": {
     "@type": "BreadcrumbList",
@@ -45,14 +45,14 @@ const signupStructuredData = {
   "potentialAction": {
     "@type": "CreateAction",
     "name": "Create Account",
-    "description": "Create a new Vorkana account to start offering or finding services"
+    "description": "Create a new Vorkanna account to start offering or finding services"
   }
 };
 
 const organizationStructuredData = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  "name": "Vorkana",
+  "name": "Vorkanna",
   "url": typeof window !== 'undefined' ? window.location.origin : '/',
   "logo": `${window.location.origin}/logo.png`,
   "description": "Global marketplace connecting talent with businesses across 100+ service categories"
@@ -388,7 +388,7 @@ const Signup = () => {
           <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
             I agree to the{" "}
             <Link to="/terms" className="text-emerald-600 hover:text-emerald-700">
-              Vorkana Terms of Service
+              Vorkanna Terms of Service
             </Link>{" "}
             and{" "}
             <Link to="/privacy" className="text-emerald-600 hover:text-emerald-700">
@@ -401,7 +401,7 @@ const Signup = () => {
           type="submit"
           disabled={loading || registerMutation.isPending || isSubmitting}
           className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base mt-4"
-          aria-label={isSubmitting ? "Creating account..." : "Create your Vorkana account"}
+          aria-label={isSubmitting ? "Creating account..." : "Create your Vorkanna account"}
         >
           {registerMutation.isPending || isSubmitting ? (
             <>
@@ -439,9 +439,9 @@ const Signup = () => {
       />
       
       <SeoWrapper
-        title="Sign Up for Vorkana | Create Your Account"
-        description="Create your Vorkana account today. Join our global marketplace with over 100 service categories. Connect with talent and businesses worldwide."
-        keywords="sign up, register, create account, Vorkana, freelance, services, marketplace, work, talent, join"
+        title="Sign Up for Vorkanna | Create Your Account"
+        description="Create your Vorkanna account today. Join our global marketplace with over 100 service categories. Connect with talent and businesses worldwide."
+        keywords="sign up, register, create account, Vorkanna, freelance, services, marketplace, work, talent, join"
         canonical={typeof window !== 'undefined' ? `${window.location.origin}/signup` : '/signup'}
         structuredData={signupStructuredData}
       >
@@ -458,7 +458,7 @@ const Signup = () => {
                 className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
                 style={{ backgroundImage: `url(${auth_modal_bg})` }}
                 role="complementary"
-                aria-label="Benefits of joining Vorkana"
+                aria-label="Benefits of joining Vorkanna"
               >
                 <div className="flex-1">
                   <h1 className="text-3xl font-bold mt-2 mb-4">
@@ -511,7 +511,7 @@ const Signup = () => {
                     <p className="text-center text-gray-600 text-sm">
                       By joining, you agree to the{" "}
                       <Link to="/terms" className="text-emerald-600 hover:text-emerald-700">
-                        Vorkana Terms of Service
+                        Vorkanna Terms of Service
                       </Link>{" "}
                       and{" "}
                       <Link to="/privacy" className="text-emerald-600 hover:text-emerald-700">
@@ -519,7 +519,7 @@ const Signup = () => {
                       </Link>.
                     </p>
                     <p className="text-center text-gray-500 text-sm mt-2">
-                      © {new Date().getFullYear()} Vorkana. All rights reserved.
+                      © {new Date().getFullYear()} Vorkanna. All rights reserved.
                     </p>
                   </footer>
                 </div>

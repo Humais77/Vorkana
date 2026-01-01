@@ -17,8 +17,8 @@ import { SeoWrapper } from "../../components/SeoWrapper";
 const signinStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Sign In to Vorkana | Access Your Account",
-  "description": "Sign in to your Vorkana account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide.",
+  "name": "Sign In to Vorkanna | Access Your Account",
+  "description": "Sign in to your Vorkanna account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/signin` : '/signin',
   "breadcrumb": {
     "@type": "BreadcrumbList",
@@ -318,9 +318,9 @@ const Signin = () => {
 
   return (
     <SeoWrapper
-      title="Sign In to Vorkana | Access Your Account"
-      description="Sign in to your Vorkana account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide."
-      keywords="sign in, login, Vorkana, freelance, services, marketplace, work, talent, account"
+      title="Sign In to Vorkanna | Access Your Account"
+      description="Sign in to your Vorkanna account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide."
+      keywords="sign in, login, Vorkanna, freelance, services, marketplace, work, talent, account"
       canonical={typeof window !== 'undefined' ? `${window.location.origin}/signin` : '/signin'}
       structuredData={signinStructuredData}
     >
@@ -337,7 +337,7 @@ const Signin = () => {
               className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
               style={{ backgroundImage: `url(${auth_modal_bg})` }}
               role="complementary"
-              aria-label="Benefits of joining Vorkana"
+              aria-label="Benefits of joining Vorkanna"
             >
               <div className="flex-1">
                 <h1 className="text-3xl font-bold mt-2 mb-4">
@@ -372,7 +372,7 @@ const Signin = () => {
                         to="/signup"
                         className="text-emerald-600 hover:text-emerald-700 font-medium"
                         disabled={isSubmitting}
-                        aria-label="Create a new account on Vorkana"
+                        aria-label="Create a new account on Vorkanna"
                       >
                         Join here
                       </Link>
@@ -390,7 +390,7 @@ const Signin = () => {
                   <p className="text-center text-gray-600 text-sm">
                     By signing in, you agree to the{" "}
                     <Link to="/terms" className="text-emerald-600 hover:text-emerald-700">
-                      Vorkana Terms of Service
+                      Vorkanna Terms of Service
                     </Link>{" "}
                     and{" "}
                     <Link to="/privacy" className="text-emerald-600 hover:text-emerald-700">
@@ -398,7 +398,7 @@ const Signin = () => {
                     </Link>.
                   </p>
                   <p className="text-center text-gray-500 text-sm mt-2">
-                    © {new Date().getFullYear()} Vorkana. All rights reserved.
+                    © {new Date().getFullYear()} Vorkanna. All rights reserved.
                   </p>
                 </footer>
               </div>

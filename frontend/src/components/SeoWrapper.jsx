@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 
 export const SeoWrapper = ({
   children,
-  title = 'Vorkana Marketplace',
+  title = 'Vorkanna Marketplace',
   description = 'Global marketplace connecting freelancers with clients. Find gigs, hire talent, and grow your freelance career.',
   keywords = 'freelance, marketplace, gigs, services, freelancers, clients',
   canonical,
@@ -15,7 +15,7 @@ export const SeoWrapper = ({
   ogType = 'website',
   ogUrl,
   twitterCard = 'summary_large_image',
-  twitterSite = '@vorkana',
+  twitterSite = '@Vorkanna',
   robots = 'index, follow',
   lang = 'en',
   alternateLanguages = [], // [{ href: string, hreflang: string }]
@@ -29,10 +29,10 @@ export const SeoWrapper = ({
 
   // Memoize the full title to prevent unnecessary recalculations
   const fullTitle = useMemo(() => {
-    if (title.includes('Vorkana') || title.includes('|')) {
+    if (title.includes('Vorkanna') || title.includes('|')) {
       return title;
     }
-    return `${title} | Vorkana`;
+    return `${title} | Vorkanna`;
   }, [title]);
 
   // Memoize other derived values
@@ -122,7 +122,7 @@ export const SeoWrapper = ({
       { property: 'og:type', content: ogType },
       { property: 'og:url', content: finalOgUrl },
       { property: 'og:image', content: finalOgImage },
-      { property: 'og:site_name', content: 'Vorkana' },
+      { property: 'og:site_name', content: 'Vorkanna' },
     ];
 
     ogTags.forEach(tag => updateOrCreate('meta', tag));
@@ -206,7 +206,7 @@ export const SeoWrapper = ({
     const websiteSchema = {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      "name": "Vorkana",
+      "name": "Vorkanna",
       "url": baseUrl,
       "description": "Global marketplace connecting freelancers with clients",
       "potentialAction": {

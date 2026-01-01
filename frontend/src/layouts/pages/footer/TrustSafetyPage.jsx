@@ -24,7 +24,7 @@ const TrustSafetyPage = () => {
             <span className="text-xs uppercase tracking-widest font-bold">Platform Governance</span>
           </div>
           <h1 className="text-4xl font-bold tracking-tight mb-8 text-black">
-            The Vorkana Integrity Protocol
+            The Vorkanna Integrity Protocol
           </h1>
           <p className="text-lg text-zinc-500 max-w-2xl leading-relaxed">
             Our marketplace is governed by strict protocols designed to protect 
@@ -143,7 +143,7 @@ const TrustSafetyPage = () => {
             </div>
           </div>
           <div className="flex justify-between items-center pt-10 border-t border-zinc-100">
-             <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-[0.2em]">Vorkana International © 2024</p>
+             <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-[0.2em]">Vorkanna International © 2024</p>
              <Link to="/" className="text-xs font-bold uppercase tracking-widest border-b border-black pb-1">Home</Link>
           </div>
         </footer>

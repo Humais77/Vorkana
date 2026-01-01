@@ -139,12 +139,12 @@ const PublicProfile = () => {
   
   // SEO data
   const seoData = useMemo(() => ({
-    title: `${profile?.name || 'User'} - Professional Profile | Vorkana`,
-    description: profile?.bio?.substring(0, 155) || `View ${profile?.name || 'this professional'}'s profile on Vorkana`,
+    title: `${profile?.name || 'User'} - Professional Profile | Vorkanna`,
+    description: profile?.bio?.substring(0, 155) || `View ${profile?.name || 'this professional'}'s profile on Vorkanna`,
     canonical: `/profile/${userId}`,
     openGraph: {
       title: `${profile?.name || 'User'} Profile`,
-      description: profile?.bio?.substring(0, 200) || 'Professional profile on Vorkana',
+      description: profile?.bio?.substring(0, 200) || 'Professional profile on Vorkanna',
       type: 'profile',
       image: profile?.picture
     }
@@ -299,7 +299,7 @@ const PublicProfile = () => {
           } : undefined,
           "alumniOf": profile.education,
           "knowsLanguage": profile.languages,
-          "memberOf": "Vorkana",
+          "memberOf": "Vorkanna",
           "sameAs": [
             ...(profile.linkedin ? [profile.linkedin] : []),
             ...(profile.github ? [profile.github] : []),
@@ -762,7 +762,7 @@ const PublicProfile = () => {
                     <Shield className="w-5 h-5 text-emerald-500 flex-shrink-0" />
                     <div>
                       <h4 className="font-medium text-gray-900">Secure Account</h4>
-                      <p className="text-sm text-gray-600">Protected by Vorkana</p>
+                      <p className="text-sm text-gray-600">Protected by Vorkanna</p>
                     </div>
                   </div>
                   

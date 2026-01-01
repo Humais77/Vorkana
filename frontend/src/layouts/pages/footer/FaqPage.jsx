@@ -20,7 +20,7 @@ const FaqPage = () => {
         },
         {
           q: 'Can I manage multiple professional identities?',
-          a: 'No. To maintain platform integrity, Vorkana enforces a one-account-per-individual policy. Secondary accounts are subject to immediate deactivation.'
+          a: 'No. To maintain platform integrity, Vorkanna enforces a one-account-per-individual policy. Secondary accounts are subject to immediate deactivation.'
         }
       ]
     },
@@ -82,7 +82,7 @@ const FaqPage = () => {
           </h1>
           <p className="text-lg text-zinc-800 max-w-xl font-medium leading-relaxed">
             Standard operating procedures and frequently asked questions regarding 
-            the Vorkana marketplace infrastructure.
+            the Vorkanna marketplace infrastructure.
           </p>
         </section>
 

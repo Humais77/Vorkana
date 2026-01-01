@@ -41,7 +41,7 @@ const HelpCenterPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
               <div className="md:col-span-4 py-2 border-l-2 border-black pl-6">
                 <h3 className="font-black text-sm uppercase tracking-widest mb-2">The Auth Modal</h3>
-                <p className="text-xs text-zinc-500 leading-relaxed uppercase">Accessing the Vorkana ecosystem.</p>
+                <p className="text-xs text-zinc-500 leading-relaxed uppercase">Accessing the Vorkanna ecosystem.</p>
               </div>
               <div className="md:col-span-8 text-zinc-600 leading-relaxed italic">
                 To begin, select "Login" or "Join" from the navigation. A secure 

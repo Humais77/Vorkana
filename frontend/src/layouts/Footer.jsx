@@ -473,7 +473,7 @@ const Footer = () => {
               >
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Email</div>
                 <div className="text-gray-700 text-base md:text-lg hover:text-black transition-colors">
-                  support@vorkana.com
+                  support@Vorkanna.com
                 </div>
               </motion.div>
               <motion.div
@@ -488,7 +488,7 @@ const Footer = () => {
                 transition={{ type: "spring", stiffness: 300 }}
               >
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Newsletter Support</div>
-                <div className="text-gray-700 text-sm">Need help with your subscription? Email: newsletter@vorkana.com</div>
+                <div className="text-gray-700 text-sm">Need help with your subscription? Email: newsletter@Vorkanna.com</div>
               </motion.div>
             </div>
           </motion.div>
@@ -519,12 +519,12 @@ const Footer = () => {
                 campaign="logo_footer"
                 className="text-3xl md:text-5xl font-black text-black hover:text-gray-800 transition-colors duration-200 tracking-tighter"
               >
-                VORKANA
+                Vorkanna
               </TrackedLink>
             </div>
             
             <p className="text-gray-500 text-xs md:text-sm">
-              © {new Date().getFullYear()} Vorkana. All rights reserved.
+              © {new Date().getFullYear()} Vorkanna. All rights reserved.
             </p>
             <p className="text-gray-400 text-xs mt-1">
               <TrackedLink 

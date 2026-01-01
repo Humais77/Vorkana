@@ -12,8 +12,8 @@ export const generateCreateServiceStructuredData = (categories = [], currentStep
   return {
     "@context": "https://schema.org",
     "@type": "HowTo",
-    "name": "How to Create a Service on Vorkana",
-    "description": "Step-by-step guide to create and publish your freelance service on Vorkana marketplace",
+    "name": "How to Create a Service on Vorkanna",
+    "description": "Step-by-step guide to create and publish your freelance service on Vorkanna marketplace",
     "totalTime": "PT15M",
     "estimatedCost": {
       "@type": "MonetaryAmount",
@@ -40,7 +40,7 @@ export const generateCreateServiceStructuredData = (categories = [], currentStep
     "tool": [
       {
         "@type": "HowToTool",
-        "name": "Vorkana Platform"
+        "name": "Vorkanna Platform"
       }
     ],
     "step": [
@@ -115,7 +115,7 @@ export const generateGigListingStructuredData = (gigs = [], searchQuery = '', to
   return {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    "name": searchQuery ? `Vorkana Gigs - ${searchQuery}` : "Vorkana Gigs - Find & Post Freelance Projects",
+    "name": searchQuery ? `Vorkanna Gigs - ${searchQuery}` : "Vorkanna Gigs - Find & Post Freelance Projects",
     "description": "Browse thousands of active freelance gigs and projects. Find work opportunities across 100+ categories including Programming, Design, Writing, Marketing and more.",
     "url": currentUrl,
     "numberOfItems": totalGigs,
@@ -180,7 +180,7 @@ export const generateProfileStructuredData = (user) => {
     "name": user.name,
     "url": `${websiteUrl}/profile`,
     "image": user.picture || `${websiteUrl}/default-avatar.png`,
-    "description": user.bio?.substring(0, 200) || `${user.name}'s profile on Vorkana`,
+    "description": user.bio?.substring(0, 200) || `${user.name}'s profile on Vorkanna`,
     "email": user.email,
     "jobTitle": user.occupation || "Freelancer",
     "knowsAbout": user.languages?.join(', ') || '',
@@ -231,7 +231,7 @@ export const generateWebsiteStructuredData = () => {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    "name": "Vorkana",
+    "name": "Vorkanna",
     "url": websiteUrl,
     "description": "Global marketplace connecting freelancers with clients. Find gigs, hire talent, and grow your freelance career.",
     "potentialAction": {
@@ -241,12 +241,12 @@ export const generateWebsiteStructuredData = () => {
     },
     "publisher": {
       "@type": "Organization",
-      "name": "Vorkana",
+      "name": "Vorkanna",
       "logo": `${websiteUrl}/logo.png`,
       "contactPoint": {
         "@type": "ContactPoint",
         "contactType": "customer support",
-        "email": "support@vorkana.com",
+        "email": "support@Vorkanna.com",
         "url": `${websiteUrl}/contact`
       }
     }
@@ -263,9 +263,9 @@ export const generateServiceCreationStructuredData = (formData = {}, categories 
   return {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "Create Service | Vorkana",
+    "name": "Create Service | Vorkanna",
     "url": currentUrl,
-    "description": "Create and publish your freelance service on Vorkana. Reach clients worldwide with your skills.",
+    "description": "Create and publish your freelance service on Vorkanna. Reach clients worldwide with your skills.",
     "breadcrumb": {
       "@type": "BreadcrumbList",
       "itemListElement": [

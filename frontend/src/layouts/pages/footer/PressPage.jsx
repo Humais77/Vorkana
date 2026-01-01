@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 const PressPage = () => {
   const pressReleases = [
     {
-      title: 'Vorkana Launches New Platform',
+      title: 'Vorkanna Launches New Platform',
       date: 'December 15, 2023',
       summary: 'Announcing the launch of our revamped freelancing platform'
     },
@@ -40,7 +40,7 @@ const PressPage = () => {
                 For media inquiries, interviews, or press information, please contact:
               </p>
               <div className="space-y-2">
-                <p className="text-blue-800"><strong>Email:</strong> press@vorkana.com</p>
+                <p className="text-blue-800"><strong>Email:</strong> press@Vorkanna.com</p>
                 <p className="text-blue-800"><strong>Phone:</strong> +1 (555) 123-4567 ext. 101</p>
               </div>
             </div>

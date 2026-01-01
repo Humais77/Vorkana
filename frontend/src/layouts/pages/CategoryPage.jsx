@@ -164,7 +164,7 @@ const CategoryPage = () => {
 
   return (
     <SeoWrapper
-      title={`${category.name} Services | Vorkana`}
+      title={`${category.name} Services | Vorkanna`}
       description={category.description || `Find professional ${category.name.toLowerCase()} services`}
       keywords={[category.name, 'services', 'freelance', 'professionals']}
       canonical={`/categories/${categoryId}`}

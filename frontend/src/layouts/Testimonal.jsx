@@ -4,48 +4,33 @@ import { ChevronLeft, ChevronRight, Star } from 'lucide-react';
 const testimonials = [
   {
     id: 1,
-    name: "Alice Johnson",
-    role: "Startup Founder",
-    review: "This platform helped me find amazing freelancers quickly. The quality of work exceeded my expectations. Highly recommend!",
-    avatar: "https://i.pravatar.cc/150?img=1",
-    rating: 5,
-    company: "TechInnovate Inc."
+    name: "Alex Johnson",
+    review: "The quality of work exceeded our expectations. Highly professional service with excellent communication throughout the project.",
+    rating: 5
   },
   {
     id: 2,
-    name: "Mark Davis",
-    role: "Digital Marketer",
-    review: "I got high-quality work at a reasonable price. The communication was seamless and delivery was always on time. Exceptional experience!",
-    avatar: "https://i.pravatar.cc/150?img=2",
-    rating: 5,
-    company: "GrowthMasters"
+    name: "Sarah Williams",
+    review: "Outstanding results delivered on time. The team demonstrated exceptional expertise and attention to detail in every aspect.",
+    rating: 5
   },
   {
     id: 3,
-    name: "Sophie Lee",
-    role: "Entrepreneur",
-    review: "The freelancers are very professional and responsive. It saved me so much time in the hiring process. Loved it!",
-    avatar: "https://i.pravatar.cc/150?img=3",
-    rating: 5,
-    company: "Creative Solutions"
+    name: "Michael Brown",
+    review: "Professional service that consistently delivers high-quality results. Efficient communication and smooth project management.",
+    rating: 5
   },
   {
     id: 4,
-    name: "Robert Chen",
-    role: "Product Manager",
-    review: "Outstanding platform! Found the perfect developer for our project in just 2 days. Will definitely use again.",
-    avatar: "https://i.pravatar.cc/150?img=4",
-    rating: 4,
-    company: "ProductLabs"
+    name: "Emily Davis",
+    review: "Reliable and professional with excellent technical skills. Projects are completed with precision and delivered ahead of schedule.",
+    rating: 5
   },
   {
     id: 5,
-    name: "Maria Garcia",
-    role: "Content Strategist",
-    review: "As a freelancer, this platform helped me find consistent, high-paying projects. The interface is intuitive.",
-    avatar: "https://i.pravatar.cc/150?img=5",
-    rating: 5,
-    company: "ContentWorks"
+    name: "James Wilson",
+    review: "Exceptional quality and professionalism. The team provides innovative solutions that significantly improve our operations.",
+    rating: 5
   }
 ];
 
@@ -87,10 +72,9 @@ const Testimonials = () => {
   };
 
   return (
-    <section className="py-20 bg-gradient-to-b">
+    <section className="py-20 bg-gradient-to-b from-gray-50 to-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             Trusted by Thousands
           </h2>
@@ -106,33 +90,18 @@ const Testimonials = () => {
               key={testimonial.id}
               className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 group hover:-translate-y-1"
             >
-              <div className="flex items-center mb-6">
-                <img
-                  src={testimonial.avatar}
-                  alt={testimonial.name}
-                  className="w-14 h-14 rounded-full ring-4 ring-blue-50 group-hover:ring-blue-100 transition-all"
-                  loading="lazy"
-                />
-                <div className="ml-4">
-                  <h4 className="font-bold text-gray-900">{testimonial.name}</h4>
-                  <p className="text-sm text-gray-600">{testimonial.role}</p>
-                  <p className="text-xs text-gray-500">{testimonial.company}</p>
+              <div className="flex flex-col items-center mb-6">
+                
+                <div className="text-center">
+                  <h4 className="font-bold text-gray-900 text-lg">{testimonial.name}</h4>
                 </div>
               </div>
               
               <RatingStars rating={testimonial.rating} />
               
-              <p className="text-gray-700 italic mb-6 leading-relaxed">
+              <p className="text-gray-700 italic mb-6 leading-relaxed text-center">
                 "{testimonial.review}"
               </p>
-              
-              <div className="pt-6 border-t border-gray-100">
-                <div className="flex items-center text-gray-400">
-                  <div className="flex-1">
-                    <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
-                  </div>
-                </div>
-              </div>
             </div>
           ))}
         </div>
@@ -147,22 +116,20 @@ const Testimonials = () => {
                   className="w-full flex-shrink-0 px-2"
                 >
                   <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
-                    <div className="flex items-center mb-4">
-                      <img
-                        src={testimonial.avatar}
-                        alt={testimonial.name}
-                        className="w-12 h-12 rounded-full"
-                        loading="lazy"
-                      />
-                      <div className="ml-3">
+                    <div className="flex flex-col items-center mb-4">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 flex items-center justify-center mb-3">
+                        <span className="text-lg font-bold text-gray-700">
+                          {testimonial.name.charAt(0)}
+                        </span>
+                      </div>
+                      <div className="text-center">
                         <h4 className="font-bold text-gray-900">{testimonial.name}</h4>
-                        <p className="text-sm text-gray-600">{testimonial.role}</p>
                       </div>
                     </div>
                     
                     <RatingStars rating={testimonial.rating} />
                     
-                    <p className="text-gray-700 italic text-sm">
+                    <p className="text-gray-700 italic text-sm text-center">
                       "{testimonial.review}"
                     </p>
                   </div>
@@ -200,7 +167,6 @@ const Testimonials = () => {
             ))}
           </div>
         </div>
-
       </div>
     </section>
   );

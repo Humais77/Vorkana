@@ -177,8 +177,8 @@ const GigDetails = () => {
   // Handle share with enhanced sharing
   const handleShare = async () => {
     const url = window.location.href;
-    const title = gig?.title || "Check out this gig on Vorkana";
-    const text = gig?.description?.substring(0, 150) || "Great opportunity on Vorkana marketplace";
+    const title = gig?.title || "Check out this gig on Vorkanna";
+    const text = gig?.description?.substring(0, 150) || "Great opportunity on Vorkanna marketplace";
     
     if (navigator.share && navigator.canShare) {
       try {
@@ -439,8 +439,8 @@ const GigDetails = () => {
   
   // SEO meta data
   const seoMetaData = {
-    title: `${gig.title} | ${gig.projectCategory?.name || 'Service'} on Vorkana`,
-    description: gig.description?.substring(0, 160) || `Find ${gig.title} services on Vorkana. Budget: ${formatPrice(gig.budget)}, Timeline: ${gig.timeline}.`,
+    title: `${gig.title} | ${gig.projectCategory?.name || 'Service'} on Vorkanna`,
+    description: gig.description?.substring(0, 160) || `Find ${gig.title} services on Vorkanna. Budget: ${formatPrice(gig.budget)}, Timeline: ${gig.timeline}.`,
     keywords: `${gig.title}, ${gig.projectCategory?.name || ''}, freelance, gig, service, hire, ${gig.skillsRequired?.join(', ') || ''}`,
     canonical: typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`,
     openGraph: {
@@ -449,7 +449,7 @@ const GigDetails = () => {
       type: 'website',
       url: typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`,
       image: thumbnailImage.url,
-      site_name: 'Vorkana'
+      site_name: 'Vorkanna'
     },
     twitter: {
       card: 'summary_large_image',

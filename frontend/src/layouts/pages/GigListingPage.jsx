@@ -373,14 +373,14 @@ const GigListingsPage = () => {
   // Memoized SEO functions
   const seoTitle = useMemo(() => {
     const categoryName = getCurrentCategoryName();
-    const baseTitle = "Find Freelance Gigs & Projects | Vorkana Marketplace";
+    const baseTitle = "Find Freelance Gigs & Projects | Vorkanna Marketplace";
     
     if (debouncedSearchTerm && categoryName) {
-      return `${debouncedSearchTerm} - ${categoryName} Gigs | Vorkana`;
+      return `${debouncedSearchTerm} - ${categoryName} Gigs | Vorkanna`;
     } else if (debouncedSearchTerm) {
-      return `Search: ${debouncedSearchTerm} | Freelance Gigs & Projects | Vorkana`;
+      return `Search: ${debouncedSearchTerm} | Freelance Gigs & Projects | Vorkanna`;
     } else if (categoryName) {
-      return `${categoryName} Gigs - Find Freelance Projects | Vorkana`;
+      return `${categoryName} Gigs - Find Freelance Projects | Vorkanna`;
     }
     
     return baseTitle;

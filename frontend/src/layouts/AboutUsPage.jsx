@@ -14,7 +14,7 @@ const AboutUsPage = () => {
     
     if (source && typeof window !== 'undefined' && window.gtag) {
       window.gtag('event', 'page_view', {
-        page_title: 'About Vorkana',
+        page_title: 'About Vorkanna',
         page_location: window.location.href,
         source: source,
         medium: medium || 'website',
@@ -33,7 +33,7 @@ const AboutUsPage = () => {
             Established 2023
           </span>
           <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 italic">
-            VORKANA.
+            Vorkanna.
           </h1>
           <p className="text-2xl md:text-3xl text-zinc-600 max-w-3xl leading-tight">
             The bridge between elite talent and global visionaries. 
@@ -46,7 +46,7 @@ const AboutUsPage = () => {
           <div>
             <h2 className="text-xs uppercase tracking-widest font-bold mb-6 text-zinc-400">Our Mission</h2>
             <p className="text-xl leading-relaxed text-zinc-800">
-              At Vorkana, we believe that excellence has no borders. We are architecting 
+              At Vorkanna, we believe that excellence has no borders. We are architecting 
               a platform where the world’s most skilled professionals can connect 
               with companies that value quality over quantity.
             </p>
@@ -92,10 +92,10 @@ const AboutUsPage = () => {
 
         {/* Story Section - Minimalist */}
         <div className="max-w-3xl mb-32">
-          <h2 className="text-3xl font-bold mb-10">The Vorkana Story</h2>
+          <h2 className="text-3xl font-bold mb-10">The Vorkanna Story</h2>
           <div className="space-y-6 text-lg text-zinc-700 leading-relaxed">
             <p>
-              Vorkana was born from a simple observation: the digital economy was 
+              Vorkanna was born from a simple observation: the digital economy was 
               becoming a race to the bottom. In 2023, our founders set out to reverse 
               that trend.
             </p>

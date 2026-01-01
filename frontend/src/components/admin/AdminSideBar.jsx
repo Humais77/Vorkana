@@ -52,7 +52,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
             <div className="h-8 w-8 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg"></div>
             <div>
               <h1 className="font-bold text-lg text-gray-900">Admin Panel</h1>
-              <p className="text-xs text-gray-500">Vorkana</p>
+              <p className="text-xs text-gray-500">Vorkanna</p>
             </div>
           </div>
           {/* Close button for mobile sidebar */}

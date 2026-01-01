@@ -580,7 +580,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
               required
             />
             <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
-              I agree to the Vorkana Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
+              I agree to the Vorkanna Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
             </label>
           </div>
 
@@ -729,10 +729,10 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
                 {/* Footer Terms */}
                 <div className="pt-6 border-t border-gray-200 mt-6">
                   <p className="text-center text-gray-600 text-sm">
-                    By joining, you agree to the Vorkana Terms of Service and Privacy Policy.
+                    By joining, you agree to the Vorkanna Terms of Service and Privacy Policy.
                   </p>
                   <p className="text-center text-gray-500 text-sm mt-2">
-                    © {new Date().getFullYear()} Vorkana. All rights reserved.
+                    © {new Date().getFullYear()} Vorkanna. All rights reserved.
                   </p>
                 </div>
               </div>

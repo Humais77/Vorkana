@@ -47,9 +47,9 @@ const SettingsPage = () => {
 
   const defaultSettings = {
     general: {
-      siteName: 'Vorkana Platform',
+      siteName: 'Vorkanna Platform',
       siteDescription: 'Freelance Services Marketplace',
-      siteUrl: 'https://vorkana.com',
+      siteUrl: 'https://Vorkanna.com',
       timezone: 'UTC',
       language: 'en',
       currency: 'USD',
@@ -70,8 +70,8 @@ const SettingsPage = () => {
       smtpPort: 587,
       smtpUser: '',
       smtpPass: '',
-      fromEmail: 'noreply@vorkana.com',
-      fromName: 'Vorkana Platform',
+      fromEmail: 'noreply@Vorkanna.com',
+      fromName: 'Vorkanna Platform',
       emailDriver: 'smtp'
     },
     users: {

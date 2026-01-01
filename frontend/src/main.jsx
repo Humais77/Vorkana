@@ -40,7 +40,7 @@ const addBaseMetaTags = () => {
     orgScript.text = JSON.stringify({
       "@context": "https://schema.org",
       "@type": "Organization",
-      "name": "Vorkana",
+      "name": "Vorkanna",
       "url": typeof window !== 'undefined' ? window.location.origin : '/',
       "logo": `${window.location.origin}/logo.png`,
       "description": "Global marketplace connecting talent with businesses across 100+ service categories"

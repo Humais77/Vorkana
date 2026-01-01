@@ -153,7 +153,7 @@ const ForgotPassword = () => {
           <p className="text-center text-gray-500 text-sm">
             Need help?{' '}
             <a
-              href="mailto:support@vorkana.com"
+              href="mailto:support@Vorkanna.com"
               className="text-emerald-600 hover:text-emerald-700 font-medium"
             >
               Contact Support

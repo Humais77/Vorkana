@@ -176,7 +176,7 @@ const EmailAuthForm = memo(({
           required
         />
         <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
-          I agree to the Vorkana Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
+          I agree to the Vorkanna Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
         </label>
       </div>
 

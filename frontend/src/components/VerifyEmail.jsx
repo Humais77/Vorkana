@@ -235,7 +235,7 @@ const VerifyEmail = () => {
       >
         <div className="flex items-center justify-center mb-8">
           <Shield className="w-10 h-10 text-emerald-600 mr-2" />
-          <span className="text-2xl font-bold text-gray-900">Vorkana</span>
+          <span className="text-2xl font-bold text-gray-900">Vorkanna</span>
         </div>
 
         {renderContent()}
@@ -244,7 +244,7 @@ const VerifyEmail = () => {
           <p className="text-center text-gray-500 text-sm">
             Need help?{' '}
             <a
-              href="mailto:support@vorkana.com"
+              href="mailto:support@Vorkanna.com"
               className="text-emerald-600 hover:text-emerald-700 font-medium"
             >
               Contact Support

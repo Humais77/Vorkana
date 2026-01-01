@@ -211,8 +211,8 @@ const ServiceDetails = () => {
   // Helper functions
   const handleShare = async () => {
     const url = window.location.href;
-    const title = service?.title || "Check out this service on Vorkana";
-    const text = service?.description?.substring(0, 150) || "Professional service on Vorkana marketplace";
+    const title = service?.title || "Check out this service on Vorkanna";
+    const text = service?.description?.substring(0, 150) || "Professional service on Vorkanna marketplace";
     
     if (navigator.share && navigator.canShare) {
       try {
@@ -474,8 +474,8 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
 
   // SEO meta data
   const seoMetaData = {
-    title: `${service?.title || 'Service'} | ${categoryName} on Vorkana`,
-    description: service?.description?.substring(0, 160) || `Professional ${categoryName} service on Vorkana. Starting at ${formatPrice(service?.price, service?.currency)}, Delivery: ${service?.deliveryTime} ${service?.deliveryTimeUnit}.`,
+    title: `${service?.title || 'Service'} | ${categoryName} on Vorkanna`,
+    description: service?.description?.substring(0, 160) || `Professional ${categoryName} service on Vorkanna. Starting at ${formatPrice(service?.price, service?.currency)}, Delivery: ${service?.deliveryTime} ${service?.deliveryTimeUnit}.`,
     keywords: `${service?.title || ''}, ${categoryName}, freelance, service, ${service?.tags?.join(', ') || ''}`,
     canonical: typeof window !== 'undefined' ? `${window.location.origin}/services/${id}` : `/services/${id}`,
     openGraph: {
@@ -484,7 +484,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
       type: 'website',
       url: typeof window !== 'undefined' ? `${window.location.origin}/services/${id}` : `/services/${id}`,
       image: thumbnailImage?.url,
-      site_name: 'Vorkana'
+      site_name: 'Vorkanna'
     },
     twitter: {
       card: 'summary_large_image',

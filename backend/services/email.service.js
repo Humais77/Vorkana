@@ -62,15 +62,15 @@ class EmailService {
   async sendEmail(to, subject, template, context) {
     try {
       const mailOptions = {
-        from: `"Vorkana" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+        from: `"Vorkanna" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
         to,
         subject,
         template,
         context: {
           ...context,
           year: new Date().getFullYear(),
-          appName: 'Vorkana',
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@vorkana.com',
+          appName: 'Vorkanna',
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@Vorkanna.com',
           frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
           currentYear: new Date().getFullYear()
         }
@@ -118,7 +118,7 @@ class EmailService {
     
     return this.sendEmail(
       user.email,
-      'Verify Your Email Address - Vorkana',
+      'Verify Your Email Address - Vorkanna',
       'verify-email',
       {
         name: user.name,
@@ -135,7 +135,7 @@ class EmailService {
   
   return this.sendEmail(
     user.email,
-    'Password Reset Request - Vorkana',
+    'Password Reset Request - Vorkanna',
     'password-reset',
     {
       name: user.name,
@@ -149,7 +149,7 @@ class EmailService {
   async sendWelcomeEmail(user) {
     return this.sendEmail(
       user.email,
-      'Welcome to Vorkana! 🎉',
+      'Welcome to Vorkanna! 🎉',
       'welcome',
       {
         name: user.name,
@@ -165,7 +165,7 @@ class EmailService {
       'Security Alert: Your password has been changed',
     'password-changed',
       {
-        from: `"Vorkana Security" <security@vorkana.com>`,
+        from: `"Vorkanna Security" <security@Vorkanna.com>`,
         name: user.name,
         timestamp: new Date().toLocaleString(),
         ipAddress,
@@ -178,7 +178,7 @@ class EmailService {
   async sendEmailChangedEmail(user, oldEmail) {
     return this.sendEmail(
       user.email,
-      'Email Address Changed - Vorkana',
+      'Email Address Changed - Vorkanna',
       'email-changed',
       {
         name: user.name,
@@ -195,7 +195,7 @@ class EmailService {
     
     return this.sendEmail(
       user.email,
-      'Account Deactivated - Vorkana',
+      'Account Deactivated - Vorkanna',
       'account-deactivated',
       {
         name: user.name,
@@ -224,11 +224,11 @@ class EmailService {
   async sendTestEmail(to) {
     return this.sendEmail(
       to,
-      'Test Email from Vorkana',
+      'Test Email from Vorkanna',
       'test',
       {
         name: 'Test User',
-        message: 'This is a test email from Vorkana Email Service',
+        message: 'This is a test email from Vorkanna Email Service',
         timestamp: new Date().toLocaleString()
       }
     );
@@ -241,7 +241,7 @@ async sendVerificationEmail(email, name, token) {
     
     return this.sendEmail(
       email,
-      'Verify Your Email Address - Vorkana',
+      'Verify Your Email Address - Vorkanna',
       'verify-email',
       {
         name: name || 'User',
@@ -254,7 +254,7 @@ async sendVerificationEmail(email, name, token) {
 async sendSubscriptionVerificationEmail(email, verificationUrl) {
     return this.sendEmail(
       email,
-      'Verify Your Newsletter Subscription - Vorkana',
+      'Verify Your Newsletter Subscription - Vorkanna',
       'verify-email', // You can create a specific template or reuse existing
       {
         name: 'Subscriber',
@@ -267,11 +267,11 @@ async sendSubscriptionVerificationEmail(email, verificationUrl) {
   async sendWelcomeNewsletterEmail(email) {
     return this.sendEmail(
       email,
-      'Welcome to Vorkana Newsletter! 🎉',
+      'Welcome to Vorkanna Newsletter! 🎉',
       'welcome', // Reuse welcome template or create newsletter-welcome
       {
         name: 'Subscriber',
-        message: 'Thank you for subscribing to Vorkana newsletter!',
+        message: 'Thank you for subscribing to Vorkanna newsletter!',
         dashboardUrl: `${process.env.FRONTEND_URL}/dashboard`,
         buttonText: 'Browse Services'
       }
@@ -281,7 +281,7 @@ async sendSubscriptionVerificationEmail(email, verificationUrl) {
   async sendUnsubscribeConfirmationEmail(email, reason = 'No reason provided') {
     return this.sendEmail(
       email,
-      'Unsubscribed from Vorkana Newsletter',
+      'Unsubscribed from Vorkanna Newsletter',
       'unsubscribe-confirm',
       {
         name: 'Subscriber',
@@ -296,7 +296,7 @@ async sendSubscriptionVerificationEmail(email, verificationUrl) {
   async sendNewsletter(email, newsletterData) {
     return this.sendEmail(
       email,
-      newsletterData.subject || 'Vorkana Newsletter',
+      newsletterData.subject || 'Vorkanna Newsletter',
       'newsletter',
       {
         ...newsletterData,

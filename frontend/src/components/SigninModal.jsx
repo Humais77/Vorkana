@@ -301,7 +301,7 @@ const SigninModal = ({ onClose, onSwitchToSignup }) => {
 
                   <div className="pt-6 border-t border-gray-200">
                     <p className="text-center text-gray-600 text-sm">
-                      By joining, you agree to the Vorkana Terms of Service and to occasionally receive emails from us.
+                      By joining, you agree to the Vorkanna Terms of Service and to occasionally receive emails from us.
                       {" "}
                       <button className="text-emerald-600 hover:text-emerald-700 font-medium">
                         Please read our Privacy Policy

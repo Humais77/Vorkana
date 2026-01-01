@@ -155,7 +155,7 @@ router.get("/verified-status", (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Verification Status - Vorkana</title>
+      <title>Verification Status - Vorkanna</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <script>
         // Post message to parent window

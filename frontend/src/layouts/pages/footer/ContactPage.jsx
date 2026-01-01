@@ -123,7 +123,7 @@ const ContactPage = () => {
                 <Mail className="w-6 h-6 shrink-0 text-black" />
                 <div>
                   <h3 className="text-sm font-bold uppercase mb-1">Electronic Mail</h3>
-                  <p className="text-sm text-zinc-800 font-bold mb-1">support@vorkana.com</p>
+                  <p className="text-sm text-zinc-800 font-bold mb-1">support@Vorkanna.com</p>
                   <span className="text-[10px] text-black font-bold uppercase tracking-tighter">Response within 24 hours</span>
                 </div>
               </div>

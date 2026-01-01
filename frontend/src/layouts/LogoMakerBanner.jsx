@@ -16,7 +16,7 @@ const LogoMakerBanner = ({ onSignupClick }) => {
         {/* Left Side: Content */}
         <div className="w-full md:w-1/2 space-y-6 z-20">
           <div className="flex items-center gap-1">
-            <span className="font-bold text-3xl tracking-tighter text-gray-900">Vorkana</span>
+            <span className="font-bold text-3xl tracking-tighter text-gray-900">Vorkanna</span>
             <span className="text-3xl text-gray-800 font-light">creative services.</span>
           </div>
           
