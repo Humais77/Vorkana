@@ -142,7 +142,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// security(app);
+security(app);
 
 // ==================== RATE LIMITING ====================
 

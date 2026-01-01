@@ -5,7 +5,10 @@ const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 const cache = require('../utils/cache.js');
-
+const createDOMPurify = require('dompurify');
+const { JSDOM } = require('jsdom');
+const window = new JSDOM('').window;
+const DOMPurify = createDOMPurify(window);
 // Security: Request ID for tracking
 const crypto = require('crypto');
 
@@ -13,9 +16,96 @@ const generateRequestId = () => crypto.randomUUID();
 
 // Security: Input sanitization for categories
 const sanitizeCategoryInput = (data) => {
-  const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version'];
-  return sanitizeObject(data, skipKeys);
+  if (!data || typeof data !== 'object') return data;
+  
+  const sanitized = { ...data };
+  const skipKeys = ['parentCategory', 'createdBy', 'lastUpdatedBy', 'order', 'level', 'version', 'servicesCount', 'gigsCount', 'isActive', 'featured', 'popular'];
+  
+  Object.keys(sanitized).forEach(key => {
+    if (skipKeys.includes(key)) return;
+    
+    if (typeof sanitized[key] === 'string') {
+      // Remove all script tags and event handlers
+      sanitized[key] = sanitized[key]
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/javascript:/gi, '')
+        .replace(/data:/gi, '')
+        .replace(/vbscript:/gi, '')
+        .replace(/on\w+\s*=/gi, '')
+        .replace(/expression\s*\(/gi, '')
+        .replace(/url\s*\(/gi, '')
+        .replace(/@import/gi, '')
+        .trim();
+      
+      // Additional sanitization for specific fields
+      if (['name', 'slug'].includes(key)) {
+        // Remove all HTML tags for name and slug
+        sanitized[key] = sanitized[key].replace(/<[^>]*>/g, '');
+      } else if (['description', 'metaTitle', 'metaDescription'].includes(key)) {
+        // Allow limited safe HTML
+        sanitized[key] = sanitizeHtmlStrict(sanitized[key]);
+      }
+      
+      // Remove dangerous characters
+      const dangerousPatterns = [
+        /\$where/i,
+        /\$ne/i,
+        /\$nin/i,
+        /\$regex/i,
+        /select.*from/i,
+        /insert.*into/i,
+        /update.*set/i,
+        /delete.*from/i,
+        /union.*select/i,
+        /or.*=.*or/i,
+        /--/,
+        /;/,
+        /\/\*.*\*\//,
+        /eval\s*\(/i,
+        /document\./i,
+        /window\./i,
+        /alert\s*\(/i,
+        /confirm\s*\(/i,
+        /prompt\s*\(/i,
+        /\x00/, // null bytes
+        /\x1a/, // substitute character
+        /\x0d/, // carriage return
+        /\x0c/, // form feed
+        /\x0b/  // vertical tab
+      ];
+      
+      dangerousPatterns.forEach(pattern => {
+        sanitized[key] = sanitized[key].replace(pattern, '');
+      });
+    } else if (Array.isArray(sanitized[key]) && key === 'metaKeywords') {
+      // Sanitize each keyword in the array
+      sanitized[key] = sanitized[key].map(keyword => {
+        if (typeof keyword === 'string') {
+          return keyword
+            .replace(/<[^>]*>/g, '')
+            .replace(/javascript:/gi, '')
+            .replace(/on\w+\s*=/gi, '')
+            .trim();
+        }
+        return keyword;
+      }).filter(keyword => keyword && keyword.length > 0);
+    }
+  });
+  
+  return sanitized;
 };
+const sanitizeHtmlStrict = (html, options = {}) => {
+  if (!html || typeof html !== 'string') return html;
+  
+  const defaultOptions = {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'br', 'p', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+    ALLOWED_ATTR: ['class', 'style', 'href', 'target', 'rel'],
+    KEEP_CONTENT: false
+  };
+  
+  return DOMPurify.sanitize(html, { ...defaultOptions, ...options });
+};
+
 
 // Cache helper functions
 const generateCacheKey = (prefix, params) => {
@@ -279,7 +369,33 @@ const createCategory = async (req, res, next) => {
 
     const sanitizedData = sanitizeCategoryInput(req.body);
     
-    // Security: Check for circular parent reference
+    // Additional manual validation for XSS
+    const validateForXSS = (fieldName, value) => {
+      if (!value) return true;
+      
+      const xssPatterns = [
+        /<script/i,
+        /javascript:/i,
+        /on\w+\s*=/i,
+        /alert\s*\(/i,
+        /confirm\s*\(/i,
+        /prompt\s*\(/i
+      ];
+      
+      const hasXSS = xssPatterns.some(pattern => pattern.test(value));
+      if (hasXSS) {
+        throw new Error(`Field '${fieldName}' contains XSS attempt`);
+      }
+      return true;
+    };
+    
+    // Validate each field
+    if (sanitizedData.name) validateForXSS('name', sanitizedData.name);
+    if (sanitizedData.description) validateForXSS('description', sanitizedData.description);
+    if (sanitizedData.metaTitle) validateForXSS('metaTitle', sanitizedData.metaTitle);
+    if (sanitizedData.metaDescription) validateForXSS('metaDescription', sanitizedData.metaDescription);
+    
+    // Check for circular parent reference
     if (sanitizedData.parentCategory) {
       if (sanitizedData.parentCategory === req.body._id) {
         return res.status(400).json({
@@ -324,6 +440,16 @@ const createCategory = async (req, res, next) => {
       responseTime: `${responseTime}ms`
     });
   } catch (error) {
+    // Security: Handle XSS validation errors
+    if (error.message.includes('XSS attempt')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+        code: 'XSS_ATTEMPT_DETECTED',
+        requestId
+      });
+    }
+    
     // Security: Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(400).json({
@@ -350,6 +476,8 @@ const createCategory = async (req, res, next) => {
     next(error);
   }
 };
+
+// Also fix the updateCategory function similarly:
 
 // Get Categories with Advanced Security
 const getCategories = async (req, res, next) => {
@@ -1101,14 +1229,33 @@ const updateCategory = async (req, res, next) => {
       });
     }
 
-    // Log the incoming data for debugging
-    console.log('[UPDATE CATEGORY] Update data:', {
-      id,
-      body: req.body,
-      user: req.user._id
-    });
-
     const sanitizedData = sanitizeCategoryInput(req.body);
+    
+    // Validate for XSS in update as well
+    const validateForXSS = (fieldName, value) => {
+      if (!value) return true;
+      
+      const xssPatterns = [
+        /<script/i,
+        /javascript:/i,
+        /on\w+\s*=/i,
+        /alert\s*\(/i,
+        /confirm\s*\(/i,
+        /prompt\s*\(/i
+      ];
+      
+      const hasXSS = xssPatterns.some(pattern => pattern.test(value));
+      if (hasXSS) {
+        throw new Error(`Field '${fieldName}' contains XSS attempt`);
+      }
+      return true;
+    };
+    
+    // Validate each field
+    if (sanitizedData.name) validateForXSS('name', sanitizedData.name);
+    if (sanitizedData.description) validateForXSS('description', sanitizedData.description);
+    if (sanitizedData.metaTitle) validateForXSS('metaTitle', sanitizedData.metaTitle);
+    if (sanitizedData.metaDescription) validateForXSS('metaDescription', sanitizedData.metaDescription);
     
     // Security: Check for circular parent reference
     if (sanitizedData.parentCategory) {
@@ -1120,102 +1267,40 @@ const updateCategory = async (req, res, next) => {
           requestId
         });
       }
-      
-      // Check if parent exists and is active
-      const parentExists = await Category.findOne({
-        _id: sanitizedData.parentCategory,
-        isActive: true
-      });
-      
-      if (!parentExists) {
-        return res.status(400).json({
-          success: false,
-          message: 'Parent category not found or inactive',
-          code: 'PARENT_NOT_FOUND',
-          requestId
-        });
-      }
     }
-
-    // Security: Optimistic concurrency control with version
-    const currentVersion = sanitizedData.version;
-    delete sanitizedData.version;
-
-    const updateData = {
+    const category = await Category.create({
       ...sanitizedData,
-      lastUpdatedBy: req.user._id,
-      $inc: { version: 1 }
-    };
+      createdBy: req.user._id,
+      version: 1
+    });
 
-    // Security: Find and update with version check
-    const category = await Category.findOneAndUpdate(
-      { 
-        _id: id,
-        ...(currentVersion ? { version: currentVersion } : {})
-      },
-      updateData,
-      { 
-        new: true,
-        runValidators: true,
-        context: 'query'
-      }
-    ).populate('parentCategory', 'name slug');
-
-    if (!category) {
-      // Security: Handle version conflict
-      if (currentVersion) {
-        const currentDoc = await Category.findById(id);
-        return res.status(409).json({
-          success: false,
-          message: 'Category was modified by another user. Please refresh and try again.',
-          code: 'VERSION_CONFLICT',
-          currentVersion: currentDoc?.version,
-          requestId
-        });
-      }
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found',
-        code: 'CATEGORY_NOT_FOUND',
-        requestId
-      });
-    }
-
-    // Invalidate cache after update
+    // Invalidate cache after creating new category
     await invalidateCategoryCache();
-    await invalidateSpecificCategoryCache(id);
 
     // Security: Audit log
-    logAudit('UPDATE', 'CATEGORY', category._id, req.user._id, {
-      updatedFields: Object.keys(sanitizedData),
-      oldVersion: currentVersion || 1,
-      newVersion: category.version
+    logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
+      name: category.name,
+      parentCategory: category.parentCategory
     });
 
     // Security: Remove sensitive data
     const safeCategory = category.toObject();
     delete safeCategory.__v;
     delete safeCategory.createdBy;
-    delete safeCategory.lastUpdatedBy;
     delete safeCategory.deletedAt;
     delete safeCategory.deletedBy;
-    delete safeCategory.version;
 
     const responseTime = Date.now() - startTime;
     
-    res.json({
+    res.status(201).json({
       success: true,
       data: safeCategory,
-      message: 'Category updated successfully',
+      message: 'Category created successfully',
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
     });
-
   } catch (error) {
-    console.error('[UPDATE CATEGORY ERROR]', error);
-    console.error('[UPDATE CATEGORY ERROR DETAILS]', error.stack);
-    
     // Security: Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(400).json({
@@ -1226,7 +1311,7 @@ const updateCategory = async (req, res, next) => {
       });
     }
     
-    // Handle validation errors
+    // Security: Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -1238,31 +1323,11 @@ const updateCategory = async (req, res, next) => {
       });
     }
     
-    // Handle cast errors
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid data format',
-        code: 'CAST_ERROR',
-        requestId
-      });
-    }
-    
-    logAudit('ERROR', 'CATEGORY', 'UPDATE', req.user._id, { 
-      id: req.params.id, 
-      error: error.message 
-    });
-    
-    // Return a generic error
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update category',
-      code: 'UPDATE_ERROR',
-      requestId,
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    logAudit('ERROR', 'CATEGORY', 'CREATE', req.user?._id, { error: error.message });
+    next(error);
   }
 };
+
 
 // Delete Category with Security (Admin Only)
 const deleteCategory = async (req, res, next) => {
