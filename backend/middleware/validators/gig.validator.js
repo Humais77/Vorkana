@@ -10,17 +10,6 @@ const objectId = Joi.string().custom((value, helpers) => {
   'any.invalid': 'Invalid ID format'
 });
 
-const secureAttachment = Joi.string().pattern(
-  /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i
-).messages({
-  'string.pattern.base': 'Invalid attachment filename format'
-});
-
-const secureDocument = Joi.string().pattern(
-  /^\/uploads\/[a-f0-9-]{20,64}\.(pdf|doc|docx)$/i
-).messages({
-  'string.pattern.base': 'Invalid document filename format'
-});
 
 const cloudinaryImage = Joi.object({
   url: Joi.string().uri().required(),
@@ -132,11 +121,7 @@ const createSchema = Joi.object({
     }),
     
   thumbnail: thumbnailSchema.optional(),
-    
-  attachments: Joi.array().max(5).items(secureAttachment)
-    .messages({
-      'array.max': 'Cannot upload more than 5 attachments',
-    }),
+
     
   visibility: Joi.string().valid('public', 'private', 'invite_only').default('public')
     .messages({
@@ -159,14 +144,6 @@ const createSchema = Joi.object({
       'array.max': 'Cannot have more than 10 deliverables',
       'string.max': 'Deliverable cannot exceed 200 characters',
     }),
-    
-  files: Joi.array().max(10).items(secureAttachment)
-    .messages({
-      'array.max': 'Cannot upload more than 10 files',
-    }),
-    
-  requirementsDocument: secureDocument.optional(),
-    
 }).options({ 
   stripUnknown: true,
   abortEarly: false 
@@ -252,12 +229,6 @@ const updateSchema = Joi.object({
     }),
     
   thumbnail: thumbnailSchema,
-    
-  attachments: Joi.array().max(5).items(secureAttachment)
-    .messages({
-      'array.max': 'Cannot upload more than 5 attachments',
-    }),
-    
   status: Joi.string().valid('open', 'in_progress', 'assigned', 'completed', 'cancelled', 'closed')
     .messages({
       'any.only': 'Invalid status',
@@ -284,14 +255,7 @@ const updateSchema = Joi.object({
       'array.max': 'Cannot have more than 10 deliverables',
       'string.max': 'Deliverable cannot exceed 200 characters',
     }),
-    
-  files: Joi.array().max(10).items(secureAttachment)
-    .messages({
-      'array.max': 'Cannot upload more than 10 files',
-    }),
-    
-  requirementsDocument: secureDocument,
-    
+
 
   version: Joi.number().integer().min(1)
     .messages({
@@ -331,7 +295,6 @@ const querySchema = Joi.object({
   paymentStatus: Joi.string().valid('pending', 'partial', 'completed', 'refunded', 'disputed'),
   disputeStatus: Joi.string().valid('none', 'open', 'resolved', 'escalated'),
   hasImages: Joi.boolean(),
-  hasAttachments: Joi.boolean(),
   hasMilestones: Joi.boolean(),
   skillsRequired: Joi.string().max(500),
   createdAfter: Joi.date().iso(),

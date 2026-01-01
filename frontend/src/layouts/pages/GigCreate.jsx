@@ -155,8 +155,6 @@ const GigCreate = () => {
   } = useCreateGig();
 
   // Component states
-  const [attachments, setAttachments] = useState([]);
-  const [files, setFiles] = useState([]);
   const [uploadedImages, setUploadedImages] = useState([]);
   const [thumbnailFile, setThumbnailFile] = useState(null);
   const [errors, setErrors] = useState({});
@@ -455,79 +453,6 @@ const validateField = (fieldName, value) => {
     const { name, value } = e.target;
     setRegisterForm(prev => ({ ...prev, [name]: value }));
   };
-
-  const handleFileChange = useCallback((e, fileType = 'attachments') => {
-    const filesArray = Array.from(e.target.files);
-    const validFiles = [];
-    const newErrors = { ...errors };
-
-    for (const file of filesArray) {
-      const isValidType = [
-        'image/jpeg', 'image/jpg', 'image/png',
-        'application/pdf', 'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/zip', 'application/x-rar-compressed'
-      ].includes(file.type);
-
-      const isValidSize = file.size <= 10 * 1024 * 1024; // 10MB
-
-      if (!isValidType) {
-        newErrors[fileType] = `File ${file.name} has invalid type. Only JPG, PNG, PDF, DOC, ZIP, RAR are allowed.`;
-        toast.error(`Invalid file type: ${file.name}`);
-        continue;
-      }
-
-      if (!isValidSize) {
-        newErrors[fileType] = `File ${file.name} is too large. Maximum size is 10MB.`;
-        toast.error(`File too large: ${file.name}`);
-        continue;
-      }
-
-      // Start upload simulation
-      setUploadProgress(prev => ({ ...prev, [`${fileType}-${file.name}`]: 0 }));
-      validFiles.push(file);
-
-      // Simulate upload progress
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 20;
-        setUploadProgress(prev => ({ ...prev, [`${fileType}-${file.name}`]: progress }));
-        if (progress >= 100) {
-          clearInterval(interval);
-        }
-      }, 100);
-    }
-
-    setErrors(newErrors);
-
-    if (fileType === 'attachments') {
-      setAttachments(prev => [...prev, ...validFiles]);
-    } else if (fileType === 'files') {
-      setFiles(prev => [...prev, ...validFiles]);
-    }
-
-    e.target.value = '';
-  }, [errors]);
-
-  const removeFile = useCallback((index, fileType = 'attachments') => {
-    if (fileType === 'attachments') {
-      const fileToRemove = attachments[index];
-      setAttachments(prev => prev.filter((_, i) => i !== index));
-      setUploadProgress(prev => {
-        const newProgress = { ...prev };
-        delete newProgress[`attachments-${fileToRemove.name}`];
-        return newProgress;
-      });
-    } else if (fileType === 'files') {
-      const fileToRemove = files[index];
-      setFiles(prev => prev.filter((_, i) => i !== index));
-      setUploadProgress(prev => {
-        const newProgress = { ...prev };
-        delete newProgress[`files-${fileToRemove.name}`];
-        return newProgress;
-      });
-    }
-  }, [attachments, files]);
 
   const addSkill = useCallback(() => {
     if (skillsInput.trim() && formData.skillsRequired.length < 10) {
@@ -834,15 +759,6 @@ const validateStep = useCallback((step) => {
         formDataObj.append('images', image.file);
       });
 
-      // Append attachments
-      attachments.forEach((file) => {
-        formDataObj.append('attachments', file);
-      });
-
-      // Append other files
-      files.forEach((file) => {
-        formDataObj.append('files', file);
-      });
 
       console.log("=== FINAL FORM DATA BEING SENT ===");
       for (let [key, value] of formDataObj.entries()) {
@@ -871,7 +787,7 @@ const validateStep = useCallback((step) => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData, attachments, files, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig, subcategories]);
+  }, [formData, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig, subcategories]);
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
@@ -925,21 +841,6 @@ const validateStep = useCallback((step) => {
     }
   };
 
-  // Render upload progress for files
-  const renderFileProgress = (fileName, progress) => {
-    return (
-      <div className="flex items-center space-x-2">
-        {progress < 100 && (
-          <div className="w-16 md:w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${progress || 0}%` }}
-            />
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <SeoWrapper
@@ -992,10 +893,7 @@ const validateStep = useCallback((step) => {
                       <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
                       <span>Set a realistic budget for better matches</span>
                     </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
-                      <span>Add attachments for clarity</span>
-                    </li>
+                    
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
                       <span>Verification ensures secure collaboration</span>
@@ -1066,7 +964,7 @@ const validateStep = useCallback((step) => {
                     {activeStep === 1 && "Sign in and provide your basic information to get started."}
                     {activeStep === 2 && "Share your contact details so freelancers can reach you."}
                     {activeStep === 3 && "Define your project scope with budget and category."}
-                    {activeStep === 4 && "Add detailed project requirements and attachments."}
+                    {activeStep === 4 && "Add detailed project requirements."}
                     {activeStep === 5 && "Your gig is ready to be published! Review your information before submitting."}
                   </p>
                 </div>
@@ -1162,12 +1060,7 @@ const validateStep = useCallback((step) => {
                             <span className="font-medium">{formData.deliverables.length} added</span>
                           </li>
                         )}
-                        {activeStep >= 4 && (attachments.length > 0 || files.length > 0) && (
-                          <li className="flex justify-between">
-                            <span className="text-emerald-100">Files:</span>
-                            <span className="font-medium">{attachments.length + files.length} uploaded</span>
-                          </li>
-                        )}
+                        
                       </ul>
                     </div>
                   </div>
@@ -1907,7 +1800,6 @@ const validateStep = useCallback((step) => {
                                 className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                                 placeholder="e.g., 2 weeks, 1 month, ASAP"
                                 disabled={gigLoading}
-                                required
                                 aria-required="true"
                                 aria-describedby="timeline-help"
                               />
@@ -2196,133 +2088,7 @@ const validateStep = useCallback((step) => {
                               </p>
                             </div>
 
-                            {/* Attachments */}
-                            <div>
-                              <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
-                                <Upload className="mr-2" size={14} />
-                                Attachments (Optional)
-                              </label>
-                              <div className={`border-2 border-dashed border-gray-300 rounded-xl p-4 md:p-8 text-center transition-colors ${gigLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-emerald-400'}`}>
-                                <Upload className="w-8 h-8 md:w-12 md:h-12 text-gray-400 mx-auto mb-2 md:mb-4" />
-                                <p className="text-gray-600 text-sm md:text-base mb-2">
-                                  Drag & drop files or click to browse
-                                </p>
-                                <p className="text-xs md:text-sm text-gray-500 mb-4">
-                                  JPG, PNG, PDF, DOC, ZIP, RAR (Max 10MB each)
-                                </p>
-                                <input
-                                  type="file"
-                                  multiple
-                                  onChange={(e) => handleFileChange(e, 'attachments')}
-                                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip,.rar"
-                                  className="hidden"
-                                  id="attachments-upload"
-                                  disabled={gigLoading}
-                                  aria-describedby="attachments-help"
-                                />
-                                <label
-                                  htmlFor="attachments-upload"
-                                  className={`inline-block px-4 md:px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-                                >
-                                  Browse Files
-                                </label>
-                              </div>
-                              <p id="attachments-help" className="mt-2 text-xs text-gray-500">
-                                Add supporting files to help freelancers understand your project better
-                              </p>
 
-                              {attachments.length > 0 && (
-                                <div className="mt-4 space-y-3">
-                                  {attachments.map((file, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                      <div className="flex items-center min-w-0">
-                                        <FileText className="text-gray-500 mr-3 flex-shrink-0" size={18} />
-                                        <div className="min-w-0">
-                                          <p className="font-medium text-gray-800 truncate text-sm">{file.name}</p>
-                                          <p className="text-xs text-gray-500">
-                                            {(file.size / 1024 / 1024).toFixed(2)} MB
-                                          </p>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center space-x-2">
-                                        {renderFileProgress(file.name, uploadProgress[`attachments-${file.name}`] || 0)}
-                                        <button
-                                          type="button"
-                                          onClick={() => removeFile(index, 'attachments')}
-                                          className="p-1 hover:bg-gray-200 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                          disabled={gigLoading}
-                                          aria-label={`Remove ${file.name}`}
-                                        >
-                                          <X size={16} className="text-gray-500" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Additional Files */}
-                            <div>
-                              <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
-                                <FileCheck className="mr-2" size={14} />
-                                Additional Files (Optional)
-                              </label>
-                              <div className={`border-2 border-dashed border-gray-300 rounded-xl p-4 md:p-8 text-center transition-colors ${gigLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-emerald-400'}`}>
-                                <FileCheck className="w-8 h-8 md:w-12 md:h-12 text-gray-400 mx-auto mb-2 md:mb-4" />
-                                <p className="text-gray-600 text-sm md:text-base mb-2">
-                                  Add additional supporting files
-                                </p>
-                                <p className="text-xs md:text-sm text-gray-500 mb-4">
-                                  JPG, PNG, PDF, DOC, ZIP, RAR (Max 10MB each)
-                                </p>
-                                <input
-                                  type="file"
-                                  multiple
-                                  onChange={(e) => handleFileChange(e, 'files')}
-                                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip,.rar"
-                                  className="hidden"
-                                  id="files-upload"
-                                  disabled={gigLoading}
-                                />
-                                <label
-                                  htmlFor="files-upload"
-                                  className={`inline-block px-4 md:px-6 py-2 rounded-lg cursor-pointer transition-colors ${gigLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-                                >
-                                  Browse Files
-                                </label>
-                              </div>
-
-                              {files.length > 0 && (
-                                <div className="mt-4 space-y-3">
-                                  {files.map((file, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                      <div className="flex items-center min-w-0">
-                                        <FileText className="text-gray-500 mr-3 flex-shrink-0" size={18} />
-                                        <div className="min-w-0">
-                                          <p className="font-medium text-gray-800 truncate text-sm">{file.name}</p>
-                                          <p className="text-xs text-gray-500">
-                                            {(file.size / 1024 / 1024).toFixed(2)} MB
-                                          </p>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center space-x-2">
-                                        {renderFileProgress(file.name, uploadProgress[`files-${file.name}`] || 0)}
-                                        <button
-                                          type="button"
-                                          onClick={() => removeFile(index, 'files')}
-                                          className="p-1 hover:bg-gray-200 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                          disabled={gigLoading}
-                                          aria-label={`Remove ${file.name}`}
-                                        >
-                                          <X size={16} className="text-gray-500" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
                           </div>
                         )}
                       </div>

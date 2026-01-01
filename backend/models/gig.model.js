@@ -167,15 +167,6 @@ const gigSchema = new mongoose.Schema({
     format: String,
     uploadedAt: Date
   },
-  
-  attachments: [{
-    type: String,
-    trim: true,
-    validate: {
-      validator: (v) => /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..'),
-      message: 'Invalid attachment filename or path traversal detected',
-    },
-  }],
   status: {
     type: String,
     enum: ['open', 'in_progress', 'assigned', 'completed', 'cancelled', 'closed'],
@@ -255,11 +246,6 @@ const gigSchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
   },
-  bidderReview: {
-    type: String,
-    trim: true,
-    maxlength: [1000, 'Review cannot exceed 1000 characters'],
-  },
   disputeReason: {
     type: String,
     trim: true,
@@ -270,20 +256,6 @@ const gigSchema = new mongoose.Schema({
     enum: ['none', 'open', 'resolved', 'escalated'],
     default: 'none',
     index: true,
-  },
-  files: [{
-    type: String,
-    validate: {
-      validator: (v) => /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|pdf|doc|docx|zip|rar)$/i.test(v) && !v.includes('..'),
-      message: 'Invalid file filename or path traversal detected',
-    },
-  }],
-  requirementsDocument: {
-    type: String,
-    validate: {
-      validator: (v) => !v || (/^\/uploads\/[a-f0-9-]{20,64}\.(pdf|doc|docx)$/i.test(v) && !v.includes('..')),
-      message: 'Invalid requirements document filename or path traversal detected',
-    },
   },
   visibility: {
     type: String,
@@ -423,7 +395,7 @@ gigSchema.pre('save', async function () {
 
   // Sanitize text fields
   const fieldsToSanitize = ['title', 'fullName', 'oauthEmail', 'country', 'phone', 
-                           'description', 'timeline', 'clientReview', 'bidderReview', 'disputeReason'];
+                           'description', 'timeline', 'clientReview','disputeReason'];
   fieldsToSanitize.forEach(field => {
     if (this[field] && typeof this[field] === 'string') {
       this[field] = sanitizeText(this[field]);

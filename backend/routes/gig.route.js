@@ -135,8 +135,6 @@ const thumbnailUpload = multer({
 
 const handleMultipleFileFields = (req, res, next) => {
   upload.fields([
-    { name: 'attachments', maxCount: 5 },
-    { name: 'files', maxCount: 5 },
     { name: 'images', maxCount: 10 },
     { name: 'thumbnail', maxCount: 1 }
   ])(req, res, (err) => {

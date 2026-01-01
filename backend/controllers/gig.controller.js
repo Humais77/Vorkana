@@ -100,7 +100,6 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
     visibility,
     paymentStatus,
     disputeStatus,
-    hasAttachments,
     hasImages,
     hasMilestones,
     skillsRequired,
@@ -187,11 +186,7 @@ const buildSecureGigQuery = (queryParams, userRole, userId) => {
   if (visibility) filter.visibility = visibility;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (disputeStatus) filter.disputeStatus = disputeStatus;
-  
-  // Boolean existence filters
-  if (hasAttachments === true || hasAttachments === 'true') {
-    filter.attachments = { $exists: true, $ne: [] };
-  }
+
   
   if (hasImages === true || hasImages === 'true') {
     filter.images = { $exists: true, $ne: [] };
@@ -415,29 +410,6 @@ const createGig = async (req, res, next) => {
       }
     }
 
-    // Process uploaded files (attachments)
-    if (req.files && req.files.attachments) {
-      const attachments = req.files.attachments.map(file => {
-        const filePath = `/uploads/${file.filename}`;
-        return filePath;
-      });
-      
-      if (attachments.length > 0) {
-        gigData.attachments = attachments;
-      }
-    }
-    
-    // Process uploaded files (general files)
-    if (req.files && req.files.files) {
-      const files = req.files.files.map(file => {
-        const filePath = `/uploads/${file.filename}`;
-        return filePath;
-      });
-      
-      if (files.length > 0) {
-        gigData.files = files;
-      }
-    }
 
     const gig = await Gig.create(gigData);
 
@@ -525,7 +497,6 @@ const getGigs = async (req, res, next) => {
       visibility,
       paymentStatus,
       disputeStatus,
-      hasAttachments,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -572,7 +543,6 @@ const getGigs = async (req, res, next) => {
       visibility,
       paymentStatus,
       disputeStatus,
-      hasAttachments,
       hasMilestones,
       skillsRequired,
       createdAfter,
@@ -1313,20 +1283,6 @@ if (sanitizedData.subcategory && sanitizedData.subcategory !== (gig.subcategory?
           uploadedAt: newImages[0].uploadedAt
         };
       }
-    }
-
-    // Process uploaded files (attachments)
-    if (req.files && req.files.attachments) {
-      const existingAttachments = gig.attachments || [];
-      const newAttachments = req.files.attachments.map(file => `/uploads/${file.filename}`);
-      updateData.attachments = [...existingAttachments, ...newAttachments];
-    }
-    
-    // Process uploaded files (general files)
-    if (req.files && req.files.files) {
-      const existingFiles = gig.files || [];
-      const newFiles = req.files.files.map(file => `/uploads/${file.filename}`);
-      updateData.files = [...existingFiles, ...newFiles];
     }
 
     const updatedGig = await Gig.findOneAndUpdate(
@@ -2539,7 +2495,6 @@ const exportGigs = async (req, res, next) => {
       ].join('\n');
 
       res.header('Content-Type', 'text/csv');
-      res.header('Content-Disposition', `attachment; filename="gigs_${Date.now()}.csv"`);
       res.header('X-Request-ID', requestId);
       res.header('X-Export-Records', count);
       res.header('X-Export-Timestamp', new Date().toISOString());
