@@ -353,7 +353,6 @@ const SearchComponent = ({
             {/* No Results */}
             {localQuery.length >= 2 && !quickSearch.isLoading && displaySuggestions.length === 0 && (
               <div className="p-6 text-center">
-                <div className="text-3xl mb-2">🔍</div>
                 <p className="text-gray-600 text-sm">
                   No results found for "{localQuery}"
                 </p>

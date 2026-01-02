@@ -62,31 +62,24 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   // Handle scroll
   useEffect(() => {
-    const handleScroll = () => {
-      if (!isHomePage) {
-        setShowSearch(false);
-        setScrolled(window.scrollY > 100);
-        return;
-      }
+  let ticking = false;
 
-      if (window.scrollY > 100) {
-        setShowSearch(true);
-        setScrolled(true);
-      } else {
-        setShowSearch(false);
-        setScrolled(false);
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-
-    if (!isHomePage) {
-      setShowSearch(false);
-      setScrolled(false);
+  const handleScroll = () => {
+    if (!ticking) {
+      window.requestAnimationFrame(() => {
+        if (!isHomePage) return;
+        const scrolled = window.scrollY > 100;
+        setShowSearch(scrolled);
+        setScrolled(scrolled);
+        ticking = false;
+      });
+      ticking = true;
     }
+  };
 
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHomePage]);
+  window.addEventListener("scroll", handleScroll, { passive: true });
+  return () => window.removeEventListener("scroll", handleScroll);
+}, [isHomePage]);
 
   // Handle mobile menu overflow
   useEffect(() => {
@@ -163,16 +156,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     exit: { opacity: 0, transition: { duration: 0.2 } }
   }), []);
 
-  // Loading state
-  if (loading || categoriesLoading) {
-    return (
-      <nav className="w-full bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="h-6 bg-gray-200 animate-pulse rounded"></div>
-        </div>
-      </nav>
-    );
-  }
 
   return (
     <>
@@ -198,11 +181,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             <div className="hidden lg:flex items-center shrink-0 mr-8">
               <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
                 <img
-                  src={Logo2}
-                  alt="Vorkanna Logo"
-                  className="h-8 lg:h-10 w-auto"
-                  loading="eager"
-                />
+  src={Logo2}
+  alt="Vorkanna Logo"
+  width={40}
+  height={40}
+  className="h-10 w-10 object-contain"
+  loading="eager"
+/>
+
                 <span className="text-xl lg:text-2xl font-black text-black">
                   Vorkanna
                 </span>
@@ -210,11 +196,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             {/* Desktop: Search */}
-            <div className="hidden lg:flex items-center ml-6 mr-auto">
+            <div className="hidden lg:flex items-center ml-6 mr-auto min-w-[520px]">
+
               <div>
                 <SearchComponent 
                   placeholder="What service are you looking for today?"
-                  className="w-[400px] xl:w-[480px]" 
+                  className="w-[520px] xl:w-[640px] 2xl:w-[720px]" 
                 />
               </div>
             </div>
@@ -243,15 +230,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   aria-label="Profile menu"
                 >
                   <img
-                    src={user?.picture || default_pp}
-                    alt="Profile"
-                    className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
-                    loading="lazy"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = default_pp;
-                    }}
-                  />
+  src={user?.picture || default_pp}
+  className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
+  loading="lazy"
+/>
+
                 </button>
               ) : (
                 <button
@@ -292,22 +275,32 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <div className="mb-4">
                           <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Browse Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {categories.length > 0 ? (
-                              categories.slice(0, 8).map((category) => (
-                                <Link
-                                  key={category._id}
-                                  to={`/categories/${category.slug}`}
-                                  onClick={closeAllDropdowns}
-                                  className="flex items-center space-x-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition-all duration-150 group"
-                                >
-                                  <span className="truncate">{category.name}</span>
-                                </Link>
-                              ))
-                            ) : (
-                              <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
-                                No categories found
-                              </div>
-                            )}
+                            {categoriesLoading ? (
+  <div className="col-span-2 space-y-2 px-2">
+    {[...Array(6)].map((_, i) => (
+      <div
+        key={i}
+        className="h-8 bg-gray-100 animate-pulse rounded-lg"
+      />
+    ))}
+  </div>
+) : categories.length > 0 ? (
+  categories.slice(0, 8).map((category) => (
+    <Link
+      key={category._id}
+      to={`/categories/${category.slug}`}
+      onClick={closeAllDropdowns}
+      className="flex items-center px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition"
+    >
+      <span className="truncate">{category.name}</span>
+    </Link>
+  ))
+) : (
+  <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
+    No categories found
+  </div>
+)}
+
                           </div>
                         </div>
 
@@ -351,15 +344,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                     >
                       <img
-                        src={user?.picture || default_pp}
-                        alt="Profile"
-                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = default_pp;
-                        }}
-                      />
+  src={user?.picture || default_pp}
+  className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
+  loading="lazy"
+/>
+
                       <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -533,7 +522,16 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <div>
                           <h4 className="text-sm font-semibold text-gray-900 mb-2 px-3">Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {categories.length > 0 ? (
+                            {categoriesLoading ? (
+  <div className="col-span-2 space-y-2 px-3">
+    {[...Array(4)].map((_, i) => (
+      <div
+        key={i}
+        className="h-8 bg-gray-100 animate-pulse rounded-lg"
+      />
+    ))}
+  </div>
+) :categories.length > 0 ? (
                               categories.slice(0, 6).map((category) => (
                                 <Link
                                   key={category._id}

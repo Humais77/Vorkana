@@ -10,8 +10,7 @@ const CompactQuoteBanner = ({ openAuthModal }) => {
 
   const handleGetQuote = () => {
     if (!token) {
-      // User not logged in → open auth modal
-      openAuthModal?.("login");
+      navigate("/signin")
     } else {
       // User logged in → go to dashboard
       navigate("/dashboard");

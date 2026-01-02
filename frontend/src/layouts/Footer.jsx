@@ -1,4 +1,4 @@
-import React, { useState ,useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import {
   FaFacebook,
   FaInstagram,
@@ -6,19 +6,16 @@ import {
   FaXTwitter,
   FaChevronDown,
   FaChevronUp,
-  FaCheck,
-  FaCircleExclamation  // Correct warning icon
 } from 'react-icons/fa6';
 import TrackedLink from '../components/TrackedLink';
-import { motion, AnimatePresence } from "framer-motion";
 import { useParentCategories } from "../hooks/useCategories";
-import { useSubscribe,useSubscriptionStatus ,useToggleSubscription} from "../hooks/useSubscribe";
+import { useSubscribe, useSubscriptionStatus, useToggleSubscription } from "../hooks/useSubscribe";
 
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [email, setEmail] = useState("");
-   const [emailError, setEmailError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [localStatus, setLocalStatus] = useState(null);
   const [preferences, setPreferences] = useState({
     frequency: "weekly",
@@ -30,7 +27,7 @@ const Footer = () => {
   
   // Use subscription hook
   const { 
-    mutateAsync: subscribe, // Changed from subscribe to mutateAsync
+    mutateAsync: subscribe,
     isLoading: subscribeLoading, 
     isSuccess: subscribeSuccess,
     error: subscribeError,
@@ -40,19 +37,23 @@ const Footer = () => {
   // Limit to 10 categories for initial display
   const initialCategories = categoriesData.slice(0, 10);
   const remainingCategories = categoriesData.slice(10);
- const { data: statusData, refetch } = useSubscriptionStatus(email);
+  const { data: statusData, refetch } = useSubscriptionStatus(email);
   
   // Toggle subscription
   const { mutate: toggleSubscription, isLoading } = useToggleSubscription();
+  
+  // Fix: Add proper validation when mapping categories
   const footerLinks = {
     categories: {
       title: "Categories",
-      links: initialCategories.map(category => ({
-        label: category.name,
-        path: `/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`,
-        source: "footer",
-        section: "categories"
-      }))
+      links: initialCategories
+        .filter(category => category && category.name) // Filter out invalid categories
+        .map(category => ({
+          label: category.name,
+          path: `/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`,
+          source: "footer",
+          section: "categories"
+        }))
     },
     discover: {
       title: "Discover",
@@ -82,7 +83,8 @@ const Footer = () => {
   const toggleDropdown = (section) => {
     setOpenDropdown(openDropdown === section ? null : section);
   };
-useEffect(() => {
+
+  useEffect(() => {
     if (statusData?.success && email) {
       setLocalStatus(statusData.data);
     } else {
@@ -188,26 +190,6 @@ useEffect(() => {
     return re.test(email);
   };
 
-  // Animation variants
-  const dropdownVariants = {
-    collapsed: { height: 0, opacity: 0 },
-    expanded: { height: "auto", opacity: 1 }
-  };
-
-  const chevronVariants = {
-    up: { rotate: 0 },
-    down: { rotate: 180 }
-  };
-
-  const listItemVariants = {
-    hidden: { opacity: 0, y: -10 },
-    visible: (i) => ({
-      opacity: 1,
-      y: 0,
-      transition: { delay: i * 0.05 }
-    })
-  };
-
   return (
     <footer className="bg-white text-black border-t border-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
@@ -222,121 +204,68 @@ useEffect(() => {
                 <span className="font-bold text-black tracking-wide text-sm uppercase">
                   {section.title}
                 </span>
-                <motion.span
-                  variants={chevronVariants}
-                  animate={openDropdown === key ? "down" : "up"}
-                  initial="up"
-                  className="text-gray-500"
-                >
+                <span className={`text-gray-500 transition-transform duration-200 ${openDropdown === key ? 'rotate-180' : ''}`}>
                   <FaChevronDown />
-                </motion.span>
+                </span>
               </button>
               
-              <AnimatePresence>
-                {openDropdown === key && (
-                  <motion.div
-                    initial="collapsed"
-                    animate="expanded"
-                    exit="collapsed"
-                    variants={dropdownVariants}
-                    className="overflow-hidden"
-                  >
-                    <ul className="pb-4 px-2 space-y-2">
-                      {section.links.map((link, linkIndex) => (
-                        <motion.li
-                          key={linkIndex}
-                          custom={linkIndex}
-                          initial="hidden"
-                          animate="visible"
-                          exit="hidden"
-                          variants={listItemVariants}
+              {openDropdown === key && (
+                <div className="overflow-hidden">
+                  <ul className="pb-4 px-2 space-y-2">
+                    {section.links
+                      .filter(link => link && link.label)
+                      .map((link, linkIndex) => (
+                      <li key={linkIndex}>
+                        <TrackedLink 
+                          to={link.path}
+                          source={link.source}
+                          medium="website"
+                          campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
+                          className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded"
+                          onClick={() => setOpenDropdown(null)}
                         >
-                          <TrackedLink 
-                            to={link.path}
-                            source={link.source}
-                            medium="website"
-                            campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
-                            className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded"
-                            onClick={() => setOpenDropdown(null)}
-                          >
-                            {link.label}
-                          </TrackedLink>
-                        </motion.li>
-                      ))}
-                      
-                      {key === 'categories' && categoriesData.length > 10 && (
-                        <motion.li
-                          custom={section.links.length}
-                          initial="hidden"
-                          animate="visible"
-                          exit="hidden"
-                          variants={listItemVariants}
+                          {link.label}
+                        </TrackedLink>
+                      </li>
+                    ))}
+                    
+                    {key === 'categories' && categoriesData.length > 10 && (
+                      <li>
+                        <button
+                          onClick={() => {
+                            setShowAllCategories(!showAllCategories);
+                            setOpenDropdown(key);
+                          }}
+                          className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded w-full text-left"
                         >
-                          <button
-                            onClick={() => {
-                              setShowAllCategories(!showAllCategories);
-                              setOpenDropdown(key);
-                            }}
-                            className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded w-full text-left"
-                          >
-                            {showAllCategories ? "Show Less" : `View All Categories (${categoriesData.length})`}
-                          </button>
-                        </motion.li>
-                      )}
-                    </ul>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                          {showAllCategories ? "Show Less" : `View All Categories (${categoriesData.length})`}
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
           ))}
         </div>
 
         {/* Desktop Grid Layout (md and above) */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="hidden md:grid md:grid-cols-2 lg:grid-cols-5 gap-8 mb-16"
-        >
-          {Object.entries(footerLinks).map(([key, section], index) => (
-            <motion.div 
-              key={key} 
-              className="space-y-4"
-            >
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12 mb-16">
+          {Object.entries(footerLinks).map(([key, section]) => (
+            <div key={key} className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-black mb-6 tracking-wide text-sm uppercase">
                   {section.title}
                 </h3>
-                {key === 'categories' && categoriesData.length > 10 && (
-                  <button
-                    onClick={() => setShowAllCategories(!showAllCategories)}
-                    className="text-xs text-gray-500 hover:text-black mb-6 flex items-center gap-1 transition-colors"
-                  >
-                    {showAllCategories ? (
-                      <>
-                        <FaChevronUp className="w-3 h-3" />
-                        Show Less
-                      </>
-                    ) : (
-                      <>
-                        View All
-                        <FaChevronDown className="w-3 h-3" />
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
               
               <ul className="space-y-3">
                 {(key === 'categories' && showAllCategories
                   ? categoriesData
                   : section.links
-                ).map((link, linkIndex) => (
-                  <motion.li 
-                    key={linkIndex}
-                    whileHover={{ x: 4 }}
-                    transition={{ type: "spring", stiffness: 400 }}
-                  >
+                ).filter(link => link && link.label)
+                 .map((link, linkIndex) => (
+                  <li key={linkIndex}>
                     <TrackedLink 
                       to={link.path}
                       source={link.source}
@@ -346,44 +275,44 @@ useEffect(() => {
                     >
                       {link.label}
                     </TrackedLink>
-                  </motion.li>
+                  </li>
                 ))}
                 
+                {/* View All Categories link (only for categories section) */}
                 {key === 'categories' && !showAllCategories && categoriesData.length > 10 && (
-                  <motion.li
-                    whileHover={{ x: 4 }}
-                    transition={{ type: "spring", stiffness: 400 }}
-                  >
+                  <li>
                     <button
                       onClick={() => setShowAllCategories(true)}
                       className="text-gray-500 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium w-full text-left"
                     >
                       View All {categoriesData.length} Categories →
                     </button>
-                  </motion.li>
+                  </li>
+                )}
+                
+                {/* Show Less link when all categories are shown */}
+                {key === 'categories' && showAllCategories && categoriesData.length > 10 && (
+                  <li>
+                    <button
+                      onClick={() => setShowAllCategories(false)}
+                      className="text-gray-500 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium w-full text-left"
+                    >
+                      Show Less Categories
+                    </button>
+                  </li>
                 )}
               </ul>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
 
         {/* Divider */}
-        <motion.div 
-          className="border-t border-gray-200 my-8 md:my-12"
-          initial={{ scaleX: 0 }}
-          animate={{ scaleX: 1 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        ></motion.div>
+        <div className="border-t border-gray-200 my-8 md:my-12"></div>
 
         {/* Newsletter & Contact */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 mb-12 md:mb-16">
           {/* Enhanced Newsletter Subscription */}
-          <motion.div 
-            className="space-y-4 md:space-y-6"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          >
+          <div className="space-y-4 md:space-y-6">
             <div>
               <h3 className="font-bold text-xl md:text-2xl text-black mb-2 md:mb-3">Stay Updated</h3>
               <p className="text-gray-600 mb-4 md:mb-6 max-w-md text-sm md:text-base">
@@ -392,96 +321,94 @@ useEffect(() => {
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={handleEmailChange}
-                  placeholder="Enter your email address"
-                  className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-black placeholder-gray-500 transition-all ${
-                    emailError 
-                      ? "border-red-500 focus:border-red-500 focus:ring-red-200" 
-                      : "border-gray-300 focus:border-black focus:ring-gray-200"
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={handleEmailChange}
+                    placeholder="Enter your email address"
+                    className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-black placeholder-gray-500 transition-all ${
+                      emailError 
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-200" 
+                        : "border-gray-300 focus:border-black focus:ring-gray-200"
+                    }`}
+                    disabled={isLoading}
+                  />
+                  {emailError && (
+                    <p className="text-red-500 text-sm mt-1">{emailError}</p>
+                  )}
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={isLoading || !email || emailError}
+                  className={`px-6 py-3 text-white font-medium rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                    isLoading 
+                      ? "bg-gray-400 cursor-not-allowed" 
+                      : showUnsubscribe
+                        ? "bg-gray-600 hover:bg-gray-700"
+                        : "bg-black hover:bg-gray-900"
                   }`}
-                  disabled={isLoading}
-                />
-                {emailError && (
-                  <p className="text-red-500 text-sm mt-1">{emailError}</p>
-                )}
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : showUnsubscribe ? (
+                    "Unsubscribe"
+                  ) : (
+                    "Subscribe"
+                  )}
+                </button>
               </div>
               
-              <motion.button
-                type="submit"
-                disabled={isLoading || !email || emailError}
-                className={`px-6 py-3 text-white font-medium rounded-lg transition-all ${
-                  isLoading 
-                    ? "bg-gray-400 cursor-not-allowed" 
-                    : showUnsubscribe
-                      ? "bg-gray-600 hover:bg-gray-700"
-                      : "bg-black hover:bg-gray-900"
-                }`}
-                whileHover={!isLoading ? { scale: 1.05 } : {}}
-                whileTap={!isLoading ? { scale: 0.95 } : {}}
-              >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Processing...
-                  </span>
-                ) : showUnsubscribe ? (
-                  "Unsubscribe"
-                ) : (
-                  "Subscribe"
-                )}
-              </motion.button>
-            </div>
-            
-            {/* Status Messages */}
-            {localStatus && (
-              <div className={`p-3 border rounded-lg ${
-                localStatus.isSubscribed 
-                  ? "bg-green-50 border-green-200" 
-                  : "bg-blue-50 border-blue-200"
-              }`}>
-                <p className={`text-sm ${
-                  localStatus.isSubscribed ? "text-green-700" : "text-blue-700"
+              {/* Status Messages */}
+              {localStatus && (
+                <div className={`p-3 border rounded-lg ${
+                  localStatus.isSubscribed 
+                    ? "bg-green-50 border-green-200" 
+                    : "bg-blue-50 border-blue-200"
                 }`}>
-                  {localStatus.isSubscribed
-                    ? `✓ Subscribed to newsletter as ${localStatus.email}`
-                    : `✓ Unsubscribed from newsletter`}
-                </p>
-                {localStatus.isSubscribed && (
-                  <button
-                    onClick={handleUnsubscribe}
-                    className="text-sm text-gray-600 hover:text-black mt-2 underline"
-                    disabled={isLoading}
-                  >
-                    Click here to unsubscribe
-                  </button>
-                )}
-              </div>
-            )}
-            
-            {/* Privacy Notice */}
-            <p className="text-gray-500 text-xs">
-              By subscribing, you agree to our{" "}
-              <a href="/privacy" className="text-gray-600 hover:text-black underline">
-                Privacy Policy
-              </a>
-              . One-click unsubscribe anytime.
-            </p>
-          </form>
+                  <p className={`text-sm ${
+                    localStatus.isSubscribed ? "text-green-700" : "text-blue-700"
+                  }`}>
+                    {localStatus.isSubscribed
+                      ? `✓ Subscribed to newsletter as ${localStatus.email}`
+                      : `✓ Unsubscribed from newsletter`}
+                  </p>
+                  {localStatus.isSubscribed && (
+                    <button
+                      onClick={handleUnsubscribe}
+                      className="text-sm text-gray-600 hover:text-black mt-2 underline"
+                      disabled={isLoading}
+                    >
+                      Click here to unsubscribe
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {/* Privacy Notice */}
+              <p className="text-gray-500 text-xs">
+                By subscribing, you agree to our{" "}
+                <a href="/privacy" className="text-gray-600 hover:text-black underline">
+                  Privacy Policy
+                </a>
+                . One-click unsubscribe anytime.
+              </p>
+            </form>
             
             {/* Preference Toggle (Optional) */}
             <div className="pt-4 border-t border-gray-100">
               <details className="group">
                 <summary className="flex items-center gap-2 text-sm text-gray-600 hover:text-black cursor-pointer">
                   <span>Email Preferences</span>
-                  <FaChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+                  <FaChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="mt-3 space-y-3 text-sm text-gray-600">
                   <div>
@@ -499,71 +426,44 @@ useEffect(() => {
                 </div>
               </details>
             </div>
-          </motion.div>
+          </div>
 
           {/* Contact Info */}
-          <motion.div 
-            className="space-y-4 md:space-y-6 mt-8 md:mt-0"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
-          >
+          <div className="space-y-4 md:space-y-6 mt-8 md:mt-0">
             <div>
               <h3 className="font-bold text-xl md:text-2xl text-black mb-2 md:mb-3">Contact Us</h3>
               <p className="text-gray-600 mb-4 md:mb-6 text-sm md:text-base">We're here to help you succeed</p>
             </div>
             <div className="space-y-4 md:space-y-6">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 300 }}
-              >
+              <div className="hover:scale-[1.02] transition-transform duration-200">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Email</div>
                 <div className="text-gray-700 text-base md:text-lg hover:text-black transition-colors">
                   support@Vorkanna.com
                 </div>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 300 }}
-              >
+              </div>
+              <div className="hover:scale-[1.02] transition-transform duration-200">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Business Hours</div>
                 <div className="text-gray-700 text-sm md:text-base">Monday - Friday, 9AM - 6PM EST</div>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 300 }}
-              >
+              </div>
+              <div className="hover:scale-[1.02] transition-transform duration-200">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Newsletter Support</div>
                 <div className="text-gray-700 text-sm">Need help with your subscription? Email: newsletter@Vorkanna.com</div>
-              </motion.div>
+              </div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Divider */}
-        <motion.div 
-          className="border-t border-gray-200 my-6 md:my-8"
-          initial={{ scaleX: 0 }}
-          animate={{ scaleX: 1 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-        ></motion.div>
+        <div className="border-t border-gray-200 my-6 md:my-8"></div>
 
         {/* Bottom Section */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-8 pt-6 md:pt-8">
           {/* Logo & Copyright */}
-          <motion.div 
-            className="text-center lg:text-left"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.5 }}
-          >
+          <div className="text-center lg:text-left">
             <div className="mb-3 md:mb-4">
               <TrackedLink 
                 to="/"
-                source="footer"
-                medium="website"
-                campaign="logo_footer"
-                className="text-3xl md:text-5xl font-black text-black hover:text-gray-800 transition-colors duration-200 tracking-tighter"
+                className="text-3xl md:text-5xl font-black text-black transition-colors tracking-tighter"
               >
                 Vorkanna
               </TrackedLink>
@@ -572,72 +472,48 @@ useEffect(() => {
             <p className="text-gray-500 text-xs md:text-sm">
               © {new Date().getFullYear()} Vorkanna. All rights reserved.
             </p>
-            <p className="text-gray-400 text-xs mt-1">
-              <TrackedLink 
-                to="/newsletter/unsubscribe" 
-                source="footer" 
-                medium="website" 
-                campaign="unsubscribe_footer"
-                className="hover:text-gray-600"
-              >
-                Unsubscribe from newsletter
-              </TrackedLink>
-            </p>
-          </motion.div>
+          </div>
 
           {/* Social Links */}
-          <motion.div 
-            className="flex flex-col items-center lg:items-end gap-4 md:gap-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.6 }}
-          >
+          <div className="flex flex-col items-center lg:items-end gap-4 md:gap-6">
             <div className="flex items-center gap-6 md:gap-8">
-              <motion.a 
+              <a 
                 href="https://facebook.com" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-black hover:text-gray-700"
-                whileHover={{ scale: 1.2, rotate: 5 }}
-                whileTap={{ scale: 0.9 }}
+                className="text-black hover:text-gray-700 hover:scale-110 active:scale-95 transition-transform duration-200"
               >
                 <FaFacebook size={20} className="md:size-6" />
-              </motion.a>
-              <motion.a 
+              </a>
+              <a 
                 href="https://twitter.com" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-black hover:text-gray-700"
-                whileHover={{ scale: 1.2, rotate: -5 }}
-                whileTap={{ scale: 0.9 }}
+                className="text-black hover:text-gray-700 hover:scale-110 active:scale-95 transition-transform duration-200"
               >
                 <FaXTwitter size={20} className="md:size-6" />
-              </motion.a>
-              <motion.a 
+              </a>
+              <a 
                 href="https://instagram.com" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-black hover:text-gray-700"
-                whileHover={{ scale: 1.2, rotate: 5 }}
-                whileTap={{ scale: 0.9 }}
+                className="text-black hover:text-gray-700 hover:scale-110 active:scale-95 transition-transform duration-200"
               >
                 <FaInstagram size={20} className="md:size-6" />
-              </motion.a>
-              <motion.a 
+              </a>
+              <a 
                 href="https://linkedin.com" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-black hover:text-gray-700"
-                whileHover={{ scale: 1.2, rotate: -5 }}
-                whileTap={{ scale: 0.9 }}
+                className="text-black hover:text-gray-700 hover:scale-110 active:scale-95 transition-transform duration-200"
               >
                 <FaLinkedin size={20} className="md:size-6" />
-              </motion.a>
+              </a>
             </div>
             <p className="text-gray-500 text-xs text-center lg:text-right">
               Connect with us on social media
             </p>
-          </motion.div>
+          </div>
         </div>
       </div>
     </footer>
