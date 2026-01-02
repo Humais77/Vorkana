@@ -71,17 +71,36 @@ const serviceSchema = new mongoose.Schema({
   // In service.model.js - Update the subcategory field
 subcategory: {
   type: mongoose.Schema.Types.ObjectId,
-  ref: 'Subcategory', // Changed from 'Category' to 'Subcategory'
+  ref: 'Subcategory',
   index: true,
   validate: {
     validator: async function(v) {
       if (!v) return true;
-      const Subcategory = mongoose.model('Subcategory');
-      const subcategory = await Subcategory.findById(v);
-      return subcategory && subcategory.isActive && 
-             subcategory.category.equals(this.category);
+      
+      try {
+        const Subcategory = mongoose.model('Subcategory');
+        const subcategory = await Subcategory.findOne({
+          _id: v,
+          isActive: true
+        });
+        
+        if (!subcategory) return false;
+        
+        // Check if subcategory belongs to the same category
+        if (this.category && !subcategory.category.equals(this.category)) {
+          return false;
+        }
+        
+        return true;
+      } catch (error) {
+        console.error('Subcategory validation error:', error);
+        return false;
+      }
     },
-    message: 'Invalid or inactive subcategory, or does not belong to the selected category'
+    message: props => {
+      if (!props.value) return 'Subcategory is required';
+      return 'Invalid or inactive subcategory, or does not belong to the selected category';
+    }
   }
 },
 

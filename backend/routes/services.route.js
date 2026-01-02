@@ -513,5 +513,9 @@ router.get('/metrics/overview',
       }
     });
 });
-
+router.get('/with-stats', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getServicesWithCategoryStats
+);
 module.exports = router;

@@ -719,7 +719,6 @@ const createService = async (req, res, next) => {
   }
 };
 
-// Update the getServices function to properly populate category and subcategory
 const getServices = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -760,7 +759,7 @@ const getServices = async (req, res, next) => {
       sort = 'createdAt',
       order = 'desc',
       page = 1,
-      limit = 10,
+      limit = 12, // Increased default limit for better UX
       offset,
       fields,
       excludeFields,
@@ -777,6 +776,7 @@ const getServices = async (req, res, next) => {
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
     const userRole = req.user?.role || 'guest';
 
+    // Build secure query
     const filter = buildSecureServiceQuery({
       search: search || q,
       title,
@@ -812,168 +812,347 @@ const getServices = async (req, res, next) => {
     }, userRole, req.user?._id);
 
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 12));
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
 
-    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'views', 'likes'];
+    // Sort configuration
+    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'views', 'likes', 'relevance'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
-    const sortObj = { [sortField]: sortOrder };
+    const sortObj = sortField === 'relevance' ? { score: { $meta: 'textScore' } } : { [sortField]: sortOrder };
 
-    const defaultExclude = ['__v', 'lastUpdatedBy', 'version'];
+    // Field selection
+    const defaultExclude = ['__v', 'lastUpdatedBy', 'version', 'deletedAt', 'deletedBy'];
     let select = {};
     
     if (fields) {
-      const fieldArray = fields.split(',').map(f => f.trim());
-      fieldArray.forEach(field => {
-        if (!defaultExclude.includes(field)) {
-          select[field] = 1;
-        }
-      });
+      try {
+        const fieldArray = fields.split(',').map(f => f.trim());
+        fieldArray.forEach(field => {
+          if (field && !defaultExclude.includes(field)) {
+            select[field] = 1;
+          }
+        });
+      } catch (err) {
+        console.warn('Error parsing fields:', err);
+      }
     } else {
-      defaultExclude.forEach(field => {
-        select[field] = 0;
+      // Default selection - include essential fields
+      select = {
+        title: 1,
+        slug: 1,
+        shortDescription: 1,
+        description: 1,
+        price: 1,
+        currency: 1,
+        rating: 1,
+        reviewsCount: 1,
+        deliveryTime: 1,
+        deliveryTimeUnit: 1,
+        revisions: 1,
+        images: 1,
+        thumbnail: 1,
+        tags: 1,
+        status: 1,
+        isActive: 1,
+        isFeatured: 1,
+        isRecommended: 1,
+        isPopular: 1,
+        category: 1,
+        subcategory: 1,
+        createdBy: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        publishedAt: 1,
+        views: 1,
+        likes: 1
+      };
+    }
+    
+    // Exclude specific fields if requested
+    if (excludeFields) {
+      try {
+        const excludeArray = excludeFields.split(',').map(f => f.trim());
+        excludeArray.forEach(field => {
+          select[field] = 0;
+        });
+      } catch (err) {
+        console.warn('Error parsing excludeFields:', err);
+      }
+    }
+
+    // Build populate options - FIXED: Ensure category and subcategory are properly populated
+    const populateOptions = [];
+    
+    if (populate && (includeCategory === 'true' || includeCategory === true || includeCategory === undefined)) {
+      populateOptions.push({
+        path: 'category',
+        select: 'name slug icon description',
+        match: { isActive: true }
       });
     }
     
-    if (excludeFields) {
-      const excludeArray = excludeFields.split(',').map(f => f.trim());
-      excludeArray.forEach(field => {
-        select[field] = 0;
+    if (populate && (includeSubcategory === 'true' || includeSubcategory === true)) {
+      populateOptions.push({
+        path: 'subcategory',
+        select: 'name slug icon description',
+        match: { isActive: true }
+      });
+    }
+    
+    if (populate && (includeCreator === 'true' || includeCreator === true || includeCreator === undefined)) {
+      populateOptions.push({
+        path: 'createdBy',
+        select: 'name email picture role',
+        match: { isActive: true }
       });
     }
 
-    // FIXED: Build populate options properly for category and subcategory
-    let populateOptions = [];
-    if (populate) {
-      if (includeCategory) {
-        populateOptions.push({
-          path: 'category',
-          select: 'name slug icon',
-          match: { isActive: true }
-        });
-      }
-      
-      // FIXED: Add subcategory population if requested
-      if (includeSubcategory === 'true' || includeSubcategory === true) {
-        populateOptions.push({
-          path: 'subcategory',
-          select: 'name slug icon',
-          match: { isActive: true }
-        });
-      }
-      
-      if (includeCreator) {
-        populateOptions.push({
-          path: 'createdBy',
-          select: 'name email picture role'
-        });
-      }
-    }
-
-    const queryOptions = {
-      select: Object.keys(select).length > 0 ? select : null,
-      sort: sortObj,
-      skip,
-      limit: limitNum,
-      populate: populateOptions.length > 0 ? populateOptions : null,
-      lean: lean !== false,
-      maxTimeMS: 5000
-    };
-
     // Generate cache key
-    const cacheKey = generateCacheKey('services', {
-      filter,
+    const cacheKey = generateCacheKey('services_list', {
+      filter: JSON.stringify(filter),
       page: pageNum,
       limit: limitNum,
-      sort: sortObj,
-      skip,
+      sort: sortField,
+      order: sortOrder,
       populate: populateOptions,
       userRole
     });
 
     let services, total;
     const useCache = useCacheParam === 'true';
-    const shouldUseCache = useCache && pageNum === 1 && !search && !q;
+    const shouldUseCache = useCache && pageNum === 1 && !search && !q && Object.keys(filter).length <= 3;
 
     if (shouldUseCache) {
       const cached = await cache.get(cacheKey);
       if (cached) {
         services = cached.services;
         total = cached.total;
-        console.log(`Cache hit for key: ${cacheKey}`);
+        console.log(`Cache hit for services: ${cacheKey}`);
       }
     }
 
     if (!services || !total) {
+      // Build query
+      let query = Service.find(filter);
+      
+      // Add text score for search relevance
+      if (search || q) {
+        query = query.select({ ...select, score: { $meta: 'textScore' } });
+      } else {
+        query = query.select(select);
+      }
+      
+      // Apply sorting, skipping, and limiting
+      query = query.sort(sortObj).skip(skip).limit(limitNum);
+      
+      // Apply population
+      if (populateOptions.length > 0) {
+        query = query.populate(populateOptions);
+      }
+      
+      // Apply lean if requested
+      if (lean) {
+        query = query.lean();
+      }
+      
+      // Execute query with timeout
+      query = query.maxTimeMS(5000);
+      
       [services, total] = await Promise.all([
-        Service.find(filter, null, queryOptions),
-        Service.countDocuments(filter)
+        query,
+        Service.countDocuments(filter).maxTimeMS(2000)
       ]);
 
       if (shouldUseCache) {
         // Cache for 5 minutes
         await cache.set(cacheKey, { services, total }, 300);
-        console.log(`Cache set for key: ${cacheKey}`);
+        console.log(`Cache set for services: ${cacheKey}`);
       }
     }
 
+    // Process services for response
     const safeServices = services.map(service => {
-      if (lean) {
-        const safeService = { ...service };
-        
-        if (safeService.createdBy && safeService.createdBy._id) {
-          delete safeService.createdBy.email;
-          delete safeService.createdBy.phone;
-          delete safeService.createdBy.password;
-        }
-        
-        delete safeService.__v;
-        delete safeService.lastUpdatedBy;
-        delete safeService.version;
-        
-        if (safeService.description && safeService.description.length > 200) {
-          safeService.description = safeService.description.substring(0, 200) + '...';
-        }
-        
-        return safeService;
+      let serviceObj;
+      
+      if (lean && typeof service === 'object') {
+        serviceObj = { ...service };
+      } else if (service && typeof service.toObject === 'function') {
+        serviceObj = service.toObject();
       } else {
-        const safeService = service.toObject();
-        
-        if (safeService.createdBy) {
-          delete safeService.createdBy.email;
-          delete safeService.createdBy.phone;
-          delete safeService.createdBy.password;
-        }
-        
-        delete safeService.__v;
-        delete safeService.lastUpdatedBy;
-        delete safeService.version;
-        
-        if (safeService.description && safeService.description.length > 200) {
-          safeService.description = safeService.description.substring(0, 200) + '...';
-        }
-        
-        return safeService;
+        serviceObj = service;
       }
+      
+      // Ensure category and subcategory are properly formatted
+      if (serviceObj.category) {
+        serviceObj.category = {
+          _id: serviceObj.category._id || serviceObj.category,
+          name: serviceObj.category.name || 'Uncategorized',
+          slug: serviceObj.category.slug || '',
+          icon: serviceObj.category.icon || '',
+          description: serviceObj.category.description || ''
+        };
+      }
+      
+      if (serviceObj.subcategory) {
+        serviceObj.subcategory = {
+          _id: serviceObj.subcategory._id || serviceObj.subcategory,
+          name: serviceObj.subcategory.name || '',
+          slug: serviceObj.subcategory.slug || '',
+          icon: serviceObj.subcategory.icon || '',
+          description: serviceObj.subcategory.description || ''
+        };
+      }
+      
+      // Clean up creator data
+      if (serviceObj.createdBy && serviceObj.createdBy._id) {
+        const safeCreator = {
+          _id: serviceObj.createdBy._id,
+          name: serviceObj.createdBy.name || 'Unknown',
+          picture: serviceObj.createdBy.picture || null,
+          role: serviceObj.createdBy.role || 'user'
+        };
+        
+        // Only include email for admin users
+        if (req.user?.role === 'admin' && serviceObj.createdBy.email) {
+          safeCreator.email = serviceObj.createdBy.email;
+        }
+        
+        serviceObj.createdBy = safeCreator;
+      }
+      
+      // Add computed fields
+      serviceObj.hasImages = serviceObj.images && serviceObj.images.length > 0;
+      serviceObj.hasThumbnail = !!serviceObj.thumbnail;
+      serviceObj.priceFormatted = `${serviceObj.currency || 'USD'} ${serviceObj.price || '0.00'}`;
+      
+      // Truncate description for list view
+      if (serviceObj.description && serviceObj.description.length > 150) {
+        serviceObj.shortDescription = serviceObj.shortDescription || serviceObj.description.substring(0, 150) + '...';
+      }
+      
+      // Remove sensitive fields
+      delete serviceObj.__v;
+      delete serviceObj.lastUpdatedBy;
+      delete serviceObj.version;
+      delete serviceObj.deletedAt;
+      delete serviceObj.deletedBy;
+      
+      return serviceObj;
     });
 
     const totalPages = Math.ceil(total / limitNum);
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
 
+    // Get category and subcategory counts for active services
+    let categoryStats = [];
+    let subcategoryStats = [];
+    
+    if (pageNum === 1 && !category && !subcategory) {
+      try {
+        // Get category distribution
+        categoryStats = await Service.aggregate([
+          { 
+            $match: { 
+              status: 'active',
+              isActive: true,
+              category: { $exists: true, $ne: null }
+            } 
+          },
+          {
+            $group: {
+              _id: '$category',
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ]);
+
+        // Get subcategory distribution
+        subcategoryStats = await Service.aggregate([
+          { 
+            $match: { 
+              status: 'active',
+              isActive: true,
+              subcategory: { $exists: true, $ne: null }
+            } 
+          },
+          {
+            $group: {
+              _id: '$subcategory',
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 15 }
+        ]);
+
+        // Populate category and subcategory names
+        if (categoryStats.length > 0) {
+          const categoryIds = categoryStats.map(stat => stat._id);
+          const categories = await Category.find({ _id: { $in: categoryIds } })
+            .select('name slug icon')
+            .lean();
+          
+          categoryStats = categoryStats.map(stat => {
+            const cat = categories.find(c => c._id.toString() === stat._id.toString());
+            return {
+              ...stat,
+              name: cat?.name || 'Unknown',
+              slug: cat?.slug || '',
+              icon: cat?.icon || ''
+            };
+          });
+        }
+
+        if (subcategoryStats.length > 0) {
+          const subcategoryIds = subcategoryStats.map(stat => stat._id);
+          const subcategories = await Subcategory.find({ _id: { $in: subcategoryIds } })
+            .select('name slug icon category')
+            .lean();
+          
+          // Get parent categories for subcategories
+          const categoryIds = [...new Set(subcategories.map(s => s.category))];
+          const categories = await Category.find({ _id: { $in: categoryIds } })
+            .select('name slug')
+            .lean();
+          
+          subcategoryStats = subcategoryStats.map(stat => {
+            const subcat = subcategories.find(s => s._id.toString() === stat._id.toString());
+            const parentCategory = categories.find(c => c._id.toString() === subcat?.category?.toString());
+            
+            return {
+              ...stat,
+              name: subcat?.name || 'Unknown',
+              slug: subcat?.slug || '',
+              icon: subcat?.icon || '',
+              categoryName: parentCategory?.name || 'Unknown',
+              categorySlug: parentCategory?.slug || ''
+            };
+          });
+        }
+      } catch (statsError) {
+        console.error('Error fetching stats:', statsError);
+        // Don't fail the request if stats fail
+      }
+    }
+
+    const responseTime = Date.now() - startTime;
+    
+    // Set response headers
     res.set({
       'X-Request-ID': requestId,
       'X-Total-Count': total,
       'X-Total-Pages': totalPages,
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
-      'X-Response-Time': `${Date.now() - startTime}ms`,
+      'X-Response-Time': `${responseTime}ms`,
+      'X-Cache': shouldUseCache && services !== undefined ? 'HIT' : 'MISS',
       'Cache-Control': shouldUseCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate'
     });
 
-    const responseTime = Date.now() - startTime;
-    
     res.json({
       success: true,
       data: safeServices,
@@ -987,6 +1166,11 @@ const getServices = async (req, res, next) => {
         nextPage: hasNext ? pageNum + 1 : null,
         prevPage: hasPrev ? pageNum - 1 : null,
       },
+      stats: {
+        categories: categoryStats,
+        subcategories: subcategoryStats,
+        totalServices: total
+      },
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`,
@@ -994,17 +1178,57 @@ const getServices = async (req, res, next) => {
     });
 
   } catch (error) {
+    const responseTime = Date.now() - startTime;
+    console.error('[GET SERVICES ERROR]', error);
+    
     if (error.name === 'MongooseError' && error.message.includes('operation timed out')) {
       return res.status(408).json({
         success: false,
-        message: 'Query timeout',
+        message: 'Query timeout. Please try with fewer filters.',
         code: 'QUERY_TIMEOUT',
-        requestId
+        requestId,
+        responseTime: `${responseTime}ms`
       });
     }
     
-    logAudit('ERROR', 'SERVICE', 'GET_LIST', req.user?._id, { error: error.message });
-    next(error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid filter parameter',
+        code: 'INVALID_FILTER',
+        requestId,
+        responseTime: `${responseTime}ms`
+      });
+    }
+    
+    logAudit('ERROR', 'SERVICE', 'GET_LIST', req.user?._id, { 
+      error: error.message,
+      responseTime,
+      queryParams: req.query 
+    });
+    
+    // Return empty response instead of crashing
+    res.status(200).json({
+      success: true,
+      data: [],
+      pagination: {
+        page: 1,
+        limit: 12,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false
+      },
+      stats: {
+        categories: [],
+        subcategories: [],
+        totalServices: 0
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+      message: 'No services found'
+    });
   }
 };
 
@@ -3372,7 +3596,6 @@ const getMyServices = async (req, res, next) => {
     next(error);
   }
 };
-// Update getAllActiveServices function:
 const getAllActiveServices = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -3390,8 +3613,11 @@ const getAllActiveServices = async (req, res, next) => {
       maxRating,
       category,
       subcategory,
-      includeSubcategory = true
+      includeSubcategory = true,
+      cache: useCacheParam = 'true'
     } = req.query;
+
+    const useCache = useCacheParam === 'true';
 
     // Simple filter for active services only
     const filter = {
@@ -3430,9 +3656,10 @@ const getAllActiveServices = async (req, res, next) => {
     }
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
+    // Sort options
     const sortOptions = {
       createdAt: order === 'asc' ? 1 : -1,
       rating: order === 'asc' ? 1 : -1,
@@ -3443,50 +3670,100 @@ const getAllActiveServices = async (req, res, next) => {
 
     const sortObj = sortOptions[sort] || sortOptions.createdAt;
 
-    // FIXED: Include subcategory in populate
-    const populateOptions = [
-      {
-        path: 'category',
-        select: 'name slug icon',
-        match: { isActive: true }
-      },
-      {
-        path: 'createdBy',
-        select: 'name picture'
-      }
-    ];
+    // Generate cache key
+    const cacheKey = generateCacheKey('all_active_services', {
+      filter,
+      page: pageNum,
+      limit: limitNum,
+      sort: sortObj,
+      includeSubcategory
+    });
 
-    if (includeSubcategory === 'true' || includeSubcategory === true) {
-      populateOptions.push({
-        path: 'subcategory',
-        select: 'name slug icon',
-        match: { isActive: true }
-      });
+    let services, total;
+
+    // Try to get from cache
+    if (useCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        services = cached.services;
+        total = cached.total;
+        console.log(`Cache hit for all active services: ${cacheKey}`);
+      }
     }
 
-    const [services, total] = await Promise.all([
-      Service.find(filter)
-        .select('title slug shortDescription description price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category subcategory createdBy tags status')
-        .populate(populateOptions)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Service.countDocuments(filter)
-    ]);
+    if (!services || !total) {
+      // Build populate options
+      const populateOptions = [
+        {
+          path: 'category',
+          select: 'name slug icon',
+          match: { isActive: true }
+        },
+        {
+          path: 'createdBy',
+          select: 'name picture'
+        }
+      ];
+
+      if (includeSubcategory === 'true' || includeSubcategory === true) {
+        populateOptions.push({
+          path: 'subcategory',
+          select: 'name slug icon',
+          match: { isActive: true }
+        });
+      }
+
+      [services, total] = await Promise.all([
+        Service.find(filter)
+          .select('title slug shortDescription description price currency rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category subcategory createdBy tags status')
+          .populate(populateOptions)
+          .sort(sortObj)
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Service.countDocuments(filter)
+      ]);
+
+      // Cache the result if enabled
+      if (useCache) {
+        await cache.set(cacheKey, { services, total }, 300); // 5 minutes
+        console.log(`Cache set for all active services: ${cacheKey}`);
+      }
+    }
 
     const totalPages = Math.ceil(total / limitNum);
 
+    const responseTime = Date.now() - startTime;
+
     res.json({
       success: true,
-      data: services.map(service => ({
-        ...service,
-        hasImages: service.images && service.images.length > 0,
-        priceFormatted: `${service.currency || 'USD'} ${service.price || '0.00'}`,
-        // Ensure category and subcategory are properly included
-        category: service.category || null,
-        subcategory: service.subcategory || null
-      })),
+      data: services.map(service => {
+        // Ensure category and subcategory are properly formatted
+        const formattedService = {
+          ...service,
+          hasImages: service.images && service.images.length > 0,
+          priceFormatted: `${service.currency || 'USD'} ${service.price || '0.00'}`,
+          category: service.category ? {
+            _id: service.category._id,
+            name: service.category.name || 'Uncategorized',
+            slug: service.category.slug,
+            icon: service.category.icon
+          } : null,
+          subcategory: service.subcategory ? {
+            _id: service.subcategory._id,
+            name: service.subcategory.name,
+            slug: service.subcategory.slug,
+            icon: service.subcategory.icon
+          } : null,
+          createdBy: service.createdBy ? {
+            _id: service.createdBy._id,
+            name: service.createdBy.name,
+            picture: service.createdBy.picture
+          } : null
+        };
+        
+        return formattedService;
+      }),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -3497,11 +3774,13 @@ const getAllActiveServices = async (req, res, next) => {
       },
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${responseTime}ms`,
+      cached: useCache && services !== undefined
     });
 
   } catch (error) {
     console.error('Get all active services error:', error);
+    const responseTime = Date.now() - startTime;
     
     // Return empty array on error
     res.json({
@@ -3517,7 +3796,237 @@ const getAllActiveServices = async (req, res, next) => {
       },
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${responseTime}ms`,
+      message: 'Error fetching services'
+    });
+  }
+};
+// Add this function to service.controller.js
+const getServicesWithCategoryStats = async (req, res, next) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    const { 
+      limit = 100,
+      category,
+      subcategory,
+      cache: useCacheParam = 'true'
+    } = req.query;
+
+    const useCache = useCacheParam === 'true';
+    const queryLimit = Math.min(parseInt(limit) || 100, 500);
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('services_with_stats', {
+      limit: queryLimit,
+      category,
+      subcategory
+    });
+
+    let result;
+
+    // Try to get from cache
+    if (useCache) {
+      result = await cache.get(cacheKey);
+      if (result) {
+        console.log(`Cache hit for services with stats: ${cacheKey}`);
+        return res.json({
+          success: true,
+          ...result,
+          requestId,
+          timestamp: new Date().toISOString(),
+          responseTime: `${Date.now() - startTime}ms`,
+          cached: true
+        });
+      }
+    }
+
+    // Build filter
+    const filter = {
+      status: 'active',
+      isActive: true
+    };
+
+    if (category && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+
+    if (subcategory && mongoose.Types.ObjectId.isValid(subcategory)) {
+      filter.subcategory = subcategory;
+    }
+
+    // Get services with category and subcategory
+    const services = await Service.find(filter)
+      .select('title slug price rating thumbnail category subcategory')
+      .populate('category', 'name slug icon')
+      .populate('subcategory', 'name slug icon')
+      .limit(queryLimit)
+      .lean();
+
+    // Get all categories with counts
+    const categoryStats = await Service.aggregate([
+      { 
+        $match: { 
+          status: 'active',
+          isActive: true,
+          category: { $exists: true, $ne: null }
+        } 
+      },
+      {
+        $group: {
+          _id: '$category',
+          count: { $sum: 1 },
+          avgPrice: { $avg: '$price' },
+          avgRating: { $avg: '$rating' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Get all subcategories with counts
+    const subcategoryStats = await Service.aggregate([
+      { 
+        $match: { 
+          status: 'active',
+          isActive: true,
+          subcategory: { $exists: true, $ne: null }
+        } 
+      },
+      {
+        $group: {
+          _id: '$subcategory',
+          count: { $sum: 1 },
+          avgPrice: { $avg: '$price' },
+          avgRating: { $avg: '$rating' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Get category details
+    const categoryIds = [...new Set([
+      ...categoryStats.map(stat => stat._id),
+      ...services.map(s => s.category).filter(Boolean)
+    ])];
+
+    const categories = await Category.find({ 
+      _id: { $in: categoryIds },
+      isActive: true 
+    })
+    .select('name slug icon description')
+    .lean();
+
+    // Get subcategory details
+    const subcategoryIds = [...new Set([
+      ...subcategoryStats.map(stat => stat._id),
+      ...services.map(s => s.subcategory).filter(Boolean)
+    ])];
+
+    const subcategories = await Subcategory.find({ 
+      _id: { $in: subcategoryIds },
+      isActive: true 
+    })
+    .select('name slug icon description category')
+    .populate('category', 'name slug')
+    .lean();
+
+    // Format category stats
+    const formattedCategoryStats = categoryStats.map(stat => {
+      const category = categories.find(c => c._id.toString() === stat._id.toString());
+      return {
+        _id: stat._id,
+        name: category?.name || 'Unknown',
+        slug: category?.slug || '',
+        icon: category?.icon || '',
+        description: category?.description || '',
+        count: stat.count,
+        avgPrice: stat.avgPrice || 0,
+        avgRating: stat.avgRating || 0
+      };
+    });
+
+    // Format subcategory stats
+    const formattedSubcategoryStats = subcategoryStats.map(stat => {
+      const subcategory = subcategories.find(s => s._id.toString() === stat._id.toString());
+      return {
+        _id: stat._id,
+        name: subcategory?.name || 'Unknown',
+        slug: subcategory?.slug || '',
+        icon: subcategory?.icon || '',
+        description: subcategory?.description || '',
+        category: subcategory?.category ? {
+          _id: subcategory.category._id,
+          name: subcategory.category.name,
+          slug: subcategory.category.slug
+        } : null,
+        count: stat.count,
+        avgPrice: stat.avgPrice || 0,
+        avgRating: stat.avgRating || 0
+      };
+    });
+
+    // Format services
+    const formattedServices = services.map(service => ({
+      _id: service._id,
+      title: service.title,
+      slug: service.slug,
+      price: service.price,
+      rating: service.rating,
+      thumbnail: service.thumbnail,
+      category: service.category ? {
+        _id: service.category._id,
+        name: service.category.name,
+        slug: service.category.slug,
+        icon: service.category.icon
+      } : null,
+      subcategory: service.subcategory ? {
+        _id: service.subcategory._id,
+        name: service.subcategory.name,
+        slug: service.subcategory.slug,
+        icon: service.subcategory.icon
+      } : null
+    }));
+
+    result = {
+      services: formattedServices,
+      categories: formattedCategoryStats,
+      subcategories: formattedSubcategoryStats,
+      totals: {
+        services: formattedServices.length,
+        categories: formattedCategoryStats.length,
+        subcategories: formattedSubcategoryStats.length
+      }
+    };
+
+    // Cache the result
+    if (useCache) {
+      await cache.set(cacheKey, result, 600); // 10 minutes
+      console.log(`Cache set for services with stats: ${cacheKey}`);
+    }
+
+    const responseTime = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      ...result,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+      cached: false
+    });
+
+  } catch (error) {
+    console.error('[SERVICES WITH STATS ERROR]', error);
+    const responseTime = Date.now() - startTime;
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch services with statistics',
+      code: 'SERVICES_STATS_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
   }
 };
@@ -4729,5 +5238,5 @@ module.exports = {
   uploadThumbnail,
   getPopularServices,
   togglePopularStatus,
-  getPopularServicesByCategory,getServicesBySubcategory, getServicesByCategory,getServicesBySubcategorySlug
+  getPopularServicesByCategory,getServicesBySubcategory, getServicesByCategory,getServicesBySubcategorySlug,getServicesWithCategoryStats
 };
