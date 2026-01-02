@@ -188,10 +188,12 @@ router.get('/subcategory/:subcategoryId',
 );
 
 router.get('/search', optionalAuth, validateQuery, searchGigs);
+router.get('/stats', protect, gigLimiter, getGigStats);
+router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
+router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
 router.get('/:id', optionalAuth, getGigById);
 
 // Protected routes (all authenticated users)
-router.get('/stats', protect, gigLimiter, getGigStats);
 router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
 
 // Update gig (creator or admin)
@@ -207,7 +209,5 @@ router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload,
 router.delete('/:id', protect, gigLimiter, deleteGig);
 
 // Admin routes
-router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
-router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
 
 module.exports = router;

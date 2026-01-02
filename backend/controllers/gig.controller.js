@@ -1179,18 +1179,28 @@ const updateGig = async (req, res, next) => {
     }
     
    
-    
     if (!isAdmin) {
-      delete sanitizedData.status;
-      delete sanitizedData.assignedTo;
-      delete sanitizedData.paymentStatus;
-      delete sanitizedData.paymentAmount;
-      delete sanitizedData.depositPaid;
-      delete sanitizedData.rating;
-      delete sanitizedData.clientReview;
-      delete sanitizedData.disputeStatus;
-      delete sanitizedData.disputeReason;
+  const restrictedFields = [
+    'status',
+    'assignedTo',
+    'paymentStatus',
+    'paymentAmount',
+    'depositPaid',
+    'rating',
+    'clientReview',
+    'disputeStatus',
+    'disputeReason'
+  ];
+  
+  restrictedFields.forEach(field => {
+    if (sanitizedData[field] !== undefined) {
+      // Instead of just deleting, throw an error or ignore the field
+      delete sanitizedData[field];
+      // OR better: Log unauthorized attempt
+      console.warn(`Non-admin attempted to update restricted field: ${field}`);
     }
+  });
+}
 
     if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
       const category = await Category.findOne({ 
