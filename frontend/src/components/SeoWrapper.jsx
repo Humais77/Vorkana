@@ -1,4 +1,3 @@
-// SeoWrapper.jsx
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -22,10 +21,13 @@ export const SeoWrapper = ({
   breadcrumb = [], // [{ name: string, url: string }]
 }) => {
   const location = useLocation();
-  const createdElements = useRef([]);
-  const originalTitle = useRef(null);
+  const createdElements = useRef(new Set());
   const isMounted = useRef(false);
   const previousPathname = useRef('');
+  
+  // Track if we're in the middle of a navigation
+  const isNavigating = useRef(false);
+  const navigationTimeout = useRef(null);
 
   // Memoize the full title to prevent unnecessary recalculations
   const fullTitle = useMemo(() => {
@@ -43,49 +45,94 @@ export const SeoWrapper = ({
   const defaultOgImage = useMemo(() => `${baseUrl}/images/og-default.jpg`, [baseUrl]);
   const finalOgImage = useMemo(() => ogImage || defaultOgImage, [ogImage, defaultOgImage]);
 
+  // Get current pathname including search params
+  const currentPath = useMemo(() => location.pathname + location.search, [location.pathname, location.search]);
+
+  // Cleanup function - only removes meta/link elements, NOT title
+  const cleanupCreatedElements = () => {
+    // Clear any pending navigation timeout
+    if (navigationTimeout.current) {
+      clearTimeout(navigationTimeout.current);
+      navigationTimeout.current = null;
+    }
+
+    // Remove only the meta/link/script elements we created
+    createdElements.current.forEach(el => {
+      try {
+        if (el && el.parentNode && el.parentNode === document.head) {
+          el.parentNode.removeChild(el);
+        }
+      } catch (error) {
+        console.error('Error removing SEO element:', error);
+      }
+    });
+    createdElements.current.clear();
+  };
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
-    // Store original title on first mount
-    if (originalTitle.current === null) {
-      originalTitle.current = document.title;
-    }
-
-    // Skip if we're still on the same page (React re-render)
-    const currentPath = window.location.pathname + window.location.search;
+    // Skip if we're still on the same page (React re-render with same path)
     if (isMounted.current && currentPath === previousPathname.current) {
       return;
     }
 
+    // Mark that we're starting a navigation
+    isNavigating.current = true;
     previousPathname.current = currentPath;
 
     // Helper function to create or update meta/link elements
-    const updateOrCreate = (tagName, attributes, contentAttr = 'content') => {
+    const updateOrCreate = (tagName, attributes) => {
       let selector = '';
+      let identifier = '';
+      
       if (tagName === 'meta') {
         if (attributes.property) {
           selector = `meta[property="${attributes.property}"]`;
+          identifier = `meta[property="${attributes.property}"]`;
         } else if (attributes.name) {
           selector = `meta[name="${attributes.name}"]`;
+          identifier = `meta[name="${attributes.name}"]`;
         }
       } else if (tagName === 'link') {
         selector = `link[rel="${attributes.rel}"]`;
+        identifier = `link[rel="${attributes.rel}"]`;
         if (attributes.hreflang) {
           selector += `[hreflang="${attributes.hreflang}"]`;
+          identifier += `[hreflang="${attributes.hreflang}"]`;
         }
       }
 
-      let el = selector ? document.querySelector(selector) : null;
+      // Check if we already created this element
+      let el = Array.from(createdElements.current).find(e => 
+        e.tagName.toLowerCase() === tagName && 
+        Object.keys(attributes).every(key => e.getAttribute(key) === attributes[key])
+      );
 
       if (!el) {
-        el = document.createElement(tagName);
-        Object.keys(attributes).forEach(key => {
-          el.setAttribute(key, attributes[key]);
-        });
-        document.head.appendChild(el);
-        createdElements.current.push(el);
+        // Look for existing element in the DOM
+        el = document.querySelector(selector);
+        
+        if (!el) {
+          el = document.createElement(tagName);
+          Object.keys(attributes).forEach(key => {
+            el.setAttribute(key, attributes[key] || '');
+          });
+          document.head.appendChild(el);
+          createdElements.current.add(el);
+        } else {
+          // Element exists but wasn't created by us - update it
+          Object.keys(attributes).forEach(key => {
+            const currentValue = el.getAttribute(key);
+            const newValue = attributes[key];
+            if (currentValue !== newValue) {
+              el.setAttribute(key, newValue || '');
+            }
+          });
+          createdElements.current.add(el);
+        }
       } else {
-        // Only update if the value has changed
+        // Update existing element if values changed
         Object.keys(attributes).forEach(key => {
           const currentValue = el.getAttribute(key);
           const newValue = attributes[key];
@@ -98,12 +145,11 @@ export const SeoWrapper = ({
       return el;
     };
 
-    // === 1. Update Title (with microtask to prevent flicker) ===
-    requestAnimationFrame(() => {
-      if (document.title !== fullTitle) {
-        document.title = fullTitle;
-      }
-    });
+    // === 1. Update Title (IMMEDIATELY to prevent flicker) ===
+    // Update title synchronously to prevent any visible glitch
+    if (document.title !== fullTitle) {
+      document.title = fullTitle;
+    }
 
     // === 2. Set Document Language ===
     if (document.documentElement.lang !== lang) {
@@ -155,13 +201,23 @@ export const SeoWrapper = ({
     });
 
     // === 8. Remove previous structured data scripts ===
+    // Find and remove script elements with data-seo attribute
     document.querySelectorAll('script[data-seo]').forEach(script => {
       if (script.parentNode) {
-        script.parentNode.removeChild(script);
+        // Only remove if we created it or if it's from a previous navigation
+        if (createdElements.current.has(script) || 
+            !Array.from(createdElements.current).some(el => el.tagName === 'SCRIPT')) {
+          script.parentNode.removeChild(script);
+        }
       }
     });
 
-    createdElements.current = createdElements.current.filter(el => el.tagName !== 'SCRIPT');
+    // Remove script elements from our tracking set
+    Array.from(createdElements.current).forEach(el => {
+      if (el.tagName === 'SCRIPT') {
+        createdElements.current.delete(el);
+      }
+    });
 
     // === 9. Add Breadcrumb Structured Data ===
     if (breadcrumb.length > 0) {
@@ -181,7 +237,7 @@ export const SeoWrapper = ({
       scriptEl.text = JSON.stringify(breadcrumbSchema);
       scriptEl.dataset.seo = 'breadcrumb';
       document.head.appendChild(scriptEl);
-      createdElements.current.push(scriptEl);
+      createdElements.current.add(scriptEl);
     }
 
     // === 10. Add Custom Structured Data ===
@@ -199,7 +255,7 @@ export const SeoWrapper = ({
       scriptEl.text = JSON.stringify(sanitizedData);
       scriptEl.dataset.seo = `custom-${index}`;
       document.head.appendChild(scriptEl);
-      createdElements.current.push(scriptEl);
+      createdElements.current.add(scriptEl);
     });
 
     // === 11. Add Default Website Structured Data ===
@@ -221,18 +277,36 @@ export const SeoWrapper = ({
     websiteScript.text = JSON.stringify(websiteSchema);
     websiteScript.dataset.seo = 'website';
     document.head.appendChild(websiteScript);
-    createdElements.current.push(websiteScript);
+    createdElements.current.add(websiteScript);
+
+    // Mark navigation as complete
+    navigationTimeout.current = setTimeout(() => {
+      isNavigating.current = false;
+      navigationTimeout.current = null;
+    }, 100);
 
     isMounted.current = true;
 
     // === Cleanup ===
     return () => {
-      // Don't cleanup during SPA navigation, only on unmount
-      // We'll rely on the next instance to update the title
+      // Clear navigation timeout
+      if (navigationTimeout.current) {
+        clearTimeout(navigationTimeout.current);
+        navigationTimeout.current = null;
+      }
+
+      // Only cleanup if we're actually unmounting (not just re-rendering)
+      // We check if the path has changed since the last render
+      const currentPathOnCleanup = window.location.pathname + window.location.search;
+      
+      if (currentPathOnCleanup !== currentPath) {
+        // We're navigating away - cleanup meta/link elements but NOT title
+        cleanupCreatedElements();
+      }
     };
 
   }, [
-    location.pathname, // Key dependency - only update on route change
+    currentPath, // Only update on route change
     fullTitle,
     description,
     keywords,
@@ -251,6 +325,26 @@ export const SeoWrapper = ({
     breadcrumb,
     baseUrl,
   ]);
+
+  // Effect to handle window blur/focus events for additional title stability
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // When tab becomes visible, ensure title is correct
+        if (document.title !== fullTitle) {
+          document.title = fullTitle;
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fullTitle]);
 
   return <>{children}</>;
 };
