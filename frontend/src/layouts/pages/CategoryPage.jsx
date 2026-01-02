@@ -25,6 +25,7 @@ import { useQuery } from '@tanstack/react-query';
 import { SeoWrapper } from '../../components/SeoWrapper';
 import { useCategory } from '../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../hooks/useSubcategories';
+import background_img from '../../assets/background_image.png'
 
 const CategoryPage = () => {
   const { categoryId } = useParams();
@@ -189,9 +190,18 @@ const CategoryPage = () => {
           </div>
         </nav>
 
-        {/* Category Hero */}
-        <div className="bg-gradient-to-r from-green-600 to-emerald-800 text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Category Hero - UPDATED WITH BACKGROUND IMAGE */}
+        <div 
+          className="relative text-white"
+          style={{
+            backgroundImage: `url(${background_img})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
+          
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="text-center">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full border border-white/20 mb-4">
                 <div className="w-2 h-2 rounded-full bg-emerald-300"></div>
@@ -288,187 +298,6 @@ const CategoryPage = () => {
                 <p className="text-gray-500">This category doesn't have any subcategories yet.</p>
               </div>
             )}
-          </div>
-
-          {/* Subcategories Section - COMPACT VERSION */}
-          {displaySections.length > 0 && (
-            <div className="mb-16">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    All {category.name} Subcategories
-                  </h2>
-                  <p className="text-gray-600">
-                    Browse through all specialized services in {category.name.toLowerCase()}
-                  </p>
-                </div>
-                <button
-                  onClick={() => navigate('/categories')}
-                  className="hidden md:flex items-center gap-2 text-green-600 hover:text-green-700 font-medium"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Back to Categories
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {displaySections.map((section, index) => (
-                  <div 
-                    key={index}
-                    onClick={() => handleSubcategoryClick(section)}
-                    className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md hover:border-green-300 transition-all duration-200 cursor-pointer group"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-green-50 rounded-md text-green-600 group-hover:bg-green-100 transition-colors">
-                        {section.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 mb-1 truncate group-hover:text-green-600 transition-colors">
-                          {section.title}
-                        </h3>
-                        {section.description && (
-                          <p className="text-sm text-gray-500 line-clamp-2">
-                            {section.description.length > 80 
-                              ? `${section.description.substring(0, 80)}...` 
-                              : section.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Stats/Features */}
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1 text-xs text-gray-500">
-                          <Sparkles className="w-3 h-3" />
-                          <span>Popular</span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-green-600 transition-colors" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Mobile Back Button */}
-              <div className="mt-8 md:hidden text-center">
-                <button
-                  onClick={() => navigate('/categories')}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-green-600 hover:text-green-700 font-medium"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Back to All Categories
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Featured Services Section */}
-          {displaySections.length > 0 && (
-            <div className="mb-16">
-              <div className="text-center mb-10">
-                <h2 className="text-2xl font-bold text-gray-900 mb-3">
-                  Featured Services in {category.name}
-                </h2>
-                <p className="text-gray-600 max-w-2xl mx-auto">
-                  Discover popular services handpicked by our community
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {displaySections.slice(0, 3).map((section, index) => (
-                  <div key={index} className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border border-green-100">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-3 bg-white rounded-lg text-green-600 shadow-sm">
-                        {section.icon}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-gray-900">{section.title}</h3>
-                        <p className="text-sm text-green-600 font-medium">Top Rated</p>
-                      </div>
-                    </div>
-                    
-                    <p className="text-gray-600 text-sm mb-4">
-                      {section.description?.substring(0, 100) || `Explore professional ${section.title.toLowerCase()} services`}
-                    </p>
-                    
-                    <button
-                      onClick={() => handleSubcategoryClick(section)}
-                      className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                    >
-                      Browse Services
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Get Started CTA */}
-          <div className="text-center bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-12 text-white">
-            <h2 className="text-3xl font-bold mb-4">Ready to Get Started?</h2>
-            <p className="text-xl opacity-90 mb-8 max-w-2xl mx-auto">
-              Find the perfect {category.name.toLowerCase()} expert for your project today
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={() => navigate(`/services/create?category=${categoryId}`)}
-                className="px-8 py-4 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-lg"
-              >
-                Offer a Service
-              </button>
-              <button
-                onClick={() => navigate(`/gigs/create?category=${categoryId}`)}
-                className="px-8 py-4 bg-transparent border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition-colors"
-              >
-                Post a Project
-              </button>
-              <button
-                onClick={() => navigate('/services')}
-                className="px-8 py-4 bg-white/20 border-2 border-white text-white font-bold rounded-lg hover:bg-white/30 transition-colors"
-              >
-                Browse Services
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Navigation */}
-        <div className="bg-white border-t border-gray-200 py-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              {[
-                {
-                  title: "Top Categories",
-                  links: ["Web Development", "Mobile Apps", "AI Development", "UI/UX Design"]
-                },
-                {
-                  title: "Popular Services",
-                  links: ["Website Development", "App Development", "Software Consulting", "Technical Support"]
-                },
-                {
-                  title: "How It Works",
-                  links: ["Find Experts", "Post Projects", "Hire Professionals", "Manage Projects"]
-                },
-                {
-                  title: "Resources",
-                  links: ["Help Center", "Blog", "Community", "Contact Support"]
-                }
-              ].map((column, index) => (
-                <div key={index}>
-                  <h4 className="font-bold text-gray-900 mb-4">{column.title}</h4>
-                  <ul className="space-y-2">
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
-                        <a href="#" className="text-gray-600 hover:text-green-600 transition-colors">
-                          {link}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

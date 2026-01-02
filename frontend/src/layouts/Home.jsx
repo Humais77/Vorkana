@@ -1,14 +1,10 @@
 import React from 'react'
 import Hero from './Hero'
 import CategoryGrid from '../components/categories/CategoryGrid'
-import PopularServices from '../components/services/PopularService'
-import FAQSection from './FaqSection'
 import Testimonials from './Testimonal'
-import Stats from './Stats'
 import CallToAction from './CallToAction'
 import MakeItHappen from './MakeItHappen'
 import AuthModal from '../components/AuthModal/AuthModal';
-import HowItWorks from '../components/HowItWorks'
 import LogoMakerBanner from './LogoMakerBanner'
 import { useState } from 'react'
 import GetQuoteBanner from './GetQuoteBanner'
@@ -16,7 +12,7 @@ import PopularCategoriesSection from './PopularCategoriesSection'
 
 const Home = ({ onSignupClick, onSigninClick }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('signin'); // ← ADD THIS LINE
+  const [activeTab, setActiveTab] = useState('signin'); 
 
   const openAuthModal = (tab = 'signin') => {
     setActiveTab(tab);
@@ -46,7 +42,6 @@ const Home = ({ onSignupClick, onSigninClick }) => {
       {/* <PopularServices /> */}
       <GetQuoteBanner/>
       <Testimonials />
-      {/* <Stats /> */}
       <MakeItHappen 
         onSignupClick={() => openAuthModal('signup')} 
         // or pass openAuthModal directly if needed
