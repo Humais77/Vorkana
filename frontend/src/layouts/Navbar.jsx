@@ -9,6 +9,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import default_pp from '../assets/default_pp-modified.png'
 import SearchComponent from "../components/Search/SearchComponent";
 import { useParentCategories } from "../hooks/useCategories"; // Import the hook
+import Vorkanna from '../assets/Vorkanna.png'
+import { buildImageUrl } from "../utils/cloudinaryFrontend";
+const LOGO_URL = buildImageUrl({
+  publicId: "pycqitxf7g6hzgzli3pr",
+  width: 220
+});
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
@@ -179,21 +185,18 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
             {/* Desktop: Logo */}
             <div className="hidden lg:flex items-center shrink-0 mr-8">
-              <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
-                <img
-  src={Logo2}
-  alt="Vorkanna Logo"
-  width={40}
-  height={40}
-  className="h-10 w-10 object-contain"
-  loading="eager"
-/>
-
-                <span className="text-xl lg:text-2xl font-black text-black">
-                  Vorkanna
-                </span>
-              </Link>
-            </div>
+  <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
+   
+    <img
+      src={LOGO_URL}
+      width={40}
+      height={40}
+      alt="Vorkanna Logo"
+      className="h-20 w-36 object-contain"  
+      loading="eager"
+    />
+  </Link>
+</div>
 
             {/* Desktop: Search */}
             <div className="hidden lg:flex items-center ml-6 mr-auto min-w-[520px]">
@@ -201,7 +204,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               <div>
                 <SearchComponent 
                   placeholder="What service are you looking for today?"
-                  className="w-[520px] xl:w-[640px] 2xl:w-[720px]" 
+                  className="w-[520px] xl:w-[500px] 2xl:w-[720px]" 
                 />
               </div>
             </div>
@@ -210,14 +213,12 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             <div className="flex items-center justify-center lg:hidden">
               <Link to="/" className="flex items-center shrink-0 gap-1" onClick={closeAllDropdowns}>
                 <img
-                  src={Logo2}
+                  src={LOGO_URL}
                   alt="Vorkanna Logo"
-                  className="h-8 w-auto"
+                  className="h-12 w-auto"
                   loading="eager"
                 />
-                <span className="text-xl font-black text-black">
-                  Vorkanna
-                </span>
+              
               </Link>
             </div>
 
@@ -449,8 +450,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-1">
-                        <img src={Logo} alt="Vorkanna" className="h-7 w-auto" loading="eager" />
-                        <span className="text-2xl font-black text-black">Vorkanna</span>
+                        <img src={LOGO_URL} alt="Vorkanna Logo" className="h-10 w-auto" loading="eager" />
                       </div>
                       <button
                         onClick={() => setMobileMenuOpen(false)}

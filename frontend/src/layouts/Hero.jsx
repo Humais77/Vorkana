@@ -13,14 +13,12 @@ const Hero = ({ isAuthModalOpen = false }) => {
   const navigate = useNavigate();
   const { isVideoPaused } = useVideoStore();
 
-  // Cloudinary config
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-  const videoPublicId = import.meta.env.VITE_CLOUDINARY_VIDEO_ID;
+const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const VIDEO_PUBLIC_ID = "hhmgxyoqn3mu3frjok4n";
 
-  // Faster + lighter Cloudinary video
-  const cloudinaryVideoUrl = `https://res.cloudinary.com/${cloudName}/video/upload/
-    f_auto,q_auto:eco,vc_vp9,br_900k,ac_none,so_0
-    /${videoPublicId}`.replace(/\s+/g, "");
+const cloudinaryVideoUrl = `https://res.cloudinary.com/${cloudName}/video/upload/
+f_auto,q_auto:eco,vc_vp9,br_900k,ac_none,so_0/${VIDEO_PUBLIC_ID}`
+.replace(/\s+/g, "");
 
   // Detect mobile
   useEffect(() => {
