@@ -26,6 +26,7 @@ import { useGigs } from '../../hooks/useGigs';
 import { useCategories } from '../../hooks/useServices';
 import { toast } from 'react-hot-toast';
 import { SeoWrapper } from '../../components/SeoWrapper';
+import heroBg from "../../assets/bg.png";
 
 const GigListingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -423,12 +424,18 @@ const GigListingsPage = () => {
     >
       <div className="min-h-screen bg-white">
         {/* Hero Section */}
-        <div className="relative bg-gradient-to-r from-gray-900 to-black text-white py-16 px-4">
-          <div className="absolute inset-0 bg-black/20"></div>
+        <div 
+          className="relative text-white py-16 px-4"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${heroBg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <div className="flex items-center justify-center mb-6">
-                
                 <h1 className="text-4xl md:text-5xl font-bold mb-4">
                   Find Your Next Gig
                 </h1>
@@ -437,7 +444,7 @@ const GigListingsPage = () => {
                 Discover freelance projects that match your skills and get paid for your expertise
               </p>
               
-              {/* Search Bar */}
+              {/* Search Bar - unchanged */}
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
@@ -465,7 +472,7 @@ const GigListingsPage = () => {
                   </div>
                 </form>
                 
-                {/* Quick Categories */}
+                {/* Quick Categories - unchanged */}
                 {!isLoadingCategories && categories.length > 1 && (
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
@@ -877,7 +884,7 @@ const GigListingsPage = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
-                onClick={() => navigate('/gigs/create')}
+                onClick={() => navigate('/dashboard')}
                 className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
                 Post a Gig

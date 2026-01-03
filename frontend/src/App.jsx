@@ -18,23 +18,22 @@ import CategoryPage from './layouts/pages/CategoryPage';
 import GigListingsPage from './layouts/pages/GigListingPage';
 import Profile from './layouts/pages/Profile';
 import Dashboard from './layouts/pages/Dashboard';
-import CreateService from './layouts/pages/CreateService';
+import CreateService from './layouts/pages/services/CreateService';
 import ServiceDetails from './layouts/pages/ServiceDetails';
 import ServiceListingPage from './layouts/pages/ServiceListingPage';
-import OAuthSuccess from './components/OAuthSuccess';
-import AllGigsPage from './components/AllGigsPage';
+import OAuthSuccess from './layouts/pages/OAuthSuccess';
 import AboutUsPage from './layouts/AboutUsPage';
 // Admin
 import ProtectedAdminRoute from './ProtectedAdminRoute';
 import AdminLayout from './layouts/pages/admin/AdminLayout';
 import AdminRoutes from './layouts/pages/admin/AdminRoutes';
-import VerifyEmail from './components/VerifyEmail';
-import ForgotPassword from './components/ForgotPassword';
-import ResetPassword from './components/ResetPassword';
-import AccountDeactivated from './components/AccountDeactivated';
+import VerifyEmail from './layouts/pages/profile/VerifyEmail';
+import ForgotPassword from './layouts/pages/profile/ForgotPassword';
+import ResetPassword from './layouts/pages/profile/ResetPassword';
+import AccountDeactivated from './layouts/pages/profile/AccountDeactivated';
 
 import ScrollToTop from './components/ScrollToTop';
-import VerifiedPage from './components/VerifiedPage';
+import VerifiedPage from './layouts/pages/profile/VerifiedPage';
 
 import CareersPage from './layouts/pages/footer/CareersPage';
 import HelpCenterPage from './layouts/pages/footer/HelpCenterPage';
@@ -45,7 +44,6 @@ import SearchResults from './layouts/pages/SearchResults';
 import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
 import PublicProfile from './layouts/pages/PublicProfile';
-import AllServicesPage from './components/AllServicesPage';
 import PopularServices from './components/services/PopularService';
 import SubcategoryDetailPage from './layouts/pages/SubcategoryDetailPage';
 import PopularServicesPage from './components/services/PopularService';
@@ -132,8 +130,6 @@ const App = () => {
             <Route path="/services" element={<ServiceListingPage />} />
             <Route path="/popular-services" element={<PopularServicesPage />} />
             <Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
-            <Route path="/all-gigs" element={<AllGigsPage />} />
-            <Route path="/all-services" element={<AllServicesPage />} />
             <Route path="/oauth-success" element={<OAuthSuccess />} />
             
             {/* Wrap VerifyEmail with VerificationWrapper */}

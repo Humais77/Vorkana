@@ -12,7 +12,7 @@ import { useParentCategories } from "../hooks/useCategories"; // Import the hook
 import Vorkanna from '../assets/Vorkanna.png'
 import { buildImageUrl } from "../utils/cloudinaryFrontend";
 const LOGO_URL = buildImageUrl({
-  publicId: "pycqitxf7g6hzgzli3pr",
+  publicId: "gpepaqvupkzg17xso4b7",
   width: 220
 });
 
@@ -215,7 +215,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 <img
                   src={LOGO_URL}
                   alt="Vorkanna Logo"
-                  className="h-12 w-auto"
+                  className="h-10 w-auto"
                   loading="eager"
                 />
               

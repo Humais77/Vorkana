@@ -106,7 +106,7 @@ const CategoryGrid = () => {
         const fetchedCategories = await categoriesAPI.getAll({
           parentCategory: null, // Only get top-level categories
           includeSubcategories: false,
-          limit: 20,
+          limit: 9,
           sortBy: 'name',
           order: 'asc'
         });

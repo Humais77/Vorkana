@@ -22,6 +22,7 @@ import { useServices, useSearchServices, useCategories } from "../../hooks/useSe
 import { useToggleLike } from "../../hooks/useServices";
 import { toast } from "react-hot-toast";
 import { SeoWrapper } from "../../components/SeoWrapper";
+import heroBg from "../../assets/bg.png";
 
 const ServiceListingPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -401,9 +402,16 @@ const ServiceListingPage = () => {
       ogType="website"
     >
       <div className="min-h-screen bg-white">
-        {/* Hero Section */}
-        <div className="relative bg-gradient-to-r from-gray-900 to-black text-white py-16 px-4">
-          <div className="absolute inset-0 bg-black/20"></div>
+        {/* Hero Section with heroBg */}
+        <div 
+          className="relative text-white py-16 px-4"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${heroBg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -413,7 +421,7 @@ const ServiceListingPage = () => {
                 Find the perfect service for your needs from our talented professionals
               </p>
               
-              {/* Search Bar */}
+              {/* Search Bar - unchanged */}
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
@@ -441,7 +449,7 @@ const ServiceListingPage = () => {
                   </div>
                 </form>
                 
-                {/* Quick Categories */}
+                {/* Quick Categories - unchanged */}
                 {!isLoadingCategories && categories.length > 1 && (
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
@@ -785,12 +793,6 @@ const ServiceListingPage = () => {
               )}
             </div>
           )}
-
-          {/* Popular Services Section */}
-          <div className="mb-8">
-            <PopularServices />
-          </div>
-
           {/* CTA Section */}
           <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
             <h2 className="text-2xl font-bold mb-3">
@@ -801,16 +803,16 @@ const ServiceListingPage = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
-                onClick={() => navigate('/services')}
+                onClick={() => navigate('/dashboard')}
                 className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
-                Browse All Services
+                Offer Your Servivce
               </button>
               <button 
-                onClick={() => navigate('/services/create')}
+                onClick={() => navigate('/gigs')}
                 className="px-6 py-2.5 bg-transparent border border-white text-white font-bold rounded-md hover:bg-white/10 transition-colors"
               >
-                Offer Your Service
+                 Browse Gigs Instead
               </button>
             </div>
           </div>

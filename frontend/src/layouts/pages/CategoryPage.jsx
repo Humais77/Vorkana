@@ -241,64 +241,47 @@ const CategoryPage = () => {
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           {/* Explore Section - Using real subcategories */}
-          <div className="mb-16">
-            <div className="text-center mb-10">
-              <h2 className="text-3xl font-bold text-gray-900 mb-3">
-                Explore {category.name}
-              </h2>
-              <div className="w-20 h-1 bg-green-500 mx-auto"></div>
-            </div>
-            
-            {displaySections.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                {displaySections.map((section, index) => (
-                  <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="p-3 bg-green-50 rounded-lg text-green-600">
-                        {section.icon}
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900">{section.title}</h3>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      {section.services && section.services.length > 0 ? (
-                        section.services.map((service, serviceIndex) => (
-                          <div 
-                            key={serviceIndex} 
-                            onClick={() => handleExploreServiceClick(service)}
-                            className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
-                          >
-                            <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"></div>
-                            <span className="text-gray-700 group-hover:text-green-600 transition-colors">
-                              {service}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <button
-                          onClick={() => handleSubcategoryClick(section)}
-                          className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors text-gray-600 hover:text-green-600 group"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span>Explore {section.title}</span>
-                            <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-                <div className="text-gray-400 mb-4">
-                  <Globe className="w-16 h-16 mx-auto" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">No subcategories found</h3>
-                <p className="text-gray-500">This category doesn't have any subcategories yet.</p>
-              </div>
-            )}
-          </div>
+          {/* Explore Section - Using real subcategories */}
+<div className="mb-16">
+  <div className="text-center mb-10">
+    <h2 className="text-3xl font-bold text-gray-900 mb-3">
+      Explore {category.name}
+    </h2>
+    <div className="w-20 h-1 bg-green-500 mx-auto"></div>
+  </div>
+  
+  {subcategories && subcategories.length > 0 ? (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+      <ul className="space-y-3">
+        {subcategories.map((subcategory, index) => (
+          <li 
+            key={index}
+            onClick={() => handleSubcategoryClick({
+              title: subcategory.name,
+              subcategoryId: subcategory._id,
+              slug: subcategory.slug
+            })}
+            className="flex items-center gap-4 p-4 rounded-lg hover:bg-green-50 cursor-pointer transition-colors hover:border-l-4 hover:border-l-green-500"
+          >
+            <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+            <span className="text-gray-800 hover:text-green-700 transition-colors text-lg font-medium">
+              {subcategory.name}
+            </span>
+            <ArrowRight className="w-4 h-4 ml-auto text-gray-400 group-hover:text-green-600" />
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : (
+    <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+      <div className="text-gray-400 mb-4">
+        <Globe className="w-16 h-16 mx-auto" />
+      </div>
+      <h3 className="text-xl font-semibold text-gray-700 mb-2">No subcategories found</h3>
+      <p className="text-gray-500">This category doesn't have any subcategories yet.</p>
+    </div>
+  )}
+</div>
         </div>
       </div>
     </SeoWrapper>

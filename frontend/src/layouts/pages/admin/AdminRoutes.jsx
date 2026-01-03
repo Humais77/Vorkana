@@ -4,18 +4,11 @@ import { lazy, Suspense } from 'react';
 
 // Lazy load pages
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
-const UsersManagement = lazy(() => import('../../../components/admin/UsersManagement'));
-const CategoriesManagement = lazy(() => import('../../../components/admin/CategoriesManagement'));
-const SubcategoriesManagement = lazy(() => import('../../../components/admin/SubcategoriesManagement'));
-const ServicesManagement = lazy(() => import('../../../components/admin/ServicesManagement'));
-const GigsManagement = lazy(() => import('../../../components/admin/GigsManagement'));
-const SecurityPage = lazy(() => import('../../../components/admin/SecurityPage'));
-const ActivityLogPage = lazy(() => import('../../../components/admin/ActivityLogPage'));
-const SettingsPage = lazy(() => import('../../../components/admin/SettingsPage'));
-
-// Add new admin service pages
-const AdminEditService = lazy(() => import('../../../components/admin/AdminEditService'));
-const AdminViewService = lazy(() => import('../../../components/admin/AdminViewService'));
+const UsersManagement = lazy(() => import('../../../components/admin/usersManagment/UsersManagement'));
+const CategoriesManagement = lazy(() => import('../../../components/admin/categoriesManagement/CategoriesManagement'));
+const SubcategoriesManagement = lazy(() => import('../../../components/admin/subcategoriesManagement/SubcategoriesManagement'));
+const ServicesManagement = lazy(() => import('../../../components/admin/servicesManagement/ServicesManagement'));
+const GigsManagement = lazy(() => import('../../../components/admin/gigsManagement/GigsManagement'));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-64">
@@ -51,35 +44,9 @@ const AdminRoutes = () => {
           <ServicesManagement />
         </Suspense>
       } />
-      {/* Add new service routes */}
-      <Route path="services/:id" element={
-        <Suspense fallback={<LoadingSpinner />}>
-          <AdminViewService />
-        </Suspense>
-      } />
-      <Route path="services/:id/edit" element={
-        <Suspense fallback={<LoadingSpinner />}>
-          <AdminEditService />
-        </Suspense>
-      } />
       <Route path="gigs" element={
         <Suspense fallback={<LoadingSpinner />}>
           <GigsManagement />
-        </Suspense>
-      } />
-      <Route path="security" element={
-        <Suspense fallback={<LoadingSpinner />}>
-          <SecurityPage />
-        </Suspense>
-      } />
-      <Route path="activity" element={
-        <Suspense fallback={<LoadingSpinner />}>
-          <ActivityLogPage />
-        </Suspense>
-      } />
-      <Route path="settings" element={
-        <Suspense fallback={<LoadingSpinner />}>
-          <SettingsPage />
         </Suspense>
       } />
       <Route path="analytics" element={<div>Analytics</div>} />
