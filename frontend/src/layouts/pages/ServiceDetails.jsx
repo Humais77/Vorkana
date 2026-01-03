@@ -272,7 +272,26 @@ const deleteServiceMutation = useDeleteService();
 const handleDeleteClick = () => {
   setShowDeleteModal(true);
 };
-
+const isOwner = () => {
+  if (!service || !user) return false;
+  
+  // If createdBy is populated as an object
+  if (service.createdBy?._id) {
+    return service.createdBy._id.toString() === user._id.toString();
+  }
+  
+  // If createdBy is just a string ID
+  if (typeof service.createdBy === 'string') {
+    return service.createdBy === user._id;
+  }
+  
+  // Check other possible fields
+  if (service.creatorDetails?._id) {
+    return service.creatorDetails._id.toString() === user._id.toString();
+  }
+  
+  return false;
+};
 const handleConfirmDelete = async () => {
   if (!service || !user) {
     toast.error('You must be logged in to delete services');
@@ -280,7 +299,7 @@ const handleConfirmDelete = async () => {
   }
 
   // Check if user is owner or admin
-  const isOwner = service.createdBy?._id === user._id;
+   const isOwnerCheck = isOwner();
   const isAdmin = user.role === 'admin';
 
   if (!isOwner && !isAdmin) {
@@ -318,7 +337,7 @@ const handlePermanentDelete = async () => {
     return;
   }
 
-  if (!confirm('⚠️ Warning: This will permanently delete the service. This action cannot be undone. Are you sure?')) {
+  if (!confirm('Warning: This will permanently delete the service. This action cannot be undone. Are you sure?')) {
     return;
   }
 
@@ -613,8 +632,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-4">
+          <h3 className="text-2xl font-bold text-red-500 mb-4">
             {error?.response?.status === 404 ? 'Service Not Found' : 'Error Loading Service'}
           </h3>
           <p className="text-gray-600 mb-8 max-w-md mx-auto">
@@ -821,7 +839,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     >
                       <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
                     </button>
-                    {(user?.role === 'admin' || service.createdBy?._id === user?._id) && (
+                    {(user?.role === 'admin' || isOwner()) &&(
     <>
       <Link
         to={`/edit-service/${service._id}`}

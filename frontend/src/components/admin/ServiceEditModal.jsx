@@ -3,13 +3,18 @@ import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { 
   FiX, FiPackage, FiInfo, FiAlertCircle, FiSave, FiChevronDown, 
   FiDollarSign, FiClock, FiTag, FiImage, FiCheck, FiUpload, FiEye, 
-  FiStar, FiPlus, FiTrash2, FiHash
+  FiStar, FiPlus, FiTrash2, FiHash, FiLoader
 } from 'react-icons/fi';
+import { 
+  useUpdateService,
+  useSubcategoriesByCategory // Import the hook
+} from '../../hooks/useAdminDashboard';
+import { toast } from 'react-hot-toast';
 
 // Validation rules
 const validationRules = {
   title: (value) => {
-    if (!value.trim()) return 'Service title is required';
+    if (!value?.trim()) return 'Service title is required';
     if (value.length < 5) return 'Title must be at least 5 characters';
     if (value.length > 100) return 'Title cannot exceed 100 characters';
     return null;
@@ -23,13 +28,13 @@ const validationRules = {
     return null;
   },
   shortDescription: (value) => {
-    if (!value.trim()) return 'Short description is required';
+    if (!value?.trim()) return 'Short description is required';
     if (value.length < 20) return 'Short description must be at least 20 characters';
     if (value.length > 250) return 'Short description cannot exceed 250 characters';
     return null;
   },
   description: (value) => {
-    if (!value.trim()) return 'Description is required';
+    if (!value?.trim()) return 'Description is required';
     if (value.length < 50) return 'Description must be at least 50 characters';
     return null;
   },
@@ -56,96 +61,142 @@ const validationRules = {
   }
 };
 
-// Initial form state
-const initialFormData = {
-  title: '',
-  description: '',
-  shortDescription: '',
-  category: '',
-  subcategory: '',
-  price: 0,
-  currency: 'USD',
-  deliveryTime: 7,
-  deliveryTimeUnit: 'days',
-  revisions: 1,
-  status: 'draft',
-  isFeatured: false,
-  isRecommended: false,
-  isPopular: false,
-  tags: [],
-  features: [],
-  faqs: [],
-  packages: [],
-  requirements: [],
-  version: 1
+// Helper function to safely parse service data
+const parseServiceData = (service) => {
+  if (!service) return null;
+  
+  // Helper function to safely parse array data
+  const parseArrayField = (field, defaultValue = []) => {
+    if (!field) return defaultValue;
+    if (Array.isArray(field)) return field;
+    if (typeof field === 'string') {
+      try {
+        const parsed = JSON.parse(field);
+        return Array.isArray(parsed) ? parsed : defaultValue;
+      } catch {
+        return defaultValue;
+      }
+    }
+    return defaultValue;
+  };
+  
+  return {
+    title: service.title || '',
+    description: service.description || '',
+    shortDescription: service.shortDescription || '',
+    category: service.category?._id || service.category || '',
+    subcategory: service.subcategory?._id || service.subcategory || '',
+    price: service.price || 0,
+    currency: service.currency || 'USD',
+    deliveryTime: service.deliveryTime || 7,
+    deliveryTimeUnit: service.deliveryTimeUnit || 'days',
+    revisions: service.revisions || 1,
+    status: service.status || 'draft',
+    isFeatured: Boolean(service.isFeatured),
+    isRecommended: Boolean(service.isRecommended),
+    isPopular: Boolean(service.isPopular),
+    tags: parseArrayField(service.tags),
+    features: parseArrayField(service.features),
+    faqs: parseArrayField(service.faqs),
+    packages: parseArrayField(service.packages),
+    requirements: parseArrayField(service.requirements),
+    version: service.version || 1,
+    images: parseArrayField(service.images)
+  };
 };
+
 
 const ServiceEditModal = memo(({ 
   service, 
   isOpen, 
   onClose, 
-  onSubmit, 
-  loading = false,
-  categories = []
+  categories = [],
+  users = []
 }) => {
-  const [formData, setFormData] = useState(initialFormData);
+  // Use the update service hook
+  const updateServiceMutation = useUpdateService();
+  
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    shortDescription: '',
+    category: '',
+    subcategory: '',
+    price: 0,
+    currency: 'USD',
+    deliveryTime: 7,
+    deliveryTimeUnit: 'days',
+    revisions: 1,
+    status: 'draft',
+    isFeatured: false,
+    isRecommended: false,
+    isPopular: false,
+    tags: [],
+    features: [],
+    faqs: [],
+    packages: [],
+    requirements: [],
+    version: 1,
+    images: []
+  });
+  
   const [errors, setErrors] = useState({});
-  const [subcategories, setSubcategories] = useState([]);
   const [newTag, setNewTag] = useState('');
   const [activeTab, setActiveTab] = useState('basic');
   const [imagePreviews, setImagePreviews] = useState([]);
+  const [newImages, setNewImages] = useState([]);
+  const [imagesToRemove, setImagesToRemove] = useState([]);
   const formRef = useRef(null);
+
+  // Use the subcategories hook - it will only fetch when category has a value
+  const { 
+    data: subcategoriesData, 
+    isLoading: isLoadingSubcategories,
+    refetch: refetchSubcategories 
+  } = useSubcategoriesByCategory(formData.category, {
+    active: true, // Only fetch active subcategories
+    limit: 100 // Adjust limit as needed
+  });
+
+  // Get subcategories from the API response
+  const subcategories = subcategoriesData?.data || [];
 
   // Initialize form with service data
   useEffect(() => {
     if (service) {
-      const data = {
-        title: service.title || '',
-        description: service.description || '',
-        shortDescription: service.shortDescription || '',
-        category: service.category?._id || service.category || '',
-        subcategory: service.subcategory?._id || service.subcategory || '',
-        price: service.price || 0,
-        currency: service.currency || 'USD',
-        deliveryTime: service.deliveryTime || 7,
-        deliveryTimeUnit: service.deliveryTimeUnit || 'days',
-        revisions: service.revisions || 1,
-        status: service.status || 'draft',
-        isFeatured: service.isFeatured || false,
-        isRecommended: service.isRecommended || false,
-        isPopular: service.isPopular || false,
-        tags: service.tags || [],
-        features: service.features || [],
-        faqs: service.faqs || [],
-        packages: service.packages || [],
-        requirements: service.requirements || [],
-        version: service.version || 1
-      };
-      
-      setFormData(data);
-      setErrors({});
-      setNewTag('');
-      setImagePreviews(service.images?.map(img => ({
-        url: img.url || img,
-        name: img.name || 'Existing Image',
-        isExisting: true
-      })) || []);
+      const parsedData = parseServiceData(service);
+      if (parsedData) {
+        setFormData(parsedData);
+        setErrors({});
+        setNewTag('');
+        
+        // Initialize image previews
+        const initialImagePreviews = parsedData.images.map(img => ({
+          url: typeof img === 'string' ? img : img.url || '',
+          name: typeof img === 'string' ? 'Existing Image' : img.name || 'Existing Image',
+          isExisting: true,
+          id: typeof img === 'string' ? img : img._id || img.id || img.url
+        }));
+        setImagePreviews(initialImagePreviews);
+        setImagesToRemove([]);
+        setNewImages([]);
+      }
     }
   }, [service]);
 
-  // Load subcategories when category changes
+  // Reset subcategory when category changes and subcategory doesn't belong to new category
   useEffect(() => {
-    if (formData.category) {
-      const category = categories.find(cat => cat._id === formData.category);
-      if (category?.subcategories) {
-        setSubcategories(category.subcategories);
-      } else {
-        setSubcategories([]);
+    if (formData.category && formData.subcategory) {
+      // Check if the current subcategory belongs to the selected category
+      const subcategoryExists = subcategories.some(sub => sub._id === formData.subcategory);
+      if (!subcategoryExists) {
+        setFormData(prev => ({ ...prev, subcategory: '' }));
       }
-    } else {
-      setSubcategories([]);
+    } else if (!formData.category) {
+      // Clear subcategory if no category is selected
+      setFormData(prev => ({ ...prev, subcategory: '' }));
     }
-  }, [formData.category, categories]);
+  }, [formData.category, formData.subcategory, subcategories]);
 
   // Validate a single field
   const validateField = useCallback((name, value) => {
@@ -173,6 +224,27 @@ const ServiceEditModal = memo(({
       }));
     }
   }, [validateField]);
+
+  // Handle category change with special handling
+  const handleCategoryChange = useCallback((e) => {
+    const { value } = e.target;
+    
+    setFormData(prev => ({
+      ...prev,
+      category: value,
+      // Keep subcategory only if it belongs to the new category
+      subcategory: prev.subcategory && subcategories.some(sub => sub._id === prev.subcategory) 
+        ? prev.subcategory 
+        : ''
+    }));
+    
+    // Validate category
+    const error = validateField('category', value);
+    setErrors(prev => ({
+      ...prev,
+      category: error
+    }));
+  }, [validateField, subcategories]);
 
   // Handle description change
   const handleDescriptionChange = useCallback((content) => {
@@ -234,26 +306,49 @@ const ServiceEditModal = memo(({
   // Handle image selection
   const handleImageSelect = useCallback((e) => {
     const files = Array.from(e.target.files);
+    
+    // Validate file size (max 5MB per image)
+    const oversizedFiles = files.filter(file => file.size > 5 * 1024 * 1024);
+    if (oversizedFiles.length > 0) {
+      toast.error('Some images exceed 5MB limit');
+      return;
+    }
+    
     const newPreviews = files.map(file => ({
       url: URL.createObjectURL(file),
       name: file.name,
       file: file,
-      isExisting: false
+      isExisting: false,
+      id: `new-${Date.now()}-${Math.random()}`
     }));
     
     // Limit to 10 images total
-    const totalImages = imagePreviews.filter(img => img.isExisting).length + newPreviews.length;
+    const totalImages = imagePreviews.filter(img => !imagesToRemove.includes(img.id)).length + newPreviews.length;
     if (totalImages > 10) {
-      alert('Maximum 10 images allowed');
+      toast.error('Maximum 10 images allowed');
+      newPreviews.forEach(preview => URL.revokeObjectURL(preview.url));
       return;
     }
     
     setImagePreviews(prev => [...prev, ...newPreviews]);
-  }, [imagePreviews]);
+    setNewImages(prev => [...prev, ...files]);
+  }, [imagePreviews, imagesToRemove]);
 
   const handleRemoveImage = useCallback((index) => {
+    const imageToRemove = imagePreviews[index];
+    
+    if (imageToRemove.isExisting) {
+      // Mark existing image for removal
+      setImagesToRemove(prev => [...prev, imageToRemove.id]);
+    } else {
+      // Remove new image from previews and newImages list
+      URL.revokeObjectURL(imageToRemove.url);
+      setNewImages(prev => prev.filter((_, i) => i !== index - imagePreviews.filter(img => img.isExisting).length));
+    }
+    
+    // Remove from previews
     setImagePreviews(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  }, [imagePreviews]);
 
   // Validate entire form
   const validateForm = useCallback(() => {
@@ -268,6 +363,74 @@ const ServiceEditModal = memo(({
     return newErrors;
   }, [formData, validateField]);
 
+  // In ServiceEditModal.jsx - Update the prepareFormData function:
+
+// Prepare form data for submission
+const prepareFormData = useCallback(() => {
+  const formDataToSubmit = new FormData();
+  
+  // Helper function to safely stringify arrays
+  const safeStringify = (data) => {
+    try {
+      if (Array.isArray(data)) {
+        return JSON.stringify(data);
+      }
+      return '[]';
+    } catch (error) {
+      console.error('Stringify error:', error);
+      return '[]';
+    }
+  };
+  
+  // Append basic fields
+  const basicFields = [
+    'title', 'description', 'shortDescription', 'category', 'subcategory',
+    'price', 'currency', 'deliveryTime', 'deliveryTimeUnit', 'revisions',
+    'status', 'version'
+  ];
+  
+  basicFields.forEach(key => {
+    if (formData[key] !== undefined && formData[key] !== null) {
+      formDataToSubmit.append(key, String(formData[key]));
+    }
+  });
+  
+  // Append boolean fields
+  const booleanFields = ['isFeatured', 'isRecommended', 'isPopular'];
+  booleanFields.forEach(key => {
+    if (formData[key] !== undefined) {
+      formDataToSubmit.append(key, String(Boolean(formData[key])));
+    }
+  });
+  
+  // Append array fields as JSON strings
+  const arrayFields = ['tags', 'features', 'faqs', 'packages', 'requirements'];
+  arrayFields.forEach(key => {
+    if (formData[key] && formData[key].length > 0) {
+      formDataToSubmit.append(key, safeStringify(formData[key]));
+    } else {
+      formDataToSubmit.append(key, '[]');
+    }
+  });
+  
+  // Append images to remove
+  if (imagesToRemove.length > 0) {
+    formDataToSubmit.append('imagesToRemove', JSON.stringify(imagesToRemove));
+  }
+  
+  // Append new images
+  newImages.forEach((file, index) => {
+    formDataToSubmit.append(`newImages`, file);
+  });
+  
+  // Log form data for debugging (remove in production)
+  console.log('FormData being sent:');
+  for (let [key, value] of formDataToSubmit.entries()) {
+    console.log(`${key}:`, value);
+  }
+  
+  return formDataToSubmit;
+}, [formData, imagesToRemove, newImages]);
   // Handle form submission
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
@@ -284,36 +447,92 @@ const ServiceEditModal = memo(({
         element.focus();
       }
       
+      toast.error('Please fix the errors in the form');
+      return;
+    }
+    
+    if (!service?._id) {
+      toast.error('Service ID is required');
       return;
     }
     
     try {
-      const submitData = {
-        ...formData,
-        newImages: imagePreviews
-          .filter(img => !img.isExisting)
-          .map(img => img.file)
-      };
+      const formDataToSubmit = prepareFormData();
       
-      await onSubmit(submitData);
+      // Use the mutation hook
+      await updateServiceMutation.mutateAsync({
+        id: service._id,
+        data: formDataToSubmit // Pass FormData object
+      }, {
+        onSuccess: () => {
+          toast.success('Service updated successfully');
+          onClose();
+        },
+        onError: (error) => {
+          console.error('Update error:', error);
+          toast.error(error.message || 'Failed to update service');
+        }
+      });
     } catch (error) {
       console.error('Form submission error:', error);
+      toast.error(error.message || 'Failed to update service');
     }
-  }, [formData, imagePreviews, validateForm, onSubmit]);
+  }, [formData, validateForm, prepareFormData, service, updateServiceMutation, onClose]);
 
   // Reset and close modal
   const handleClose = useCallback(() => {
-    setFormData(initialFormData);
+    // Clean up object URLs
+    imagePreviews.forEach(preview => {
+      if (!preview.isExisting && preview.url) {
+        URL.revokeObjectURL(preview.url);
+      }
+    });
+    
+    setFormData({
+      title: '',
+      description: '',
+      shortDescription: '',
+      category: '',
+      subcategory: '',
+      price: 0,
+      currency: 'USD',
+      deliveryTime: 7,
+      deliveryTimeUnit: 'days',
+      revisions: 1,
+      status: 'draft',
+      isFeatured: false,
+      isRecommended: false,
+      isPopular: false,
+      tags: [],
+      features: [],
+      faqs: [],
+      packages: [],
+      requirements: [],
+      version: 1,
+      images: []
+    });
     setErrors({});
-    setSubcategories([]);
     setNewTag('');
     setImagePreviews([]);
+    setNewImages([]);
+    setImagesToRemove([]);
     setActiveTab('basic');
     onClose();
-  }, [onClose]);
+  }, [imagePreviews, onClose]);
+
+  // Handle Enter key for tags
+  const handleTagKeyPress = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTag();
+    }
+  }, [handleAddTag]);
 
   // Don't render if not open or no service
   if (!isOpen || !service) return null;
+
+  const loading = updateServiceMutation.isLoading;
+  const totalLoading = loading || isLoadingSubcategories;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -337,6 +556,7 @@ const ServiceEditModal = memo(({
               onClick={handleClose}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               aria-label="Close modal"
+              disabled={loading}
             >
               <FiX className="h-5 w-5 text-gray-500" />
             </button>
@@ -375,6 +595,7 @@ const ServiceEditModal = memo(({
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              disabled={loading}
             >
               Basic Info
             </button>
@@ -386,6 +607,7 @@ const ServiceEditModal = memo(({
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              disabled={loading}
             >
               Pricing
             </button>
@@ -397,6 +619,7 @@ const ServiceEditModal = memo(({
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              disabled={loading}
             >
               Content
             </button>
@@ -408,6 +631,7 @@ const ServiceEditModal = memo(({
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              disabled={loading}
             >
               Media
             </button>
@@ -419,6 +643,7 @@ const ServiceEditModal = memo(({
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              disabled={loading}
             >
               Status
             </button>
@@ -440,9 +665,10 @@ const ServiceEditModal = memo(({
                   type="text"
                   value={formData.title}
                   onChange={handleChange}
+                  disabled={loading}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     errors.title ? 'border-red-300' : 'border-gray-300'
-                  }`}
+                  } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                 />
                 {errors.title && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
@@ -463,10 +689,11 @@ const ServiceEditModal = memo(({
                       id="category"
                       name="category"
                       value={formData.category}
-                      onChange={handleChange}
+                      onChange={handleCategoryChange}
+                      disabled={loading || categories.length === 0}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
                         errors.category ? 'border-red-300' : 'border-gray-300'
-                      }`}
+                      } ${loading || categories.length === 0 ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                     >
                       <option value="">Select a category</option>
                       {categories.map(category => (
@@ -495,24 +722,46 @@ const ServiceEditModal = memo(({
                       name="subcategory"
                       value={formData.subcategory}
                       onChange={handleChange}
-                      disabled={!formData.category}
+                      disabled={loading || !formData.category || isLoadingSubcategories}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
                         errors.subcategory ? 'border-red-300' : 'border-gray-300'
-                      } ${!formData.category ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                      } ${loading || !formData.category || isLoadingSubcategories ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                     >
                       <option value="">Select a subcategory</option>
-                      {subcategories.map(subcategory => (
-                        <option key={subcategory._id} value={subcategory._id}>
-                          {subcategory.name}
+                      {isLoadingSubcategories ? (
+                        <option value="" disabled>
+                          Loading subcategories...
                         </option>
-                      ))}
+                      ) : subcategories.length > 0 ? (
+                        subcategories.map(subcategory => (
+                          <option key={subcategory._id} value={subcategory._id}>
+                            {subcategory.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>
+                          No subcategories found for this category
+                        </option>
+                      )}
                     </select>
                     <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
                   </div>
+                  {isLoadingSubcategories && formData.category && (
+                    <div className="mt-1.5 text-sm text-blue-600 flex items-center">
+                      <FiLoader className="h-4 w-4 mr-1 animate-spin" />
+                      Loading subcategories...
+                    </div>
+                  )}
                   {errors.subcategory && (
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       {errors.subcategory}
+                    </p>
+                  )}
+                  {!isLoadingSubcategories && formData.category && subcategories.length === 0 && (
+                    <p className="mt-1.5 text-sm text-yellow-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      No subcategories available for this category
                     </p>
                   )}
                 </div>
@@ -529,9 +778,10 @@ const ServiceEditModal = memo(({
                   value={formData.shortDescription}
                   onChange={handleChange}
                   rows={3}
+                  disabled={loading}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     errors.shortDescription ? 'border-red-300' : 'border-gray-300'
-                  }`}
+                  } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                 />
                 <div className="flex justify-between mt-1.5">
                   {errors.shortDescription ? (
@@ -568,9 +818,10 @@ const ServiceEditModal = memo(({
                       onChange={handleChange}
                       min="0"
                       step="0.01"
+                      disabled={loading}
                       className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                         errors.price ? 'border-red-300' : 'border-gray-300'
-                      }`}
+                      } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                     />
                   </div>
                   {errors.price && (
@@ -590,7 +841,10 @@ const ServiceEditModal = memo(({
                     name="currency"
                     value={formData.currency}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    disabled={loading}
+                    className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <option value="USD">USD ($)</option>
                     <option value="EUR">EUR (€)</option>
@@ -614,9 +868,10 @@ const ServiceEditModal = memo(({
                       onChange={handleChange}
                       min="1"
                       max="365"
+                      disabled={loading}
                       className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                         errors.deliveryTime ? 'border-red-300' : 'border-gray-300'
-                      }`}
+                      } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                     />
                   </div>
                   {errors.deliveryTime && (
@@ -638,7 +893,10 @@ const ServiceEditModal = memo(({
                     name="deliveryTimeUnit"
                     value={formData.deliveryTimeUnit}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    disabled={loading}
+                    className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <option value="days">Days</option>
                     <option value="weeks">Weeks</option>
@@ -658,9 +916,10 @@ const ServiceEditModal = memo(({
                     onChange={handleChange}
                     min="0"
                     max="10"
+                    disabled={loading}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                       errors.revisions ? 'border-red-300' : 'border-gray-300'
-                    }`}
+                    } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                   />
                   {errors.revisions && (
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
@@ -685,11 +944,12 @@ const ServiceEditModal = memo(({
                   id="description"
                   name="description"
                   value={formData.description}
-                  onChange={handleChange}
+                  onChange={(e) => handleDescriptionChange(e.target.value)}
                   rows={8}
+                  disabled={loading}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     errors.description ? 'border-red-300' : 'border-gray-300'
-                  }`}
+                  } ${loading ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                 />
                 {errors.description && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
@@ -711,14 +971,18 @@ const ServiceEditModal = memo(({
                       type="text"
                       value={newTag}
                       onChange={(e) => setNewTag(e.target.value)}
+                      onKeyPress={handleTagKeyPress}
                       placeholder="Add a tag (press Enter)"
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                      disabled={loading}
+                      className={`flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                        loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                      }`}
                     />
                     <button
                       type="button"
                       onClick={handleAddTag}
-                      className="px-4 py-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200"
+                      disabled={loading}
+                      className="px-4 py-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FiTag className="h-5 w-5" />
                     </button>
@@ -735,7 +999,8 @@ const ServiceEditModal = memo(({
                           <button
                             type="button"
                             onClick={() => handleRemoveTag(tag)}
-                            className="ml-2 text-indigo-600 hover:text-indigo-800"
+                            disabled={loading}
+                            className="ml-2 text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <FiX className="h-4 w-4" />
                           </button>
@@ -755,7 +1020,8 @@ const ServiceEditModal = memo(({
                   <button
                     type="button"
                     onClick={handleAddFeature}
-                    className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center"
+                    disabled={loading}
+                    className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <FiPlus className="h-4 w-4 mr-1" />
                     Add Feature
@@ -771,14 +1037,16 @@ const ServiceEditModal = memo(({
                             type="checkbox"
                             checked={feature.included}
                             onChange={(e) => handleUpdateFeature(index, 'included', e.target.checked)}
-                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                            disabled={loading}
+                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:opacity-50"
                           />
                           <h5 className="font-medium text-gray-900">Feature {index + 1}</h5>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleRemoveFeature(index)}
-                          className="text-red-600 hover:text-red-700"
+                          disabled={loading}
+                          className="text-red-600 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiTrash2 className="h-4 w-4" />
                         </button>
@@ -793,7 +1061,10 @@ const ServiceEditModal = memo(({
                             type="text"
                             value={feature.title}
                             onChange={(e) => handleUpdateFeature(index, 'title', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            disabled={loading}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                              loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                            }`}
                             placeholder="e.g., Responsive Design"
                           />
                         </div>
@@ -806,7 +1077,10 @@ const ServiceEditModal = memo(({
                             value={feature.description}
                             onChange={(e) => handleUpdateFeature(index, 'description', e.target.value)}
                             rows={2}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            disabled={loading}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                              loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                            }`}
                             placeholder="Describe this feature..."
                           />
                         </div>
@@ -837,7 +1111,7 @@ const ServiceEditModal = memo(({
                 {imagePreviews.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {imagePreviews.map((image, index) => (
-                      <div key={index} className="relative group">
+                      <div key={image.id} className="relative group">
                         <img
                           src={image.url}
                           alt={`Service ${index + 1}`}
@@ -846,13 +1120,21 @@ const ServiceEditModal = memo(({
                         <button
                           type="button"
                           onClick={() => handleRemoveImage(index)}
-                          className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          disabled={loading}
+                          className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiX className="h-4 w-4" />
                         </button>
                         <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                           {image.isExisting ? 'Existing' : 'New'}
                         </div>
+                        {imagesToRemove.includes(image.id) && (
+                          <div className="absolute inset-0 bg-red-500 bg-opacity-20 flex items-center justify-center rounded-lg">
+                            <span className="text-xs font-semibold text-white bg-red-600 px-2 py-1 rounded">
+                              To be removed
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -877,17 +1159,21 @@ const ServiceEditModal = memo(({
                     multiple
                     accept="image/*"
                     onChange={handleImageSelect}
+                    disabled={loading}
                     className="hidden"
                   />
                   <label
                     htmlFor="service-new-images"
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
+                    className={`inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer ${
+                      loading ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <FiUpload className="h-5 w-5 mr-2" />
                     Select New Images
                   </label>
                   <p className="text-xs text-gray-500 mt-4">
                     {imagePreviews.filter(img => !img.isExisting).length} new images selected
+                    {imagesToRemove.length > 0 && ` • ${imagesToRemove.length} images to remove`}
                   </p>
                 </div>
               </div>
@@ -906,7 +1192,10 @@ const ServiceEditModal = memo(({
                   name="status"
                   value={formData.status}
                   onChange={handleChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={loading}
+                  className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                    loading ? 'bg-gray-50 cursor-not-allowed' : ''
+                  }`}
                 >
                   <option value="draft">Draft</option>
                   <option value="active">Active</option>
@@ -917,13 +1206,16 @@ const ServiceEditModal = memo(({
               </div>
               
               <div className="space-y-4">
-                <label className="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                <label className={`flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${
+                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}>
                   <input
                     type="checkbox"
                     name="isFeatured"
                     checked={formData.isFeatured}
                     onChange={handleChange}
-                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5"
+                    disabled={loading}
+                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5 disabled:opacity-50"
                   />
                   <div>
                     <span className="font-medium text-gray-900">Featured Service</span>
@@ -933,13 +1225,16 @@ const ServiceEditModal = memo(({
                   </div>
                 </label>
                 
-                <label className="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                <label className={`flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${
+                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}>
                   <input
                     type="checkbox"
                     name="isRecommended"
                     checked={formData.isRecommended}
                     onChange={handleChange}
-                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5"
+                    disabled={loading}
+                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5 disabled:opacity-50"
                   />
                   <div>
                     <span className="font-medium text-gray-900">Recommended Service</span>
@@ -949,13 +1244,16 @@ const ServiceEditModal = memo(({
                   </div>
                 </label>
                 
-                <label className="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                <label className={`flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${
+                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}>
                   <input
                     type="checkbox"
                     name="isPopular"
                     checked={formData.isPopular}
                     onChange={handleChange}
-                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5"
+                    disabled={loading}
+                    className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5 disabled:opacity-50"
                   />
                   <div>
                     <span className="font-medium text-gray-900">Popular Service</span>
@@ -979,20 +1277,20 @@ const ServiceEditModal = memo(({
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
                 disabled={loading}
+                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={totalLoading}
                 className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? (
+                {totalLoading ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Saving...</span>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Saving Changes...</span>
                   </>
                 ) : (
                   <>

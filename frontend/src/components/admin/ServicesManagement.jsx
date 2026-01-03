@@ -378,9 +378,9 @@ const ServicesManagement = () => {
   }, []);
 
   const handleEditService = useCallback((service) => {
-    setSelectedService(service);
-    setShowEditModal(true);
-  }, []);
+  setSelectedService(service);
+  setShowEditModal(true);
+}, []);
 
   const handleDeleteServiceClick = useCallback((service) => {
     setSelectedService(service);
@@ -1037,7 +1037,7 @@ const ServicesManagement = () => {
             setShowEditModal(false);
             setSelectedService(null);
           }}
-          onSubmit={handleSubmitEdit}
+        
           loading={updateServiceMutation.isLoading}
           categories={categories}
           users={users}

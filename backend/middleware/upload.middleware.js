@@ -123,28 +123,74 @@ const profilePicUpload = multer({
  */
 const processUploadToCloudinary = async (files, folder = 'services') => {
   if (!files || !Array.isArray(files) || files.length === 0) {
+    console.log('No files to upload to Cloudinary');
     return [];
   }
   
-  const uploadPromises = files.map(async (file) => {
+  console.log(`Processing ${files.length} file(s) for Cloudinary upload to folder: ${folder}`);
+  
+  const uploadPromises = files.map(async (file, index) => {
     try {
-      const result = await uploadToCloudinary(file.path, {
-        folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER}/${folder}`,
-        public_id: `${folder}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-        transformation: [
-          { quality: 'auto', fetch_format: 'auto' }
-        ]
+      console.log(`Uploading file ${index + 1}:`, {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        hasBuffer: !!file.buffer,
+        hasPath: !!file.path
       });
+
+      let result;
       
-      // Clean up local file
-      await cleanupLocalFiles(file.path);
+      // FIXED: Handle buffer uploads (from memory storage)
+      if (file.buffer) {
+        console.log('Uploading from buffer');
+        // Convert buffer to base64 for Cloudinary
+        const base64Data = file.buffer.toString('base64');
+        const dataUri = `data:${file.mimetype};base64,${base64Data}`;
+        
+        result = await uploadToCloudinary(dataUri, {
+          folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'vorkana'}/${folder}`,
+          public_id: `${folder}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+          overwrite: true,
+          invalidate: true,
+          resource_type: 'image',
+          transformation: [
+            { quality: 'auto', fetch_format: 'auto' }
+          ]
+        });
+      } 
+      // Handle file path uploads (from disk storage)
+      else if (file.path) {
+        console.log('Uploading from file path:', file.path);
+        result = await uploadToCloudinary(file.path, {
+          folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'vorkana'}/${folder}`,
+          public_id: `${folder}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+          overwrite: true,
+          invalidate: true,
+          resource_type: 'image',
+          transformation: [
+            { quality: 'auto', fetch_format: 'auto' }
+          ]
+        });
+        
+        // Clean up local file if it exists
+        if (file.path) {
+          await cleanupLocalFiles(file.path).catch(console.error);
+        }
+      } else {
+        console.error('File has neither buffer nor path:', file);
+        return null;
+      }
       
       if (result.success) {
+        console.log(`Upload successful for ${file.originalname}:`, result.data.url);
         return {
           url: result.data.url,
           public_id: result.data.public_id,
           format: result.data.format,
-          size: result.data.bytes
+          size: result.data.bytes,
+          width: result.data.width,
+          height: result.data.height
         };
       } else {
         console.error('Upload failed:', result.error);
@@ -152,7 +198,10 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
       }
     } catch (error) {
       console.error('Upload processing error:', error);
-      await cleanupLocalFiles(file.path);
+      // Clean up local file if it exists
+      if (file.path) {
+        await cleanupLocalFiles(file.path).catch(console.error);
+      }
       return null;
     }
   });
@@ -162,39 +211,72 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
     .filter(result => result.status === 'fulfilled' && result.value)
     .map(result => result.value);
   
+  console.log(`Successfully uploaded ${successfulUploads.length}/${files.length} files`);
   return successfulUploads;
 };
 
 /**
- * Process profile picture upload to Cloudinary
- * @param {Object} file - Multer file object
- * @param {string} userId - User ID for unique naming
- * @returns {Promise<Object>} Upload result
+ * Process profile picture upload to Cloudinary - FIXED: Handle buffer uploads
  */
 const processProfilePictureUpload = async (file, userId) => {
   if (!file) {
     throw new Error('No file provided');
   }
   
+  console.log('Processing profile picture:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    hasBuffer: !!file.buffer,
+    hasPath: !!file.path
+  });
+  
   try {
     // Generate a unique public ID using userId and timestamp
     const publicId = `profile_${userId}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     
-    const result = await uploadToCloudinary(file.path, {
-  folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER}/profiles`,
-  public_id: publicId,
-  overwrite: true,
-  invalidate: true, // 🔥 VERY IMPORTANT
-  resource_type: 'image',
-  transformation: [
-    { width: 400, height: 400, crop: 'fill', gravity: 'face' },
-    { quality: 'auto:best', fetch_format: 'auto' }
-  ]
-});
-
+    let result;
     
-    // Clean up local file
-    await cleanupLocalFiles(file.path);
+    // FIXED: Handle buffer uploads
+    if (file.buffer) {
+      console.log('Uploading profile picture from buffer');
+      const base64Data = file.buffer.toString('base64');
+      const dataUri = `data:${file.mimetype};base64,${base64Data}`;
+      
+      result = await uploadToCloudinary(dataUri, {
+        folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'vorkana'}/profiles`,
+        public_id: publicId,
+        overwrite: true,
+        invalidate: true,
+        resource_type: 'image',
+        transformation: [
+          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { quality: 'auto:best', fetch_format: 'auto' }
+        ]
+      });
+    } 
+    // Handle file path uploads
+    else if (file.path) {
+      console.log('Uploading profile picture from file path');
+      result = await uploadToCloudinary(file.path, {
+        folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'vorkana'}/profiles`,
+        public_id: publicId,
+        overwrite: true,
+        invalidate: true,
+        resource_type: 'image',
+        transformation: [
+          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { quality: 'auto:best', fetch_format: 'auto' }
+        ]
+      });
+      
+      // Clean up local file
+      if (file.path) {
+        await cleanupLocalFiles(file.path);
+      }
+    } else {
+      throw new Error('Profile picture has neither buffer nor path');
+    }
     
     if (result.success) {
       return {
@@ -211,13 +293,12 @@ const processProfilePictureUpload = async (file, userId) => {
   } catch (error) {
     console.error('Profile picture upload error:', error);
     // Ensure local file cleanup even on error
-    if (file.path) {
+    if (file && file.path) {
       await cleanupLocalFiles(file.path).catch(console.error);
     }
     throw error;
   }
 };
-
 /**
  * Handle multer errors
  */

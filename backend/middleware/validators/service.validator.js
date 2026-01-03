@@ -50,19 +50,49 @@ const sanitizeInput = (data, options = {}) => {
   }
   return data;
 };
-
-const imageUrlSchema = Joi.string().pattern(
-  /^\/uploads\/[a-f0-9-]{20,64}\.(jpg|jpeg|png|webp|gif|svg)$/i
-).custom((value, helpers) => {
-  if (value.includes('..') || value.includes('//')) {
-    return helpers.error('any.invalid');
-  }
-  return value;
-}, 'Image URL validation').messages({
-  'string.pattern.base': 'Invalid image URL format',
-  'any.invalid': 'Invalid image path detected'
+const imageObjectSchema = Joi.object({
+  url: Joi.string()
+    .required()
+    .pattern(/^https?:\/\//)
+    .messages({
+      'string.pattern.base': 'Image URL must be a valid URL',
+      'any.required': 'Image URL is required'
+    }),
+  public_id: Joi.string().required().messages({
+    'any.required': 'Image public_id is required'
+  }),
+  width: Joi.number().optional().allow(null),
+  height: Joi.number().optional().allow(null),
+  size: Joi.number().optional().allow(null),
+  format: Joi.string().optional().allow(null, ''),
+  uploadedAt: Joi.date().optional()
+}).options({ stripUnknown: true });
+const imageUrlSchema = Joi.alternatives().try(
+  Joi.string().pattern(/^https:\/\/res\.cloudinary\.com\/.*$/i),
+  Joi.string().pattern(/^https:\/\/res\.cloudinary\.com\/.*$/i),
+  Joi.string().pattern(/^https?:\/\/.*$/i)
+).messages({
+  'alternatives.match': 'Image must be a valid Cloudinary URL',
+  'string.pattern.base': 'Invalid image URL format'
 });
-
+const thumbnailSchema = Joi.alternatives().try(
+  // Accept string URL
+  imageUrlSchema,
+  
+  // Accept thumbnail object
+  Joi.object({
+    url: imageUrlSchema.required(),
+    public_id: Joi.string().required(),
+    width: Joi.number().optional(),
+    height: Joi.number().optional(),
+    size: Joi.number().optional(),
+    format: Joi.string().optional(),
+    uploadedAt: Joi.date().optional()
+  })
+).required().messages({
+  'alternatives.match': 'Thumbnail must be either a valid URL or a thumbnail object',
+  'any.required': 'Thumbnail is required'
+});
 const packageSchema = Joi.object({
   name: Joi.string()
     .required()
@@ -279,19 +309,36 @@ const createSchema = Joi.object({
       'number.min': 'Revisions cannot be negative',
       'number.max': 'Maximum revisions is 99',
     }),
-  
-  images: Joi.array()
-    .items(imageUrlSchema)
+images: Joi.array()
+    .items(Joi.alternatives().try(
+      // Accept string URLs
+      Joi.string()
+        .pattern(/^https?:\/\//)
+        .messages({
+          'string.pattern.base': 'Image must be a valid URL'
+        }),
+      // Accept image objects
+      imageObjectSchema
+    ))
     .max(10)
     .optional()
     .messages({
       'array.max': 'Cannot upload more than 10 images',
     }),
-  
-  thumbnail: imageUrlSchema
-    .optional()
-    .allow(null, ''),
-  
+
+  thumbnail: Joi.alternatives().try(
+    // Accept string URLs
+    Joi.string()
+      .pattern(/^https?:\/\//)
+      .messages({
+        'string.pattern.base': 'Thumbnail must be a valid URL'
+      }),
+    // Accept thumbnail objects
+    imageObjectSchema
+  ).required().messages({
+    'any.required': 'Thumbnail is required'
+  }),
+
   tags: Joi.array()
     .items(Joi.string().max(30).custom((value) => sanitizeText(value), 'XSS prevention'))
     .max(20)
@@ -458,19 +505,23 @@ shortDescription: Joi.string()
       'number.min': 'Revisions cannot be negative',
       'number.max': 'Maximum revisions is 99',
     }),
-  
-  images: Joi.array()
-    .items(imageUrlSchema)
+ images: Joi.array()
+    .items(Joi.alternatives().try(
+      Joi.string().pattern(/^https?:\/\//),
+      imageObjectSchema
+    ))
     .max(10)
     .optional()
     .messages({
       'array.max': 'Cannot upload more than 10 images',
     }),
-  
-  thumbnail: imageUrlSchema
-    .optional()
-    .allow(null, ''),
-  
+
+  thumbnail: Joi.alternatives().try(
+    Joi.string().pattern(/^https?:\/\//),
+    imageObjectSchema
+  ).optional().messages({
+    'alternatives.match': 'Thumbnail must be a valid URL or thumbnail object'
+  }),
   tags: Joi.array()
     .items(Joi.string().max(30).custom((value) => sanitizeText(value), 'XSS prevention'))
     .max(20)
@@ -703,10 +754,45 @@ const validateCreate = (req, res, next) => {
     });
   }
 };
-
 const validateUpdate = (req, res, next) => {
   try {
-    const { error, value } = updateSchema.validate(req.body, { 
+    // Check if request has FormData (multipart/form-data)
+    let bodyData = req.body;
+    
+    // If FormData contains 'data' field with JSON string, parse it
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      if (req.body.data && typeof req.body.data === 'string') {
+        try {
+          bodyData = JSON.parse(req.body.data);
+        } catch (parseError) {
+          console.error('Error parsing JSON from FormData:', parseError);
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid JSON data in FormData',
+            code: 'INVALID_FORM_DATA',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      // Also handle direct fields in FormData (for backward compatibility)
+      Object.keys(req.body).forEach(key => {
+        if (key !== 'data' && !req.files?.[key]) {
+          // Try to parse as JSON if it looks like JSON
+          if (typeof req.body[key] === 'string' && 
+              (req.body[key].startsWith('[') || req.body[key].startsWith('{'))) {
+            try {
+              bodyData[key] = JSON.parse(req.body[key]);
+            } catch (e) {
+              bodyData[key] = req.body[key];
+            }
+          } else {
+            bodyData[key] = req.body[key];
+          }
+        }
+      });
+    }
+    
+    const { error, value } = updateSchema.validate(bodyData, { 
       abortEarly: false,
       allowUnknown: false 
     });
@@ -727,7 +813,11 @@ const validateUpdate = (req, res, next) => {
       });
     }
     
+    // Replace req.body with validated data
     req.body = value;
+    // Also keep the original body for file handling
+    req.originalBody = bodyData;
+    
     next();
   } catch (err) {
     return res.status(500).json({

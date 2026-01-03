@@ -1,8 +1,6 @@
+// service.route.js - Remove local storage configurations
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const controller = require('../controllers/services.controller.js');
 const { protect, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
 const { 
@@ -13,6 +11,12 @@ const {
 } = require('../middleware/validators/service.validator.js');
 
 const rateLimit = require('express-rate-limit');
+const { 
+  upload, 
+  thumbnailUpload, 
+  handleMulterError,
+  processUploadToCloudinary 
+} = require('../middleware/upload.middleware.js');
 
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -53,146 +57,11 @@ const imageUploadLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../public/uploads');
-    
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname).toLowerCase();
-    
-    const originalName = file.originalname.replace(path.extname(file.originalname), '');
-    const sanitizedName = originalName.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
-    
-    const filename = `${sanitizedName}-${uniqueSuffix}${ext}`;
-    cb(null, filename);
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|webp|gif|svg/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
-  const mimetype = allowedTypes.test(file.mimetype);
-  
-  if (extname && mimetype) {
-    const maxSize = 5 * 1024 * 1024;
-    
-    if (file.size > maxSize) {
-      return cb(new Error('File size exceeds 5MB limit'), false);
-    }
-    
-    const originalName = file.originalname.toLowerCase();
-    if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
-      return cb(new Error('Invalid filename'), false);
-    }
-    
-    const executableExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.py'];
-    const fileExtension = path.extname(originalName);
-    if (executableExtensions.includes(fileExtension)) {
-      return cb(new Error('Executable files are not allowed'), false);
-    }
-    
-    return cb(null, true);
-  }
-  
-  cb(new Error('Invalid file type. Only images (jpeg, jpg, png, webp, gif, svg) are allowed.'), false);
-};
-
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 10
-  },
-  fileFilter: fileFilter
-});
-
-const thumbnailUpload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 2 * 1024 * 1024,
-    files: 1
-  },
-  fileFilter: fileFilter
-});
-const uploadWithThumbnail = multer({
-  storage: storage,
-  limits: { 
-    fileSize: 5 * 1024 * 1024, // 5MB max per file
-    files: 11 // 1 thumbnail + 10 images max
-  },
-  fileFilter: fileFilter
-}).fields([
+// Create combined upload middleware
+const uploadWithThumbnail = upload.fields([
   { name: 'images', maxCount: 10 },
   { name: 'thumbnail', maxCount: 1 }
 ]);
-
-const handleMulterError = (err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        message: 'File size too large. Maximum size is 5MB per file (2MB for thumbnails).',
-        code: 'FILE_TOO_LARGE'
-      });
-    }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
-        success: false,
-        message: 'Too many files. Maximum 10 files allowed for service images.',
-        code: 'TOO_MANY_FILES'
-      });
-    }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({
-        success: false,
-        message: 'Unexpected file field',
-        code: 'UNEXPECTED_FILE_FIELD'
-      });
-    }
-  }
-  
-  if (err.message.includes('Invalid file type')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'INVALID_FILE_TYPE'
-    });
-  }
-  
-  if (err.message.includes('File size exceeds')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'FILE_SIZE_EXCEEDED'
-    });
-  }
-  
-  if (err.message.includes('Invalid filename')) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid filename detected',
-      code: 'INVALID_FILENAME'
-    });
-  }
-
-  if (err.message.includes('Executable files are not allowed')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-      code: 'EXECUTABLE_FILE_NOT_ALLOWED'
-    });
-  }
-  
-  next(err);
-};
 
 // ============================================
 // PUBLIC ROUTES
@@ -206,35 +75,46 @@ router.get('/search', optionalAuth, validateQuery, controller.searchServices);
 
 // Get similar services
 router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
+
+// Get my services
 router.get('/my-services', 
   protect, 
   serviceLimiter, 
   validateQuery, 
   controller.getMyServices
 );
+
 // Get service by ID or slug
 router.get('/:id', optionalAuth, controller.getServiceById);
+
+// Get popular services
 router.get('/popular', 
   optionalAuth, 
   serviceLimiter, 
   controller.getPopularServices
 );
 
-// Get popular services by category (for frontend component)
+// Get popular services by category
 router.get('/popular/category', 
   optionalAuth, 
   serviceLimiter, 
   controller.getPopularServicesByCategory
 );
+
+// Get all active services
 router.get('/all/active', 
   protect, 
   controller.getAllActiveServices
 );
+
+// Get services by category
 router.get('/category/:categoryId', 
   optionalAuth, 
   serviceLimiter, 
   controller.getServicesByCategory
 );
+
+// Get services by subcategory ID
 router.get('/subcategory/:subcategoryId', 
   optionalAuth, 
   serviceLimiter, 
@@ -247,10 +127,9 @@ router.get('/subcategory/slug/:slug',
   serviceLimiter, 
   controller.getServicesBySubcategorySlug
 );
-// Toggle popular status (admin only)
 
 // ============================================
-// PROTECTED ROUTES (All authenticated users)
+// PROTECTED ROUTES
 // ============================================
 
 // Like/Unlike service
@@ -260,10 +139,7 @@ router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 // USER ROUTES (Service creators)
 // ============================================
 
-// Get my created services
-
-
-// Create service with images
+// Create service with Cloudinary uploads
 router.post('/', 
   protect, 
   serviceLimiter, 
@@ -277,12 +153,12 @@ router.post('/',
 router.put('/:id', 
   protect, 
   serviceLimiter, 
-  upload.array('images', 10), 
+  uploadWithThumbnail,
   handleMulterError, 
   validateUpdate, 
   controller.updateService
 );
-router.get('/all-active', protect, controller.getAllActiveServices);
+
 // Delete my service
 router.delete('/:id', 
   protect, 
@@ -297,7 +173,7 @@ router.patch('/:id/restore',
   controller.restoreService
 );
 
-// Upload additional images to my service
+// Upload additional images to my service (Cloudinary)
 router.post('/:id/images', 
   protect, 
   imageUploadLimiter, 
@@ -306,7 +182,7 @@ router.post('/:id/images',
   controller.uploadImages
 );
 
-// Remove specific image from my service
+// Remove specific image from my service (Cloudinary)
 router.delete('/:id/images/:publicId', 
   protect, 
   serviceLimiter, 
@@ -320,7 +196,7 @@ router.put('/:id/thumbnail/:publicId',
   controller.setThumbnail
 );
 
-// Upload new thumbnail for my service
+// Upload new thumbnail for my service (Cloudinary)
 router.post('/:id/thumbnail', 
   protect, 
   imageUploadLimiter, 
@@ -332,6 +208,8 @@ router.post('/:id/thumbnail',
 // ============================================
 // ADMIN ROUTES
 // ============================================
+
+// Admin create service
 router.post('/admin/create', 
   protect, 
   adminOnly, 
@@ -341,6 +219,8 @@ router.post('/admin/create',
   validateCreate, 
   controller.createService
 );
+
+// Get admin services
 router.get('/admin/services', 
   protect, 
   adminOnly, 
@@ -348,6 +228,7 @@ router.get('/admin/services',
   validateQuery, 
   controller.getAdminServices
 );
+
 // Update any service (admin)
 router.put('/admin/:id', 
   protect, 
@@ -428,12 +309,15 @@ router.post('/admin/:id/thumbnail',
   handleMulterError, 
   controller.uploadThumbnail
 );
+
+// Toggle popular status (admin)
 router.patch('/:id/popular', 
   protect, 
   adminOnly, 
   serviceLimiter, 
   controller.togglePopularStatus
 );
+
 // ============================================
 // BATCH OPERATION ROUTES (Admin only)
 // ============================================
@@ -471,7 +355,7 @@ router.patch('/batch/popular',
 );
 
 // ============================================
-// SERVICE HEALTH CHECK ROUTES
+// HEALTH CHECK ROUTES
 // ============================================
 
 // Service health check
@@ -508,14 +392,18 @@ router.get('/metrics/overview',
           search: true,
           stats: true,
           export: true,
-          rateLimiting: true
+          rateLimiting: true,
+          cloudinaryUpload: true
         }
       }
     });
 });
+
+// Get services with stats
 router.get('/with-stats', 
   optionalAuth, 
   serviceLimiter, 
   controller.getServicesWithCategoryStats
 );
+
 module.exports = router;

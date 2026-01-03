@@ -17,12 +17,22 @@ cloudinary.config({
  * @param {Object} options - Cloudinary upload options
  * @returns {Promise<Object>} Upload result
  */
-const uploadToCloudinary = async (filePath, options = {}) => {
+// In utils/cloudinary.js
+const uploadToCloudinary = async (file, options = {}) => {
   try {
-    const result = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'auto',
-      ...options
+    console.log('Cloudinary upload called with:', {
+      fileType: typeof file,
+      fileLength: file?.length || 'N/A',
+      options
     });
+    
+    // Cloudinary can handle both file paths and base64 data URIs
+    const uploadOptions = {
+      ...options,
+      resource_type: options.resource_type || 'auto'
+    };
+    
+    const result = await cloudinary.uploader.upload(file, uploadOptions);
     
     return {
       success: true,
@@ -124,11 +134,23 @@ const cleanupOldProfilePictures = async (pictureHistory, keepCount = 3) => {
   
   return deleteResults;
 };
+const buildImageUrl = ({
+  publicId,
+  width = 400,
+  height,
+  quality = 'auto',
+  format = 'auto',
+  crop = 'limit'
+}) => {
+  let transformations = `f_${format},q_${quality},c_${crop},w_${width}`;
+  if (height) transformations += `,h_${height}`;
 
+  return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/${transformations}/${publicId}`;
+};
 module.exports = {
   cloudinary,
   uploadToCloudinary,
   deleteFromCloudinary,
   cleanupLocalFiles,
-  cleanupOldProfilePictures
+  cleanupOldProfilePictures,buildImageUrl
 };

@@ -1,17 +1,14 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 const Service = require('../models/services.model.js');
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
 const { sanitizeHtml } = require('../utils/sanitize.js');
 const { 
   processUploadToCloudinary, 
-  deleteCloudinaryImages,
-  processProfilePictureUpload 
+  deleteCloudinaryImages
 } = require('../middleware/upload.middleware.js');
-const cache = require('../utils/cache.js'); // Import cache utility
+const cache = require('../utils/cache.js');
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
@@ -47,11 +44,26 @@ const invalidateAllServiceCache = async () => {
     console.warn('Error invalidating all service cache:', err.message);
   }
 };
-
-const sanitizeServiceInput = (data, files = {}) => {
+const sanitizeServiceInput = (data) => {
   const sanitized = {};
   
   for (const key in data) {
+    if (key === 'thumbnail') {
+      // Handle thumbnail specially - keep it as is if it's an object
+      if (typeof data[key] === 'object' && data[key] !== null) {
+        sanitized[key] = data[key];
+      } else if (typeof data[key] === 'string' && data[key].trim() !== '') {
+        // If it's a string URL, convert to object
+        sanitized[key] = {
+          url: data[key].trim(),
+          public_id: `thumbnail-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+          uploadedAt: new Date()
+        };
+      }
+      // If thumbnail is empty string or null, skip it (don't add to sanitized)
+      continue;
+    }
+    
     if (typeof data[key] === 'string') {
       // Try to parse JSON if it looks like JSON
       if (
@@ -75,7 +87,6 @@ const sanitizeServiceInput = (data, files = {}) => {
             sanitized[key] = data[key];
           }
         } catch (e) {
-          // If not valid JSON, treat as string
           sanitized[key] = sanitizeHtml(data[key], {
             allowedTags: [],
             allowedAttributes: {},
@@ -90,90 +101,10 @@ const sanitizeServiceInput = (data, files = {}) => {
         }).trim();
       }
     } else if (Array.isArray(data[key])) {
-      // If it's already an array
-      if (key === 'tags' || key === 'searchKeywords') {
-        sanitized[key] = data[key].map(item => 
-          sanitizeHtml(item.toString(), { 
-            allowedTags: [], 
-            allowedAttributes: {} 
-          }).trim()
-        );
-      } else if (key === 'features') {
-        sanitized[key] = data[key].map(feature => {
-          if (typeof feature === 'string') {
-            return { 
-              title: sanitizeHtml(feature, { allowedTags: [], allowedAttributes: {} }).trim(),
-              description: '' 
-            };
-          }
-          return {
-            title: sanitizeHtml(feature.title || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-            description: sanitizeHtml(feature.description || '', { allowedTags: [], allowedAttributes: {} }).trim()
-          };
-        });
-      } else if (key === 'faqs') {
-        sanitized[key] = data[key].map(faq => {
-          if (typeof faq === 'string') {
-            return { 
-              question: sanitizeHtml(faq, { allowedTags: [], allowedAttributes: {} }).trim(),
-              answer: '' 
-            };
-          }
-          return {
-            question: sanitizeHtml(faq.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-            answer: sanitizeHtml(faq.answer || '', { allowedTags: [], allowedAttributes: {} }).trim()
-          };
-        });
-      } else if (key === 'requirements') {
-        sanitized[key] = data[key].map(req => {
-          if (typeof req === 'string') {
-            return { 
-              question: sanitizeHtml(req, { allowedTags: [], allowedAttributes: {} }).trim(),
-              options: [] 
-            };
-          }
-          return {
-            question: sanitizeHtml(req.question || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-            options: req.options ? req.options.map(opt => 
-              sanitizeHtml(opt.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
-            ) : []
-          };
-        });
-      } else if (key === 'packages') {
-        sanitized[key] = data[key].map(pkg => {
-          if (typeof pkg === 'string') {
-            try {
-              const parsed = JSON.parse(pkg);
-              return {
-                name: sanitizeHtml(parsed.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-                description: sanitizeHtml(parsed.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-                price: parsed.price || 0,
-                deliveryTime: parsed.deliveryTime || 0,
-                features: (parsed.features || []).map(f => 
-                  sanitizeHtml(f.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
-                )
-              };
-            } catch (e) {
-              return {
-                name: sanitizeHtml(pkg, { allowedTags: [], allowedAttributes: {} }).trim(),
-                description: '',
-                price: 0,
-                deliveryTime: 0,
-                features: []
-              };
-            }
-          }
-          return {
-            name: sanitizeHtml(pkg.name || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-            description: sanitizeHtml(pkg.description || '', { allowedTags: [], allowedAttributes: {} }).trim(),
-            price: pkg.price || 0,
-            deliveryTime: pkg.deliveryTime || 0,
-            features: pkg.features ? pkg.features.map(f => 
-              sanitizeHtml(f.toString(), { allowedTags: [], allowedAttributes: {} }).trim()
-            ) : []
-          };
-        });
-      } else if (typeof data[key][0] === 'string') {
+      // Keep Cloudinary image arrays as is
+      if (key === 'images' && data[key].length > 0 && data[key][0] && data[key][0].url) {
+        sanitized[key] = data[key];
+      } else if (key === 'tags' || key === 'searchKeywords') {
         sanitized[key] = data[key].map(item => 
           sanitizeHtml(item.toString(), { 
             allowedTags: [], 
@@ -181,77 +112,24 @@ const sanitizeServiceInput = (data, files = {}) => {
           }).trim()
         );
       } else {
-        sanitized[key] = data[key];
+        sanitized[key] = data[key].map(item => {
+          if (typeof item === 'object' && item !== null) {
+            return sanitizeServiceInput(item);
+          }
+          return sanitizeHtml(item.toString(), { allowedTags: [], allowedAttributes: {} }).trim();
+        });
       }
+    } else if (typeof data[key] === 'object' && data[key] !== null) {
+      // Handle nested objects
+      sanitized[key] = sanitizeServiceInput(data[key]);
     } else {
       sanitized[key] = data[key];
-    }
-  }
-  
-  // Handle files if present
-  if (files && Array.isArray(files)) {
-    const imageUrls = files.map(file => {
-      const safePath = file.path.replace(/\\/g, '/');
-      const relativePath = `/uploads/${path.basename(safePath)}`;
-      
-      const absolutePath = path.join(__dirname, '../../public', relativePath);
-      if (!fs.existsSync(absolutePath)) {
-        throw new Error(`Uploaded file not found: ${relativePath}`);
-      }
-      
-      const normalizedAbsolute = path.normalize(absolutePath);
-      const uploadsDir = path.join(__dirname, '../../public/uploads');
-      if (!normalizedAbsolute.startsWith(uploadsDir)) {
-        throw new Error(`File path traversal detected: ${relativePath}`);
-      }
-      
-      return relativePath;
-    });
-    
-    if (imageUrls.length > 0) {
-      sanitized.images = imageUrls;
-      
-      if (!sanitized.thumbnail && imageUrls.length > 0) {
-        sanitized.thumbnail = imageUrls[0];
-      }
     }
   }
   
   return sanitized;
 };
 
-const cleanupUploadedFiles = async (files, uploadedImagePaths = []) => {
-  try {
-    if (!files || !Array.isArray(files)) return;
-    
-    for (const file of files) {
-      const isUsed = uploadedImagePaths.some(imgPath => 
-        file.path.includes(path.basename(imgPath))
-      );
-      
-      if (!isUsed && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
-    }
-  } catch (error) {
-    console.error('Error cleaning up uploaded files:', error);
-  }
-};
-
-const deleteImageFiles = (imagePaths) => {
-  try {
-    if (!Array.isArray(imagePaths)) return;
-    
-    for (const imagePath of imagePaths) {
-      const fullPath = path.join(__dirname, '../../public', imagePath);
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-      }
-    }
-  } catch (error) {
-    console.error('Error deleting image files:', error);
-  }
-};
 
 const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   const {
@@ -416,12 +294,10 @@ const parseFormDataArrays = (bodyData, arrayFields) => {
   
   for (const key in bodyData) {
     if (arrayFields.includes(key)) {
-      // Handle arrays sent as FormData
       if (typeof bodyData[key] === 'string') {
         try {
           parsed[key] = JSON.parse(bodyData[key]);
         } catch (e) {
-          // If it's a comma-separated string
           if (bodyData[key].includes(',')) {
             parsed[key] = bodyData[key].split(',').map(item => item.trim()).filter(item => item);
           } else {
@@ -442,7 +318,6 @@ const parseFormDataArrays = (bodyData, arrayFields) => {
 };
 const createService = async (req, res, next) => {
   const requestId = generateRequestId();
-  let serviceData;
   
   try {
     if (!req.user) {
@@ -455,57 +330,105 @@ const createService = async (req, res, next) => {
     }
 
     let bodyData = req.body;
-    if (typeof req.body === 'string') {
+    
+    // Handle multipart form data
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      // Parse arrays from form data
+      const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
+      bodyData = parseFormDataArrays(req.body, arrayFields);
+      
+      // Handle thumbnail upload if provided
+      if (req.files && req.files.thumbnail && req.files.thumbnail.length > 0) {
+        const thumbnailFile = req.files.thumbnail[0];
+        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
+        
+        if (thumbnailUpload.length > 0) {
+          bodyData.thumbnail = {
+            url: thumbnailUpload[0].url,
+            public_id: thumbnailUpload[0].public_id,
+            width: thumbnailUpload[0].width,
+            height: thumbnailUpload[0].height,
+            size: thumbnailUpload[0].size,
+            format: thumbnailUpload[0].format,
+            uploadedAt: new Date()
+          };
+        }
+      }
+      
+      // Handle images upload if provided
+      if (req.files && req.files.images && req.files.images.length > 0) {
+        const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+        bodyData.images = imageUploads.map(img => ({
+          url: img.url,
+          public_id: img.public_id,
+          width: img.width,
+          height: img.height,
+          size: img.size,
+          format: img.format,
+          uploadedAt: new Date()
+        }));
+      }
+    } else if (typeof req.body === 'string') {
+      // Handle JSON string
       try {
         bodyData = JSON.parse(req.body);
       } catch (e) {
         bodyData = req.body;
       }
     }
-    
-    // Check if data is nested in a 'data' field
-    if (bodyData.data && typeof bodyData.data === 'string') {
-      try {
-        bodyData = JSON.parse(bodyData.data);
-      } catch (e) {
-        // Keep as is
-      }
-    }
-    
-    const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
-    let sanitizedData = req.body;
 
-    // Check if it's FormData (multipart)
-    if (req.headers['content-type']?.includes('multipart/form-data')) {
-      sanitizedData = parseFormDataArrays(req.body, arrayFields);
-    }
-
-    // Then sanitize
-    sanitizedData = sanitizeServiceInput(sanitizedData);
-
-    // Ensure all array fields exist as arrays
-    arrayFields.forEach(field => {
-      if (!Array.isArray(sanitizedData[field])) {
-        sanitizedData[field] = [];
-      }
-    });
-
-    // CRITICAL FIX: Verify category is provided and valid
-    if (!sanitizedData.category) {
+    // Validate bodyData exists
+    if (!bodyData || Object.keys(bodyData).length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Category is required',
-        code: 'CATEGORY_REQUIRED',
+        message: 'Service data is required',
+        code: 'DATA_REQUIRED',
         requestId
       });
     }
 
-    // CRITICAL FIX: Verify subcategory is provided
-    if (!sanitizedData.subcategory) {
+    // Sanitize input
+    const sanitizedData = sanitizeServiceInput(bodyData);
+
+    // Validate required fields
+    const requiredFields = ['title', 'description', 'category', 'subcategory', 'price', 'deliveryTime'];
+    const missingFields = requiredFields.filter(field => !sanitizedData[field]);
+    
+    if (missingFields.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Subcategory is required',
-        code: 'SUBCATEGORY_REQUIRED',
+        message: `Missing required fields: ${missingFields.join(', ')}`,
+        code: 'MISSING_REQUIRED_FIELDS',
+        requestId
+      });
+    }
+
+    // Validate thumbnail
+    if (!sanitizedData.thumbnail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail is required',
+        code: 'THUMBNAIL_REQUIRED',
+        requestId
+      });
+    }
+
+    // Validate thumbnail URL if provided as string
+    if (typeof sanitizedData.thumbnail === 'string' && !/^https?:\/\//.test(sanitizedData.thumbnail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail must be a valid URL',
+        code: 'INVALID_THUMBNAIL_URL',
+        requestId
+      });
+    }
+
+    // Validate images
+    if (sanitizedData.images && sanitizedData.images.length > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maximum 10 images allowed',
+        code: 'MAX_IMAGES_EXCEEDED',
         requestId
       });
     }
@@ -525,7 +448,7 @@ const createService = async (req, res, next) => {
       });
     }
 
-    // Validate subcategory exists, is active, and belongs to the selected category
+    // Validate subcategory
     const subcategory = await Subcategory.findOne({ 
       _id: sanitizedData.subcategory,
       category: sanitizedData.category,
@@ -541,123 +464,26 @@ const createService = async (req, res, next) => {
       });
     }
 
-    // Verify short description is provided
-    if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim().length < 20) {
-      return res.status(400).json({
-        success: false,
-        message: 'Short description is required and must be at least 20 characters',
-        code: 'SHORT_DESCRIPTION_REQUIRED',
-        requestId
-      });
-    }
-
-    // Create service data
-    serviceData = {
+    // Prepare service data
+    const serviceData = {
       ...sanitizedData,
       createdBy: req.user._id,
       version: 1,
-      images: [],
-      thumbnail: null,
-      // Ensure short description is trimmed
-      shortDescription: sanitizedData.shortDescription.trim()
-    };
-    
-    // Handle uploaded files
-    const uploadedFiles = [];
-    const uploadedThumbnail = [];
-    
-    // Check for thumbnail
-    if (req.files && req.files.thumbnail) {
-      uploadedThumbnail.push(...req.files.thumbnail);
-    } else if (req.body.thumbnail) {
-      // If thumbnail comes as a string URL (from client-side upload)
-      serviceData.thumbnail = {
-        url: req.body.thumbnail,
-        public_id: `thumbnail-${Date.now()}`,
+      images: sanitizedData.images || [],
+      thumbnail: typeof sanitizedData.thumbnail === 'string' ? {
+        url: sanitizedData.thumbnail,
+        public_id: `thumbnail-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
         uploadedAt: new Date()
-      };
-    } else {
-      // Thumbnail is now required
-      return res.status(400).json({
-        success: false,
-        message: 'Thumbnail is required',
-        code: 'THUMBNAIL_REQUIRED',
-        requestId
-      });
-    }
-    
-    // Check for other images
-    if (req.files && req.files.images) {
-      uploadedFiles.push(...req.files.images);
-    }
+      } : sanitizedData.thumbnail
+    };
 
-    // Upload thumbnail first
-    if (uploadedThumbnail.length > 0) {
-      const thumbnailUpload = await processUploadToCloudinary(uploadedThumbnail, 'services/thumbnails', {
-        transformation: [
-          { width: 800, height: 600, crop: 'fill', gravity: 'auto' },
-          { quality: 'auto:best', fetch_format: 'auto' }
-        ]
-      });
-      
-      if (thumbnailUpload.length > 0) {
-        serviceData.thumbnail = {
-          url: thumbnailUpload[0].url,
-          public_id: thumbnailUpload[0].public_id,
-          width: thumbnailUpload[0].width,
-          height: thumbnailUpload[0].height,
-          size: thumbnailUpload[0].size,
-          format: thumbnailUpload[0].format,
-          uploadedAt: new Date()
-        };
-        
-        // Add thumbnail to images array
-        serviceData.images.push(thumbnailUpload[0]);
-      }
-    }
-    
-    if (!serviceData.thumbnail) {
-      return res.status(400).json({
-        success: false,
-        message: 'Thumbnail is required. Please upload a thumbnail image.',
-        code: 'THUMBNAIL_MISSING',
-        requestId
-      });
-    }
-    
-    // Upload other images
-    if (uploadedFiles.length > 0) {
-      const uploadedImages = await processUploadToCloudinary(uploadedFiles, 'services');
-      
-      if (uploadedImages.length > 0) {
-        // Add images to array, avoiding duplicates
-        uploadedImages.forEach(image => {
-          const exists = serviceData.images.some(img => img.public_id === image.public_id);
-          if (!exists) {
-            serviceData.images.push(image);
-          }
-        });
-      }
-    }
-
-    // Validate we don't exceed image limit
-    if (serviceData.images.length > 10) {
-      // Delete uploaded images
-      await deleteCloudinaryImages(serviceData.images);
-      return res.status(400).json({
-        success: false,
-        message: 'Maximum 10 images allowed',
-        code: 'MAX_IMAGES_EXCEEDED',
-        requestId
-      });
-    }
-
+    // Create service
     const service = await Service.create(serviceData);
 
-    // Invalidate cache after creating new service
+    // Invalidate cache
     await invalidateAllServiceCache();
 
-    // Security: Audit log
+    // Audit log
     logAudit('CREATE', 'SERVICE', service._id, req.user._id, {
       title: service.title,
       category: service.category,
@@ -667,13 +493,12 @@ const createService = async (req, res, next) => {
       hasThumbnail: !!service.thumbnail
     });
 
-    // Populate category and subcategory for response
+    // Populate for response
     await service.populate([
       { path: 'category', select: 'name slug icon' },
       { path: 'subcategory', select: 'name slug icon' }
     ]);
 
-    // Remove sensitive data
     const safeService = service.toObject();
     delete safeService.__v;
     delete safeService.lastUpdatedBy;
@@ -688,11 +513,6 @@ const createService = async (req, res, next) => {
 
   } catch (error) {
     console.error('Create service error:', error);
-    
-    // Clean up any uploaded images on error
-    if (serviceData?.images?.length > 0) {
-      await deleteCloudinaryImages(serviceData.images);
-    }
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -718,6 +538,7 @@ const createService = async (req, res, next) => {
     next(error);
   }
 };
+
 
 const getServices = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -1631,10 +1452,8 @@ const incrementViewCountAsync = async (serviceId) => {
     console.error('Failed to increment view count:', error.message);
   }
 };
-// Update Service
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
-  let uploadedFiles = [];
   
   try {
     const { id } = req.params;
@@ -1672,24 +1491,81 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    if (req.files) {
-      uploadedFiles = req.files;
-    }
-    
+    // Handle FormData parsing
     let bodyData = req.body;
+    let newThumbnail = null;
+    let newImages = [];
+    
+    console.log('Request headers:', req.headers['content-type']);
+    console.log('Request has files:', !!req.files);
+    console.log('Request files:', req.files);
+
+    // Handle file uploads from multer - FIXED: Check FormData structure
     if (req.headers['content-type']?.includes('multipart/form-data')) {
-      bodyData = parseFormData(req.body);
+      console.log('Processing multipart/form-data');
+      
+      // Check if body contains JSON data
+      if (req.body.data && typeof req.body.data === 'string') {
+        try {
+          bodyData = JSON.parse(req.body.data);
+          console.log('Parsed JSON data from FormData');
+        } catch (parseError) {
+          console.error('Error parsing JSON from FormData:', parseError);
+          // If parsing fails, use the body as-is
+        }
+      }
+      
+      // Handle thumbnail upload - FIXED: Proper file access
+      if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+        console.log('Processing thumbnail upload');
+        const thumbnailFile = req.files.thumbnail[0];
+        console.log('Thumbnail file details:', {
+          originalname: thumbnailFile.originalname,
+          mimetype: thumbnailFile.mimetype,
+          size: thumbnailFile.size
+        });
+        
+        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
+        
+        if (thumbnailUpload.length > 0) {
+          newThumbnail = {
+            url: thumbnailUpload[0].url,
+            public_id: thumbnailUpload[0].public_id,
+            width: thumbnailUpload[0].width,
+            height: thumbnailUpload[0].height,
+            size: thumbnailUpload[0].size,
+            format: thumbnailUpload[0].format,
+            uploadedAt: new Date()
+          };
+          
+          console.log('New thumbnail uploaded successfully:', newThumbnail.url);
+        }
+      }
+      
+      // Handle images upload - FIXED: Proper file access
+      if (req.files && req.files.images && Array.isArray(req.files.images)) {
+        console.log(`Processing ${req.files.images.length} image uploads`);
+        const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+        
+        newImages = imageUploads.map(img => ({
+          url: img.url,
+          public_id: img.public_id,
+          width: img.width,
+          height: img.height,
+          size: img.size,
+          format: img.format,
+          uploadedAt: new Date()
+        }));
+        
+        console.log(`${newImages.length} new images uploaded successfully`);
+      }
     }
 
-    const sanitizedData = sanitizeServiceInput(bodyData, uploadedFiles);
+    // Sanitize input
+    const sanitizedData = sanitizeServiceInput(bodyData);
     
-    // Handle empty subcategory - set to null instead of empty string
-    if (sanitizedData.subcategory === '') {
-      sanitizedData.subcategory = null;
-    }
-    
+    // Remove admin-only fields if not admin
     if (!isAdmin) {
-      // Regular users cannot update certain fields
       delete sanitizedData.status;
       delete sanitizedData.isFeatured;
       delete sanitizedData.isRecommended;
@@ -1700,33 +1576,108 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    // FIXED: Validate subcategory if it's being changed
-    if (sanitizedData.subcategory !== undefined) {
-      if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
-        // Allow clearing subcategory
-        sanitizedData.subcategory = null;
-      } else {
-        // Validate subcategory exists and belongs to the correct category
-        const categoryId = sanitizedData.category || service.category;
-        const subcategory = await Subcategory.findOne({ 
-          _id: sanitizedData.subcategory,
-          category: categoryId,
-          isActive: true
-        });
-        
-        if (!subcategory) {
-          await cleanupUploadedFiles(uploadedFiles);
-          return res.status(400).json({
-            success: false,
-            message: 'Subcategory not found, inactive, or does not belong to the selected category',
-            code: 'SUBCATEGORY_NOT_FOUND',
-            requestId
-          });
+    // FIXED: Handle thumbnail from new upload first, then from JSON
+    if (newThumbnail) {
+      console.log('Using newly uploaded thumbnail');
+      // Delete old thumbnail from Cloudinary if exists
+      if (service.thumbnail && service.thumbnail.public_id) {
+        try {
+          await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+          console.log('Old thumbnail deleted from Cloudinary');
+        } catch (error) {
+          console.error('Error deleting old thumbnail:', error);
         }
       }
+      sanitizedData.thumbnail = newThumbnail;
+    } else if (sanitizedData.thumbnail) {
+      // Handle thumbnail from JSON data
+      console.log('Processing thumbnail from JSON data');
+      if (typeof sanitizedData.thumbnail === 'string') {
+        // Convert string URL to thumbnail object
+        sanitizedData.thumbnail = {
+          url: sanitizedData.thumbnail.trim(),
+          public_id: service.thumbnail?.public_id || `thumbnail-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+          uploadedAt: new Date()
+        };
+      }
+      // If it's already an object, keep it as is
+      console.log('Thumbnail from JSON:', sanitizedData.thumbnail?.url?.substring(0, 50) || 'none');
+    } else {
+      // Preserve existing thumbnail if no new one provided
+      sanitizedData.thumbnail = service.thumbnail;
+      console.log('Preserving existing thumbnail');
     }
 
-    // Handle category change validation
+    // FIXED: Handle images from new upload first, then from JSON
+    if (newImages.length > 0) {
+      console.log('Processing newly uploaded images');
+      const existingImages = service.images || [];
+      const updatedImages = [...existingImages, ...newImages];
+      
+      if (updatedImages.length > 10) {
+        // Delete newly uploaded images from Cloudinary
+        await deleteCloudinaryImages(newImages.map(img => ({ public_id: img.public_id })));
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot have more than 10 images',
+          code: 'MAX_IMAGES_EXCEEDED',
+          requestId
+        });
+      }
+      
+      sanitizedData.images = updatedImages;
+      console.log(`Added ${newImages.length} new images, total: ${updatedImages.length}`);
+    } else if (sanitizedData.images && Array.isArray(sanitizedData.images)) {
+      // Handle images from JSON data
+      console.log('Processing images from JSON data');
+      sanitizedData.images = sanitizedData.images.map((img, index) => {
+        if (typeof img === 'string') {
+          // Convert string URL to image object
+          return {
+            url: img.trim(),
+            public_id: service.images?.[index]?.public_id || `image-${Date.now()}-${index}`,
+            uploadedAt: new Date()
+          };
+        }
+        // If it's already an object, keep it
+        return img;
+      });
+      console.log(`Processed ${sanitizedData.images.length} images from JSON`);
+    } else {
+      // Preserve existing images if no new ones provided
+      sanitizedData.images = service.images || [];
+      console.log('Preserving existing images');
+    }
+
+
+    // Handle subcategory validation
+    if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null || sanitizedData.subcategory === undefined) {
+  // If subcategory is empty but was previously set, keep the existing one
+  if (service.subcategory) {
+    sanitizedData.subcategory = service.subcategory;
+    console.log('Using existing subcategory:', service.subcategory);
+  } else {
+    // If no existing subcategory, set to null
+    sanitizedData.subcategory = null;
+  }
+}
+if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() === '') {
+  // Generate short description from description if not provided
+  if (sanitizedData.description) {
+    sanitizedData.shortDescription = sanitizedData.description.substring(0, 150) + '...';
+  } else if (service.description) {
+    sanitizedData.shortDescription = service.description.substring(0, 150) + '...';
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Short description is required',
+      code: 'SHORT_DESCRIPTION_REQUIRED',
+      requestId
+    });
+  }
+}
+
+    // Handle category change
     if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
       const category = await Category.findOne({ 
         _id: sanitizedData.category, 
@@ -1734,7 +1685,6 @@ const updateService = async (req, res, next) => {
       });
       
       if (!category) {
-        await cleanupUploadedFiles(uploadedFiles);
         return res.status(400).json({
           success: false,
           message: 'Category not found or inactive',
@@ -1743,7 +1693,6 @@ const updateService = async (req, res, next) => {
         });
       }
       
-      // If category changes and subcategory is set, validate subcategory belongs to new category
       if (sanitizedData.subcategory && sanitizedData.subcategory !== service.subcategory?.toString()) {
         const subcategory = await Subcategory.findOne({ 
           _id: sanitizedData.subcategory,
@@ -1752,7 +1701,6 @@ const updateService = async (req, res, next) => {
         });
         
         if (!subcategory) {
-          await cleanupUploadedFiles(uploadedFiles);
           return res.status(400).json({
             success: false,
             message: 'Subcategory does not belong to the new category',
@@ -1763,14 +1711,19 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    const currentVersion = sanitizedData.version;
-    delete sanitizedData.version;
-
+    // Prepare update data
     const updateData = {
       ...sanitizedData,
       lastUpdatedBy: req.user._id,
       $inc: { version: 1 }
     };
+
+    console.log('Update data includes:', {
+      hasThumbnail: !!updateData.thumbnail,
+      thumbnailUrl: updateData.thumbnail?.url?.substring(0, 50) || 'none',
+      imagesCount: updateData.images?.length || 0,
+      totalKeys: Object.keys(updateData).length
+    });
 
     if (sanitizedData.status && sanitizedData.status !== service.status) {
       if (sanitizedData.status === 'active' && !service.publishedAt) {
@@ -1778,14 +1731,18 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    const existingImages = service.images || [];
-    const newImages = sanitizedData.images || [];
+    const currentVersion = sanitizedData.version !== undefined ? sanitizedData.version : service.version;
+    delete updateData.version;
+
+    const queryConditions = { _id: id };
+    if (bodyData.version !== undefined || sanitizedData.version !== undefined) {
+      queryConditions.version = currentVersion;
+    }
+
+    console.log('Executing update with data keys:', Object.keys(updateData));
     
     const updatedService = await Service.findOneAndUpdate(
-      { 
-        _id: id,
-        ...(currentVersion ? { version: currentVersion } : {})
-      },
+      queryConditions,
       updateData,
       { 
         new: true,
@@ -1795,16 +1752,18 @@ const updateService = async (req, res, next) => {
     ).populate('category', 'name slug').populate('subcategory', 'name slug').populate('createdBy', 'name picture');
 
     if (!updatedService) {
-      await cleanupUploadedFiles(uploadedFiles, newImages);
-      
-      if (currentVersion) {
-        const currentDoc = await Service.findById(id);
+      // Check for version conflict
+      const currentDoc = await Service.findById(id);
+      if (currentDoc && (bodyData.version !== undefined || sanitizedData.version !== undefined)) {
         return res.status(409).json({
           success: false,
           message: 'Service was modified by another user. Please refresh and try again.',
           code: 'VERSION_CONFLICT',
-          currentVersion: currentDoc?.version,
-          requestId
+          currentVersion: currentDoc.version,
+          serviceTitle: currentDoc.title,
+          updatedAt: currentDoc.updatedAt,
+          requestId,
+          suggestion: 'Refresh the page to get the latest version before making changes'
         });
       }
       
@@ -1816,24 +1775,19 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    try {
-      const removedImages = existingImages.filter(img => !newImages.includes(img));
-      if (removedImages.length > 0) {
-        deleteImageFiles(removedImages);
-      }
-    } catch (cleanupError) {
-      console.error('Error cleaning up old images:', cleanupError);
-    }
-
-    // Invalidate cache after update
+    // Invalidate cache
     await invalidateServiceCache(id);
 
     logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
       updatedFields: Object.keys(sanitizedData),
-      oldVersion: currentVersion || service.version,
+      oldVersion: currentVersion,
       newVersion: updatedService.version,
       statusChanged: sanitizedData.status ? sanitizedData.status !== service.status : false,
-      imagesUpdated: newImages.length > 0
+      imagesUpdated: newImages.length > 0,
+      thumbnailUpdated: !!newThumbnail,
+      versionChecked: (bodyData.version !== undefined || sanitizedData.version !== undefined),
+      hasThumbnail: !!updatedService.thumbnail,
+      hasImages: updatedService.images?.length > 0
     });
 
     const safeService = updatedService.toObject();
@@ -1844,12 +1798,15 @@ const updateService = async (req, res, next) => {
       success: true,
       service: safeService,
       message: 'Service updated successfully',
+      newVersion: updatedService.version,
+      thumbnailUpdated: !!newThumbnail,
+      imagesUpdated: newImages.length > 0,
       requestId,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    await cleanupUploadedFiles(uploadedFiles);
+    console.error('Update service error:', error);
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -1878,7 +1835,8 @@ const updateService = async (req, res, next) => {
     next(error);
   }
 };
-// Delete Service
+
+// Update deleteService function
 const deleteService = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -1918,33 +1876,33 @@ const deleteService = async (req, res, next) => {
       });
     }
 
-    let result;
-    
     if (permanent === 'true' && isAdmin) {
-      // Permanent delete - bypass validation
-      try {
-        if (service.images && Array.isArray(service.images)) {
-          deleteImageFiles(service.images);
+      // Delete from Cloudinary
+      if (service.images && Array.isArray(service.images)) {
+        try {
+          await deleteCloudinaryImages(service.images.map(img => ({ public_id: img.public_id })));
+        } catch (cleanupError) {
+          console.error('Error deleting Cloudinary images:', cleanupError);
         }
-        
-        if (service.thumbnail) {
-          deleteImageFiles([service.thumbnail]);
-        }
-      } catch (cleanupError) {
-        console.error('Error cleaning up files during permanent delete:', cleanupError);
       }
       
-      // Use deleteOne instead of findByIdAndDelete to avoid hooks
+      if (service.thumbnail && service.thumbnail.public_id) {
+        try {
+          await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+        } catch (cleanupError) {
+          console.error('Error deleting Cloudinary thumbnail:', cleanupError);
+        }
+      }
+      
+      // Permanent delete
       await Service.deleteOne({ _id: id });
       
       logAudit('PERMANENT_DELETE', 'SERVICE', id, req.user._id, {
         title: service.title,
         createdBy: service.createdBy,
-        force: force === 'true',
-        imagesCleaned: service.images?.length || 0
+        force: force === 'true'
       });
       
-      // Invalidate cache after permanent delete
       await invalidateServiceCache(id);
       
       return res.json({
@@ -1954,11 +1912,10 @@ const deleteService = async (req, res, next) => {
         timestamp: new Date().toISOString()
       });
     } else {
-      // Soft delete - update without validation
+      // Soft delete
       const wasOpen = service.status === 'open';
       
-      // Update using updateOne to bypass validation
-      result = await Service.updateOne(
+      const result = await Service.updateOne(
         { _id: id },
         { 
           $set: {
@@ -1980,14 +1937,12 @@ const deleteService = async (req, res, next) => {
         });
       }
 
-      // Update category count if service was open
       if (wasOpen && service.category) {
         await Category.findByIdAndUpdate(service.category, {
           $inc: { servicesCount: -1 }
         });
       }
 
-      // Invalidate cache after soft delete
       await invalidateServiceCache(id);
 
       logAudit('SOFT_DELETE', 'SERVICE', id, req.user._id, {
@@ -2006,7 +1961,6 @@ const deleteService = async (req, res, next) => {
   } catch (error) {
     console.error('[DELETE SERVICE ERROR]', error);
     
-    // Check if it's a validation error
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
@@ -2024,6 +1978,7 @@ const deleteService = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Restore Service
 const restoreService = async (req, res, next) => {
@@ -2911,8 +2866,6 @@ const getSimilarServices = async (req, res, next) => {
     next(error);
   }
 };
-
-// Upload Images
 const uploadImages = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -2960,7 +2913,7 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    // Upload images to Cloudinary
+    // Upload to Cloudinary
     const uploadedImages = await processUploadToCloudinary(req.files, 'services');
     
     if (uploadedImages.length === 0) {
@@ -2972,12 +2925,22 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
+    const formattedImages = uploadedImages.map(img => ({
+      url: img.url,
+      public_id: img.public_id,
+      width: img.width,
+      height: img.height,
+      size: img.size,
+      format: img.format,
+      uploadedAt: new Date()
+    }));
+
     const existingImages = service.images || [];
-    const updatedImages = [...existingImages, ...uploadedImages];
+    const updatedImages = [...existingImages, ...formattedImages];
     
     if (updatedImages.length > 10) {
       // Delete newly uploaded images from Cloudinary
-      await deleteCloudinaryImages(uploadedImages);
+      await deleteCloudinaryImages(formattedImages.map(img => ({ public_id: img.public_id })));
       return res.status(400).json({
         success: false,
         message: 'Cannot have more than 10 images',
@@ -2986,18 +2949,17 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    // Update service
     service.images = updatedImages;
     
     // Set thumbnail if not already set
-    if (!service.thumbnail && uploadedImages.length > 0) {
+    if (!service.thumbnail && formattedImages.length > 0) {
       service.thumbnail = {
-        url: uploadedImages[0].url,
-        public_id: uploadedImages[0].public_id,
-        width: uploadedImages[0].width,
-        height: uploadedImages[0].height,
-        size: uploadedImages[0].size,
-        format: uploadedImages[0].format,
+        url: formattedImages[0].url,
+        public_id: formattedImages[0].public_id,
+        width: formattedImages[0].width,
+        height: formattedImages[0].height,
+        size: formattedImages[0].size,
+        format: formattedImages[0].format,
         uploadedAt: new Date()
       };
     }
@@ -3006,18 +2968,17 @@ const uploadImages = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
-    // Invalidate cache after image upload
     await invalidateServiceCache(id);
 
     logAudit('UPLOAD_IMAGES', 'SERVICE', id, req.user._id, {
-      imagesAdded: uploadedImages.length,
+      imagesAdded: formattedImages.length,
       totalImages: updatedImages.length
     });
 
     res.json({
       success: true,
       message: 'Images uploaded successfully',
-      images: uploadedImages,
+      images: formattedImages,
       totalImages: updatedImages.length,
       requestId,
       timestamp: new Date().toISOString()
@@ -3033,7 +2994,7 @@ const uploadImages = async (req, res, next) => {
   }
 };
 
-// Remove Image
+// Update removeImage function
 const removeImage = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -3105,9 +3066,8 @@ const removeImage = async (req, res, next) => {
     await service.save();
 
     // Delete image from Cloudinary
-    await deleteCloudinaryImages([imageToRemove]);
+    await deleteCloudinaryImages([{ public_id: publicId }]);
 
-    // Invalidate cache after image removal
     await invalidateServiceCache(id);
 
     logAudit('REMOVE_IMAGE', 'SERVICE', id, req.user._id, {
@@ -3132,7 +3092,6 @@ const removeImage = async (req, res, next) => {
     next(error);
   }
 };
-
 // Set Thumbnail
 const setThumbnail = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -3222,7 +3181,6 @@ const setThumbnail = async (req, res, next) => {
   }
 };
 
-// Upload Thumbnail
 const uploadThumbnail = async (req, res, next) => {
   const requestId = generateRequestId();
   
@@ -3270,8 +3228,8 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    // Upload thumbnail to Cloudinary with optimized settings
-    const uploadedImage = await processUploadToCloudinary([req.file], 'services/thumbnails', {
+    // Upload to Cloudinary
+    const uploadedImage = await processUploadToCloudinary([req.file], 'thumbnails', {
       transformation: [
         { width: 800, height: 600, crop: 'fill', gravity: 'auto' },
         { quality: 'auto:best', fetch_format: 'auto' }
@@ -3287,7 +3245,15 @@ const uploadThumbnail = async (req, res, next) => {
       });
     }
 
-    const newThumbnail = uploadedImage[0];
+    const newThumbnail = {
+      url: uploadedImage[0].url,
+      public_id: uploadedImage[0].public_id,
+      width: uploadedImage[0].width,
+      height: uploadedImage[0].height,
+      size: uploadedImage[0].size,
+      format: uploadedImage[0].format,
+      uploadedAt: new Date()
+    };
     
     // Delete old thumbnail from Cloudinary if exists
     if (service.thumbnail && service.thumbnail.public_id) {
@@ -3295,15 +3261,7 @@ const uploadThumbnail = async (req, res, next) => {
     }
     
     // Update service
-    service.thumbnail = {
-      url: newThumbnail.url,
-      public_id: newThumbnail.public_id,
-      width: newThumbnail.width,
-      height: newThumbnail.height,
-      size: newThumbnail.size,
-      format: newThumbnail.format,
-      uploadedAt: new Date()
-    };
+    service.thumbnail = newThumbnail;
     
     // Add to images array if not already there
     const isAlreadyInImages = service.images.some(img => img.public_id === newThumbnail.public_id);
@@ -3315,7 +3273,6 @@ const uploadThumbnail = async (req, res, next) => {
     service.version += 1;
     await service.save();
 
-    // Invalidate cache after thumbnail upload
     await invalidateServiceCache(id);
 
     logAudit('UPLOAD_THUMBNAIL', 'SERVICE', id, req.user._id, {
@@ -3339,7 +3296,6 @@ const uploadThumbnail = async (req, res, next) => {
     next(error);
   }
 };
-
 // Get My Services
 const getMyServices = async (req, res, next) => {
   const requestId = generateRequestId();

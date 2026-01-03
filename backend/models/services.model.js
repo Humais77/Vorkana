@@ -147,37 +147,37 @@ subcategory: {
     min: [0, 'Revisions cannot be negative'],
     max: [99, 'Maximum revisions is 99'],
   },
-  images: [{
-    url: {
-      type: String,
-      required: true,
-      validate: {
-        validator: function(v) {
-          return /^https?:\/\//.test(v);
-        },
-        message: 'Image must be a valid URL'
-      }
-    },
-    public_id: {
-      type: String,
-      required: true
-    },
-    width: Number,
-    height: Number,
-    size: Number,
-    format: String,
-    uploadedAt: {
-      type: Date,
-      default: Date.now
+ images: [{
+  url: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(v) {
+        return /^https?:\/\//.test(v);
+      },
+      message: 'Image must be a valid URL'
     }
-  }],
+  },
+  public_id: {
+    type: String,
+    required: true
+  },
+  width: Number,
+  height: Number,
+  size: Number,
+  format: String,
+  uploadedAt: {
+    type: Date,
+    default: Date.now
+  }
+}],
+
 thumbnail: {
   url: {
     type: String,
-    required: [true, 'Thumbnail URL is required'], // Added required
+    required: [true, 'Thumbnail URL is required'],
     validate: {
       validator: function(v) {
-        if (!v) return false; // Now required
         return /^https?:\/\//.test(v);
       },
       message: 'Thumbnail must be a valid URL'
@@ -185,7 +185,7 @@ thumbnail: {
   },
   public_id: {
     type: String,
-    required: true // Added required
+    required: true
   },
   width: Number,
   height: Number,

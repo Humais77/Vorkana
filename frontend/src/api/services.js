@@ -352,96 +352,42 @@ getByCategory: async (categoryIdentifier, params = {}) => {
   }
 },
   create: async (serviceData, files = null) => {
-  try {
-    console.log('Creating service with data:', serviceData);
-    
-    let formData;
-    
-    if (files instanceof FormData) {
-      // If files is already FormData, use it
-      formData = files;
-    } else {
-      // Create new FormData
-      formData = new FormData();
+    try {
+      let formData;
       
-      // Append service data as JSON
-      formData.append('data', JSON.stringify(serviceData));
-      
-      // Append thumbnail if provided
-      if (serviceData.thumbnailFile) {
-        formData.append('thumbnail', serviceData.thumbnailFile);
-        delete serviceData.thumbnailFile;
-      }
-      
-      // Append images if provided
-      if (serviceData.imageFiles && Array.isArray(serviceData.imageFiles)) {
-        serviceData.imageFiles.forEach(file => {
-          formData.append('images', file);
-        });
-        delete serviceData.imageFiles;
-      }
-    }
-    
-    // Debug: Log FormData contents
-    console.log('FormData entries:');
-    for (let pair of (formData?.entries() || [])) {
-      console.log(pair[0], pair[1]);
-    }
-    
-    const response = await axiosInstance.post('/api/services', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    
-    console.log('Create service response:', response.data);
-    
-    if (response.data && response.data.success) {
-      return {
-        success: true,
-        message: response.data.message || 'Service created successfully',
-        service: response.data.service || response.data.data,
-        serviceId: response.data.service?._id || response.data.service?.id || 
-                  response.data.data?._id || response.data.data?.id
-      };
-    }
-    
-    return response.data;
-      
-  } catch (error) {
-    console.error('Create service error:', error);
-    let errorMessage = 'Failed to create service';
-    
-    if (error.response) {
-      const { data, status } = error.response;
-      
-      if (status === 400) {
-        if (data.code === 'CATEGORY_REQUIRED') {
-          errorMessage = 'Please select a category.';
-        } else if (data.code === 'SUBCATEGORY_REQUIRED') {
-          errorMessage = 'Please select a subcategory.';
-        } else if (data.code === 'THUMBNAIL_REQUIRED') {
-          errorMessage = 'Please upload a thumbnail image.';
-        } else if (data.code === 'CATEGORY_NOT_FOUND') {
-          errorMessage = 'Invalid category selected.';
-        } else if (data.code === 'SUBCATEGORY_NOT_FOUND') {
-          errorMessage = 'Invalid subcategory selected or subcategory does not belong to the category.';
-        } else if (data.errors) {
-          const validationErrors = data.errors.map(err => err.message).join(', ');
-          errorMessage = `Validation failed: ${validationErrors}`;
-        } else if (data.message) {
-          errorMessage = data.message;
+      if (files instanceof FormData) {
+        formData = files;
+      } else {
+        formData = new FormData();
+        
+        // Append service data as JSON
+        formData.append('data', JSON.stringify(serviceData));
+        
+        // Append files if provided
+        if (serviceData.thumbnailFile) {
+          formData.append('thumbnail', serviceData.thumbnailFile);
         }
-      } else if (status === 401) {
-        errorMessage = 'Please login to create a service';
-      } else if (status === 409) {
-        errorMessage = 'A service with similar title already exists';
+        
+        if (serviceData.imageFiles && Array.isArray(serviceData.imageFiles)) {
+          serviceData.imageFiles.forEach(file => {
+            formData.append('images', file);
+          });
+        }
       }
+      
+      const response = await axiosInstance.post('/api/services', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to create service');
     }
-    
-    throw new Error(errorMessage);
-  }
-},
+  },
+  
   
   // Add method to get admin services
   getAdminServices: async (filters = {}) => {
@@ -463,60 +409,63 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     }
   },
   
-  update: async (id, updateData, files = null) => {
-    try {
-      let response;
-      
-      if (files && files.length > 0) {
-        const formData = new FormData();
-        formData.append('data', JSON.stringify(updateData));
-        
-        files.forEach((file, index) => {
-          formData.append('images', file);
-        });
-        
-        response = await axiosInstance.put(`/api/services/${id}`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-      } else {
-        response = await axiosInstance.put(`/api/services/${id}`, updateData);
-      }
-      
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          message: response.data.message || 'Service updated successfully',
-          service: response.data.service || response.data.data
-        };
-      }
-      
-      return response.data;
-      
-    } catch (error) {
-      let errorMessage = 'Failed to update service';
-      if (error.response) {
-        const { data, status } = error.response;
-        
-        if (status === 400 && data.errors) {
-          const validationErrors = data.errors.map(err => err.message).join(', ');
-          errorMessage = `Validation failed: ${validationErrors}`;
-        } else if (status === 403) {
-          // CHANGE: Update error message to be generic
-          errorMessage = 'You can only update your own services';
-        } else if (status === 404) {
-          errorMessage = 'Service not found';
-        } else if (status === 409) {
-          errorMessage = 'Service was modified by another user. Please refresh and try again.';
-        } else {
-          errorMessage = data?.message || errorMessage;
-        }
-      }
-      
-      throw new Error(errorMessage);
+  update: async (id, updateData, formData = null) => {
+  try {
+    let response;
+    
+    if (formData instanceof FormData) {
+      // If FormData is provided, use it directly
+      console.log('Sending FormData to update service');
+      response = await axiosInstance.put(`/api/services/${id}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    } else {
+      // Otherwise send JSON data
+      console.log('Sending JSON data to update service');
+      response = await axiosInstance.put(`/api/services/${id}`, updateData);
     }
-  },
+    
+    console.log('Update response:', response.data);
+    
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        message: response.data.message || 'Service updated successfully',
+        service: response.data.service || response.data.data,
+        thumbnailUpdated: response.data.thumbnailUpdated || false,
+        imagesUpdated: response.data.imagesUpdated || false
+      };
+    }
+    
+    return response.data;
+    
+  } catch (error) {
+    console.error('Update service error:', error);
+    console.error('Error response:', error.response?.data);
+    
+    let errorMessage = 'Failed to update service';
+    if (error.response) {
+      const { data, status } = error.response;
+      
+      if (status === 400 && data.errors) {
+        const validationErrors = data.errors.map(err => err.message).join(', ');
+        errorMessage = `Validation failed: ${validationErrors}`;
+      } else if (status === 403) {
+        errorMessage = 'You can only update your own services';
+      } else if (status === 404) {
+        errorMessage = 'Service not found';
+      } else if (status === 409) {
+        errorMessage = 'Service was modified by another user. Please refresh and try again.';
+      } else {
+        errorMessage = data?.message || errorMessage;
+      }
+    }
+    
+    throw new Error(errorMessage);
+  }
+},
   
   delete: async (id, options = {}) => {
     try {
