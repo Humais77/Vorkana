@@ -13,7 +13,6 @@ const cache = require('../utils/cache.js'); // Import the cache utility
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
-
 const sanitizeGigInput = (data) => {
   if (!data || typeof data !== 'object') return data;
   
@@ -29,6 +28,11 @@ const sanitizeGigInput = (data) => {
   };
   
   Object.keys(sanitized).forEach(key => {
+    // Skip version and budget from sanitization to preserve numbers
+    if (key === 'version' || key === 'budget') {
+      return;
+    }
+    
     if (typeof sanitized[key] === 'string' || 
         (Array.isArray(sanitized[key]) && typeof sanitized[key][0] === 'string')) {
       sanitized[key] = sanitizeTextFields(sanitized[key]);
@@ -39,19 +43,17 @@ const sanitizeGigInput = (data) => {
 };
 
 const uploadGigImages = async (files, gigId) => {
-  if (!files || !Array.isArray(files) || files.length === 0) {
-    return [];
-  }
-  
-  const uploadedImages = await processUploadToCloudinary(files, 'gigs');
-  
-  return uploadedImages.map(image => ({
-    url: image.url,
-    public_id: image.public_id,
-    width: image.width,
-    height: image.height,
-    size: image.size,
-    format: image.format,
+  if (!files || files.length === 0) return [];
+
+  const uploaded = await processUploadToCloudinary(files, 'gigs');
+
+  return uploaded.map(img => ({
+    url: img.url,
+    public_id: img.public_id,
+    width: img.width,
+    height: img.height,
+    size: img.size,
+    format: img.format,
     uploadedAt: new Date()
   }));
 };
@@ -1106,8 +1108,151 @@ const getGigById = async (req, res, next) => {
     });
   }
 };
+const parseFormDataValue = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  
+  // If it's already a number, return it
+  if (typeof value === 'number') {
+    return value;
+  }
+  
+  // If it's a string
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim();
+    
+    if (trimmedValue === '') {
+      return undefined;
+    }
+    
+    // Handle version specifically - must be integer
+    if (/^-?\d+$/.test(trimmedValue)) {
+      return parseInt(trimmedValue, 10);
+    }
+    
+    // Handle budget/float
+    if (/^-?\d*\.?\d+$/.test(trimmedValue)) {
+      return parseFloat(trimmedValue);
+    }
+    
+    // Handle boolean
+    if (trimmedValue.toLowerCase() === 'true') return true;
+    if (trimmedValue.toLowerCase() === 'false') return false;
+    
+    return trimmedValue;
+  }
+  
+  return value;
+};
 
-// Update Gig
+// Helper function to parse FormData with better handling
+const parseFormData = (body, files) => {
+  const parsed = {};
+  
+  // Parse simple fields first
+  const simpleFields = [
+    'title', 'fullName', 'oauthEmail', 'country', 'phone', 'projectCategory', 
+    'subcategory', 'description', 'budget', 'currency', 'timeline', 'timelineUnit', 
+    'communication', 'urgency', 'visibility', 'version'
+  ];
+  
+  simpleFields.forEach(field => {
+    if (body[field] !== undefined) {
+      parsed[field] = parseFormDataValue(body[field]);
+    }
+  });
+  
+  // Handle array fields - check for indexed format first
+  ['skillsRequired', 'deliverables'].forEach(field => {
+    const arrayValues = [];
+    
+    // Check for indexed format: field[0], field[1], etc.
+    const fieldRegex = new RegExp(`^${field}\\[\\d+\\]$`);
+    Object.keys(body).forEach(key => {
+      if (fieldRegex.test(key)) {
+        const value = body[key];
+        if (value && value.trim()) {
+          arrayValues.push(value.trim());
+        }
+      }
+    });
+    
+    // If we found indexed values, use them
+    if (arrayValues.length > 0) {
+      parsed[field] = arrayValues;
+    } 
+    // Otherwise check for regular field
+    else if (body[field] !== undefined) {
+      const value = parseFormDataValue(body[field]);
+      if (Array.isArray(value)) {
+        parsed[field] = value;
+      } else if (typeof value === 'string') {
+        // Try to split by commas
+        parsed[field] = value.split(',').map(item => item.trim()).filter(item => item);
+      } else if (value !== undefined) {
+        parsed[field] = [value];
+      }
+    }
+  });
+  
+  // Handle files
+  if (files) {
+    Object.keys(files).forEach(key => {
+      parsed[key] = files[key];
+    });
+  }
+  
+  return parsed;
+};
+// Helper function to validate and clean gig ID
+const validateGigId = (id) => {
+  if (!id) {
+    return { valid: false, message: 'Gig ID is required' };
+  }
+  
+  let cleanId = id;
+  
+  // If it's an object, try to extract ID
+  if (typeof cleanId === 'object') {
+    if (cleanId._id) {
+      cleanId = cleanId._id;
+    } else if (cleanId.id) {
+      cleanId = cleanId.id;
+    } else {
+      // Try to stringify and extract
+      try {
+        const str = JSON.stringify(cleanId);
+        // Extract MongoDB-like ObjectId (24 hex chars)
+        const match = str.match(/[a-f0-9]{24}/i);
+        if (match) {
+          cleanId = match[0];
+        }
+      } catch (e) {
+        // Continue with original
+      }
+    }
+  }
+  
+  // Convert to string and clean
+  cleanId = String(cleanId).trim();
+  
+  // Remove any quotes or brackets
+  cleanId = cleanId.replace(/^["'{(\[]+|["'})\]]+$/g, '');
+  
+  // Validate as MongoDB ObjectId
+  if (!mongoose.Types.ObjectId.isValid(cleanId)) {
+    return { 
+      valid: false, 
+      message: 'Invalid gig ID format',
+      cleanedId: cleanId 
+    };
+  }
+  
+  return { valid: true, cleanedId: cleanId };
+};
+// In the updateGig function, fix the version parsing:
+
 const updateGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1115,6 +1260,11 @@ const updateGig = async (req, res, next) => {
   try {
     const { id } = req.params;
     
+    console.log('=== UPDATE GIG STARTED ===');
+    console.log('Request ID:', requestId);
+    console.log('Gig ID:', id);
+    
+    // Simple ID validation
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -1158,228 +1308,352 @@ const updateGig = async (req, res, next) => {
       });
     }
 
-    const sanitizedData = sanitizeGigInput(req.body);
-    if (sanitizedData.subcategory !== undefined && 
-        (sanitizedData.subcategory === '' || sanitizedData.subcategory === null)) {
+    // Initialize sanitizedData
+    let sanitizedData = {};
+    
+    console.log('=== PARSING REQUEST DATA ===');
+    console.log('Request body keys:', Object.keys(req.body));
+    console.log('Files:', req.files ? Object.keys(req.files) : 'No files');
+    
+    // Parse version FIRST - CRITICAL FIX
+    let requestVersion = gig.version; // Default to current version
+    
+    if (req.body.version !== undefined) {
+      console.log('Raw version from request:', req.body.version, 'Type:', typeof req.body.version);
+      
+      // Convert to number
+      const versionNum = parseInt(req.body.version, 10);
+      if (isNaN(versionNum)) {
+        console.log('Failed to parse version as number:', req.body.version);
+        return res.status(400).json({
+          success: false,
+          message: 'Version must be a valid number',
+          code: 'INVALID_VERSION',
+          requestId
+        });
+      }
+      
+      requestVersion = versionNum;
+      console.log('Parsed version as number:', requestVersion, 'Type:', typeof requestVersion);
+    }
+    
+    // Parse other fields
+    if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+      console.log('Handling multipart/form-data');
+      
+      // Parse simple text fields
+      const textFields = [
+        'title', 'fullName', 'oauthEmail', 'country', 'phone', 'projectCategory', 
+        'subcategory', 'description', 'currency', 'timeline', 'timelineUnit', 
+        'communication', 'urgency', 'visibility'
+      ];
+      
+      textFields.forEach(field => {
+        if (req.body[field] !== undefined) {
+          sanitizedData[field] = req.body[field];
+          console.log(`${field}: ${req.body[field]}`);
+        }
+      });
+      
+      // Parse budget - ensure it's a number
+      if (req.body.budget !== undefined && req.body.budget !== '') {
+        const budgetNum = parseFloat(req.body.budget);
+        if (isNaN(budgetNum)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Budget must be a valid number',
+            code: 'INVALID_BUDGET',
+            requestId
+          });
+        }
+        sanitizedData.budget = budgetNum;
+        console.log(`budget: ${budgetNum} (converted from ${req.body.budget})`);
+      }
+      
+      // Parse array fields
+      ['skillsRequired', 'deliverables'].forEach(field => {
+        const values = [];
+        
+        // Look for indexed format: skillsRequired[0], skillsRequired[1], etc.
+        const arrayPattern = new RegExp(`^${field}\\[\\d+\\]$`);
+        Object.keys(req.body).forEach(key => {
+          if (arrayPattern.test(key)) {
+            const value = req.body[key];
+            if (value && value.trim()) {
+              values.push(value.trim());
+            }
+          }
+        });
+        
+        // If no indexed values, check for direct field
+        if (values.length === 0 && req.body[field]) {
+          const value = req.body[field];
+          if (Array.isArray(value)) {
+            values.push(...value);
+          } else if (typeof value === 'string') {
+            values.push(...value.split(',').map(item => item.trim()).filter(item => item));
+          }
+        }
+        
+        if (values.length > 0) {
+          sanitizedData[field] = values;
+          console.log(`${field}:`, values);
+        }
+      });
+      
+      // Handle files
+      if (req.files) {
+        console.log('Files received:', Object.keys(req.files));
+        Object.keys(req.files).forEach(key => {
+          sanitizedData[key] = req.files[key];
+        });
+      }
+      
+    } else {
+      // Handle JSON data
+      console.log('Handling JSON data');
+      sanitizedData = { ...req.body };
+      
+      // Ensure budget is a number if provided
+      if (sanitizedData.budget !== undefined) {
+        const budgetNum = parseFloat(sanitizedData.budget);
+        if (isNaN(budgetNum)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Budget must be a valid number',
+            code: 'INVALID_BUDGET',
+            requestId
+          });
+        }
+        sanitizedData.budget = budgetNum;
+      }
+    }
+    
+    console.log('=== PROCESSED DATA ===');
+    console.log('Request version:', requestVersion);
+    console.log('Sanitized data keys:', Object.keys(sanitizedData));
+    
+    // Basic validation
+    const validationErrors = [];
+    
+    if (!sanitizedData.title || sanitizedData.title.trim().length === 0) {
+      validationErrors.push({ field: 'title', message: 'Title is required' });
+    }
+    
+    if (!sanitizedData.description || sanitizedData.description.trim().length === 0) {
+      validationErrors.push({ field: 'description', message: 'Description is required' });
+    }
+    
+    if (!sanitizedData.projectCategory) {
+      validationErrors.push({ field: 'projectCategory', message: 'Project category is required' });
+    }
+    
+    if (validationErrors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Subcategory is required',
-        code: 'SUBCATEGORY_REQUIRED',
+        message: 'Validation failed',
+        errors: validationErrors,
+        code: 'VALIDATION_ERROR',
         requestId
       });
     }
-    // Handle empty assignedTo - set to null instead of empty string
-    if (sanitizedData.assignedTo === '' || sanitizedData.assignedTo === null) {
-      sanitizedData.assignedTo = null;
+    
+    // Validate subcategory
+    if (sanitizedData.subcategory !== undefined) {
+      if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
+        sanitizedData.subcategory = null;
+      } else {
+        const subcategoryExists = await Subcategory.findOne({ 
+          _id: sanitizedData.subcategory,
+          category: sanitizedData.projectCategory || gig.projectCategory,
+          isActive: true
+        });
+        
+        if (!subcategoryExists) {
+          return res.status(400).json({
+            success: false,
+            message: 'Subcategory not found or does not belong to selected category',
+            code: 'SUBCATEGORY_NOT_FOUND',
+            requestId
+          });
+        }
+      }
     }
     
-    // Handle empty subcategory
-    if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
-      sanitizedData.subcategory = null;
-    }
-    
-   
-    if (!isAdmin) {
-  const restrictedFields = [
-    'status',
-    'assignedTo',
-    'paymentStatus',
-    'paymentAmount',
-    'depositPaid',
-    'rating',
-    'clientReview',
-    'disputeStatus',
-    'disputeReason'
-  ];
-  
-  restrictedFields.forEach(field => {
-    if (sanitizedData[field] !== undefined) {
-      // Instead of just deleting, throw an error or ignore the field
-      delete sanitizedData[field];
-      // OR better: Log unauthorized attempt
-      console.warn(`Non-admin attempted to update restricted field: ${field}`);
-    }
-  });
-}
-
-    if (sanitizedData.projectCategory && sanitizedData.projectCategory !== gig.projectCategory.toString()) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.projectCategory 
-      });
-      
-      if (!category) {
+    // Validate budget
+    if (sanitizedData.budget !== undefined) {
+      if (typeof sanitizedData.budget !== 'number' || isNaN(sanitizedData.budget) || sanitizedData.budget < 0) {
         return res.status(400).json({
           success: false,
-          message: 'Category not found',
-          code: 'CATEGORY_NOT_FOUND',
+          message: 'Budget must be a valid positive number',
+          code: 'INVALID_BUDGET',
           requestId
         });
       }
     }
-if (sanitizedData.subcategory !== undefined) {
-  if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
-    // Allow clearing subcategory if needed
-    sanitizedData.subcategory = null;
-  } else {
-    // Validate subcategory exists and belongs to the correct category
-    const subcategory = await Subcategory.findOne({ 
-      _id: sanitizedData.subcategory,
-      category: sanitizedData.projectCategory || gig.projectCategory,
-      isActive: true
-    });
-    
-    if (!subcategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subcategory not found, inactive, or does not belong to the selected category',
-        code: 'SUBCATEGORY_NOT_FOUND',
-        requestId
-      });
-    }
+    let uploadedImages = [];
+let uploadedThumbnail = null;
+
+// Handle new thumbnail upload
+if (req.files && req.files.thumbnail && req.files.thumbnail.length > 0) {
+  const thumbnailFile = req.files.thumbnail[0];
+  const thumbnailResult = await uploadGigThumbnail(thumbnailFile, gig._id); // your existing helper
+  if (thumbnailResult) {
+    uploadedThumbnail = thumbnailResult;
   }
-} else if (!gig.subcategory) {
-  // If subcategory is not being updated but gig doesn't have one
+}
+
+// Handle new images upload
+if (req.files && req.files.images && req.files.images.length > 0) {
+  uploadedImages = await uploadGigImages(req.files.images, gig._id); // your existing helper
+}
+
+// Now build the final images array
+let finalImages = [...gig.images]; // keep existing
+
+// Add new uploaded images
+if (uploadedImages.length > 0) {
+  uploadedImages.forEach(img => {
+    if (!finalImages.some(existing => existing.public_id === img.public_id)) {
+      finalImages.push(img);
+    }
+  });
+}
+
+// Handle thumbnail
+if (uploadedThumbnail) {
+  finalImages = finalImages.filter(img => img.public_id !== gig.thumbnail?.public_id);
+  finalImages.unshift(uploadedThumbnail); // put thumbnail first
+}
+
+// Enforce max 10 images
+if (finalImages.length > 10) {
   return res.status(400).json({
     success: false,
-    message: 'Subcategory is required',
-    code: 'SUBCATEGORY_REQUIRED',
+    message: 'Maximum 10 images allowed',
+    code: 'MAX_IMAGES_EXCEEDED',
     requestId
   });
 }
 
-    const currentVersion = sanitizedData.version;
-    delete sanitizedData.version;
-
-    const updateData = {
-      ...sanitizedData,
-      lastUpdatedBy: req.user._id,
-      $inc: { version: 1 }
+// === BUILD FINAL UPDATE DATA ===
+const updateData = {
+  ...sanitizedData,
+  lastUpdatedBy: req.user._id,
+  images: finalImages,
+  thumbnail: uploadedThumbnail || gig.thumbnail, // use new or keep old
+  $inc: { version: 1 }
+};
+    
+    // Add version increment
+    updateData.$inc = { version: 1 };
+    
+    console.log('=== FINAL UPDATE DATA ===');
+    console.log('Update data:', updateData);
+    console.log('User is owner:', isOwner);
+    console.log('User is admin:', isAdmin);
+    console.log('Request version:', requestVersion);
+    console.log('Current gig version:', gig.version);
+    
+    // Build query conditions
+    const queryConditions = { 
+      _id: id,
+      deletedAt: null
     };
-
-    // Process uploaded images
-    const existingImages = gig.images || [];
-    let newImages = [];
     
-    // Check for thumbnail
-    if (req.files && req.files.thumbnail) {
-      const thumbnailUpload = await uploadGigThumbnail(req.files.thumbnail[0], gig._id);
-      if (thumbnailUpload) {
-        updateData.thumbnail = thumbnailUpload;
-        newImages.push(thumbnailUpload);
-      }
+    // Only add version condition for non-owners/non-admins
+    if (!isOwner && !isAdmin) {
+      queryConditions.version = requestVersion;
+      console.log('Adding version check for non-owner/admin');
     }
     
-    // Check for other images
-    if (req.files && req.files.images) {
-      const images = await uploadGigImages(req.files.images, gig._id);
-      newImages = [...newImages, ...images];
-    }
+    console.log('Query conditions:', queryConditions);
     
-    // Combine images if new ones were uploaded
-    if (newImages.length > 0) {
-      const combinedImages = [...existingImages];
-      newImages.forEach(image => {
-        const exists = combinedImages.some(img => img.public_id === image.public_id);
-        if (!exists) {
-          combinedImages.push(image);
-        }
-      });
-      
-      updateData.images = combinedImages;
-      
-      // Set thumbnail if not already set
-      if (!updateData.thumbnail && newImages.length > 0) {
-        updateData.thumbnail = {
-          url: newImages[0].url,
-          public_id: newImages[0].public_id,
-          width: newImages[0].width,
-          height: newImages[0].height,
-          size: newImages[0].size,
-          format: newImages[0].format,
-          uploadedAt: newImages[0].uploadedAt
-        };
-      }
-    }
-
+    // Perform the update
     const updatedGig = await Gig.findOneAndUpdate(
-      { 
-        _id: id,
-        deletedAt: null,
-        ...(currentVersion ? { version: currentVersion } : {})
-      },
+      queryConditions,
       updateData,
       { 
         new: true,
         runValidators: true,
         context: 'query'
       }
-    ).populate('projectCategory', 'name slug').populate('createdBy', 'name email');
+    ).populate('projectCategory', 'name slug').populate('subcategory', 'name slug');
 
     if (!updatedGig) {
-      // Clean up uploaded images if update failed
-      if (newImages.length > 0) {
-        await deleteCloudinaryImages(newImages);
-      }
+      // Check why update failed
+      const currentGig = await Gig.findById(id);
       
-      if (currentVersion) {
-        const currentDoc = await Gig.findById(id);
-        return res.status(409).json({
+      if (!currentGig) {
+        return res.status(404).json({
           success: false,
-          message: 'Gig was modified by another user. Please refresh and try again.',
-          code: 'VERSION_CONFLICT',
-          currentVersion: currentDoc?.version,
+          message: 'Gig not found during update',
+          code: 'UPDATE_FAILED',
           requestId
         });
       }
       
-      return res.status(404).json({
+      // If version mismatch and user is not owner/admin
+      if (!isOwner && !isAdmin && currentGig.version !== requestVersion) {
+        return res.status(409).json({
+          success: false,
+          message: 'Gig was modified by another user. Please refresh and try again.',
+          code: 'VERSION_CONFLICT',
+          currentVersion: currentGig.version,
+          gigTitle: currentGig.title,
+          updatedAt: currentGig.updatedAt,
+          requestId
+        });
+      }
+      
+      return res.status(400).json({
         success: false,
-        message: 'Gig not found during update',
+        message: 'Update failed',
         code: 'UPDATE_FAILED',
         requestId
       });
     }
 
-    // Invalidate cache after update
+    // Invalidate cache
     await invalidateGigCache(id);
 
-    logAudit('UPDATE', 'GIG', updatedGig._id, req.user._id, {
-      updatedFields: Object.keys(sanitizedData),
-      oldVersion: currentVersion || gig.version,
-      newVersion: updatedGig.version,
-      imagesUpdated: newImages.length > 0
-    });
-
-    const safeGig = updatedGig.toObject();
-    delete safeGig.__v;
-    delete safeGig.lastUpdatedBy;
-    delete safeGig.deletedAt;
-    delete safeGig.deletedBy;
-    delete safeGig.version;
-    
-    if (safeGig.createdBy) {
-      delete safeGig.createdBy.email;
-      delete safeGig.createdBy.phone;
-      delete safeGig.createdBy.password;
-    }
-
+    // Success response
     const responseTime = Date.now() - startTime;
     
     res.json({
       success: true,
-      data: safeGig,
+      data: updatedGig,
       message: 'Gig updated successfully',
+      newVersion: updatedGig.version,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
+    console.error('Update gig error:', error);
+    
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
         message: 'Gig with similar title already exists',
         code: 'DUPLICATE_GIG',
+        requestId
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message,
+        type: err.kind
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
         requestId
       });
     }

@@ -150,17 +150,43 @@ export const useGig = (id) => {
     queryKey: gigKeys.detail(id),
     queryFn: () => gigsAPI.getById(id),
     enabled: !!id && id !== 'undefined',
-    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: true,
+refetchOnReconnect: true,
     gcTime: 30 * 60 * 1000,
     retry: (failureCount, error) => {
       if (error.status === 404) return false;
       return failureCount < 3;
     },
-    onSuccess: (data) => {
-      if (data?.gig || data?.data) {
-        setGigDetails(data.gig || data.data);
-      }
-    },
+    onSuccess: (data, variables) => {
+  const updatedGig = data.data || data.gig || data;
+
+  // Instantly update the single gig cache — feels immediate!
+  queryClient.setQueryData(gigKeys.detail(variables.id), (oldData) => {
+    if (!oldData) return { gig: updatedGig, data: updatedGig };
+    return {
+      ...oldData,
+      gig: updatedGig,
+      data: updatedGig,
+    };
+  });
+
+  // Also update any list caches optimistically (optional but nice)
+  queryClient.setQueryData(gigKeys.lists(), (old) => {
+    if (!old || !Array.isArray(old.data)) return old;
+    return {
+      ...old,
+      data: old.data.map((gig) =>
+        gig._id === variables.id ? updatedGig : gig
+      ),
+    };
+  });
+
+  // Still invalidate lists to ensure freshness on next load
+  queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
+  queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+
+  toast.success(data.message || 'Gig updated successfully!');
+},
   });
 };
 

@@ -281,22 +281,30 @@ const [isRefreshing, setIsRefreshing] = useState(false);
       }, 2000);
     }
   }, [updateSuccess, updatedGigData, navigate, id, refetchGig]);
-
-  // Handle update errors
-  useEffect(() => {
-    if (updateError) {
-      if (updateError.code === 'VERSION_CONFLICT') {
-        setVersionConflict(true);
-        toast.error('This gig was modified by another user. Please refresh and try again.');
-      } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
-        setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-        toast.error('Subcategory is required');
-      } else {
-        toast.error(updateError.message || 'Failed to update gig');
-      }
+useEffect(() => {
+  if (updateError) {
+    // Check if user is owner or admin
+    const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
+    const isAdmin = currentUser?.role === 'admin';
+    
+    if (updateError.code === 'VERSION_CONFLICT' && (isOwner || isAdmin)) {
+      // Owners and admins should not see version conflict errors
+      // Just refresh the data silently
+      refetchGig();
+      return;
     }
-  }, [updateError]);
-
+    
+    if (updateError.code === 'VERSION_CONFLICT') {
+      setVersionConflict(true);
+      toast.error('This gig was modified by another user. Please refresh and try again.');
+    } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
+      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
+      toast.error('Subcategory is required');
+    } else {
+      toast.error(updateError.message || 'Failed to update gig');
+    }
+  }
+}, [updateError, currentUser, gigData, refetchGig]);
   // Cleanup
   useEffect(() => {
     return () => {
@@ -567,17 +575,19 @@ const [isRefreshing, setIsRefreshing] = useState(false);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories]);
-
-  const handleSubmit = useCallback(async (e) => {
+// In the handleSubmit function - FIX THE VERSION CONFLICT HANDLING
+const handleSubmit = useCallback(async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
   setVersionConflict(false);
- if (gigData?.gig?.version && gigData.gig.version > currentVersion) {
-    setVersionConflict(true);
-    toast.error('Gig data is outdated. Please refresh.');
-    setIsSubmitting(false);
-    return;
-  }
+
+  console.log('=== SUBMIT DEBUG INFO ===');
+  console.log('Gig ID:', id);
+  console.log('Current Version:', currentVersion);
+  console.log('User ID:', currentUser?._id);
+  console.log('Gig Owner ID:', gigData?.gig?.createdBy?._id);
+  console.log('Is Owner:', currentUser?._id === gigData?.gig?.createdBy?._id);
+  console.log('Is Admin:', currentUser?.role === 'admin');
 
   if (!isAuthenticated) {
     toast.error("Please sign in to update gigs");
@@ -591,61 +601,79 @@ const [isRefreshing, setIsRefreshing] = useState(false);
   }
 
   try {
-    const formDataObj = new FormData();
-
-    // Create update data object
-    const gigUpdateData = {
-      title: formData.title.trim(),
-      fullName: formData.fullName.trim(),
-      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-      country: formData.country.trim(),
-      phone: formData.phone.trim(),
-      projectCategory: formData.projectCategory,
-      subcategory: formData.subcategory || undefined,
-      description: formData.description.trim(),
-      budget: parseFloat(formData.budget),
-      currency: formData.currency,
-      timeline: formData.timeline.trim(),
-      timelineUnit: formData.timelineUnit,
-      communication: formData.communication,
-      urgency: formData.urgency,
-      visibility: formData.visibility
-    };
-
-    // Validate subcategory
-    if (subcategories.length > 0 && !gigUpdateData.subcategory) {
-      throw new Error('Subcategory is required for this category');
+    // Verify gig exists
+    if (!gigData?.gig && !gigData) {
+      toast.error('Gig data not loaded. Please refresh the page.');
+      setIsSubmitting(false);
+      return;
     }
 
-    // Append basic data
-    Object.keys(gigUpdateData).forEach(key => {
-      if (gigUpdateData[key] !== null && gigUpdateData[key] !== undefined && gigUpdateData[key] !== '') {
-        if (typeof gigUpdateData[key] === 'object') {
-          formDataObj.append(key, JSON.stringify(gigUpdateData[key]));
-        } else {
-          formDataObj.append(key, gigUpdateData[key]);
-        }
+    const gig = gigData.gig || gigData;
+    
+    // Check ownership
+    const isOwner = currentUser?._id === gig.createdBy?._id;
+    const isAdmin = currentUser?.role === 'admin';
+    
+    if (!isOwner && !isAdmin) {
+      toast.error('You can only edit your own gigs');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Validate ID
+    if (!id || id === 'undefined' || id === 'null') {
+      toast.error('Invalid gig ID');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const formDataObj = new FormData();
+
+    // Append fields with proper formatting
+    const appendField = (key, value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        formDataObj.append(key, String(value));
       }
-    });
+    };
 
-    // ✅ CRITICAL FIX: Append version separately
-    formDataObj.append('version', currentVersion);
-
-    // Append skills
+    appendField('title', formData.title.trim());
+    appendField('fullName', formData.fullName.trim());
+    appendField('oauthEmail', formData.oauthEmail.trim().toLowerCase());
+    appendField('country', formData.country.trim());
+    appendField('phone', formData.phone.trim());
+    appendField('projectCategory', formData.projectCategory);
+    
+    // Handle subcategory - can be empty string
+    formDataObj.append('subcategory', formData.subcategory || '');
+    
+    appendField('description', formData.description.trim());
+    appendField('budget', parseFloat(formData.budget));
+    appendField('currency', formData.currency);
+    appendField('timeline', formData.timeline.trim());
+    appendField('timelineUnit', formData.timelineUnit);
+    appendField('communication', formData.communication);
+    appendField('urgency', formData.urgency);
+    appendField('visibility', formData.visibility);
+    
+ console.log('FormData contents before sending:');
+  for (let pair of formDataObj.entries()) {
+    console.log(`${pair[0]}: ${pair[1]} (type: ${typeof pair[1]})`);
+  }
+    // Append skills as array format
     if (formData.skillsRequired && formData.skillsRequired.length > 0) {
       formData.skillsRequired.forEach((skill, index) => {
         formDataObj.append(`skillsRequired[${index}]`, skill);
       });
     }
 
-    // Append deliverables
+    // Append deliverables as array format
     if (formData.deliverables && formData.deliverables.length > 0) {
       formData.deliverables.forEach((deliverable, index) => {
         formDataObj.append(`deliverables[${index}]`, deliverable);
       });
     }
 
-    // Append thumbnail if new
+    // Append thumbnail
     if (thumbnailFile) {
       formDataObj.append('thumbnail', thumbnailFile.file);
     }
@@ -655,37 +683,70 @@ const [isRefreshing, setIsRefreshing] = useState(false);
       formDataObj.append('images', image.file);
     });
 
-    setErrors({});
+    // Debug log
+    console.log('FormData Contents:');
+    for (let pair of formDataObj.entries()) {
+      console.log(`${pair[0]}: ${pair[1]} (type: ${typeof pair[1]})`);
+    }
     
     // Call update mutation
     updateGig({
       id: id,
-      data: formDataObj
+      data: formDataObj,
     });
 
   } catch (error) {
     console.error("Error in handleSubmit:", error);
-  
-  if (error.message?.includes('version') || error.code === 'VERSION_CONFLICT') {
-    setVersionConflict(true);
-    toast.error('This gig was modified by another user. Please refresh and try again.');
-  } else {
-    toast.error(error.message || "Failed to update gig. Please try again.");
+    toast.error(error.message || "Failed to update gig");
+    setIsSubmitting(false);
   }
-  
-  setErrors(prev => ({
-    ...prev,
-    form: error.message || "Something went wrong. Please try again."
-  }));
-  setIsSubmitting(false);
+}, [formData, currentVersion, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig, gigData, currentUser]);
+
+// In the version conflict error handling - FIX THE LOGIC
+useEffect(() => {
+  if (updateError) {
+    const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
+    const isAdmin = currentUser?.role === 'admin';
+    
+    if (updateError.code === 'VERSION_CONFLICT') {
+      if (isOwner || isAdmin) {
+        // For owners/admins, just refresh and continue
+        toast('Refreshing to get latest version...', {
+          icon: '🔄',
+          style: {
+            background: '#3b82f6',
+            color: 'white',
+          },
+        });
+        refetchGig();
+      } else {
+        // For others, show version conflict error
+        setVersionConflict(true);
+        toast.error('This gig was modified by another user. Please refresh and try again.');
+      }
+    } else if (updateError.code === 'SUBCATEGORY_NOT_FOUND') {
+      toast.error('Please select a valid subcategory');
+    } else {
+      toast.error(updateError.message || 'Failed to update gig');
+    }
   }
-}, [formData, currentVersion, subcategories, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig]);
-  const handleRefreshGig = useCallback(async () => {
+}, [updateError, currentUser, gigData, refetchGig]);
+
+
+
+
+
+
+
+const handleRefreshGig = useCallback(async () => {
   setIsRefreshing(true);
   try {
-    await refetchGig();
-    setVersionConflict(false);
-    toast.success('Gig data refreshed successfully!');
+    const { data: refreshedData } = await refetchGig();
+    if (refreshedData?.gig || refreshedData) {
+      const gig = refreshedData.gig || refreshedData;
+      setVersionConflict(false);
+      toast.success('Gig data refreshed successfully! Latest version: ' + (gig.version || 1));
+    }
   } catch (error) {
     toast.error('Failed to refresh gig data');
   } finally {
@@ -851,7 +912,7 @@ useEffect(() => {
                     </div>
                   )}
 
-                {versionConflict && (
+               {versionConflict && (
   <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
     <div className="flex items-start">
       <AlertCircle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
@@ -868,21 +929,24 @@ useEffect(() => {
             <RefreshCw className="h-3 w-3" />
             Refresh Gig Data
           </button>
-          <button
-            onClick={() => {
-              setVersionConflict(false);
-              toast('Continuing with current data', {
-                icon: '⚠️',
-                style: {
-                  background: '#f59e0b',
-                  color: 'white',
-                },
-              });
-            }}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
-          >
-            Continue Anyway
-          </button>
+          {/* Only show "Continue Anyway" for owners/admins */}
+          {(currentUser?._id === gigData?.gig?.createdBy?._id || currentUser?.role === 'admin') && (
+            <button
+              onClick={() => {
+                setVersionConflict(false);
+                toast('Continuing with current data', {
+                  icon: '⚠️',
+                  style: {
+                    background: '#f59e0b',
+                    color: 'white',
+                  },
+                });
+              }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
+            >
+              Continue Anyway (Owner/Admin Override)
+            </button>
+          )}
         </div>
       </div>
     </div>
