@@ -2,6 +2,48 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { servicesAPI } from '../api/services.js';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios'; // Import axios
+
+// Create axios instance for direct use in mutations
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('userToken') || localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+axiosInstance.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout. Please check your connection.');
+    }
+    
+    if (!navigator.onLine) {
+      throw new Error('No internet connection');
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 export const useMyServices = (filters = {}) => {
   return useQuery({
@@ -38,7 +80,6 @@ export const useMyServices = (filters = {}) => {
   });
 };
 
-// Update useServices hook
 export const useServices = (filters = {}) => {
   return useQuery({
     queryKey: ['services', filters],
@@ -70,6 +111,7 @@ export const useServices = (filters = {}) => {
     },
   });
 };
+
 export const useService = (identifier) => {
   return useQuery({
     queryKey: ['service', identifier],
@@ -81,6 +123,7 @@ export const useService = (identifier) => {
     },
   });
 };
+
 export const usePopularServices = (params = {}) => {
   return useQuery({
     queryKey: ['popularServices', params],
@@ -100,11 +143,7 @@ export const usePopularServices = (params = {}) => {
     },
   });
 };
-// Add these hooks to your existing useServices.js file
 
-/**
- * Hook to get services by category ID
- */
 export const useServicesByCategory = (categoryId, subcategoryId = null, options = {}) => {
   return useQuery({
     queryKey: ['services', 'category', categoryId, subcategoryId],
@@ -112,7 +151,6 @@ export const useServicesByCategory = (categoryId, subcategoryId = null, options 
       if (!categoryId) return [];
       
       try {
-        // Use servicesAPI instead of direct axiosInstance
         const result = await servicesAPI.getAll({
           category: categoryId,
           subcategory: subcategoryId,
@@ -120,7 +158,6 @@ export const useServicesByCategory = (categoryId, subcategoryId = null, options 
           limit: 50
         });
         
-        // Handle different response structures
         if (result?.success) {
           return result.data || [];
         }
@@ -136,9 +173,7 @@ export const useServicesByCategory = (categoryId, subcategoryId = null, options 
     ...options,
   });
 };
-/**
- * Hook to get services by subcategory slug
- */
+
 export const useServicesBySubcategory = (subcategorySlug, options = {}) => {
   return useQuery({
     queryKey: ['services', 'subcategory', subcategorySlug],
@@ -146,7 +181,6 @@ export const useServicesBySubcategory = (subcategorySlug, options = {}) => {
       if (!subcategorySlug) return [];
       
       try {
-        // Use servicesAPI with subcategory filter
         const result = await servicesAPI.getAll({
           subcategorySlug: subcategorySlug,
           status: 'active',
@@ -195,7 +229,6 @@ export const useTogglePopularStatus = () => {
     },
     onSuccess: (data, variables) => {
       if (data.success) {
-        // Invalidate relevant queries
         queryClient.invalidateQueries(['popularServices']);
         queryClient.invalidateQueries(['popularServicesByCategory']);
         queryClient.invalidateQueries(['service', variables.serviceId]);
@@ -210,6 +243,7 @@ export const useTogglePopularStatus = () => {
     },
   });
 };
+
 export const useCategories = () => {
   return useQuery({
     queryKey: ['categories'],
@@ -259,22 +293,40 @@ export const useCreateService = () => {
   });
 };
 
+// FIXED: Correct useUpdateService hook
 export const useUpdateService = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, data, files = null }) => {
-      return servicesAPI.update(id, data, files);
+    mutationFn: async ({ id, data, files }) => {
+      console.log('useUpdateService called with:', { id, hasData: !!data, hasFiles: !!files });
+      
+      // If files is FormData, use it directly with our axiosInstance
+      if (files instanceof FormData) {
+        console.log('Sending FormData to server');
+        const response = await axiosInstance.put(`/api/services/${id}`, files, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        return response.data;
+      }
+      
+      // Otherwise use the servicesAPI.update method
+      console.log('Sending JSON data to server');
+      return servicesAPI.update(id, data);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      console.log('Update successful:', data);
       if (data.success) {
         queryClient.invalidateQueries(['myServices']);
         queryClient.invalidateQueries(['services']);
-        queryClient.invalidateQueries(['service', data.service?._id]);
+        queryClient.invalidateQueries(['service', variables.id]);
         toast.success(data.message || 'Service updated successfully!');
       }
     },
     onError: (error) => {
+      console.error('Update service error:', error);
       toast.error(error.message || 'Failed to update service');
     },
   });
@@ -325,7 +377,6 @@ export const useServiceStats = (filters = {}) => {
     queryKey: ['serviceStats', filters],
     queryFn: () => servicesAPI.getStats(filters),
     refetchOnWindowFocus: false,
-    // Add error handling
     onError: (error) => {
       toast.error(error.message || 'Failed to fetch service statistics');
     },
@@ -337,7 +388,6 @@ export const useSearchServices = (searchParams) => {
     queryKey: ['searchServices', searchParams],
     queryFn: async () => {
       try {
-        // If searchParams is null or undefined, return empty result
         if (!searchParams) {
           return {
             success: true,
@@ -364,7 +414,6 @@ export const useSearchServices = (searchParams) => {
         };
       } catch (error) {
         console.error('Search services error:', error);
-        // Always return a value, even on error
         return {
           success: false,
           data: [],
@@ -380,7 +429,7 @@ export const useSearchServices = (searchParams) => {
     },
     enabled: Boolean(searchParams?.query || searchParams?.q || searchParams?.category),
     refetchOnWindowFocus: false,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
     onError: (error) => {
       toast.error(error.message || 'Failed to search services');
     },
@@ -455,6 +504,7 @@ export const useRemoveServiceImage = () => {
     },
   });
 };
+
 export const useSetThumbnail = () => {
   const queryClient = useQueryClient();
   
@@ -474,6 +524,7 @@ export const useSetThumbnail = () => {
     },
   });
 };
+
 export const useServicesByCategoryId = (categoryId, params = {}, options = {}) => {
   return useQuery({
     queryKey: ['services', 'category', categoryId, params],
@@ -508,7 +559,6 @@ export const useServicesByCategoryId = (categoryId, params = {}, options = {}) =
   });
 };
 
-// Hook for services by subcategory ID
 export const useServicesBySubcategoryId = (subcategoryId, params = {}, options = {}) => {
   return useQuery({
     queryKey: ['services', 'subcategory', 'id', subcategoryId, params],
@@ -543,7 +593,6 @@ export const useServicesBySubcategoryId = (subcategoryId, params = {}, options =
   });
 };
 
-// Hook for services by subcategory slug
 export const useServicesBySubcategorySlug = (subcategorySlug, params = {}, options = {}) => {
   return useQuery({
     queryKey: ['services', 'subcategory', 'slug', subcategorySlug, params],
@@ -578,7 +627,6 @@ export const useServicesBySubcategorySlug = (subcategorySlug, params = {}, optio
   });
 };
 
-// Hook for admin services
 export const useAdminServices = (filters = {}) => {
   return useQuery({
     queryKey: ['adminServices', filters],

@@ -662,8 +662,7 @@ const EditService = () => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories, thumbnailFile, existingThumbnail]);
-
-  const handleSubmit = useCallback(async (e) => {
+const handleSubmit = useCallback(async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
   setVersionConflict(false);
@@ -688,137 +687,96 @@ const EditService = () => {
   }
 
   try {
-    const formDataObj = new FormData();
+    const shortDesc = formData.shortDescription?.trim() || ''; // FIXED: Add safe access
+    const finalShortDesc = shortDesc.length >= 20 ? shortDesc : 
+      (formData.description ? formData.description.substring(0, 150) + '...' : 
+       'Professional service');
 
-    // Append basic data
-    const appendFormData = (key, value) => {
-      if (value === null || value === undefined || value === '') {
-        return;
-      }
-      
-      if (Array.isArray(value)) {
-        // For arrays, append each item
-        value.forEach((item, index) => {
-          if (typeof item === 'object') {
-            // Handle nested objects (features, faqs, packages)
-            Object.keys(item).forEach(subKey => {
-              const subValue = item[subKey];
-              if (subValue !== null && subValue !== undefined) {
-                if (Array.isArray(subValue)) {
-                  subValue.forEach((subItem, subIndex) => {
-                    formDataObj.append(`${key}[${index}][${subKey}][${subIndex}]`, subItem);
-                  });
-                } else if (typeof subValue === 'boolean') {
-                  formDataObj.append(`${key}[${index}][${subKey}]`, subValue.toString());
-                } else {
-                  formDataObj.append(`${key}[${index}][${subKey}]`, subValue);
-                }
-              }
-            });
-          } else {
-            formDataObj.append(`${key}[${index}]`, item);
-          }
-        });
-      } else if (typeof value === 'boolean') {
-        formDataObj.append(key, value.toString());
-      } else if (typeof value === 'object' && !(value instanceof File)) {
-        // Stringify objects that aren't files
-        formDataObj.append(key, JSON.stringify(value));
-      } else {
-        formDataObj.append(key, value);
-      }
-    };
+    const finalSubcategory = formData.subcategory || null;
 
-    // Create update data object
-    const updateData = {
-      title: formData.title.trim(),
-      description: formData.description.trim(),
-      shortDescription: formData.shortDescription.trim(),
+    // Create FormData
+    const formDataToSend = new FormData();
+
+    // Append all text data as JSON - FIXED: Use safe trimming
+    const jsonData = {
+      title: (formData.title || '').trim(),
+      description: (formData.description || '').trim(),
+      shortDescription: finalShortDesc,
       category: formData.category,
-      subcategory: formData.subcategory || null,
-      price: parseFloat(formData.price),
-      currency: formData.currency,
-      deliveryTime: parseInt(formData.deliveryTime),
-      deliveryTimeUnit: formData.deliveryTimeUnit,
-      revisions: parseInt(formData.revisions) || 0,
-      tags: formData.tags,
-      searchKeywords: formData.searchKeywords,
-      features: formData.features,
-      requirements: formData.requirements,
-      faqs: formData.faqs,
-      packages: formData.packages,
-      metaTitle: formData.metaTitle || '',
-      metaDescription: formData.metaDescription || '',
-      status: formData.status,
+      subcategory: finalSubcategory,
+      price: parseFloat(formData.price || 0),
+      currency: formData.currency || "USD",
+      deliveryTime: parseInt(formData.deliveryTime || 1),
+      deliveryTimeUnit: formData.deliveryTimeUnit || "days",
+      revisions: parseInt(formData.revisions || 1),
+      tags: formData.tags || [],
+      searchKeywords: formData.searchKeywords || [],
+      features: formData.features || [],
+      requirements: formData.requirements || [],
+      faqs: formData.faqs || [],
+      packages: formData.packages || [],
+      metaTitle: (formData.metaTitle || '').trim(),
+      metaDescription: (formData.metaDescription || '').trim(),
+      status: formData.status || "active",
       version: currentVersion
     };
 
-    // Validate subcategory
-    if (subcategories.length > 0 && !updateData.subcategory) {
-      throw new Error('Subcategory is required for this category');
+    // Add existing thumbnail and images to JSON if not being replaced
+    if (!thumbnailFile && existingThumbnail) {
+      jsonData.thumbnail = existingThumbnail;
+      console.log('Including existing thumbnail in JSON');
     }
 
-    // Append all data
-    Object.keys(updateData).forEach(key => {
-      appendFormData(key, updateData[key]);
-    });
+    if (existingImages.length > 0 && uploadedImages.length === 0) {
+      jsonData.images = existingImages;
+      console.log(`Including ${existingImages.length} existing images in JSON`);
+    }
 
-    // Handle thumbnail differently - it needs to be a file
+    // Append JSON data
+    formDataToSend.append('data', JSON.stringify(jsonData));
+    console.log('JSON data appended to FormData');
+
+    // Append thumbnail file if exists
     if (thumbnailFile && thumbnailFile.file) {
-      formDataObj.append('thumbnail', thumbnailFile.file);
-    } else if (existingThumbnail && existingThumbnail.url) {
-      // If we have existing thumbnail, send the URL as string
-      formDataObj.append('thumbnail', existingThumbnail.url);
+      console.log('Appending thumbnail file:', thumbnailFile.file.name);
+      formDataToSend.append('thumbnail', thumbnailFile.file);
     }
 
-    // Append new images as files
-    uploadedImages.forEach((image) => {
-      if (image.file) {
-        formDataObj.append('images', image.file);
-      }
-    });
-
-    // Append existing images as URLs
-    existingImages.forEach((image, index) => {
-      if (image.url) {
-        formDataObj.append(`existingImages[${index}]`, image.url);
-      }
-    });
-
-    // Debug: Log form data
-    console.log('FormData entries:');
-    for (let pair of formDataObj.entries()) {
-      console.log(pair[0] + ': ' + pair[1]);
+    // Append new image files if exist
+    if (uploadedImages.length > 0) {
+      console.log(`Appending ${uploadedImages.length} image files`);
+      uploadedImages.forEach((img, index) => {
+        if (img.file) {
+          formDataToSend.append('images', img.file);
+          console.log(`Appended image ${index + 1}: ${img.file.name}`);
+        }
+      });
     }
 
-    setErrors({});
-    
-    // Call update mutation
+    // Call updateService with FormData
+    console.log('Calling updateService API...');
     updateService({
       id: id,
-      data: formDataObj
+      data: jsonData, // Pass JSON data separately for reference
+      files: formDataToSend // Pass FormData for files
     });
 
   } catch (error) {
     console.error("Error in handleSubmit:", error);
-    
-    if (error.message?.includes('version') || error.code === 'VERSION_CONFLICT') {
-      setVersionConflict(true);
-      toast.error('This service was modified by another user. Please refresh and try again.');
-    } else if (error.message?.includes('Subcategory')) {
-      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-      toast.error('Subcategory is required');
-    } else {
-      toast.error(error.message || "Failed to update service. Please try again.");
-    }
-    
-    setErrors(prev => ({
-      ...prev,
-      form: error.message || "Something went wrong. Please try again."
-    }));
+    toast.error(error.message || "Failed to update service");
     setIsSubmitting(false);
   }
-}, [formData, currentVersion, subcategories, isAuthenticated, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, serviceData, validateForm, updateService]);
+}, [formData, currentVersion, isAuthenticated, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, serviceData, validateForm, updateService]);
+
+
+
+
+
+
+
+
+
+
   const handleRefreshService = useCallback(async () => {
     setIsRefreshing(true);
     try {
