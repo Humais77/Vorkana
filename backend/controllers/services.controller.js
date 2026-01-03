@@ -67,7 +67,7 @@ const sanitizeServiceInput = (data) => {
     if (typeof data[key] === 'string') {
       // Try to parse JSON if it looks like JSON
       if (
-        (key === 'tags' || key === 'features' || key === 'faqs' || key === 'searchKeywords' || key === 'packages' || key === 'requirements') &&
+        (key === 'tags' || key === 'features' || key === 'faqs' || key === 'searchKeywords'  || key === 'requirements') &&
         (data[key].startsWith('[') || data[key].startsWith('{'))
       ) {
         try {
@@ -152,7 +152,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     isRecommended,
     isPopular,
     hasImages,
-    hasPackages,
     hasFaqs,
     tags,
     createdAfter,
@@ -241,7 +240,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
   if (isPopular !== undefined) filter.isPopular = isPopular;
   
   if (hasImages === 'true') filter.images = { $exists: true, $ne: [] };
-  if (hasPackages === 'true') filter.packages = { $exists: true, $ne: [] };
   if (hasFaqs === 'true') filter.faqs = { $exists: true, $ne: [] };
   
   if (tags) {
@@ -334,7 +332,7 @@ const createService = async (req, res, next) => {
     // Handle multipart form data
     if (req.headers['content-type']?.includes('multipart/form-data')) {
       // Parse arrays from form data
-      const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'packages', 'requirements'];
+      const arrayFields = ['tags', 'features', 'faqs', 'searchKeywords', 'requirements'];
       bodyData = parseFormDataArrays(req.body, arrayFields);
       
       // Handle thumbnail upload if provided
@@ -566,7 +564,6 @@ const getServices = async (req, res, next) => {
       isRecommended,
       isPopular,
       hasImages,
-      hasPackages,
       hasFaqs,
       tags,
       createdAfter,
@@ -618,7 +615,6 @@ const getServices = async (req, res, next) => {
       isRecommended,
       isPopular,
       hasImages,
-      hasPackages,
       hasFaqs,
       tags,
       createdAfter,
@@ -1401,15 +1397,6 @@ const processServiceData = (service, isFastMode, isMinimal, skipImages) => {
     if (!isFastMode) {
       processed.createdBy.accountAge = Date.now() - new Date(processed.createdBy.createdAt).getTime();
     }
-  }
-  
-  // OPTIMIZATION: Process packages only in full mode
-  if (!isFastMode && !isMinimal && processed.packages && Array.isArray(processed.packages)) {
-    processed.packages = processed.packages.map(pkg => ({
-      ...pkg,
-      deliveryText: `${pkg.deliveryTime} ${service.deliveryTimeUnit}`,
-      priceText: `${service.currency} ${pkg.price}`
-    }));
   }
   
   // OPTIMIZATION: Limit images if skipImages is true
@@ -3461,7 +3448,6 @@ const getMyServices = async (req, res, next) => {
       const safeService = { ...service };
 
       safeService.hasImages = Boolean(service.images && service.images.length > 0);
-      safeService.hasPackages = Boolean(service.packages && service.packages.length > 0);
       safeService.hasFaqs = Boolean(service.faqs && service.faqs.length > 0);
 
       safeService.priceFormatted = `${service.currency || 'USD'} ${service.price}`;

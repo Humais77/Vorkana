@@ -19,7 +19,6 @@ import {
   ChevronDown,
   ArrowLeft,
   Type,
-  Package as PackageIcon,
   Layers,
   AlertCircle,
   RefreshCw,
@@ -96,7 +95,7 @@ const QUICK_TIPS = [
   "Update clear and specific service details",
   "Keep images relevant and high-quality",
   "Refresh your service to keep it visible in searches",
-  "Update packages to reflect current offerings"
+ 
 ];
 
 const CURRENCY_OPTIONS = [
@@ -170,7 +169,6 @@ const EditService = () => {
     features: [],
     requirements: [],
     faqs: [],
-    packages: [],
     metaTitle: "",
     metaDescription: "",
     status: "active"
@@ -196,16 +194,6 @@ const EditService = () => {
     question: "",
     answer: ""
   });
-  const [newPackage, setNewPackage] = useState({
-    name: "",
-    description: "",
-    price: "",
-    deliveryTime: "",
-    revisions: 0,
-    features: [],
-    popular: false
-  });
-  const [newPackageFeature, setNewPackageFeature] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [versionConflict, setVersionConflict] = useState(false);
@@ -264,7 +252,6 @@ const EditService = () => {
         features: service.features || [],
         requirements: service.requirements || [],
         faqs: service.faqs || [],
-        packages: service.packages || [],
         metaTitle: service.metaTitle || "",
         metaDescription: service.metaDescription || "",
         status: service.status || "active"
@@ -452,57 +439,6 @@ const EditService = () => {
     toast.success('FAQ removed');
   }, []);
 
-  // Packages Management
-  const handleAddPackageFeature = useCallback(() => {
-    if (newPackageFeature.trim() && newPackage.features.length < 20) {
-      setNewPackage(prev => ({
-        ...prev,
-        features: [...prev.features, newPackageFeature.trim()]
-      }));
-      setNewPackageFeature("");
-      toast.success('Package feature added');
-    }
-  }, [newPackageFeature, newPackage.features]);
-
-  const handleRemovePackageFeature = useCallback((featureToRemove) => {
-    setNewPackage(prev => ({
-      ...prev,
-      features: prev.features.filter(feature => feature !== featureToRemove)
-    }));
-    toast.success('Package feature removed');
-  }, []);
-
-  const handleAddPackage = useCallback(() => {
-    if (newPackage.name.trim() && newPackage.price && newPackage.deliveryTime) {
-      setFormData(prev => ({
-        ...prev,
-        packages: [...prev.packages, {
-          ...newPackage,
-          price: parseFloat(newPackage.price) || 0,
-          deliveryTime: parseInt(newPackage.deliveryTime) || 1
-        }]
-      }));
-      setNewPackage({
-        name: "",
-        description: "",
-        price: "",
-        deliveryTime: "",
-        revisions: 0,
-        features: [],
-        popular: false
-      });
-      toast.success('Package added');
-    }
-  }, [newPackage]);
-
-  const handleRemovePackage = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      packages: prev.packages.filter((_, i) => i !== index)
-    }));
-    toast.success('Package removed');
-  }, []);
-
   const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
     
@@ -614,11 +550,9 @@ const EditService = () => {
         case 'keyword': handleAddKeyword(); break;
         case 'feature': handleAddFeature(); break;
         case 'faq': handleAddFAQ(); break;
-        case 'packageFeature': handleAddPackageFeature(); break;
-        case 'package': handleAddPackage(); break;
       }
     }
-  }, [handleAddTag, handleAddKeyword, handleAddFeature, handleAddFAQ, handleAddPackageFeature, handleAddPackage]);
+  }, [handleAddTag, handleAddKeyword, handleAddFeature, handleAddFAQ]);
 
   const validateForm = useCallback(() => {
     const newErrors = {};
@@ -714,7 +648,6 @@ const handleSubmit = useCallback(async (e) => {
       features: formData.features || [],
       requirements: formData.requirements || [],
       faqs: formData.faqs || [],
-      packages: formData.packages || [],
       metaTitle: (formData.metaTitle || '').trim(),
       metaDescription: (formData.metaDescription || '').trim(),
       status: formData.status || "active",
@@ -1681,181 +1614,6 @@ const handleSubmit = useCallback(async (e) => {
                       </div>
                     </div>
 
-                    {/* Packages */}
-                    <div className="mb-8">
-                      <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <PackageIcon className="h-5 w-5 text-emerald-600" />
-                        Service Packages
-                      </h2>
-                      <div className="space-y-4">
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Package Name
-                              </label>
-                              <input
-                                type="text"
-                                value={newPackage.name}
-                                onChange={(e) => setNewPackage(prev => ({ ...prev, name: e.target.value }))}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                placeholder="e.g., Basic Package"
-                                maxLength="100"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Price
-                              </label>
-                              <input
-                                type="number"
-                                value={newPackage.price}
-                                onChange={(e) => setNewPackage(prev => ({ ...prev, price: e.target.value }))}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                placeholder="Package price"
-                                min="1"
-                                step="0.01"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Delivery Time
-                              </label>
-                              <input
-                                type="number"
-                                value={newPackage.deliveryTime}
-                                onChange={(e) => setNewPackage(prev => ({ ...prev, deliveryTime: e.target.value }))}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                placeholder="Delivery days"
-                                min="1"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Revisions
-                              </label>
-                              <input
-                                type="number"
-                                value={newPackage.revisions}
-                                onChange={(e) => setNewPackage(prev => ({ ...prev, revisions: parseInt(e.target.value) || 0 }))}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                placeholder="Number of revisions"
-                                min="0"
-                              />
-                            </div>
-                          </div>
-                          <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Package Features
-                            </label>
-                            <div className="flex gap-2 mb-2">
-                              <input
-                                type="text"
-                                value={newPackageFeature}
-                                onChange={(e) => setNewPackageFeature(e.target.value)}
-                                onKeyPress={(e) => handleKeyPress(e, 'packageFeature')}
-                                className="flex-1 p-2 border border-gray-300 rounded-lg"
-                                placeholder="Add feature"
-                              />
-                              <button
-                                type="button"
-                                onClick={handleAddPackageFeature}
-                                className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                              >
-                                Add
-                              </button>
-                            </div>
-                            {newPackage.features.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-2">
-                                {newPackage.features.map((feature, index) => (
-                                  <div key={index} className="flex items-center bg-gray-100 text-gray-800 px-2 py-1 rounded">
-                                    {feature}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemovePackageFeature(feature)}
-                                      className="ml-2 text-gray-600 hover:text-gray-800"
-                                    >
-                                      <X size={12} />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <label className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={newPackage.popular}
-                                onChange={(e) => setNewPackage(prev => ({ ...prev, popular: e.target.checked }))}
-                                className="h-4 w-4 text-emerald-600 rounded"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">Mark as popular package</span>
-                            </label>
-                            <button
-                              type="button"
-                              onClick={handleAddPackage}
-                              onKeyPress={(e) => handleKeyPress(e, 'package')}
-                              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                            >
-                              Add Package
-                            </button>
-                          </div>
-                        </div>
-
-                        {formData.packages.length > 0 && (
-                          <div className="space-y-4">
-                            {formData.packages.map((pkg, index) => (
-                              <div key={index} className="p-4 bg-gray-50 rounded-lg border">
-                                <div className="flex justify-between items-start mb-4">
-                                  <div>
-                                    <h4 className="font-medium text-gray-900">{pkg.name}</h4>
-                                    {pkg.description && (
-                                      <p className="text-sm text-gray-600 mt-1">{pkg.description}</p>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {pkg.popular && (
-                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                                        Popular
-                                      </span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemovePackage(index)}
-                                      className="text-red-500 hover:text-red-700"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                  <div>
-                                    <span className="text-gray-500">Price:</span>
-                                    <p className="font-medium">${formatPrice(pkg.price)}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Delivery:</span>
-                                    <p className="font-medium">{pkg.deliveryTime} days</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Revisions:</span>
-                                    <p className="font-medium">{pkg.revisions}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Features:</span>
-                                    <p className="font-medium">{pkg.features?.length || 0}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     {/* Status & Metadata */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
@@ -2036,10 +1794,7 @@ const handleSubmit = useCallback(async (e) => {
                         <span className="text-emerald-100">Features:</span>
                         <span className="font-medium">{formData.features.length} added</span>
                       </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Packages:</span>
-                        <span className="font-medium">{formData.packages.length} added</span>
-                      </li>
+                      
                       <li className="flex justify-between">
                         <span className="text-emerald-100">Total Images:</span>
                         <span className="font-medium">
@@ -2078,10 +1833,7 @@ const handleSubmit = useCallback(async (e) => {
                         <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                         <span>Update at least once a month to stay relevant</span>
                       </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>Clear packages attract better clients</span>
-                      </li>
+                     
                       <li className="flex items-start gap-2">
                         <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                         <span>High-quality images increase engagement</span>

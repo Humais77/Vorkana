@@ -8,7 +8,6 @@ import {
   Shield, 
   ChevronRight,
   ChevronLeft,
-  Package,
   FileText,
   User,
   Calendar,
@@ -91,18 +90,6 @@ const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
     "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
 
-  if (service.packages && service.packages.length > 0) {
-    service.packages.forEach((pkg) => {
-      offers.push({
-        "@type": "Offer",
-        ...formatStructuredPrice(pkg.price, service.currency),
-        "name": pkg.name,
-        "description": pkg.description || `Package: ${pkg.name}`,
-        "availability": service.status === 'active' ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        "priceValidUntil": new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      });
-    });
-  }
 
   return {
     "@context": "https://schema.org",
@@ -843,17 +830,19 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
     <>
       <Link
         to={`/edit-service/${service._id}`}
-        className="p-3 hover:bg-gray-50 rounded-xl transition-colors text-emerald-600"
+                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
         aria-label="Edit service"
       >
         <Edit className="h-6 w-6" />
+        Edit
       </Link>
       <button
         onClick={handleDeleteClick}
-        className="p-3 hover:bg-gray-50 rounded-xl transition-colors text-red-600"
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
         aria-label="Delete service"
       >
         <Trash2 className="h-6 w-6" />
+        Delete
       </button>
     </>
   )}
@@ -1004,13 +993,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                       <p className="text-sm text-gray-500" itemProp="priceCurrency" content={service.currency || "USD"}>
                         Base price for this service
                       </p>
-                      {service.packages && service.packages.length > 0 && (
-                        <div className="mt-3 text-xs text-gray-600">
-                          <span className="inline-block px-2 py-1 bg-white rounded border">
-                            {service.packages.length} packages available
-                          </span>
-                        </div>
-                      )}
+                      
                     </div>
                   </div>
 
@@ -1328,66 +1311,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   </div>
                 </div>
 
-                {/* Packages */}
-                {service.packages && service.packages.length > 0 && (
-                  <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                      <Package className="h-6 w-6 text-emerald-600" aria-hidden="true" />
-                      Service Packages
-                    </h2>
-                    <div className="space-y-4" role="list">
-                      {service.packages.slice(0, 3).map((pkg, index) => (
-                        <div key={index} className="bg-white border border-gray-200 rounded-xl p-6 hover:border-emerald-200 transition-colors" role="listitem">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
-                            <div>
-                              <h3 className="text-xl font-bold text-gray-900">{pkg.name}</h3>
-                              {pkg.description && (
-                                <p className="text-gray-600 mt-1">{pkg.description}</p>
-                              )}
-                            </div>
-                            <div className="mt-2 md:mt-0">
-                              <div className="text-2xl font-bold text-emerald-600">
-                                {formatPrice(pkg.price, service.currency)}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {pkg.features && pkg.features.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="font-medium text-gray-900 mb-2">Package Includes:</h4>
-                              <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {pkg.features.slice(0, 4).map((feature, featureIndex) => (
-                                  <li key={featureIndex} className="flex items-center text-sm text-gray-600">
-                                    <CheckCircle className="h-4 w-4 text-emerald-500 mr-2" aria-hidden="true" />
-                                    {feature}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200">
-                            <div className="text-sm text-gray-600">
-                              Delivery: {pkg.deliveryTime || service.deliveryTime} {service.deliveryTimeUnit}
-                            </div>
-                            <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-                              Select Package
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {service.packages.length > 3 && (
-                        <div className="text-center">
-                          <button className="text-emerald-600 hover:text-emerald-700 font-medium">
-                            + {service.packages.length - 3} more packages
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* Features */}
                 {service.features && service.features.length > 0 && (
                   <div className="mb-8">
@@ -1492,10 +1415,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                       </p>
                     </div>
                     <div className="flex items-center text-sm text-gray-500">
-                      <span className="flex items-center mr-4">
-                        <Package className="h-4 w-4 mr-1" aria-hidden="true" />
-                        {categoryName}
-                      </span>
                       {subcategoryName && (
                         <span className="flex items-center">
                           <ChevronRight className="h-4 w-4 mr-1" aria-hidden="true" />
@@ -1617,7 +1536,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                       <div>
                         <h4 className="text-sm font-medium text-gray-600 mb-2">Main Category</h4>
                         <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
-                          <Package className="h-5 w-5 text-emerald-600 mr-3" aria-hidden="true" />
                           <div>
                             <span className="font-semibold text-gray-900 block" itemProp="serviceType">{categoryName}</span>
                           </div>

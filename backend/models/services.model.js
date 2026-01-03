@@ -252,42 +252,6 @@ thumbnail: {
       maxlength: [500, 'FAQ answer cannot exceed 500 characters'],
     },
   }],
-  packages: [{
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: [50, 'Package name cannot exceed 50 characters'],
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [500, 'Package description cannot exceed 500 characters'],
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: [1, 'Minimum package price is $1'],
-    },
-    deliveryTime: {
-      type: Number,
-      required: true,
-      min: [1, 'Minimum delivery time is 1 day'],
-    },
-    revisions: {
-      type: Number,
-      default: 0,
-    },
-    features: [{
-      type: String,
-      trim: true,
-      maxlength: [100, 'Package feature cannot exceed 100 characters'],
-    }],
-    popular: {
-      type: Boolean,
-      default: false,
-    },
-  }],
   rating: {
     type: Number,
     default: 0,
@@ -483,14 +447,6 @@ serviceSchema.pre('save', async function () {
     }));
   }
 
-  if (Array.isArray(this.packages)) {
-    this.packages = this.packages.map(p => ({
-      ...p,
-      name: sanitizeText(p.name || ''),
-      description: sanitizeText(p.description || ''),
-      features: p.features ? p.features.map(sanitizeText) : []
-    }));
-  }
 
   if (this.isModified('title') || this.isNew) {
     let baseSlug = slugify(this.title, { lower: true, strict: true, locale: 'en', trim: true });

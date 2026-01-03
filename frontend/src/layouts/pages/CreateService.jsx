@@ -30,7 +30,6 @@ import {
   ChevronDown,
   ArrowRight,
   Type,
-  Package as PackageIcon,
   Layers,
   Lock,
   Tag,
@@ -160,7 +159,6 @@ const CreateService = () => {
   features: [],
   requirements: [],
   faqs: [],
-  packages: [],
   searchKeywords: [],
   metaTitle: '',
   metaDescription: '',
@@ -209,17 +207,7 @@ const CreateService = () => {
     question: '',
     answer: ''
   });
-  const [newPackage, setNewPackage] = useState({
-    name: '',
-    description: '',
-    price: '',
-    deliveryTime: '',
-    revisions: 0,
-    features: [],
-    popular: false
-  });
   const [newRequirementOption, setNewRequirementOption] = useState('');
-  const [newPackageFeature, setNewPackageFeature] = useState('');
   const [uploadedImages, setUploadedImages] = useState([]);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [thumbnailFile, setThumbnailFile] = useState(null);
@@ -547,56 +535,6 @@ useEffect(() => {
     toast.success('FAQ removed');
   }, []);
 
-  // Packages Management
-  const handleAddPackageFeature = useCallback(() => {
-    if (newPackageFeature.trim() && newPackage.features.length < 20) {
-      setNewPackage(prev => ({
-        ...prev,
-        features: [...prev.features, newPackageFeature.trim()]
-      }));
-      setNewPackageFeature('');
-      toast.success('Package feature added');
-    }
-  }, [newPackageFeature, newPackage.features]);
-
-  const handleRemovePackageFeature = useCallback((featureToRemove) => {
-    setNewPackage(prev => ({
-      ...prev,
-      features: prev.features.filter(feature => feature !== featureToRemove)
-    }));
-    toast.success('Package feature removed');
-  }, []);
-
-  const handleAddPackage = useCallback(() => {
-    if (newPackage.name.trim() && newPackage.price && newPackage.deliveryTime) {
-      setFormData(prev => ({
-        ...prev,
-        packages: [...prev.packages, {
-          ...newPackage,
-          price: parseFloat(newPackage.price) || 0,
-          deliveryTime: parseInt(newPackage.deliveryTime) || 1
-        }]
-      }));
-      setNewPackage({
-        name: '',
-        description: '',
-        price: '',
-        deliveryTime: '',
-        revisions: 0,
-        features: [],
-        popular: false
-      });
-      toast.success('Package added');
-    }
-  }, [newPackage]);
-
-  const handleRemovePackage = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      packages: prev.packages.filter((_, i) => i !== index)
-    }));
-    toast.success('Package removed');
-  }, []);
 
   const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
@@ -701,8 +639,7 @@ useEffect(() => {
         case 'requirement': handleAddRequirement(); break;
         case 'requirementOption': handleAddRequirementOption(); break;
         case 'faq': handleAddFAQ(); break;
-        case 'packageFeature': handleAddPackageFeature(); break;
-        case 'package': handleAddPackage(); break;
+      
       }
     }
   }, [
@@ -712,8 +649,6 @@ useEffect(() => {
     handleAddRequirement, 
     handleAddRequirementOption, 
     handleAddFAQ, 
-    handleAddPackageFeature, 
-    handleAddPackage
   ]);
 
   const validateStep = useCallback((step) => {
@@ -874,22 +809,6 @@ useEffect(() => {
       formData.faqs.forEach((faq, index) => {
         submitFormData.append(`faqs[${index}][question]`, faq.question);
         submitFormData.append(`faqs[${index}][answer]`, faq.answer);
-      });
-    }
-    
-    if (formData.packages?.length > 0) {
-      formData.packages.forEach((pkg, index) => {
-        submitFormData.append(`packages[${index}][name]`, pkg.name);
-        submitFormData.append(`packages[${index}][description]`, pkg.description || '');
-        submitFormData.append(`packages[${index}][price]`, pkg.price);
-        submitFormData.append(`packages[${index}][deliveryTime]`, pkg.deliveryTime);
-        submitFormData.append(`packages[${index}][revisions]`, pkg.revisions || 0);
-        submitFormData.append(`packages[${index}][popular]`, pkg.popular || false);
-        if (pkg.features?.length > 0) {
-          pkg.features.forEach((feature, featIndex) => {
-            submitFormData.append(`packages[${index}][features][${featIndex}]`, feature);
-          });
-        }
       });
     }
 
@@ -1947,7 +1866,7 @@ useEffect(() => {
   const renderLeftPanel = useMemo(() => {
     const stepTitles = {
       1: "Define your service basics including title, category, and description.",
-      2: "Set your pricing, delivery time, and service packages.",
+      2: "Set your pricing, delivery time.",
       3: "Add features, requirements, and additional details.",
       4: "Upload images and add frequently asked questions.",
       5: "Your service is ready to be published! Review your information before submitting."

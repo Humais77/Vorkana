@@ -93,63 +93,6 @@ const thumbnailSchema = Joi.alternatives().try(
   'alternatives.match': 'Thumbnail must be either a valid URL or a thumbnail object',
   'any.required': 'Thumbnail is required'
 });
-const packageSchema = Joi.object({
-  name: Joi.string()
-    .required()
-    .max(50)
-    .custom((value) => sanitizeText(value), 'XSS prevention')
-    .messages({
-      'string.empty': 'Package name is required',
-      'string.max': 'Package name cannot exceed 50 characters',
-    }),
-  
-  description: Joi.string()
-    .max(500)
-    .custom((value) => sanitizeText(value || ''), 'XSS prevention')
-    .allow('')
-    .messages({
-      'string.max': 'Package description cannot exceed 500 characters',
-    }),
-  
-  price: Joi.number()
-    .required()
-    .min(1)
-    .max(100000)
-    .messages({
-      'number.base': 'Package price must be a number',
-      'number.min': 'Minimum package price is $1',
-      'number.max': 'Maximum package price is $100,000',
-    }),
-  
-  deliveryTime: Joi.number()
-    .required()
-    .min(1)
-    .max(365)
-    .messages({
-      'number.base': 'Delivery time must be a number',
-      'number.min': 'Minimum delivery time is 1 day',
-      'number.max': 'Maximum delivery time is 365 days',
-    }),
-  
-  revisions: Joi.number()
-    .min(0)
-    .max(99)
-    .default(0)
-    .messages({
-      'number.min': 'Revisions cannot be negative',
-      'number.max': 'Maximum revisions is 99',
-    }),
-  
-  features: Joi.array()
-    .items(Joi.string().max(100).custom((value) => sanitizeText(value), 'XSS prevention'))
-    .messages({
-      'string.max': 'Feature cannot exceed 100 characters',
-    }),
-  
-  popular: Joi.boolean()
-    .default(false),
-}).options({ stripUnknown: true });
-
 const featureSchema = Joi.object({
   title: Joi.string()
     .required()
@@ -372,13 +315,6 @@ images: Joi.array()
       'array.max': 'Cannot have more than 15 FAQs',
     }),
   
-  packages: Joi.array()
-    .items(packageSchema)
-    .max(3)
-    .optional()
-    .messages({
-      'array.max': 'Cannot have more than 3 packages',
-    }),
   
   status: Joi.string()
     .valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended')
@@ -555,13 +491,6 @@ shortDescription: Joi.string()
       'array.max': 'Cannot have more than 15 FAQs',
     }),
   
-  packages: Joi.array()
-    .items(packageSchema)
-    .max(3)
-    .optional()
-    .messages({
-      'array.max': 'Cannot have more than 3 packages',
-    }),
   
   status: Joi.string()
     .valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended')
@@ -685,7 +614,6 @@ const querySchema = Joi.object({
   isRecommended: Joi.boolean(),
   isPopular: Joi.boolean(),
   hasImages: Joi.boolean(),
-  hasPackages: Joi.boolean(),
   hasFaqs: Joi.boolean(),
   tags: Joi.string().custom((value) => sanitizeText(value || ''), 'XSS prevention'),
   createdAfter: Joi.date().iso(),
