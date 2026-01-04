@@ -42,12 +42,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-import { useAuthStore } from '../../store/useAuthStore';
-import { useService, useUpdateService } from '../../hooks/useServices';
-import { useCategories } from '../../hooks/useCategories';
-import { useSubcategoriesByCategory } from '../../hooks/useSubcategories';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import { isProfileCompleteEnough } from '../../utils/profileUtils';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { useService, useUpdateService } from '../../../hooks/useServices';
+import { useCategories } from '../../../hooks/useCategories';
+import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
+import { SeoWrapper } from '../../../components/SeoWrapper';
+import { isProfileCompleteEnough } from '../../../utils/profileUtils';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 

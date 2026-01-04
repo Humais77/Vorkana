@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import {
@@ -28,11 +28,11 @@ import {
   Save,
   ArrowLeft
 } from 'lucide-react';
-import { useProfilePicture } from '../../hooks/useProfilePicture';
-import { useUpdateProfile, useGetProfile } from '../../hooks/useAuth';
-import { formatDateForAPI, formatDateForInput } from '../../utils/dateUtils';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import default_pp from '../../assets/default_pp-modified.png';
+import { useProfilePicture } from '../../../hooks/useProfilePicture';
+import { useUpdateProfile, useGetProfile } from '../../../hooks/useAuth';
+import { formatDateForAPI, formatDateForInput } from '../../../utils/dateUtils';
+import { SeoWrapper } from '../../../components/SeoWrapper';
+import default_pp from '../../../assets/default_pp-modified.png';
 
 // Memoized Profile Section Components
 const ProfileSection = memo(({ 

@@ -34,8 +34,8 @@ import {
   Loader2,
   AlertCircle
 } from 'lucide-react';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import { useAuthStore } from '../../store/useAuthStore';
+import { SeoWrapper } from '../../../components/SeoWrapper';
+import { useAuthStore } from '../../../store/useAuthStore';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';

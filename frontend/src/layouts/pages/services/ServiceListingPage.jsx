@@ -1,6 +1,7 @@
-// src/pages/GigListingsPage.jsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+// src/pages/ServiceListingPage.jsx
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import PopularServices from "../../../components/services/PopularService";
 import {
   Search,
   Filter,
@@ -15,42 +16,33 @@ import {
   Heart,
   AlertCircle,
   Loader2,
-  Image as ImageIcon,
-  MapPin,
-  Calendar,
-  Zap,
-  Users,
-  ArrowLeft
-} from 'lucide-react';
-import { useGigs } from '../../hooks/useGigs';
-import { useCategories } from '../../hooks/useServices';
-import { toast } from 'react-hot-toast';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import heroBg from "../../assets/bg.png";
+  Image as ImageIcon
+} from "lucide-react";
+import { useServices, useSearchServices, useCategories } from "../../../hooks/useServices";
+import { useToggleLike } from "../../../hooks/useServices";
+import { toast } from "react-hot-toast";
+import { SeoWrapper } from "../../../components/SeoWrapper";
+import heroBg from "../../../assets/bg.png";
 
-const GigListingsPage = () => {
+const ServiceListingPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
   // Get query parameters from URL
-  const searchQuery = searchParams.get('q') || searchParams.get('query') || searchParams.get('search') || '';
+  const searchQuery = searchParams.get('q') || searchParams.get('query') || '';
   const categoryId = searchParams.get('category') || '';
-  const minBudget = searchParams.get('minBudget') || '';
-  const maxBudget = searchParams.get('maxBudget') || '';
-  const urgency = searchParams.get('urgency') || '';
-  const status = searchParams.get('status') || 'open';
+  const minPrice = searchParams.get('minPrice') || '';
+  const maxPrice = searchParams.get('maxPrice') || '';
   const sort = searchParams.get('sort') || 'createdAt';
   const page = searchParams.get('page') || '1';
   
   // Local state
   const [searchTerm, setSearchTerm] = useState(searchQuery);
   const [selectedCategory, setSelectedCategory] = useState(categoryId || 'All');
-  const [budgetRange, setBudgetRange] = useState([
-    minBudget ? parseInt(minBudget) : 0, 
-    maxBudget ? parseInt(maxBudget) : 100000
+  const [priceRange, setPriceRange] = useState([
+    minPrice ? parseInt(minPrice) : 0, 
+    maxPrice ? parseInt(maxPrice) : 10000
   ]);
-  const [selectedUrgency, setSelectedUrgency] = useState(urgency);
-  const [selectedStatus, setSelectedStatus] = useState(status);
   const [sortBy, setSortBy] = useState(sort);
   const [showFilters, setShowFilters] = useState(false);
   const [favorites, setFavorites] = useState([]);
@@ -71,26 +63,19 @@ const GigListingsPage = () => {
 
   // API Hooks with cleaned parameters
   const { 
-    data: gigsData, 
-    isLoading: isLoadingGigs,
-    error: gigsError,
-    refetch: refetchGigs
-  } = useGigs(
-    cleanQueryParams({
-      page: parseInt(page),
-      limit: 12,
-      sort: sortBy,
-      search: debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2 ? debouncedSearchTerm.trim() : undefined,
-      status: selectedStatus !== 'open' ? selectedStatus : undefined,
+    data: searchData, 
+    isLoading: isSearching, 
+    error: searchError,
+    refetch: refetchSearch 
+  } = useSearchServices(
+    debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2 ? cleanQueryParams({
+      q: debouncedSearchTerm.trim(),
       category: selectedCategory !== 'All' ? selectedCategory : undefined,
-      minBudget: budgetRange[0] > 0 ? budgetRange[0] : undefined,
-      maxBudget: budgetRange[1] < 100000 ? budgetRange[1] : undefined,
-      urgency: selectedUrgency ? selectedUrgency : undefined,
-      includeCategory: true,
-      includeClient: true,
-      includeSeller: true,
-      populate: true
-    })
+      minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
+      maxPrice: priceRange[1] < 10000 ? priceRange[1] : undefined,
+      sort: sortBy !== 'createdAt' ? sortBy : undefined,
+      limit: 20
+    }) : null
   );
 
   const { 
@@ -98,20 +83,37 @@ const GigListingsPage = () => {
     isLoading: isLoadingCategories 
   } = useCategories();
 
+  const { 
+    data: allServicesData, 
+    isLoading: isLoadingServices,
+    error: servicesError
+  } = useServices(
+    cleanQueryParams({
+      page: parseInt(page),
+      limit: 12,
+      sort: sortBy,
+      category: selectedCategory !== 'All' ? selectedCategory : undefined,
+      minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
+      maxPrice: priceRange[1] < 10000 ? priceRange[1] : undefined,
+    })
+  );
+
+  const { mutate: toggleLike } = useToggleLike();
+
   // Handle API errors
   useEffect(() => {
-    if (gigsError) {
-      setApiError(gigsError);
-      toast.error(gigsError.message || 'Failed to load gigs');
+    if (searchError || servicesError) {
+      setApiError(searchError || servicesError);
     } else {
       setApiError(null);
     }
-  }, [gigsError]);
+  }, [searchError, servicesError]);
 
   // Debounce search term
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
+      // Reset to page 1 when search changes
       if (searchTerm !== searchQuery) {
         setSearchParams(prev => {
           if (searchTerm.trim()) {
@@ -140,14 +142,12 @@ const GigListingsPage = () => {
     if (page !== '1') params.set('page', page);
     if (debouncedSearchTerm.trim()) params.set('q', debouncedSearchTerm.trim());
     if (selectedCategory && selectedCategory !== 'All') params.set('category', selectedCategory);
-    if (selectedStatus && selectedStatus !== 'open') params.set('status', selectedStatus);
-    if (budgetRange[0] > 0) params.set('minBudget', budgetRange[0]);
-    if (budgetRange[1] < 100000) params.set('maxBudget', budgetRange[1]);
-    if (selectedUrgency) params.set('urgency', selectedUrgency);
+    if (priceRange[0] > 0) params.set('minPrice', priceRange[0]);
+    if (priceRange[1] < 10000) params.set('maxPrice', priceRange[1]);
     if (sortBy !== 'createdAt') params.set('sort', sortBy);
     
     setSearchParams(params, { replace: true });
-  }, [selectedCategory, selectedStatus, budgetRange, selectedUrgency, sortBy, page, debouncedSearchTerm, setSearchParams, isInitialLoad]);
+  }, [selectedCategory, priceRange, sortBy, page, debouncedSearchTerm, setSearchParams, isInitialLoad]);
 
   // Handle search
   const handleSearch = useCallback((e) => {
@@ -181,55 +181,27 @@ const GigListingsPage = () => {
     });
   }, [setSearchParams]);
 
-  // Handle budget range change
-  const handleBudgetRangeChange = useCallback((index, value) => {
-    const newRange = [...budgetRange];
+  // Handle price range change
+  const handlePriceRangeChange = useCallback((index, value) => {
+    const newRange = [...priceRange];
     newRange[index] = parseInt(value) || 0;
-    setBudgetRange(newRange);
+    setPriceRange(newRange);
     
     setSearchParams(prev => {
       if (newRange[0] > 0) {
-        prev.set('minBudget', newRange[0]);
+        prev.set('minPrice', newRange[0]);
       } else {
-        prev.delete('minBudget');
+        prev.delete('minPrice');
       }
-      if (newRange[1] < 100000) {
-        prev.set('maxBudget', newRange[1]);
+      if (newRange[1] < 10000) {
+        prev.set('maxPrice', newRange[1]);
       } else {
-        prev.delete('maxBudget');
-      }
-      prev.set('page', '1');
-      return prev;
-    });
-  }, [budgetRange, setSearchParams]);
-
-  // Handle urgency change
-  const handleUrgencyChange = useCallback((urgencyValue) => {
-    setSelectedUrgency(urgencyValue);
-    setSearchParams(prev => {
-      if (urgencyValue) {
-        prev.set('urgency', urgencyValue);
-      } else {
-        prev.delete('urgency');
+        prev.delete('maxPrice');
       }
       prev.set('page', '1');
       return prev;
     });
-  }, [setSearchParams]);
-
-  // Handle status change
-  const handleStatusChange = useCallback((statusValue) => {
-    setSelectedStatus(statusValue);
-    setSearchParams(prev => {
-      if (statusValue !== 'open') {
-        prev.set('status', statusValue);
-      } else {
-        prev.delete('status');
-      }
-      prev.set('page', '1');
-      return prev;
-    });
-  }, [setSearchParams]);
+  }, [priceRange, setSearchParams]);
 
   // Handle sort change
   const handleSortChange = useCallback((e) => {
@@ -245,24 +217,24 @@ const GigListingsPage = () => {
     });
   }, [setSearchParams]);
 
-  // Handle like (favorite)
-  const handleLike = useCallback(async (gigId, e) => {
+  // Handle like
+  const handleLike = useCallback(async (serviceId, e) => {
     e.stopPropagation();
     try {
+      await toggleLike({ serviceId, action: 'toggle' });
       setFavorites(prev => 
-        prev.includes(gigId) 
-          ? prev.filter(id => id !== gigId)
-          : [...prev, gigId]
+        prev.includes(serviceId) 
+          ? prev.filter(id => id !== serviceId)
+          : [...prev, serviceId]
       );
-      toast.success(favorites.includes(gigId) ? 'Removed from favorites' : 'Added to favorites');
     } catch (error) {
       toast.error('Failed to update favorites');
     }
-  }, [favorites]);
+  }, [toggleLike]);
 
-  // Handle view gig details
-  const handleViewDetails = useCallback((gigId, slug) => {
-    navigate(`/gig/${slug || gigId}`);
+  // Handle view details
+  const handleViewDetails = useCallback((serviceId, slug) => {
+    navigate(`/services/${slug || serviceId}`);
   }, [navigate]);
 
   // Reset filters
@@ -270,25 +242,39 @@ const GigListingsPage = () => {
     setSearchTerm('');
     setDebouncedSearchTerm('');
     setSelectedCategory('All');
-    setSelectedStatus('open');
-    setSelectedUrgency('');
-    setBudgetRange([0, 100000]);
+    setPriceRange([0, 10000]);
     setSortBy('createdAt');
     setSearchParams({ page: '1' });
     setApiError(null);
     setIsInitialLoad(true);
   }, [setSearchParams]);
 
-  // Extract gigs from response
-  const gigs = useMemo(() => {
-    return gigsData?.data || gigsData?.gigs || [];
-  }, [gigsData]);
+  // Determine which data to show
+  const services = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      return searchData?.data || searchData || [];
+    } else {
+      return allServicesData?.data || allServicesData || [];
+    }
+  }, [debouncedSearchTerm, searchData, allServicesData]);
 
-  const totalGigs = useMemo(() => {
-    return gigsData?.pagination?.total || gigs.length || 0;
-  }, [gigsData, gigs]);
+  const isLoading = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      return isSearching;
+    } else {
+      return isLoadingServices;
+    }
+  }, [debouncedSearchTerm, isSearching, isLoadingServices]);
 
-  // Extract categories from API response
+  const totalServices = useMemo(() => {
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+      return searchData?.pagination?.total || services.length || 0;
+    } else {
+      return allServicesData?.pagination?.total || services.length || 0;
+    }
+  }, [debouncedSearchTerm, searchData, allServicesData, services]);
+
+  // Extract categories
   const categories = useMemo(() => [
     { _id: 'All', name: 'All Categories', icon: '📦' },
     ...(categoriesData?.map(cat => ({ 
@@ -301,41 +287,23 @@ const GigListingsPage = () => {
   // Sort options
   const sortOptions = useMemo(() => [
     { value: 'createdAt', label: 'Newest First' },
-    { value: 'budget_desc', label: 'Budget: High to Low' },
-    { value: 'budget_asc', label: 'Budget: Low to High' },
-    { value: 'urgent', label: 'Most Urgent' }
+    { value: 'price_asc', label: 'Price: Low to High' },
+    { value: 'price_desc', label: 'Price: High to Low' },
+    { value: 'rating', label: 'Highest Rated' },
+    { value: 'delivery', label: 'Fastest Delivery' }
   ], []);
 
-  // Urgency options
-  const urgencyOptions = useMemo(() => [
-    { value: '', label: 'All Urgency' },
-    { value: 'high', label: 'High Urgency' },
-    { value: 'medium', label: 'Medium Urgency' },
-    { value: 'low', label: 'Low Urgency' }
-  ], []);
-
-  // Status options
-  const statusOptions = useMemo(() => [
-    { value: 'open', label: 'Open Gigs' },
-    { value: 'assigned', label: 'Assigned Gigs' },
-    { value: 'in_progress', label: 'In Progress' }
-  ], []);
-
-  // Get gig thumbnail
-  const getGigThumbnail = useCallback((gig) => {
-    if (gig.thumbnail?.url) {
-      return gig.thumbnail.url;
+  // Get service thumbnail
+  const getServiceThumbnail = useCallback((service) => {
+    if (service.thumbnail?.url) {
+      return service.thumbnail.url;
     }
     
-    if (gig.images && gig.images.length > 0 && gig.images[0]?.url) {
-      return gig.images[0].url;
+    if (service.images && service.images.length > 0 && service.images[0]?.url) {
+      return service.images[0].url;
     }
     
-    if (gig.attachments && gig.attachments.length > 0) {
-      return gig.attachments[0];
-    }
-    
-    const categoryName = gig.projectCategory?.name?.toLowerCase() || '';
+    const categoryName = service.categoryDetails?.name?.toLowerCase() || '';
     if (categoryName.includes('design') || categoryName.includes('art')) {
       return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     } else if (categoryName.includes('development') || categoryName.includes('programming')) {
@@ -343,24 +311,35 @@ const GigListingsPage = () => {
     } else if (categoryName.includes('writing') || categoryName.includes('content')) {
       return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     } else {
-      return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+      return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
     }
   }, []);
 
-  // Get client information
-  const getClientInfo = useCallback((gig) => {
-    if (gig.createdBy && typeof gig.createdBy === 'object') {
+  // Get seller information
+  const getUserInfo = useCallback((service) => {
+    if (service.createdBy && typeof service.createdBy === 'object') {
       return {
-        username: gig.createdBy.name || 'Client',
-        avatar: gig.createdBy.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        verified: gig.createdBy.emailVerified || false
+        username: service.createdBy.name || 'Service Provider',
+        avatar: service.createdBy.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+        verified: service.createdBy.emailVerified || false,
+        level: service.createdBy.accountType || 'Basic'
+      };
+    }
+    
+    if (service.creatorDetails && typeof service.creatorDetails === 'object') {
+      return {
+        username: service.creatorDetails.name || 'Service Provider',
+        avatar: service.creatorDetails.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+        verified: service.creatorDetails.emailVerified || false,
+        level: service.creatorDetails.accountType || 'Basic'
       };
     }
     
     return {
-      username: 'Client',
+      username: 'Service Provider',
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-      verified: false
+      verified: false,
+      level: 'Basic'
     };
   }, []);
 
@@ -371,17 +350,17 @@ const GigListingsPage = () => {
     return category?.name || null;
   }, [selectedCategory, categories]);
 
-  // Memoized SEO functions
+  // SEO
   const seoTitle = useMemo(() => {
     const categoryName = getCurrentCategoryName();
-    const baseTitle = "Find Freelance Gigs & Projects | Vorkanna Marketplace";
+    const baseTitle = "Browse Freelance Services | Vorkanna Marketplace";
     
     if (debouncedSearchTerm && categoryName) {
-      return `${debouncedSearchTerm} - ${categoryName} Gigs | Vorkanna`;
+      return `${debouncedSearchTerm} - ${categoryName} Services | Vorkanna`;
     } else if (debouncedSearchTerm) {
-      return `Search: ${debouncedSearchTerm} | Freelance Gigs & Projects | Vorkanna`;
+      return `Search: ${debouncedSearchTerm} | Freelance Services | Vorkanna`;
     } else if (categoryName) {
-      return `${categoryName} Gigs - Find Freelance Projects | Vorkanna`;
+      return `${categoryName} Services - Professional Freelancers | Vorkanna`;
     }
     
     return baseTitle;
@@ -389,20 +368,20 @@ const GigListingsPage = () => {
 
   const seoDescription = useMemo(() => {
     const categoryName = getCurrentCategoryName();
-    const baseDesc = "Discover thousands of freelance gigs and projects. Find work in design, development, writing, marketing, and more. Start earning today.";
+    const baseDesc = "Discover thousands of professional freelance services. Find experts in design, development, writing, marketing, and more. Get quality work delivered fast.";
     
     if (debouncedSearchTerm && categoryName) {
-      return `Find the best ${categoryName.toLowerCase()} gigs for "${debouncedSearchTerm}". Browse ${totalGigs} freelance projects with budgets, deadlines, and client ratings.`;
+      return `Find the best ${categoryName.toLowerCase()} services for "${debouncedSearchTerm}". Browse ${totalServices} professional freelance services with reviews, ratings, and competitive pricing.`;
     } else if (debouncedSearchTerm) {
-      return `Search results for "${debouncedSearchTerm}". Browse ${totalGigs} freelance gigs across all categories. Find projects that match your skills.`;
+      return `Search results for "${debouncedSearchTerm}". Browse ${totalServices} professional freelance services across all categories. Find experts for your project needs.`;
     } else if (categoryName) {
-      return `Browse ${totalGigs} ${categoryName.toLowerCase()} gigs from verified clients. Get paid for your skills with competitive budgets and clear requirements.`;
+      return `Browse ${totalServices} professional ${categoryName.toLowerCase()} services from verified freelancers. Get quality work with fast delivery and competitive pricing.`;
     }
     
     return baseDesc;
-  }, [debouncedSearchTerm, getCurrentCategoryName, totalGigs]);
+  }, [debouncedSearchTerm, getCurrentCategoryName, totalServices]);
 
-  // Pagination functions
+  // Pagination
   const handlePageChange = useCallback((newPage) => {
     setSearchParams(prev => {
       prev.set('page', newPage.toString());
@@ -415,15 +394,15 @@ const GigListingsPage = () => {
     <SeoWrapper
       title={seoTitle}
       description={seoDescription}
-      keywords={["freelance gigs", "find projects", "freelance work", "online jobs", "remote gigs"]}
-      canonical={`/gigs${window.location.search}`}
+      keywords={["freelance services", "hire freelancers", "online services"]}
+      canonical={`/services${window.location.search}`}
       ogTitle={seoTitle}
       ogDescription={seoDescription}
-      ogImage="https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
+      ogImage="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
     >
       <div className="min-h-screen bg-white">
-        {/* Hero Section */}
+        {/* Hero Section with heroBg */}
         <div 
           className="relative text-white py-16 px-4"
           style={{
@@ -435,13 +414,11 @@ const GigListingsPage = () => {
         >
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
-              <div className="flex items-center justify-center mb-6">
-                <h1 className="text-4xl md:text-5xl font-bold mb-4">
-                  Find Your Next Gig
-                </h1>
-              </div>
+              <h1 className="text-4xl md:text-5xl font-bold mb-4">
+                Discover Amazing Services
+              </h1>
               <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
-                Discover freelance projects that match your skills and get paid for your expertise
+                Find the perfect service for your needs from our talented professionals
               </p>
               
               {/* Search Bar - unchanged */}
@@ -451,19 +428,19 @@ const GigListingsPage = () => {
                     <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                       type="text"
-                      placeholder="Search for gigs by skill or keyword (min. 2 characters)"
+                      placeholder="What service are you looking for? (min. 2 characters)"
                       className="w-full pl-12 pr-24 py-3 rounded-lg text-gray-900 text-base focus:outline-none focus:ring-2 focus:ring-gray-800"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      aria-label="Search for gigs"
+                      aria-label="Search for services"
                       minLength={2}
                     />
                     <button 
                       type="submit"
                       className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white px-5 py-2 rounded-md hover:bg-black transition-colors flex items-center justify-center min-w-[80px]"
-                      disabled={isLoadingGigs}
+                      disabled={isSearching}
                     >
-                      {isLoadingGigs ? (
+                      {isSearching ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         'Search'
@@ -502,7 +479,7 @@ const GigListingsPage = () => {
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <div className="flex items-center text-red-800">
                 <AlertCircle className="w-5 h-5 mr-2" />
-                <span className="font-medium">Error loading gigs</span>
+                <span className="font-medium">Error loading services</span>
               </div>
               <p className="text-red-600 text-sm mt-1">
                 {apiError.message || 'Please try again or refresh the page'}
@@ -510,7 +487,9 @@ const GigListingsPage = () => {
               <button
                 onClick={() => {
                   setApiError(null);
-                  refetchGigs();
+                  if (debouncedSearchTerm && debouncedSearchTerm.trim().length >= 2) {
+                    refetchSearch();
+                  }
                 }}
                 className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm"
               >
@@ -550,9 +529,9 @@ const GigListingsPage = () => {
               
               <div className="flex items-center gap-4">
                 <span className="text-gray-600 text-sm">
-                  {totalGigs} {debouncedSearchTerm ? 'results' : 'gigs'} found
+                  {totalServices} {debouncedSearchTerm ? 'results' : 'services'} found
                 </span>
-                {(searchTerm || selectedCategory !== 'All' || budgetRange[0] > 0 || budgetRange[1] < 100000 || selectedUrgency || selectedStatus !== 'open' || sortBy !== 'createdAt') && (
+                {(searchTerm || selectedCategory !== 'All' || priceRange[0] > 0 || priceRange[1] < 10000 || sortBy !== 'createdAt') && (
                   <button
                     onClick={resetFilters}
                     className="px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
@@ -565,34 +544,34 @@ const GigListingsPage = () => {
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Budget Range: ${budgetRange[0]} - ${budgetRange[1]}
+                    Price Range: ${priceRange[0]} - ${priceRange[1]}
                   </label>
                   <div className="space-y-3">
                     <input
                       type="range"
                       min="0"
-                      max="100000"
+                      max="10000"
                       step="100"
-                      value={budgetRange[0]}
-                      onChange={(e) => handleBudgetRangeChange(0, e.target.value)}
+                      value={priceRange[0]}
+                      onChange={(e) => handlePriceRangeChange(0, e.target.value)}
                       className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
                     />
                     <input
                       type="range"
                       min="0"
-                      max="100000"
+                      max="10000"
                       step="100"
-                      value={budgetRange[1]}
-                      onChange={(e) => handleBudgetRangeChange(1, e.target.value)}
+                      value={priceRange[1]}
+                      onChange={(e) => handlePriceRangeChange(1, e.target.value)}
                       className="w-full h-1.5 bg-gray-200 rounded appearance-none cursor-pointer"
                     />
                   </div>
                   <div className="flex justify-between text-xs text-gray-500 mt-1">
                     <span>$0</span>
-                    <span>$100,000</span>
+                    <span>$10,000</span>
                   </div>
                 </div>
                 
@@ -617,178 +596,119 @@ const GigListingsPage = () => {
                     ))}
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Urgency
-                  </label>
-                  <div className="space-y-1">
-                    {urgencyOptions.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => handleUrgencyChange(option.value)}
-                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
-                          selectedUrgency === option.value
-                            ? "bg-gray-900 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Status
-                  </label>
-                  <div className="space-y-1">
-                    {statusOptions.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => handleStatusChange(option.value)}
-                        className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
-                          selectedStatus === option.value
-                            ? "bg-gray-900 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
           </div>
 
           {/* Loading State */}
-          {isLoadingGigs && (
+          {isLoading && (
             <div className="flex justify-center items-center py-20">
               <div className="text-center">
                 <Loader2 className="w-10 h-10 animate-spin text-gray-900 mx-auto mb-3" />
                 <p className="text-gray-600">
-                  {debouncedSearchTerm ? 'Searching gigs...' : 'Loading gigs...'}
+                  {debouncedSearchTerm ? 'Searching services...' : 'Loading services...'}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Gigs Grid */}
-          {!isLoadingGigs && gigs.length > 0 && (
+          {/* Services Grid */}
+          {!isLoading && services.length > 0 && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-                {gigs.map((gig) => {
-                  const clientInfo = getClientInfo(gig);
-                  const thumbnailUrl = getGigThumbnail(gig);
-                  const deliveryTime = gig.timeline ? `${gig.timeline} ${gig.timelineUnit || 'days'}` : 'Custom';
+                {services.map(service => {
+                  const userInfo = getUserInfo(service);
+                  const thumbnailUrl = getServiceThumbnail(service);
                   
                   return (
                     <article
-                      key={gig._id}
+                      key={service._id}
                       className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer"
-                      onClick={() => handleViewDetails(gig._id, gig.slug)}
+                      onClick={() => handleViewDetails(service._id, service.slug)}
                     >
-                      {/* Gig Image */}
+                      {/* Service Image */}
                       <div className="relative h-40 overflow-hidden">
                         <img
                           src={thumbnailUrl}
-                          alt={gig.title}
+                          alt={service.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+                            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
                           }}
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                         
                         {/* Favorite Button */}
                         <button
-                          onClick={(e) => handleLike(gig._id, e)}
+                          onClick={(e) => handleLike(service._id, e)}
                           className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors"
                         >
                           <Heart
                             className={`w-4 h-4 transition-colors ${
-                              favorites.includes(gig._id)
+                              favorites.includes(service._id)
                                 ? "fill-red-500 text-red-500"
                                 : "text-gray-600 hover:text-red-500"
                             }`}
                           />
                         </button>
                         
-                        {/* Urgency Badge */}
-                        {gig.urgency === 'high' && (
-                          <div className="absolute top-3 left-3 bg-gray-900 text-white px-2 py-1 rounded text-xs font-bold">
-                            <Zap className="w-3 h-3 inline mr-1" />
-                            URGENT
+                        {/* Featured Badge */}
+                        {service.isFeatured && (
+                          <div className="absolute top-3 left-3 bg-gray-900 text-white px-2 py-1 rounded text-xs font-medium">
+                            <Sparkles className="w-3 h-3 inline mr-1" />
+                            FEATURED
                           </div>
                         )}
                       </div>
 
-                      {/* Gig Content */}
+                      {/* Service Content */}
                       <div className="p-4">
-                        {/* Client Info */}
+                        {/* Seller Info */}
                         <div className="flex items-center gap-2 mb-3">
                           <img
-                            src={clientInfo.avatar}
-                            alt={clientInfo.username}
+                            src={userInfo.avatar}
+                            alt={userInfo.username}
                             className="w-8 h-8 rounded-full object-cover border border-gray-300"
                           />
                           <div>
                             <div className="flex items-center gap-1">
                               <h4 className="font-medium text-gray-900 text-sm">
-                                {clientInfo.username}
+                                {userInfo.username}
                               </h4>
-                              {clientInfo.verified && (
+                              {userInfo.verified && (
                                 <CheckCircle className="w-3 h-3 text-gray-600" />
                               )}
                             </div>
-                            <span className="text-xs text-gray-500">Client</span>
+                            <span className="text-xs text-gray-500 capitalize">{userInfo.level}</span>
                           </div>
                         </div>
 
-                        {/* Gig Title & Description */}
+                        {/* Service Title & Description */}
                         <h3 className="font-bold text-gray-900 mb-2 line-clamp-1">
-                          {gig.title}
+                          {service.title}
                         </h3>
                         <p className="text-gray-600 text-sm mb-3 line-clamp-2 min-h-[40px]">
-                          {gig.description || 'No description provided.'}
+                          {service.shortDescription || service.description || 'No description available'}
                         </p>
 
-                        {/* Gig Details */}
-                        <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            <span>{deliveryTime}</span>
+                        {/* Price & CTA */}
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                          <div>
+                            <span className="text-lg font-bold text-gray-900">
+                              {service.currency || '$'} {service.price?.toFixed(2) || '0.00'}
+                            </span>
+                            <span className="text-gray-500 text-xs block">Starting from</span>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            <span className="font-bold text-gray-900">${gig.budget || 'Negotiable'}</span>
-                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDetails(service._id, service.slug);
+                            }}
+                            className="px-3 py-1.5 bg-gray-900 text-white font-medium rounded-md hover:bg-black transition-colors text-sm"
+                          >
+                            View Details
+                          </button>
                         </div>
-
-                        {/* Status Badge */}
-                        <div className="mb-3">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            gig.status === 'open' ? 'bg-gray-100 text-gray-800' :
-                            gig.status === 'in_progress' ? 'bg-blue-50 text-blue-800' :
-                            gig.status === 'assigned' ? 'bg-purple-50 text-purple-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {gig.status?.replace('_', ' ').toUpperCase() || 'OPEN'}
-                          </span>
-                        </div>
-
-                        {/* CTA Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetails(gig._id, gig.slug);
-                          }}
-                          className="w-full px-3 py-1.5 bg-gray-900 text-white font-medium rounded-md hover:bg-black transition-colors text-sm"
-                        >
-                          View Gig Details
-                        </button>
                       </div>
                     </article>
                   );
@@ -796,7 +716,7 @@ const GigListingsPage = () => {
               </div>
 
               {/* Pagination */}
-              {totalGigs > 12 && (
+              {totalServices > 12 && (
                 <nav className="flex justify-center items-center gap-3 mb-8">
                   <button
                     onClick={() => handlePageChange(Math.max(1, parseInt(page) - 1))}
@@ -830,9 +750,9 @@ const GigListingsPage = () => {
                   
                   <button
                     onClick={() => handlePageChange(parseInt(page) + 1)}
-                    disabled={gigs.length < 12}
+                    disabled={services.length < 12}
                     className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm ${
-                      gigs.length < 12
+                      services.length < 12
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-gray-900 text-white hover:bg-black'
                     }`}
@@ -846,18 +766,18 @@ const GigListingsPage = () => {
           )}
 
           {/* No Results */}
-          {!isLoadingGigs && gigs.length === 0 && (
+          {!isLoading && services.length === 0 && (
             <div className="text-center py-16">
               <div className="w-20 h-20 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <Search className="w-10 h-10 text-gray-400" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">
-                {debouncedSearchTerm ? 'No gigs found' : 'No gigs available'}
+                {debouncedSearchTerm ? 'No services found' : 'No services available'}
               </h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
                 {debouncedSearchTerm
-                  ? `No gigs found for "${debouncedSearchTerm}". Try adjusting your search or filter criteria.`
-                  : 'There are currently no gigs available. Check back soon!'}
+                  ? `No services found for "${debouncedSearchTerm}". Try adjusting your search or filter criteria.`
+                  : 'There are currently no services available. Check back soon!'}
               </p>
               {debouncedSearchTerm && (
                 <button
@@ -873,27 +793,26 @@ const GigListingsPage = () => {
               )}
             </div>
           )}
-
           {/* CTA Section */}
           <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
             <h2 className="text-2xl font-bold mb-3">
-              Ready to find your perfect gig?
+              Ready to find your perfect service?
             </h2>
             <p className="text-gray-300 mb-4 max-w-2xl mx-auto">
-              Join thousands of freelancers who found their next project here
+              Join thousands of satisfied customers who found exactly what they needed
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button 
                 onClick={() => navigate('/dashboard')}
                 className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
-                Post a Gig
+                Offer Your Servivce
               </button>
               <button 
-                onClick={() => navigate('/services')}
+                onClick={() => navigate('/gigs')}
                 className="px-6 py-2.5 bg-transparent border border-white text-white font-bold rounded-md hover:bg-white/10 transition-colors"
               >
-                Browse Services Instead
+                 Browse Gigs Instead
               </button>
             </div>
           </div>
@@ -903,4 +822,4 @@ const GigListingsPage = () => {
   );
 };
 
-export default GigListingsPage;
+export default ServiceListingPage;

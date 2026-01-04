@@ -50,10 +50,10 @@ import { toast } from 'react-hot-toast';
 import { Dialog } from '@headlessui/react';
 
 // Import Zustand stores and TanStack Query hooks
-import { useAuthStore } from '../../store/useAuthStore';
-import { useGigStore } from '../../store/useGigStore';
-import { useGig, useDeleteGig } from '../../hooks/useGigs';
-import { SeoWrapper } from '../../components/SeoWrapper';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { useGigStore } from '../../../store/useGigStore';
+import { useGig, useDeleteGig } from '../../../hooks/useGigs';
+import { SeoWrapper } from '../../../components/SeoWrapper';
 
 const GigDetails = () => {
   const { id } = useParams();

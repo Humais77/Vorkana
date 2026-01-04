@@ -7,7 +7,7 @@ import Logo from "../assets/logo.png";
 import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
 import default_pp from '../assets/default_pp-modified.png'
-import SearchComponent from "../components/Search/SearchComponent";
+import SearchComponent from "../components/search/SearchComponent";
 import { useParentCategories } from "../hooks/useCategories"; // Import the hook
 import { buildImageUrl } from "../utils/cloudinaryFrontend";
 const LOGO_URL = buildImageUrl({

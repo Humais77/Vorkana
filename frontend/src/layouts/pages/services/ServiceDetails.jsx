@@ -47,9 +47,9 @@ import {
 import { toast } from 'react-hot-toast';
 
 // Import Zustand stores and TanStack Query hooks
-import { useAuthStore } from '../../store/useAuthStore';
-import { useService ,useDeleteService } from '../../hooks/useServices';
-import { SeoWrapper } from '../../components/SeoWrapper';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { useService ,useDeleteService } from '../../../hooks/useServices';
+import { SeoWrapper } from '../../../components/SeoWrapper';
 
 // Helper functions
 const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
