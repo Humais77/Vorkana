@@ -252,8 +252,7 @@ const GigDetails = () => {
     navigate(`/edit-gig/${id}`);
   };
 
-  // Handle delete gig
- const handleDeleteGig = async () => {
+  const handleDeleteGig = async () => {
   if (!isAuthenticated) {
     toast.error('Please sign in to delete gigs');
     return;
@@ -274,12 +273,13 @@ const GigDetails = () => {
       force: deleteOptions.force
     }, {
       onSuccess: () => {
-        toast.success(
-          deleteOptions.permanent 
-            ? 'Gig permanently deleted' 
-            : 'Gig deleted successfully'
-        );
-        navigate('/dashboard');
+        // Optimistic UI will update immediately
+        // Navigation will happen after toast is shown
+        const navigationTimer = setTimeout(() => {
+          navigate('/dashboard');
+        }, 800);
+        
+        return () => clearTimeout(navigationTimer);
       },
       onError: (error) => {
         if (error.code === 'GIG_IN_PROGRESS') {

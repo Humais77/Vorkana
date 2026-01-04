@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { useAuthStore } from "../store/useAuthStore";
-import { useLogout } from "../hooks/useAuth";
+import { useAuthStore } from "../../../store/useAuthStore";
+import { useLogout } from "../../../hooks/useAuth";
 import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, ShoppingBag } from "lucide-react";
-import Logo from "../assets/logo.png";
-import Logo2 from "../assets/logo1.png";
 import { motion, AnimatePresence } from "framer-motion";
-import default_pp from '../assets/default_pp-modified.png'
-import SearchComponent from "../components/search/SearchComponent";
-import { useParentCategories } from "../hooks/useCategories"; // Import the hook
-import { buildImageUrl } from "../utils/cloudinaryFrontend";
+import default_pp from '../../../assets/default_pp-modified.png'
+import SearchComponent from "../../../components/search/SearchComponent";
+import { useParentCategories } from "../../../hooks/useCategories"; 
+import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 const LOGO_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -184,17 +182,23 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
             {/* Desktop: Logo */}
             <div className="hidden lg:flex items-center shrink-0 mr-8">
-  <Link to="/" className="flex items-center gap-1" onClick={closeAllDropdowns}>
-   
-    <img
-      src={LOGO_URL}
-      width={40}
-      height={40}
-      alt="Vorkanna Logo"
-      className="h-20 w-36 object-contain"  
-      loading="eager"
-    />
-  </Link>
+  <Link
+  to="/"
+  className="flex items-center gap-1"
+  onClick={closeAllDropdowns}
+  draggable="true"
+>
+  <img
+    src={LOGO_URL}
+    width={40}
+    height={40}
+    alt="Vorkanna Logo"
+    className="h-20 w-36 object-contain pointer-events-none"
+    loading="eager"
+    draggable="false"
+  />
+</Link>
+
 </div>
 
             {/* Desktop: Search */}
@@ -210,15 +214,20 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
             {/* Center: Logo (Mobile only) */}
             <div className="flex items-center justify-center lg:hidden">
-              <Link to="/" className="flex items-center shrink-0 gap-1" onClick={closeAllDropdowns}>
-                <img
-                  src={LOGO_URL}
-                  alt="Vorkanna Logo"
-                  className="h-10 w-auto"
-                  loading="eager"
-                />
-              
-              </Link>
+              <Link
+  to="/"
+  className="flex items-center shrink-0 gap-1"
+  onClick={closeAllDropdowns}
+  draggable="true"
+>
+  <img
+    src={LOGO_URL}
+    alt="Vorkanna Logo"
+    className="h-10 w-auto pointer-events-none"
+    loading="eager"
+    draggable="false"
+  />
+</Link>
             </div>
 
             {/* Right: Profile/Join Button (Mobile) */}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Pause, Play } from "lucide-react";
-import HeroSearch from "../components/Search/HeroSearch";
+import HeroSearch from "../../../components/Search/HeroSearch";
 import { useNavigate } from "react-router-dom";
-import useVideoStore from '../store/useVideoStore';
+import useVideoStore from '../../../store/useVideoStore';
 
 const Hero = ({ isAuthModalOpen = false }) => {
   const [paused, setPaused] = useState(false);

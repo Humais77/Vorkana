@@ -2,7 +2,7 @@
 import React from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore } from "../../../store/useAuthStore";
 
 const CompactQuoteBanner = ({ openAuthModal }) => {
   const navigate = useNavigate();

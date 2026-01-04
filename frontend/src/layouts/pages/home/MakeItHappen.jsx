@@ -1,6 +1,6 @@
 // components/home/MakeItHappen.jsx
 import { Grid, RefreshCw, Zap, Smile } from "lucide-react";
-import { useAuthStore } from "../store/useAuthStore";
+import { useAuthStore } from "../../../store/useAuthStore";
 
 const items = [
   {
