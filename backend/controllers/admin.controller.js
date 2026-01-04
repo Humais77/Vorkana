@@ -9,9 +9,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
 const parsePhoneNumberFromString = require("libphonenumber-js").parsePhoneNumberFromString;
-// Add this at the top with your other imports
-const gigController = require('../controllers/gig.controller.js');
-// Security: Generate admin-specific token
+const bcrypt = require('bcryptjs');
 const generateAdminToken = (userId) => {
   return jwt.sign(
     { 
@@ -593,633 +591,1012 @@ const getDashboardStats = async (req, res) => {
     }
   }
 };
-// User Management
 const getUsers = async (req, res) => {
   const requestId = uuidv4();
+  const startTime = Date.now();
   
   try {
+    console.log(`[ADMIN GET USERS] Request started - ID: ${requestId}`);
+    
+    // Extract and sanitize query parameters
     const {
       page = 1,
       limit = 20,
       search = '',
       role = '',
       isActive = '',
+      registrationStatus = '',
+      emailVerified = '',
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      accountType = ''
     } = req.query;
 
-    // Security: Build secure query
-    const query = {};
+    // Build secure query filter
+    const filter = { deletedAt: null };
     
-    if (search) {
-      const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query.$or = [
+    // Search filter - sanitize input to prevent regex injection
+    if (search && search.trim()) {
+      const sanitizedSearch = validator.escape(search.trim());
+      filter.$or = [
         { name: { $regex: sanitizedSearch, $options: 'i' } },
-        { email: { $regex: sanitizedSearch, $options: 'i' } }
+        { email: { $regex: sanitizedSearch, $options: 'i' } },
+        { 'phoneNumber': { $regex: sanitizedSearch, $options: 'i' } }
       ];
     }
     
-    if (role) query.role = role;
-    if (isActive !== '') query.isActive = isActive === 'true';
+    // Role filter
+    if (role && ['user', 'admin'].includes(role)) {
+      filter.role = role;
+    }
+    
+    // Account type filter
+    if (accountType && ['basic', 'premium', 'business'].includes(accountType)) {
+      filter.accountType = accountType;
+    }
+    
+    // Boolean filters
+    if (isActive !== '') {
+      filter.isActive = isActive === 'true';
+    }
+    
+    if (emailVerified !== '') {
+      filter.emailVerified = emailVerified === 'true';
+    }
+    
+    // Registration status filter
+    if (registrationStatus && ['pending', 'verified', 'expired', 'cancelled'].includes(registrationStatus)) {
+      filter.registrationStatus = registrationStatus;
+    }
 
-    // Security: Validate pagination
+    // Validate and sanitize pagination parameters
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Cap at 100 for performance
     const skip = (pageNum - 1) * limitNum;
 
-    // Security: Validate sort fields
-    const allowedSortFields = ['name', 'email', 'role', 'createdAt', 'lastLoginAt'];
+    // Validate sort fields for security
+    const allowedSortFields = [
+      'name', 'email', 'role', 'createdAt', 'updatedAt', 
+      'lastLoginAt', 'rating', 'completedOrders', 'responseRate'
+    ];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    // Execute query with projection (exclude sensitive fields)
-    const [users, total] = await Promise.all([
-      User.find(query)
-        .select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret -emailVerificationToken')
-        .sort({ [sortField]: sortDirection })
+    // Create sort object
+    const sort = { [sortField]: sortDirection };
+    
+    // If sorting by name, add secondary sort by email for consistency
+    if (sortField === 'name') {
+      sort.email = 1;
+    }
+
+    // Projection to exclude sensitive fields
+    const projection = {
+      password: 0,
+      resetPasswordToken: 0,
+      resetPasswordExpires: 0,
+      twoFactorSecret: 0,
+      verificationToken: 0,
+      verificationTokenExpires: 0,
+      registrationData: 0,
+      registrationExpiresAt: 0,
+      passwordHistory: 0,
+      deviceTokens: 0,
+      loginHistory: 0,
+      failedLoginAttempts: 0,
+      lockUntil: 0,
+      suspiciousActivityDetected: 0,
+      __v: 0
+    };
+
+    // Execute queries in parallel for better performance
+    const [users, total, activeCount, adminCount, pendingCount] = await Promise.all([
+      // Get paginated users
+      User.find(filter, projection)
+        .sort(sort)
         .skip(skip)
         .limit(limitNum)
         .lean(),
-      User.countDocuments(query)
+      
+      // Get total count
+      User.countDocuments(filter),
+      
+      // Get active users count
+      User.countDocuments({ ...filter, isActive: true }),
+      
+      // Get admin count
+      User.countDocuments({ ...filter, role: 'admin' }),
+      
+      // Get pending registration count
+      User.countDocuments({ ...filter, registrationStatus: 'pending' })
     ]);
 
-   const sanitizedUsers = users.map(user => ({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      picture: user.picture,
-      role: user.role,
-      isActive: user.isActive,
-      emailVerified: user.emailVerified,
-      twoFactorEnabled: user.twoFactorEnabled,
-      phoneNumber: user.phoneNumber,
-      bio: user.bio,
-      gender: user.gender,
-      dateOfBirth: user.dateOfBirth,
-      country: user.country,
-      city: user.city,
-      occupation: user.occupation,
-      education: user.education,
-      languages: user.languages,
-      accountType: user.accountType,
-      privacySettings: user.privacySettings,
-      responseRate: user.responseRate,
-      responseTime: user.responseTime,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      lastLoginAt: user.lastLoginAt,
-      // Add any other fields you need
-    }));
-
-    const totalPages = Math.ceil(total / limitNum);
-
-    res.json({
-      success: true,
-      data: sanitizedUsers,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasNext: pageNum < totalPages,
-        hasPrev: pageNum > 1
-      },
-      requestId,
-      timestamp: new Date().toISOString()
+    // Sanitize user data before sending
+    const sanitizedUsers = users.map(user => {
+      const sanitized = { ...user };
+      
+      // Apply privacy settings before sending
+      if (sanitized.privacySettings) {
+        if (!sanitized.privacySettings.showEmail) {
+          delete sanitized.email;
+        }
+        
+        if (!sanitized.privacySettings.showPhone && sanitized.phoneNumber) {
+          delete sanitized.phoneNumber;
+        }
+        
+        if (!sanitized.privacySettings.showLocation) {
+          delete sanitized.country;
+          delete sanitized.city;
+        }
+        
+        if (!sanitized.privacySettings.showLastSeen) {
+          delete sanitized.lastSeenAt;
+        }
+      }
+      
+      // Format dates for consistency
+      if (sanitized.dateOfBirth) {
+        sanitized.dateOfBirth = sanitized.dateOfBirth.toISOString().split('T')[0];
+      }
+      
+      if (sanitized.createdAt) {
+        sanitized.createdAt = sanitized.createdAt.toISOString();
+      }
+      
+      if (sanitized.updatedAt) {
+        sanitized.updatedAt = sanitized.updatedAt.toISOString();
+      }
+      
+      if (sanitized.lastLoginAt) {
+        sanitized.lastLoginAt = sanitized.lastLoginAt.toISOString();
+      }
+      
+      if (sanitized.lastSeenAt) {
+        sanitized.lastSeenAt = sanitized.lastSeenAt.toISOString();
+      }
+      
+      // Add computed fields
+      sanitized.isOnline = sanitized.lastSeenAt && 
+        new Date(sanitized.lastSeenAt) > new Date(Date.now() - 5 * 60 * 1000);
+      
+      sanitized.accountAge = sanitized.createdAt ? 
+        Date.now() - new Date(sanitized.createdAt).getTime() : null;
+      
+      return sanitized;
     });
 
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limitNum);
+
+    // Prepare response
+    const response = {
+      success: true,
+      data: {
+        users: sanitizedUsers,
+        stats: {
+          total,
+          active: activeCount,
+          admins: adminCount,
+          pending: pendingCount
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages,
+          hasNext: pageNum < totalPages,
+          hasPrev: pageNum > 1,
+          nextPage: pageNum < totalPages ? pageNum + 1 : null,
+          prevPage: pageNum > 1 ? pageNum - 1 : null
+        }
+      },
+      meta: {
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${Date.now() - startTime}ms`,
+        results: sanitizedUsers.length,
+        filters: {
+          search: search || null,
+          role: role || null,
+          isActive: isActive !== '' ? isActive === 'true' : null,
+          registrationStatus: registrationStatus || null
+        }
+      }
+    };
+
+    console.log(`[ADMIN GET USERS] Request completed - ID: ${requestId}, Users: ${sanitizedUsers.length}, Total: ${total}`);
+    
+    res.json(response);
+
   } catch (error) {
-    console.error('[GET USERS ERROR]', error);
+    console.error(`[ADMIN GET USERS ERROR] Request ID: ${requestId}`, error);
+    
+    // Log additional error details for debugging
+    console.error('[ADMIN GET USERS ERROR DETAILS]', {
+      message: error.message,
+      stack: error.stack,
+      query: req.query
+    });
+
     res.status(500).json({
       success: false,
       message: 'Failed to fetch users',
       code: 'USERS_FETCH_ERROR',
-      requestId
+      requestId,
+      timestamp: new Date().toISOString(),
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
     });
   }
 };
 
-// Update User (Admin)
-const updateUser = async (req, res) => {
-  const requestId = uuidv4();
-  
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    console.log('[ADMIN UPDATE USER] Request body:', JSON.stringify(updates, null, 2));
-    console.log('[ADMIN UPDATE USER] User ID:', id);
-    console.log('[ADMIN UPDATE USER] Admin ID:', req.admin?._id);
-
-    // Security: Validate ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID',
-        code: 'INVALID_USER_ID',
-        requestId
-      });
-    }
-
-    // Security: Define allowed update fields (expanded list)
-    const allowedUpdates = [
-      'name', 'role', 'isActive', 'emailVerified', 'twoFactorEnabled',
-      'phoneNumber', 'bio', 'gender', 'dateOfBirth', 'country', 'city',
-      'occupation', 'education', 'languages', 'accountType', 'privacySettings',
-      'picture', 'bio', 'rating', 'responseRate', 'responseTime'
-    ];
-    
-    const filteredUpdates = {};
-    
-    Object.keys(updates).forEach(key => {
-      if (allowedUpdates.includes(key)) {
-        // Handle different data types
-        if (key === 'languages' && typeof updates[key] === 'string') {
-          // Convert string to array if needed
-          filteredUpdates[key] = updates[key].split(',').map(lang => lang.trim());
-        } else if (key === 'privacySettings' && typeof updates[key] === 'string') {
-          // Parse JSON string for privacySettings
-          try {
-            filteredUpdates[key] = JSON.parse(updates[key]);
-          } catch (e) {
-            console.error('[ADMIN UPDATE USER] Invalid privacySettings JSON:', e);
-          }
-        } else {
-          filteredUpdates[key] = updates[key];
-        }
-      }
-    });
-
-    // Validate email if being updated
-    if (filteredUpdates.email) {
-      if (!validator.isEmail(filteredUpdates.email)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid email format',
-          code: 'INVALID_EMAIL',
-          requestId
-        });
-      }
-      
-      // Check if email already exists (excluding current user)
-      const existingUser = await User.findOne({ 
-        email: filteredUpdates.email.toLowerCase(),
-        _id: { $ne: id }
-      });
-      
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          message: 'Email already exists',
-          code: 'DUPLICATE_EMAIL',
-          requestId
-        });
-      }
-      
-      filteredUpdates.email = filteredUpdates.email.toLowerCase();
-    }
-
-    // Security: Prevent self-demotion
-    if (filteredUpdates.role && filteredUpdates.role !== 'admin' && id === req.admin._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot change your own role',
-        code: 'SELF_ROLE_CHANGE',
-        requestId
-      });
-    }
-
-    // Validate date of birth if being updated
-    if (filteredUpdates.dateOfBirth && !validateDateOfBirth(filteredUpdates.dateOfBirth)) {
-      return res.status(400).json({
-        success: false,
-        message: 'You must be at least 13 years old and not older than 120 years',
-        code: 'INVALID_DATE_OF_BIRTH',
-        requestId
-      });
-    }
-
-    // Validate phone number if being updated
-    if (filteredUpdates.phoneNumber && !validatePhoneNumber(filteredUpdates.phoneNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid phone number format',
-        code: 'INVALID_PHONE',
-        requestId
-      });
-    }
-
-    console.log('[ADMIN UPDATE USER] Filtered updates:', JSON.stringify(filteredUpdates, null, 2));
-
-    // Add updatedAt to the updates object (not as separate operator)
-    filteredUpdates.updatedAt = new Date();
-
-    // Find and update user - FIXED VERSION
-    const user = await User.findByIdAndUpdate(
-      id,
-      filteredUpdates,  // Directly pass the updates object (mongoose handles $set automatically)
-      { 
-        new: true, 
-        runValidators: true,
-        context: 'query'
-      }
-    )
-    .select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret -emailVerificationToken -deviceTokens -loginHistory')
-    .lean();
-
-    if (!user) {
-      console.log('[ADMIN UPDATE USER] User not found:', id);
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-        code: 'USER_NOT_FOUND',
-        requestId
-      });
-    }
-
-    // Security: Log admin action
-    await logAdminAction(req.admin._id, 'UPDATE_USER', `user:${id}`, {
-      updates: Object.keys(filteredUpdates),
-      ip: req.ip,
-      userEmail: user.email
-    });
-
-    console.log('[ADMIN UPDATE USER] Successfully updated user:', user._id);
-
-    res.json({
-      success: true,
-      message: 'User updated successfully',
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        emailVerified: user.emailVerified,
-        phoneNumber: user.phoneNumber,
-        bio: user.bio,
-        gender: user.gender,
-        dateOfBirth: user.dateOfBirth,
-        country: user.country,
-        city: user.city,
-        occupation: user.occupation,
-        education: user.education,
-        languages: user.languages,
-        accountType: user.accountType,
-        privacySettings: user.privacySettings,
-        picture: user.picture,
-        rating: user.rating,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        lastLoginAt: user.lastLoginAt
-      },
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('[UPDATE USER ERROR]', error);
-    console.error('[UPDATE USER ERROR STACK]', error.stack);
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      console.error('[UPDATE USER VALIDATION ERROR]', messages);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: messages,
-        code: 'VALIDATION_ERROR',
-        requestId
-      });
-    }
-    
-    // Handle duplicate key errors
-    if (error.code === 11000) {
-      console.error('[UPDATE USER DUPLICATE ERROR]', error);
-      return res.status(409).json({
-        success: false,
-        message: 'Email already exists',
-        code: 'DUPLICATE_EMAIL',
-        requestId
-      });
-    }
-    
-    // Handle cast errors
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid data format',
-        code: 'CAST_ERROR',
-        requestId
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user: ' + (error.message || 'Internal server error'),
-      code: 'USER_UPDATE_ERROR',
-      requestId,
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// Delete User (Soft Delete)
-const deleteUser = async (req, res) => {
-  const requestId = uuidv4();
-  
-  try {
-    const { id } = req.params;
-    const { permanent = 'false' } = req.query;
-
-    // Security: Validate ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID',
-        code: 'INVALID_USER_ID',
-        requestId
-      });
-    }
-
-    // Security: Prevent self-deletion
-    if (id === req.admin._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete your own account',
-        code: 'SELF_DELETION',
-        requestId
-      });
-    }
-
-    let result;
-    
-    if (permanent === 'true') {
-      // Permanent delete (with additional checks)
-      const user = await User.findById(id);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found',
-          code: 'USER_NOT_FOUND',
-          requestId
-        });
-      }
-
-      // Check for dependencies (orders, services, etc.)
-      const userOrders = await Order.countDocuments({ user: id }).catch(() => 0);
-      if (userOrders > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete user with existing orders',
-          code: 'USER_HAS_DEPENDENCIES',
-          requestId
-        });
-      }
-
-      result = await User.findByIdAndDelete(id);
-      
-      // Security: Log permanent deletion
-      await logAdminAction(req.admin._id, 'PERMANENT_DELETE_USER', `user:${id}`, {
-        ip: req.ip,
-        userName: user.name,
-        userEmail: user.email
-      });
-
-    } else {
-      // Soft delete
-      result = await User.findByIdAndUpdate(
-        id,
-        { 
-          isActive: false,
-          deletedAt: new Date(),
-          deletedBy: req.admin._id
-        },
-        { new: true }
-      );
-
-      if (!result) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found',
-          code: 'USER_NOT_FOUND',
-          requestId
-        });
-      }
-
-      // Security: Log soft deletion
-      await logAdminAction(req.admin._id, 'SOFT_DELETE_USER', `user:${id}`, {
-        ip: req.ip
-      });
-    }
-
-    res.json({
-      success: true,
-      message: permanent === 'true' ? 'User permanently deleted' : 'User deactivated',
-      data: {
-        _id: result._id,
-        email: result.email,
-        isActive: result.isActive,
-        deletedAt: result.deletedAt
-      },
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('[DELETE USER ERROR]', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete user',
-      code: 'USER_DELETE_ERROR',
-      requestId
-    });
-  }
-};
+/**
+ * @desc    Create a new user (Admin)
+ * @route   POST /api/admin/users
+ * @access  Private/Admin
+ */
 const createUser = async (req, res) => {
   const requestId = uuidv4();
+  const startTime = Date.now();
   
   try {
+    console.log(`[ADMIN CREATE USER] Request started - ID: ${requestId}`);
+    console.log('[ADMIN CREATE USER] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[ADMIN CREATE USER] Admin ID:', req.admin._id);
+
     const userData = req.body;
-    const ip = req.ip || req.connection.remoteAddress;
+    const adminId = req.admin._id;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
-    console.log('[ADMIN CREATE USER] Request body:', JSON.stringify(userData, null, 2));
-
-    // Security: Validate required fields
-    if (!userData.email || !userData.password || !userData.name) {
+    // ===== VALIDATION =====
+    
+    // Required fields validation
+    const requiredFields = ['name', 'email', 'password'];
+    const missingFields = requiredFields.filter(field => !userData[field]);
+    
+    if (missingFields.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Email, password, and name are required',
+        message: `Missing required fields: ${missingFields.join(', ')}`,
         code: 'MISSING_REQUIRED_FIELDS',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Validate email format
+    // Email validation
     if (!validator.isEmail(userData.email)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid email format',
         code: 'INVALID_EMAIL',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Validate password strength
-    if (!validatePassword(userData.password)) {
+    // Password validation
+    const passwordValidation = validatePassword(userData.password);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters with uppercase, lowercase, number and special character (@$!%*?&)',
+        message: passwordValidation.message,
         code: 'WEAK_PASSWORD',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Check for existing user
-    const existingUser = await User.findOne({ email: userData.email.toLowerCase() });
+    // Check for existing user (including pending registrations)
+    const existingUser = await User.findOne({ 
+      email: userData.email.toLowerCase().trim()
+    });
+    
     if (existingUser) {
       console.log('[ADMIN CREATE USER] User already exists:', userData.email);
+      
+      // Provide specific message based on registration status
+      let message = 'User already exists';
+      if (existingUser.registrationStatus === 'pending') {
+        message = 'User with this email has a pending registration';
+      } else if (existingUser.registrationStatus === 'verified') {
+        message = 'User with this email is already verified';
+      }
+      
       return res.status(409).json({
         success: false,
-        message: 'User already exists with this email',
+        message,
         code: 'USER_EXISTS',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Sanitize user data
+    // ===== DATA SANITIZATION =====
+    
     const sanitizedData = {
+      // Authentication
       name: validator.escape(userData.name.trim()),
       email: userData.email.toLowerCase().trim(),
       password: userData.password,
-      role: userData.role || 'user',
-      isActive: userData.isActive !== undefined ? userData.isActive : true,
-      emailVerified: userData.emailVerified !== undefined ? userData.emailVerified : true,
-      phoneNumber: userData.phoneNumber ? validator.escape(userData.phoneNumber.trim()) : '',
+      
+      // Account settings
+      role: ['user', 'admin'].includes(userData.role) ? userData.role : 'user',
+      accountType: ['basic', 'premium', 'business'].includes(userData.accountType) ? userData.accountType : 'basic',
+      isActive: userData.isActive !== undefined ? Boolean(userData.isActive) : true,
+      emailVerified: userData.emailVerified !== undefined ? Boolean(userData.emailVerified) : true,
+      registrationStatus: userData.emailVerified ? 'verified' : 'pending',
+      
+      // Profile information
+      picture: userData.picture && validator.isURL(userData.picture) ? userData.picture : null,
       bio: userData.bio ? validator.escape(userData.bio.trim()) : '',
-      gender: userData.gender || '',
-      dateOfBirth: userData.dateOfBirth || null,
+      phoneNumber: userData.phoneNumber ? validator.escape(userData.phoneNumber.trim()) : '',
+      gender: ['male', 'female', 'other', 'prefer-not-to-say', ''].includes(userData.gender) ? userData.gender : '',
+      dateOfBirth: validateDate(userData.dateOfBirth) ? new Date(userData.dateOfBirth) : null,
       country: userData.country ? validator.escape(userData.country.trim()) : '',
       city: userData.city ? validator.escape(userData.city.trim()) : '',
+      languages: Array.isArray(userData.languages) ? 
+        userData.languages.map(lang => validator.escape(lang.trim())).filter(lang => lang) : [],
       occupation: userData.occupation ? validator.escape(userData.occupation.trim()) : '',
       education: userData.education ? validator.escape(userData.education.trim()) : '',
-      languages: Array.isArray(userData.languages) ? userData.languages : [],
+      
+      // Platform metrics
+      rating: Math.min(5, Math.max(0, parseFloat(userData.rating) || 0)),
+      responseRate: Math.min(100, Math.max(0, parseFloat(userData.responseRate) || 0)),
+      responseTime: Math.max(0, parseFloat(userData.responseTime) || 0),
+      
+      // Privacy settings
       privacySettings: userData.privacySettings || {
-        profileVisibility: 'public',
-        showEmail: false,
-        showPhone: false,
-        showLocation: true,
-        showLastSeen: true
+        profileVisibility: userData.profileVisibility || 'public',
+        showEmail: Boolean(userData.showEmail),
+        showPhone: Boolean(userData.showPhone),
+        showLocation: userData.showLocation !== undefined ? Boolean(userData.showLocation) : true,
+        showLastSeen: userData.showLastSeen !== undefined ? Boolean(userData.showLastSeen) : true
       },
-      picture: userData.picture || null,
-      createdByAdmin: req.admin._id,
-      adminNotes: userData.adminNotes || ''
+      
+      // Two-factor authentication
+      twoFactorEnabled: Boolean(userData.twoFactorEnabled),
+      
+      // Admin metadata
+      createdByAdmin: adminId,
+      adminNotes: userData.adminNotes ? validator.escape(userData.adminNotes.trim()) : '',
+      
+      // Security timestamps
+      lastPasswordChangeAt: new Date()
     };
 
-    console.log('[ADMIN CREATE USER] Sanitized data:', JSON.stringify(sanitizedData, null, 2));
-
-    // Validate date of birth if provided
-    if (sanitizedData.dateOfBirth && !validateDateOfBirth(sanitizedData.dateOfBirth)) {
-      return res.status(400).json({
-        success: false,
-        message: 'You must be at least 13 years old and not older than 120 years',
-        code: 'INVALID_DATE_OF_BIRTH',
-        requestId
-      });
-    }
-
     // Validate phone number if provided
-    if (sanitizedData.phoneNumber && !validatePhoneNumberWithLib(sanitizedData.phoneNumber)) {
+    if (sanitizedData.phoneNumber && !validatePhoneNumber(sanitizedData.phoneNumber)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid phone number format',
         code: 'INVALID_PHONE',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Create the user
-    console.log('[ADMIN CREATE USER] Creating user in database...');
+    // ===== CREATE USER =====
+    
+    console.log('[ADMIN CREATE USER] Creating user with sanitized data');
+    
     const user = await User.create(sanitizedData);
+    
     console.log('[ADMIN CREATE USER] User created successfully:', user._id);
 
-    // Prepare response data (exclude sensitive fields)
+    // ===== PREPARE RESPONSE =====
+    
+    // Exclude sensitive fields from response
     const responseData = {
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      accountType: user.accountType,
       isActive: user.isActive,
       emailVerified: user.emailVerified,
-      createdAt: user.createdAt,
+      registrationStatus: user.registrationStatus,
       picture: user.picture,
       phoneNumber: user.phoneNumber,
       country: user.country,
       city: user.city,
       occupation: user.occupation,
       education: user.education,
-      createdByAdmin: user.createdByAdmin,
+      rating: user.rating,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
       privacySettings: user.privacySettings,
+      twoFactorEnabled: user.twoFactorEnabled,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      createdByAdmin: user.createdByAdmin,
       languages: user.languages || []
     };
 
-    // Security: Log admin action
-    await logAdminAction(req.admin._id, 'CREATE_USER', `user:${user._id}`, {
+    // ===== LOG ADMIN ACTION =====
+    
+    await logAdminAction(adminId, 'CREATE_USER', `user:${user._id}`, {
       email: user.email,
       role: user.role,
-      ip: req.ip
+      ip: ip,
+      timestamp: new Date().toISOString()
     });
 
+    // ===== SEND RESPONSE =====
+    
+    const responseTime = Date.now() - startTime;
+    
+    console.log(`[ADMIN CREATE USER] Request completed - ID: ${requestId}, Time: ${responseTime}ms`);
+    
     res.status(201).json({
       success: true,
       message: 'User created successfully',
       data: responseData,
-      requestId,
-      timestamp: new Date().toISOString()
+      meta: {
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      }
     });
 
   } catch (error) {
-    console.error('[ADMIN CREATE USER ERROR]', error);
+    console.error(`[ADMIN CREATE USER ERROR] Request ID: ${requestId}`, error);
     console.error('[ADMIN CREATE USER ERROR DETAILS]', error.stack);
     
-    // Handle validation errors
+    const responseTime = Date.now() - startTime;
+    
+    // Handle specific error types
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       console.error('[ADMIN CREATE USER VALIDATION ERROR]', messages);
+      
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
         errors: messages,
         code: 'VALIDATION_ERROR',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
       });
     }
     
-    // Handle duplicate key errors
     if (error.code === 11000) {
       console.error('[ADMIN CREATE USER DUPLICATE ERROR]', error);
+      
       return res.status(409).json({
         success: false,
         message: 'User with this email already exists',
         code: 'DUPLICATE_EMAIL',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
       });
     }
     
-    // Handle other errors
+    // Generic error response
     res.status(500).json({
       success: false,
-      message: 'Failed to create user: ' + (error.message || 'Internal server error'),
+      message: 'Failed to create user',
       code: 'USER_CREATE_ERROR',
       requestId,
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      timestamp: new Date().toISOString(),
+      executionTime: `${responseTime}ms`,
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
     });
   }
 };
 
+/**
+ * @desc    Update user (Admin)
+ * @route   PUT /api/admin/users/:id
+ * @access  Private/Admin
+ */
+const updateUser = async (req, res) => {
+  const requestId = uuidv4();
+  const startTime = Date.now();
+  
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const adminId = req.admin._id;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    console.log(`[ADMIN UPDATE USER] Request started - ID: ${requestId}`);
+    console.log('[ADMIN UPDATE USER] Params:', { id });
+    console.log('[ADMIN UPDATE USER] Updates:', JSON.stringify(updates, null, 2));
+
+    // ===== VALIDATION =====
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+        code: 'INVALID_USER_ID',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Prevent self-modification for certain operations
+    if (id === adminId.toString()) {
+      if (updates.role && updates.role !== 'admin') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot change your own role',
+          code: 'SELF_ROLE_CHANGE',
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      if (updates.isActive !== undefined && !updates.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot deactivate your own account',
+          code: 'SELF_DEACTIVATION',
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // ===== DATA SANITIZATION =====
+    
+    // Define allowed update fields
+    const allowedUpdates = [
+      'name', 'role', 'accountType', 'isActive', 'emailVerified', 
+      'registrationStatus', 'twoFactorEnabled', 'phoneNumber', 'bio', 
+      'gender', 'dateOfBirth', 'country', 'city', 'languages', 
+      'occupation', 'education', 'picture', 'rating', 'responseRate', 
+      'responseTime', 'privacySettings', 'profileVisibility', 
+      'showEmail', 'showPhone', 'showLocation', 'showLastSeen',
+      'completedOrders', 'lastSeenAt'
+    ];
+    
+    const filteredUpdates = {};
+    
+    // Filter and sanitize updates
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedUpdates.includes(key)) {
+        switch (key) {
+          case 'email':
+            if (validator.isEmail(value)) {
+              filteredUpdates[key] = value.toLowerCase().trim();
+            }
+            break;
+            
+          case 'name':
+          case 'bio':
+          case 'country':
+          case 'city':
+          case 'occupation':
+          case 'education':
+            filteredUpdates[key] = validator.escape(String(value).trim());
+            break;
+            
+          case 'phoneNumber':
+            if (validatePhoneNumber(value)) {
+              filteredUpdates[key] = validator.escape(String(value).trim());
+            }
+            break;
+            
+          case 'dateOfBirth':
+            if (validateDate(value)) {
+              filteredUpdates[key] = new Date(value);
+            }
+            break;
+            
+          case 'languages':
+            if (Array.isArray(value)) {
+              filteredUpdates[key] = value.map(lang => validator.escape(String(lang).trim()));
+            }
+            break;
+            
+          case 'privacySettings':
+            if (typeof value === 'object') {
+              filteredUpdates[key] = value;
+            }
+            break;
+            
+          case 'rating':
+            filteredUpdates[key] = Math.min(5, Math.max(0, parseFloat(value) || 0));
+            break;
+            
+          case 'responseRate':
+            filteredUpdates[key] = Math.min(100, Math.max(0, parseFloat(value) || 0));
+            break;
+            
+          case 'responseTime':
+            filteredUpdates[key] = Math.max(0, parseFloat(value) || 0);
+            break;
+            
+          case 'picture':
+            if (validator.isURL(value)) {
+              filteredUpdates[key] = value;
+            }
+            break;
+            
+          default:
+            filteredUpdates[key] = value;
+        }
+      }
+    }
+    
+    // Handle privacy settings shortcuts
+    if (updates.profileVisibility) {
+      filteredUpdates.privacySettings = {
+        ...(filteredUpdates.privacySettings || {}),
+        profileVisibility: updates.profileVisibility
+      };
+    }
+    
+    // Update timestamps
+    filteredUpdates.updatedAt = new Date();
+
+    // ===== UPDATE USER =====
+    
+    console.log('[ADMIN UPDATE USER] Filtered updates:', JSON.stringify(filteredUpdates, null, 2));
+    
+    const user = await User.findByIdAndUpdate(
+      id,
+      filteredUpdates,
+      {
+        new: true,
+        runValidators: true,
+        context: 'query',
+        select: '-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret -verificationToken -verificationTokenExpires -registrationData -registrationExpiresAt -passwordHistory -deviceTokens -loginHistory -failedLoginAttempts -lockUntil -suspiciousActivityDetected -__v'
+      }
+    );
+
+    if (!user) {
+      console.log('[ADMIN UPDATE USER] User not found:', id);
+      
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${Date.now() - startTime}ms`
+      });
+    }
+
+    // ===== PREPARE RESPONSE =====
+    
+    // Format dates for consistency
+    const responseData = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      accountType: user.accountType,
+      isActive: user.isActive,
+      emailVerified: user.emailVerified,
+      registrationStatus: user.registrationStatus,
+      picture: user.picture,
+      phoneNumber: user.phoneNumber,
+      bio: user.bio,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString().split('T')[0] : null,
+      country: user.country,
+      city: user.city,
+      occupation: user.occupation,
+      education: user.education,
+      languages: user.languages,
+      rating: user.rating,
+      responseRate: user.responseRate,
+      responseTime: user.responseTime,
+      privacySettings: user.privacySettings,
+      twoFactorEnabled: user.twoFactorEnabled,
+      completedOrders: user.completedOrders,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+      lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : null
+    };
+
+    // Apply privacy settings to response
+    if (responseData.privacySettings) {
+      if (!responseData.privacySettings.showEmail) {
+        delete responseData.email;
+      }
+      
+      if (!responseData.privacySettings.showPhone) {
+        delete responseData.phoneNumber;
+      }
+      
+      if (!responseData.privacySettings.showLocation) {
+        delete responseData.country;
+        delete responseData.city;
+      }
+      
+      if (!responseData.privacySettings.showLastSeen) {
+        delete responseData.lastSeenAt;
+      }
+    }
+
+    // ===== LOG ADMIN ACTION =====
+    
+    await logAdminAction(adminId, 'UPDATE_USER', `user:${id}`, {
+      updatedFields: Object.keys(filteredUpdates),
+      userEmail: user.email,
+      ip: ip,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`[ADMIN UPDATE USER] User updated successfully: ${user._id}`);
+
+    // ===== SEND RESPONSE =====
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      data: responseData,
+      meta: {
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      }
+    });
+
+  } catch (error) {
+    console.error(`[ADMIN UPDATE USER ERROR] Request ID: ${requestId}`, error);
+    console.error('[ADMIN UPDATE USER ERROR DETAILS]', error.stack);
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Handle specific error types
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists',
+        code: 'DUPLICATE_EMAIL',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data format',
+        code: 'CAST_ERROR',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    // Generic error response
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user',
+      code: 'USER_UPDATE_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      executionTime: `${responseTime}ms`,
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
+    });
+  }
+};
+
+/**
+ * @desc    Delete user (Admin - Soft or Permanent)
+ * @route   DELETE /api/admin/users/:id
+ * @access  Private/Admin
+ */
+const deleteUser = async (req, res) => {
+  const requestId = uuidv4();
+  const startTime = Date.now();
+  
+  try {
+    const { id } = req.params;
+    const { permanent = 'false', reason = '' } = req.query;
+    const adminId = req.admin._id;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    console.log(`[ADMIN DELETE USER] Request started - ID: ${requestId}`);
+    console.log('[ADMIN DELETE USER] Params:', { id, permanent, reason });
+
+    // ===== VALIDATION =====
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+        code: 'INVALID_USER_ID',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Prevent self-deletion
+    if (id === adminId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete your own account',
+        code: 'SELF_DELETION',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Find user
+    const user = await User.findById(id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Check if already deleted
+    if (user.deletedAt && permanent !== 'true') {
+      return res.status(400).json({
+        success: false,
+        message: 'User is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // ===== DELETE USER =====
+    
+    let result;
+    const now = new Date();
+    
+    if (permanent === 'true') {
+      // Permanent delete - check for active dependencies
+      const Order = require('../models/order.model.js'); // Assuming you have Order model
+      const Service = require('../models/services.model.js');
+      const Gig = require('../models/gig.model.js');
+      
+      // Check for active dependencies
+      const [activeServices, activeGigs, activeOrders] = await Promise.all([
+        Service.countDocuments({ createdBy: id, deletedAt: null, status: 'active' }),
+        Gig.countDocuments({ createdBy: id, deletedAt: null, status: 'open' }),
+        Order ? Order.countDocuments({ user: id, status: { $nin: ['completed', 'cancelled'] } }) : 0
+      ]);
+      
+      if (activeServices > 0 || activeGigs > 0 || activeOrders > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot permanently delete user with active services, gigs, or orders',
+          code: 'ACTIVE_DEPENDENCIES',
+          details: {
+            activeServices,
+            activeGigs,
+            activeOrders
+          },
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Perform permanent deletion
+      result = await User.findByIdAndDelete(id);
+      
+      console.log(`[ADMIN DELETE USER] User permanently deleted: ${id}`);
+      
+    } else {
+      // Soft delete
+      result = await User.findByIdAndUpdate(
+        id,
+        {
+          isActive: false,
+          deletedAt: now,
+          deletedBy: adminId,
+          deletionReason: validator.escape(String(reason).trim()),
+          lastSeenAt: now,
+          // Clear active sessions if any
+          $set: { activeSessions: [] }
+        },
+        { new: true }
+      );
+      
+      console.log(`[ADMIN DELETE USER] User soft deleted: ${id}`);
+    }
+
+    // ===== LOG ADMIN ACTION =====
+    
+    await logAdminAction(adminId, 'DELETE_USER', `user:${id}`, {
+      permanent: permanent === 'true',
+      reason: reason || undefined,
+      userEmail: user.email,
+      ip: ip,
+      timestamp: now.toISOString()
+    });
+
+    // ===== SEND RESPONSE =====
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      message: permanent === 'true' ? 'User permanently deleted' : 'User deactivated successfully',
+      data: {
+        _id: id,
+        email: user.email,
+        name: user.name,
+        isActive: false,
+        deletedAt: now.toISOString(),
+        deletionReason: reason || undefined
+      },
+      meta: {
+        requestId,
+        timestamp: now.toISOString(),
+        executionTime: `${responseTime}ms`,
+        deletionType: permanent === 'true' ? 'permanent' : 'soft'
+      }
+    });
+
+  } catch (error) {
+    console.error(`[ADMIN DELETE USER ERROR] Request ID: ${requestId}`, error);
+    console.error('[ADMIN DELETE USER ERROR DETAILS]', error.stack);
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Handle specific error types
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    // Generic error response
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      code: 'USER_DELETE_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      executionTime: `${responseTime}ms`,
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
+    });
+  }
+};
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Validate password strength
+ */
 const validatePassword = (password) => {
-  if (typeof password !== 'string') return false;
+  if (typeof password !== 'string') {
+    return { valid: false, message: 'Password must be a string' };
+  }
   
   const minLength = 8;
   const hasUpperCase = /[A-Z]/.test(password);
@@ -1227,18 +1604,37 @@ const validatePassword = (password) => {
   const hasNumbers = /\d/.test(password);
   const hasSpecialChar = /[@$!%*?&]/.test(password);
   
-  return password.length >= minLength && 
-         hasUpperCase && 
-         hasLowerCase && 
-         hasNumbers && 
-         hasSpecialChar;
+  const errors = [];
+  
+  if (password.length < minLength) {
+    errors.push(`at least ${minLength} characters`);
+  }
+  if (!hasUpperCase) {
+    errors.push('one uppercase letter');
+  }
+  if (!hasLowerCase) {
+    errors.push('one lowercase letter');
+  }
+  if (!hasNumbers) {
+    errors.push('one number');
+  }
+  if (!hasSpecialChar) {
+    errors.push('one special character (@$!%*?&)');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    message: errors.length > 0 ? `Password must contain ${errors.join(', ')}` : 'Password is valid'
+  };
 };
 
-// Helper function: validate date of birth
-const validateDateOfBirth = (dob) => {
-  if (!dob) return true;
+/**
+ * Validate date format and age range
+ */
+const validateDate = (dateString) => {
+  if (!dateString) return false;
   
-  const date = new Date(dob);
+  const date = new Date(dateString);
   if (isNaN(date.getTime())) return false;
   
   const today = new Date();
@@ -1252,28 +1648,17 @@ const validateDateOfBirth = (dob) => {
   return age >= 13 && age <= 120;
 };
 
-const validatePhoneNumberWithLib = (phone) => {
+/**
+ * Validate phone number
+ */
+const validatePhoneNumber = (phone) => {
   if (!phone || phone.trim() === '') return true;
   
-  try {
-    const phoneNumber = parsePhoneNumberFromString(phone);
-    
-    if (!phoneNumber) {
-      return false;
-    }
-    
-    // Accept any number that can be parsed (even if it's not 100% valid)
-    return phoneNumber.isPossible();
-  } catch (error) {
-    console.log('[PHONE VALIDATION] Error parsing phone:', phone, error.message);
-    
-    // Fallback to basic validation
-    const phoneStr = phone.toString().trim();
-    const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
-    const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
-    
-    return phoneRegex.test(phoneStr) && cleanPhone.length >= 8 && cleanPhone.length <= 16;
-  }
+  const phoneStr = phone.toString().trim();
+  const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
+  const cleanPhone = phoneStr.replace(/[\s\-\(\)\.]/g, '');
+  
+  return phoneRegex.test(phoneStr) && cleanPhone.length >= 8 && cleanPhone.length <= 16;
 };
 // Export Users
 // Export Users - FIXED VERSION
@@ -3836,6 +4221,162 @@ const exportSubcategories = async (req, res) => {
     });
   }
 };
+const getRecentActivity = async (req, res) => {
+  const requestId = uuidv4();
+
+  try {
+    const { limit = 15, days = 30 } = req.query;
+
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Safety cap
+    const cutoffDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000);
+
+    // Base filter for "recent" and not deleted
+    const baseFilter = {
+      deletedAt: null,
+      createdAt: { $gte: cutoffDate }
+    };
+
+    // Run all queries in parallel with Promise.allSettled for resilience
+    const [usersResult, servicesResult, gigsResult] = await Promise.allSettled([
+      User.find({ ...baseFilter })
+        .select('name email picture role createdAt lastLoginAt isActive')
+        .sort({ createdAt: -1 })
+        .limit(limitNum * 2) // Oversample to allow balanced final selection
+        .lean(),
+
+      Service.find({ ...baseFilter })
+        .select('title slug category createdBy createdAt status')
+        .populate('createdBy', 'name email picture')
+        .populate('category', 'name slug')
+        .sort({ createdAt: -1 })
+        .limit(limitNum * 2)
+        .lean(),
+
+      Gig.find({ ...baseFilter })
+        .select('title slug projectCategory createdBy createdAt status budget')
+        .populate('createdBy', 'name email picture')
+        .populate('projectCategory', 'name slug')
+        .sort({ createdAt: -1 })
+        .limit(limitNum * 2)
+        .lean()
+    ]);
+
+    // Extract successful results
+    const recentUsers = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    const recentServices = servicesResult.status === 'fulfilled' ? servicesResult.value : [];
+    const recentGigs = gigsResult.status === 'fulfilled' ? gigsResult.value : [];
+
+    // Build unified activity entries
+    const activities = [];
+
+    recentUsers.forEach(user => {
+      activities.push({
+        id: user._id,
+        type: 'USER_REGISTRATION',
+        action: 'registered',
+        title: 'New User Joined',
+        description: `${user.name || 'A user'} joined the platform`,
+        actor: {
+          id: user._id,
+          name: user.name || 'Unknown',
+          email: user.email,
+          picture: user.picture || null,
+          role: user.role || 'user'
+        },
+        target: null,
+        metadata: {
+          isActive: user.isActive,
+          neverLoggedIn: !user.lastLoginAt
+        },
+        timestamp: user.createdAt,
+        isoTimestamp: new Date(user.createdAt).toISOString()
+      });
+    });
+
+    recentServices.forEach(service => {
+      activities.push({
+        id: service._id,
+        type: 'SERVICE_CREATED',
+        action: 'created service',
+        title: 'New Service Published',
+        description: `${service.createdBy?.name || 'Someone'} published "${service.title}"`,
+        actor: {
+          id: service.createdBy?._id,
+          name: service.createdBy?.name || 'Unknown',
+          email: service.createdBy?.email,
+          picture: service.createdBy?.picture || null
+        },
+        target: {
+          id: service._id,
+          title: service.title,
+          slug: service.slug,
+          category: service.category?.name || 'Uncategorized'
+        },
+        metadata: {
+          status: service.status || 'active'
+        },
+        timestamp: service.createdAt,
+        isoTimestamp: new Date(service.createdAt).toISOString()
+      });
+    });
+
+    recentGigs.forEach(gig => {
+      activities.push({
+        id: gig._id,
+        type: 'GIG_POSTED',
+        action: 'posted gig',
+        title: 'New Gig Posted',
+        description: `${gig.createdBy?.name || 'Someone'} posted "${gig.title}" (Budget: $${gig.budget || 'N/A'})`,
+        actor: {
+          id: gig.createdBy?._id,
+          name: gig.createdBy?.name || 'Unknown',
+          email: gig.createdBy?.email,
+          picture: gig.createdBy?.picture || null
+        },
+        target: {
+          id: gig._id,
+          title: gig.title,
+          slug: gig.slug,
+          category: gig.projectCategory?.name || 'Uncategorized',
+          budget: gig.budget
+        },
+        metadata: {
+          status: gig.status || 'open'
+        },
+        timestamp: gig.createdAt,
+        isoTimestamp: new Date(gig.createdAt).toISOString()
+      });
+    });
+
+    // Sort all activities by timestamp (newest first)
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Apply final limit
+    const finalActivities = activities.slice(0, limitNum);
+
+    res.json({
+      success: true,
+      data: finalActivities,
+      count: finalActivities.length,
+      filters: {
+        days: parseInt(days),
+        limit: limitNum
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[GET RECENT ACTIVITY ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recent activity',
+      code: 'ACTIVITY_FETCH_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
 module.exports = {
   getDashboardStats,
   getUsers,
@@ -3866,5 +4407,6 @@ module.exports = {
   getSubcategoryStats,
   exportSubcategories,
   bulkUpdateUsers,
-  exportCategories
+  exportCategories,
+  getRecentActivity
 };

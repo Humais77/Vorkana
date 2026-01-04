@@ -1,5 +1,5 @@
-// UserManagement.jsx - OPTIMIZED VERSION
-import React, { useState, useMemo, useCallback, memo } from 'react';
+// UserManagement.jsx - UPDATED DATA EXTRACTION LOGIC
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAdminUsers, useUpdateUser, useDeleteUser ,useBulkUserOperations, useExportUsers } from '../../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
@@ -24,7 +24,8 @@ import {
   FiRefreshCw,
   FiX,
   FiClock,
-  FiHash
+  FiHash,
+  FiAlertCircle
 } from 'react-icons/fi';
 import { format, differenceInDays } from 'date-fns';
 import CreateUserModal from './CreateUserModal';
@@ -32,7 +33,36 @@ import EditUserModal from './EditUserModal';
 import UserDetailsModal from './UserDetailsModal';
 import DeleteConfirmationModal from '../DeleteConfirmationModal';
 
-// Memoized User Row Component
+// Error Boundary Component
+const ErrorBoundaryFallback = ({ error, resetErrorBoundary }) => (
+  <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
+    <div className="flex items-center mb-3">
+      <FiAlertCircle className="h-6 w-6 text-red-500 mr-2" />
+      <h3 className="text-lg font-medium text-red-800">Something went wrong</h3>
+    </div>
+    <p className="text-sm text-red-700 mb-2">Error: {error.message}</p>
+    <div className="bg-white p-3 rounded border border-red-100 mb-4">
+      <p className="text-xs text-red-600 font-mono">{error.stack?.split('\n')[0]}</p>
+    </div>
+    <button
+      onClick={resetErrorBoundary}
+      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+    >
+      Try again
+    </button>
+  </div>
+);
+
+// Loading Skeleton Component
+const TableSkeleton = () => (
+  <div className="space-y-3">
+    {[...Array(5)].map((_, i) => (
+      <div key={i} className="h-16 bg-gray-100 animate-pulse rounded"></div>
+    ))}
+  </div>
+);
+
+// Enhanced User Table Row Component with error handling
 const UserTableRow = memo(({
   user,
   isSelected,
@@ -42,12 +72,37 @@ const UserTableRow = memo(({
   onDelete,
   onToggleActionMenu,
   actionMenuId,
-  onUpdateUser
+  onUpdateUser,
+  updateMutation
 }) => {
+  const [localLoading, setLocalLoading] = useState(false);
+  const [rowError, setRowError] = useState(null);
+
+  // Validate user object
+  const safeUser = useMemo(() => {
+    if (!user || typeof user !== 'object') {
+      return {
+        _id: 'error',
+        name: 'Invalid User Data',
+        email: 'N/A',
+        role: 'user',
+        isActive: false,
+        emailVerified: false,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: null,
+        picture: null
+      };
+    }
+    return user;
+  }, [user]);
+
   const getRoleColor = (role) => {
+    if (!role) return 'bg-gray-100 text-gray-800 border border-gray-200';
     const colors = {
       admin: 'bg-purple-100 text-purple-800 border border-purple-200',
-      user: 'bg-gray-100 text-gray-800 border border-gray-200'
+      user: 'bg-gray-100 text-gray-800 border border-gray-200',
+      seller: 'bg-blue-100 text-blue-800 border border-blue-200',
+      buyer: 'bg-green-100 text-green-800 border border-green-200'
     };
     return colors[role] || colors.user;
   };
@@ -62,27 +117,86 @@ const UserTableRow = memo(({
 
   const formatDate = (date) => {
     if (!date) return 'Never';
-    return format(new Date(date), 'MMM d, yyyy HH:mm');
+    try {
+      return format(new Date(date), 'MMM d, yyyy HH:mm');
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return 'Invalid date';
+    }
   };
 
   const getMemberDuration = (createdAt) => {
-    if (!createdAt) return '';
-    const days = differenceInDays(new Date(), new Date(createdAt));
-    if (days < 1) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 30) return `${days} days`;
-    if (days < 365) return `${Math.floor(days / 30)} months`;
-    return `${Math.floor(days / 365)} years`;
+    if (!createdAt) return 'N/A';
+    try {
+      const days = differenceInDays(new Date(), new Date(createdAt));
+      if (days < 1) return 'Today';
+      if (days === 1) return 'Yesterday';
+      if (days < 30) return `${days} days`;
+      if (days < 365) return `${Math.floor(days / 30)} months`;
+      return `${Math.floor(days / 365)} years`;
+    } catch (error) {
+      console.error('Date calculation error:', error);
+      return 'N/A';
+    }
   };
 
+  const handleSingleUpdate = async (userId, data, actionName) => {
+    try {
+      setLocalLoading(true);
+      setRowError(null);
+      
+      if (!userId) {
+        throw new Error('Invalid user ID');
+      }
+      
+      await onUpdateUser(userId, data);
+      toast.success(`User ${actionName.toLowerCase()} successfully`);
+    } catch (error) {
+      console.error(`[USER ACTION ERROR] ${actionName}:`, error);
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to update user';
+      setRowError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  if (rowError) {
+    return (
+      <tr className="bg-red-50">
+        <td colSpan="7" className="px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <FiAlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              <div>
+                <p className="text-sm font-medium text-red-800">Error loading user data</p>
+                <p className="text-xs text-red-600">{rowError}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setRowError(null)}
+              className="text-sm text-red-600 hover:text-red-800"
+            >
+              Dismiss
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
-    <tr className={`hover:bg-gray-50 ${!user.isActive ? 'bg-red-50' : ''}`}>
+    <tr className={`hover:bg-gray-50 ${!safeUser.isActive ? 'bg-red-50' : ''} ${localLoading ? 'opacity-50' : ''}`}>
       <td className="px-4 py-4">
         <input
           type="checkbox"
           checked={isSelected}
-          onChange={() => onToggleSelect(user._id)}
+          onChange={() => onToggleSelect(safeUser._id)}
           className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          disabled={localLoading || safeUser._id === 'error'}
         />
       </td>
       <td className="px-4 py-4">
@@ -90,30 +204,30 @@ const UserTableRow = memo(({
           <div className="h-10 w-10 flex-shrink-0">
             <img
               className="h-10 w-10 rounded-full object-cover"
-              src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
-              alt={user.name}
+              src={safeUser.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(safeUser.name || 'User')}&background=random`}
+              alt={safeUser.name || 'User'}
               onError={(e) => {
-                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
+                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(safeUser.name || 'User')}&background=random`;
               }}
             />
           </div>
           <div className="min-w-0">
             <div className="text-sm font-medium text-gray-900 truncate">
-              {user.name}
-              {user.role === 'admin' && (
+              {safeUser.name || 'No name'}
+              {safeUser.role === 'admin' && (
                 <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                   Admin
                 </span>
               )}
             </div>
-            <div className="text-sm text-gray-500 truncate">{user.email}</div>
+            <div className="text-sm text-gray-500 truncate">{safeUser.email || 'No email'}</div>
             <div className="text-xs text-gray-400 mt-1">
               <div className="flex items-center">
                 <FiHash className="h-3 w-3 mr-1" />
-                {user._id.substring(0, 8)}...
+                {safeUser._id?.substring(0, 8) || 'N/A'}...
               </div>
               <div className="mt-1">
-                Member for {getMemberDuration(user.createdAt)}
+                Member for {getMemberDuration(safeUser.createdAt)}
               </div>
             </div>
           </div>
@@ -121,22 +235,27 @@ const UserTableRow = memo(({
       </td>
       <td className="px-4 py-4">
         <div className="flex flex-col space-y-1">
-          <span className={`px-2 py-1 inline-flex text-xs leading-4 font-semibold rounded-full ${getRoleColor(user.role)}`}>
-            {user.role}
+          <span className={`px-2 py-1 inline-flex text-xs leading-4 font-semibold rounded-full ${getRoleColor(safeUser.role)}`}>
+            {safeUser.role || 'user'}
+          </span>
+          {safeUser.accountType && safeUser.accountType !== 'basic' && (
+            <span className="px-2 py-0.5 inline-flex text-xs leading-3 font-medium rounded-full bg-amber-100 text-amber-800 mt-1">
+              {safeUser.accountType}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center space-x-2">
+          {getStatusIcon(safeUser.isActive)}
+          <span className={`text-sm ${safeUser.isActive ? 'text-green-700' : 'text-red-700'}`}>
+            {safeUser.isActive ? 'Active' : 'Inactive'}
           </span>
         </div>
       </td>
       <td className="px-4 py-4">
         <div className="flex items-center space-x-2">
-          {getStatusIcon(user.isActive)}
-          <span className={`text-sm ${user.isActive ? 'text-green-700' : 'text-red-700'}`}>
-            {user.isActive ? 'Active' : 'Inactive'}
-          </span>
-        </div>
-      </td>
-      <td className="px-4 py-4">
-        <div className="flex items-center space-x-2">
-          {user.emailVerified ? (
+          {safeUser.emailVerified ? (
             <>
               <FiCheckCircle className="h-4 w-4 text-green-500" />
               <span className="text-sm text-green-700">Verified</span>
@@ -153,45 +272,49 @@ const UserTableRow = memo(({
         <div className="flex flex-col">
           <div className="flex items-center space-x-1">
             <FiClock className="h-3 w-3" />
-            <span>{formatDate(user.lastLoginAt)}</span>
+            <span>{formatDate(safeUser.lastLoginAt)}</span>
           </div>
           <div className="text-xs text-gray-400 mt-1">
-            Joined: {format(new Date(user.createdAt), 'MMM d, yyyy')}
+            Joined: {safeUser.createdAt ? format(new Date(safeUser.createdAt), 'MMM d, yyyy') : 'N/A'}
           </div>
         </div>
       </td>
       <td className="px-4 py-4">
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => onView(user)}
-            className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+            onClick={() => onView(safeUser)}
+            className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-50"
             title="View Details"
+            disabled={localLoading || safeUser._id === 'error'}
           >
             <FiEye className="h-4 w-4" />
           </button>
           <button
-            onClick={() => onEdit(user)}
-            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            onClick={() => onEdit(safeUser)}
+            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
             title="Edit User"
+            disabled={localLoading || safeUser._id === 'error'}
           >
             <FiEdit2 className="h-4 w-4" />
           </button>
           <button
-            onClick={() => onDelete(user)}
-            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            onClick={() => onDelete(safeUser)}
+            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
             title="Delete User"
+            disabled={localLoading || safeUser._id === 'error'}
           >
             <FiTrash2 className="h-4 w-4" />
           </button>
           <div className="relative">
             <button
-              onClick={() => onToggleActionMenu(actionMenuId === user._id ? null : user._id)}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              onClick={() => onToggleActionMenu(actionMenuId === safeUser._id ? null : safeUser._id)}
+              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+              disabled={localLoading || safeUser._id === 'error'}
             >
               <FiMoreVertical className="h-4 w-4" />
             </button>
             
-            {actionMenuId === user._id && (
+            {actionMenuId === safeUser._id && (
               <>
                 <div 
                   className="fixed inset-0 z-10"
@@ -200,13 +323,11 @@ const UserTableRow = memo(({
                 <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
                   <div className="py-1">
                     <button
-                      onClick={() => {
-                        onUpdateUser(user._id, { isActive: !user.isActive });
-                        onToggleActionMenu(null);
-                      }}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => handleSingleUpdate(safeUser._id, { isActive: !safeUser.isActive }, safeUser.isActive ? 'Deactivate' : 'Activate')}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                      disabled={localLoading}
                     >
-                      {user.isActive ? (
+                      {safeUser.isActive ? (
                         <>
                           <FiUserX className="h-4 w-4 mr-2" />
                           Deactivate
@@ -217,29 +338,38 @@ const UserTableRow = memo(({
                           Activate
                         </>
                       )}
+                      {localLoading && (
+                        <div className="ml-auto animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400"></div>
+                      )}
                     </button>
-                    {!user.emailVerified && (
+                    {!safeUser.emailVerified && (
                       <button
-                        onClick={() => {
-                          onUpdateUser(user._id, { emailVerified: true });
-                          onToggleActionMenu(null);
-                        }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => handleSingleUpdate(safeUser._id, { emailVerified: true }, 'Verify Email')}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        disabled={localLoading}
                       >
                         <FiShield className="h-4 w-4 mr-2" />
                         Verify Email
                       </button>
                     )}
-                    {user.role !== 'admin' && (
+                    {safeUser.role !== 'admin' && (
                       <button
-                        onClick={() => {
-                          onUpdateUser(user._id, { role: 'admin' });
-                          onToggleActionMenu(null);
-                        }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => handleSingleUpdate(safeUser._id, { role: 'admin' }, 'Make Admin')}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        disabled={localLoading}
                       >
                         <FiShield className="h-4 w-4 mr-2" />
                         Make Admin
+                      </button>
+                    )}
+                    {safeUser.role === 'admin' && (
+                      <button
+                        onClick={() => handleSingleUpdate(safeUser._id, { role: 'user' }, 'Make User')}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        disabled={localLoading}
+                      >
+                        <FiShield className="h-4 w-4 mr-2" />
+                        Remove Admin
                       </button>
                     )}
                   </div>
@@ -255,7 +385,7 @@ const UserTableRow = memo(({
 
 UserTableRow.displayName = 'UserTableRow';
 
-// Main Component
+// Main Component with enhanced error handling
 const UsersManagement = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -277,6 +407,8 @@ const UsersManagement = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [viewingUser, setViewingUser] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
+  const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState('');
 
   const limit = 10;
   
@@ -285,7 +417,8 @@ const UsersManagement = () => {
     data, 
     isLoading, 
     refetch, 
-    isRefetching 
+    isRefetching,
+    error: queryError
   } = useAdminUsers({
     page,
     limit,
@@ -296,22 +429,181 @@ const UsersManagement = () => {
   const updateUserMutation = useUpdateUser();
   const deleteUserMutation = useDeleteUser();
   const bulkUserMutation = useBulkUserOperations();
-const exportUsersMutation = useExportUsers();
-  const users = data?.data || [];
-  const pagination = data?.pagination || { total: 0, totalPages: 1 };
+  const exportUsersMutation = useExportUsers();
 
-  // Memoized stats calculation
+  // Debug: Log the data structure
+  useEffect(() => {
+    if (data) {
+      console.log('Raw data from API:', data);
+      console.log('Data type:', typeof data);
+      console.log('Is array:', Array.isArray(data));
+      console.log('Data keys:', Object.keys(data || {}));
+      setDebugInfo(JSON.stringify(data, null, 2).substring(0, 500) + '...');
+    }
+  }, [data]);
+
+  // Safely extract users data with multiple fallback strategies
+  const users = useMemo(() => {
+    try {
+      console.log('Extracting users from data:', data);
+      
+      if (!data) {
+        console.log('No data available');
+        return [];
+      }
+
+      // Strategy 1: Check if data is already an array
+      if (Array.isArray(data)) {
+        console.log('Data is already an array, length:', data.length);
+        return data;
+      }
+
+      // Strategy 2: Check for data.data array (common API pattern)
+      if (data.data && Array.isArray(data.data)) {
+        console.log('Found data.data array, length:', data.data.length);
+        return data.data;
+      }
+
+      // Strategy 3: Check for data.users array
+      if (data.users && Array.isArray(data.users)) {
+        console.log('Found data.users array, length:', data.users.length);
+        return data.users;
+      }
+
+      // Strategy 4: Check if data has a property that contains users
+      if (typeof data === 'object') {
+        const keys = Object.keys(data);
+        for (const key of keys) {
+          if (Array.isArray(data[key]) && data[key].length > 0) {
+            // Check if first item looks like a user object
+            const firstItem = data[key][0];
+            if (firstItem && typeof firstItem === 'object') {
+              if (firstItem.email !== undefined || firstItem.name !== undefined) {
+                console.log(`Found array in key "${key}", length:`, data[key].length);
+                return data[key];
+              }
+            }
+          }
+        }
+      }
+
+      // Strategy 5: Check if data itself is a user object (single user)
+      if (data._id && (data.email || data.name)) {
+        console.log('Data is a single user object');
+        return [data];
+      }
+
+      // Strategy 6: Check for nested data structure
+      if (data.data && typeof data.data === 'object') {
+        const nestedKeys = Object.keys(data.data);
+        for (const key of nestedKeys) {
+          if (Array.isArray(data.data[key])) {
+            console.log(`Found nested array in data.data.${key}`);
+            return data.data[key];
+          }
+        }
+      }
+
+      console.warn('Unexpected data format, returning empty array');
+      console.log('Full data structure:', data);
+      return [];
+    } catch (err) {
+      console.error('Error parsing users data:', err);
+      setError('Failed to parse user data: ' + err.message);
+      return [];
+    }
+  }, [data]);
+
+  // Safely extract pagination data
+  const pagination = useMemo(() => {
+    try {
+      if (!data) {
+        console.log('No data for pagination');
+        return { total: 0, totalPages: 1 };
+      }
+
+      // Check for pagination object
+      if (data.pagination && typeof data.pagination === 'object') {
+        console.log('Found pagination object:', data.pagination);
+        return {
+          total: data.pagination.total || 0,
+          totalPages: data.pagination.totalPages || 
+                     Math.ceil((data.pagination.total || 0) / limit) || 1
+        };
+      }
+
+      // Check for direct total property
+      if (data.total !== undefined) {
+        console.log('Found total property:', data.total);
+        return {
+          total: data.total,
+          totalPages: Math.ceil(data.total / limit)
+        };
+      }
+
+      // Fallback to users length
+      console.log('Using users length for pagination:', users.length);
+      return { 
+        total: users.length, 
+        totalPages: Math.ceil(users.length / limit) || 1 
+      };
+    } catch (err) {
+      console.error('Error parsing pagination data:', err);
+      return { total: 0, totalPages: 1 };
+    }
+  }, [data, users.length, limit]);
+
+  // Memoized stats calculation with safe array handling
   const userStats = useMemo(() => {
-    if (users.length === 0) {
+    try {
+      if (!Array.isArray(users)) {
+        console.error('Users is not an array:', users);
+        return { total: 0, active: 0, admins: 0 };
+      }
+      
+      console.log('Calculating stats for users array, length:', users.length);
+      
+      if (users.length === 0) {
+        return { 
+          total: pagination.total || 0, 
+          active: 0, 
+          admins: 0 
+        };
+      }
+      
+      const safeUsers = users.filter(user => 
+        user && typeof user === 'object' && user._id
+      );
+      
+      const activeCount = safeUsers.filter(u => u.isActive === true).length;
+      const adminCount = safeUsers.filter(u => u.role === 'admin').length;
+      
+      console.log('Stats calculated:', {
+        total: pagination.total || safeUsers.length,
+        active: activeCount,
+        admins: adminCount
+      });
+      
+      return {
+        total: pagination.total || safeUsers.length,
+        active: activeCount,
+        admins: adminCount
+      };
+    } catch (err) {
+      console.error('Error calculating user stats:', err);
       return { total: 0, active: 0, admins: 0 };
     }
-    
-    return {
-      total: pagination.total,
-      active: users.filter(u => u.isActive).length,
-      admins: users.filter(u => u.role === 'admin').length
-    };
   }, [users, pagination.total]);
+
+  // Handle query errors
+  useEffect(() => {
+    if (queryError) {
+      console.error('Query error:', queryError);
+      setError(queryError.message || 'Failed to load users');
+    } else {
+      setError(null);
+    }
+  }, [queryError]);
 
   // Memoized handlers
   const handleSearch = useCallback((e) => {
@@ -346,32 +638,38 @@ const exportUsersMutation = useExportUsers();
     }
 
     try {
-      const updatePromises = selectedUsers.map(userId => {
-        switch (action) {
-          case 'activate':
-            return updateUserMutation.mutateAsync({ id: userId, data: { isActive: true } });
-          case 'deactivate':
-            return updateUserMutation.mutateAsync({ id: userId, data: { isActive: false } });
-          case 'verify':
-            return updateUserMutation.mutateAsync({ id: userId, data: { emailVerified: true } });
-          case 'make_admin':
-            return updateUserMutation.mutateAsync({ id: userId, data: { role: 'admin' } });
-          default:
-            return Promise.resolve();
-        }
+      const result = await bulkUserMutation.mutateAsync({
+        ids: selectedUsers,
+        operation: action
       });
-
-      await Promise.all(updatePromises);
-      toast.success(`${selectedUsers.length} users updated successfully`);
-      setSelectedUsers([]);
       
-      // Invalidate cache
-      queryClient.invalidateQueries(['admin', 'users']);
-      
+      if (result.success) {
+        toast.success(result.message || `${selectedUsers.length} users updated successfully`);
+        setSelectedUsers([]);
+        
+        // Invalidate cache
+        queryClient.invalidateQueries(['admin', 'users']);
+      } else {
+        toast.error(result.message || 'Failed to perform bulk action');
+      }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to perform bulk action');
+      console.error('[BULK ACTION ERROR]', error);
+      
+      // Show detailed error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to perform bulk action';
+      
+      // Show validation errors if they exist
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     }
-  }, [selectedUsers, updateUserMutation, queryClient]);
+  }, [selectedUsers, bulkUserMutation, queryClient]);
 
   const handleDeleteUser = useCallback(async () => {
     try {
@@ -393,38 +691,35 @@ const exportUsersMutation = useExportUsers();
       queryClient.invalidateQueries(['admin', 'users']);
       
     } catch (error) {
+      console.error('Delete error:', error);
       toast.error(error.response?.data?.message || 'Failed to delete users');
     }
   }, [userToDelete, deleteUserMutation, queryClient]);
 
   const handleViewUser = useCallback((user) => {
+    if (!user || typeof user !== 'object') {
+      toast.error('Invalid user data');
+      return;
+    }
     setViewingUser(user);
     setShowUserDetails(true);
   }, []);
 
   const handleEditUser = useCallback((user) => {
+    if (!user || typeof user !== 'object') {
+      toast.error('Invalid user data');
+      return;
+    }
     setEditingUser(user);
     setShowEditModal(true);
   }, []);
 
-  const handleUpdateUser = useCallback(async (data) => {
-    if (!editingUser?._id) return;
-    
-    try {
-      await updateUserMutation.mutateAsync({ id: editingUser._id, data });
-      toast.success('User updated successfully');
-      setShowEditModal(false);
-      setEditingUser(null);
-      
-      // Invalidate cache
-      queryClient.invalidateQueries(['admin', 'users']);
-      
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update user');
+  const handleUpdateUser = useCallback(async (userId, data) => {
+    if (!userId) {
+      toast.error('Invalid user ID');
+      return;
     }
-  }, [editingUser, updateUserMutation, queryClient]);
-
-  const handleSingleUpdateUser = useCallback(async (userId, data) => {
+    
     try {
       await updateUserMutation.mutateAsync({ id: userId, data });
       
@@ -432,7 +727,12 @@ const exportUsersMutation = useExportUsers();
       queryClient.invalidateQueries(['admin', 'users']);
       
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update user');
+      console.error('Update user error:', error);
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to update user';
+      throw new Error(errorMessage);
     }
   }, [updateUserMutation, queryClient]);
 
@@ -445,8 +745,15 @@ const exportUsersMutation = useExportUsers();
   }, [queryClient]);
 
   const toggleSelectAll = useCallback((e) => {
+    if (!Array.isArray(users)) {
+      toast.error('Cannot select users: data not loaded');
+      return;
+    }
+    
+    const validUsers = users.filter(user => user && user._id);
+    
     if (e.target.checked) {
-      setSelectedUsers(users.map(user => user._id));
+      setSelectedUsers(validUsers.map(user => user._id));
     } else {
       setSelectedUsers([]);
     }
@@ -465,51 +772,158 @@ const exportUsersMutation = useExportUsers();
   }, [actionMenu]);
 
   const handleDelete = useCallback((user) => {
+    if (!user || !user._id) {
+      toast.error('Invalid user data');
+      return;
+    }
     setUserToDelete({ type: 'single', id: user._id });
     setShowDeleteModal(true);
   }, []);
 
   const refreshData = useCallback(() => {
-    refetch();
-    setSelectedUsers([]);
-    toast.success('Data refreshed');
+    try {
+      refetch();
+      setSelectedUsers([]);
+      toast.success('Data refreshed');
+    } catch (error) {
+      console.error('Refresh error:', error);
+      toast.error('Failed to refresh data');
+    }
   }, [refetch]);
 
   const exportUsers = useCallback(async () => {
-  try {
-    const response = await exportUsersMutation.mutateAsync('csv');
-    
-    // Create blob and download
-    const blob = new Blob([response.data], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `users_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    
-    toast.success('Users exported successfully');
-  } catch (error) {
-    toast.error('Failed to export users');
-  }
-}, [exportUsersMutation]);
+    try {
+      const response = await exportUsersMutation.mutateAsync('csv');
+      
+      // Create blob and download
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `users_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success('Users exported successfully');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export users');
+    }
+  }, [exportUsersMutation]);
 
   const handleCreateUser = useCallback(() => {
     setShowCreateModal(true);
   }, []);
 
+  // Reset error when data loads successfully
+  useEffect(() => {
+    if (data && !isLoading) {
+      setError(null);
+    }
+  }, [data, isLoading]);
+
+  // Loading state with skeleton
   if (isLoading && !users.length) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-8 w-48 bg-gray-200 animate-pulse rounded"></div>
+            <div className="h-4 w-64 bg-gray-200 animate-pulse rounded"></div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div className="h-10 w-24 bg-gray-200 animate-pulse rounded"></div>
+            <div className="h-10 w-24 bg-gray-200 animate-pulse rounded"></div>
+            <div className="h-10 w-24 bg-gray-200 animate-pulse rounded"></div>
+          </div>
+        </div>
+        
+        {/* Stats Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-lg p-4">
+              <div className="h-20 bg-gray-100 animate-pulse rounded"></div>
+            </div>
+          ))}
+        </div>
+        
+        {/* Table Skeleton */}
+        <TableSkeleton />
+      </div>
+    );
+  }
+
+  // Error state with debug info
+  if (error && !isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center mb-3">
+            <FiAlertCircle className="h-6 w-6 text-red-500 mr-2" />
+            <h3 className="text-lg font-medium text-red-800">Error Loading Users</h3>
+          </div>
+          <p className="text-sm text-red-700 mb-2">{error}</p>
+          
+          {/* Debug Information */}
+          {debugInfo && (
+            <div className="mt-4 p-3 bg-white border border-gray-200 rounded">
+              <p className="text-xs font-medium text-gray-700 mb-1">Debug Information:</p>
+              <pre className="text-xs text-gray-600 overflow-auto max-h-40">
+                {debugInfo}
+              </pre>
+            </div>
+          )}
+          
+          <div className="flex space-x-3 mt-4">
+            <button
+              onClick={refreshData}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+            >
+              Retry
+            </button>
+            <button
+              onClick={handleClearFilters}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Debug Panel - Remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center">
+              <FiAlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+              <h4 className="text-sm font-medium text-yellow-800">Debug Info</h4>
+            </div>
+            <button
+              onClick={() => console.log('Full data:', data)}
+              className="text-xs text-yellow-700 hover:text-yellow-900"
+            >
+              Log Full Data
+            </button>
+          </div>
+          <div className="text-xs text-yellow-700 space-y-1">
+            <div>Users array length: {users.length}</div>
+            <div>Data type: {typeof data}</div>
+            <div>Is array: {Array.isArray(data) ? 'Yes' : 'No'}</div>
+            {data && (
+              <div>Data keys: {Object.keys(data).join(', ')}</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -527,7 +941,8 @@ const exportUsersMutation = useExportUsers();
           </button>
           <button
             onClick={exportUsers}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+            disabled={exportUsersMutation.isLoading}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiDownload className="h-4 w-4" />
             <span>Export</span>
@@ -548,7 +963,7 @@ const exportUsersMutation = useExportUsers();
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold mt-1">{userStats.total}</p>
+              <p className="text-2xl font-bold mt-1">{userStats.total.toLocaleString()}</p>
             </div>
             <FiUsers className="h-8 w-8 text-blue-500" />
           </div>
@@ -557,7 +972,7 @@ const exportUsersMutation = useExportUsers();
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Active Users</p>
-              <p className="text-2xl font-bold mt-1">{userStats.active}</p>
+              <p className="text-2xl font-bold mt-1">{userStats.active.toLocaleString()}</p>
             </div>
             <FiUserCheck className="h-8 w-8 text-green-500" />
           </div>
@@ -566,7 +981,7 @@ const exportUsersMutation = useExportUsers();
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Admins</p>
-              <p className="text-2xl font-bold mt-1">{userStats.admins}</p>
+              <p className="text-2xl font-bold mt-1">{userStats.admins.toLocaleString()}</p>
             </div>
             <FiShield className="h-8 w-8 text-red-500" />
           </div>
@@ -587,45 +1002,52 @@ const exportUsersMutation = useExportUsers();
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-  <button
-    onClick={() => handleBulkAction('activate')}
-    className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
-  >
-    <FiCheckCircle className="h-4 w-4" />
-    <span>Activate</span>
-  </button>
-  <button
-    onClick={() => handleBulkAction('deactivate')}
-    className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
-  >
-    <FiUserX className="h-4 w-4" />
-    <span>Deactivate</span>
-  </button>
-  <button
-    onClick={() => handleBulkAction('verify-email')}
-    className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200 flex items-center space-x-1"
-  >
-    <FiShield className="h-4 w-4" />
-    <span>Verify Email</span>
-  </button>
-  <button
-    onClick={() => handleBulkAction('promote-admin')}
-    className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
-  >
-    <FiShield className="h-4 w-4" />
-    <span>Make Admin</span>
-  </button>
-  <button
-    onClick={() => {
-      setUserToDelete({ type: 'bulk', ids: selectedUsers });
-      setShowDeleteModal(true);
-    }}
-    className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
-  >
-    <FiTrash2 className="h-4 w-4" />
-    <span>Delete</span>
-  </button>
-</div>
+              <button
+                onClick={() => handleBulkAction('activate')}
+                disabled={bulkUserMutation.isLoading}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
+              >
+                <FiCheckCircle className="h-4 w-4" />
+                <span>Activate</span>
+                {bulkUserMutation.isLoading && (
+                  <div className="ml-1 animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
+                )}
+              </button>
+              <button
+                onClick={() => handleBulkAction('deactivate')}
+                disabled={bulkUserMutation.isLoading}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
+              >
+                <FiUserX className="h-4 w-4" />
+                <span>Deactivate</span>
+              </button>
+              <button
+                onClick={() => handleBulkAction('verify-email')}
+                disabled={bulkUserMutation.isLoading}
+                className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200 flex items-center space-x-1 disabled:opacity-50"
+              >
+                <FiShield className="h-4 w-4" />
+                <span>Verify Email</span>
+              </button>
+              <button
+                onClick={() => handleBulkAction('promote-admin')}
+                disabled={bulkUserMutation.isLoading}
+                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1 disabled:opacity-50"
+              >
+                <FiShield className="h-4 w-4" />
+                <span>Make Admin</span>
+              </button>
+              <button
+                onClick={() => {
+                  setUserToDelete({ type: 'bulk', ids: selectedUsers });
+                  setShowDeleteModal(true);
+                }}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+              >
+                <FiTrash2 className="h-4 w-4" />
+                <span>Delete</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -665,6 +1087,8 @@ const exportUsersMutation = useExportUsers();
                 <option value="">All Roles</option>
                 <option value="admin">Admin</option>
                 <option value="user">User</option>
+                <option value="seller">Seller</option>
+                <option value="buyer">Buyer</option>
               </select>
               
               <select
@@ -701,6 +1125,8 @@ const exportUsersMutation = useExportUsers();
                 <option value="">All Roles</option>
                 <option value="admin">Admin</option>
                 <option value="user">User</option>
+                <option value="seller">Seller</option>
+                <option value="buyer">Buyer</option>
               </select>
             </div>
             
@@ -755,9 +1181,10 @@ const exportUsersMutation = useExportUsers();
                 <th className="w-12 px-4 py-3">
                   <input
                     type="checkbox"
-                    checked={selectedUsers.length === users.length && users.length > 0}
+                    checked={users.length > 0 && selectedUsers.length === users.filter(user => user && user._id).length}
                     onChange={toggleSelectAll}
                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={!Array.isArray(users) || users.length === 0}
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -781,26 +1208,43 @@ const exportUsersMutation = useExportUsers();
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
-                <UserTableRow
-                  key={user._id}
-                  user={user}
-                  isSelected={selectedUsers.includes(user._id)}
-                  onToggleSelect={toggleSelectUser}
-                  onView={handleViewUser}
-                  onEdit={handleEditUser}
-                  onDelete={handleDelete}
-                  onToggleActionMenu={toggleActionMenu}
-                  actionMenuId={actionMenu}
-                  onUpdateUser={handleSingleUpdateUser}
-                />
-              ))}
+              {Array.isArray(users) && users.length > 0 ? (
+                users.map((user) => (
+                  <UserTableRow
+                    key={user?._id || Math.random()}
+                    user={user}
+                    isSelected={selectedUsers.includes(user?._id)}
+                    onToggleSelect={toggleSelectUser}
+                    onView={handleViewUser}
+                    onEdit={handleEditUser}
+                    onDelete={handleDelete}
+                    onToggleActionMenu={toggleActionMenu}
+                    actionMenuId={actionMenu}
+                    onUpdateUser={handleUpdateUser}
+                    updateMutation={updateUserMutation}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7" className="px-4 py-8 text-center">
+                    <FiUsers className="h-12 w-12 text-gray-300 mx-auto" />
+                    <h3 className="mt-4 text-lg font-medium text-gray-900">No users found</h3>
+                    <p className="mt-2 text-gray-500">Try adjusting your search or filter criteria.</p>
+                    <button
+                      onClick={handleClearFilters}
+                      className="mt-4 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear all filters
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Empty State */}
-        {users.length === 0 && !isLoading && (
+        {Array.isArray(users) && users.length === 0 && !isLoading && (
           <div className="text-center py-12">
             <FiUsers className="h-12 w-12 text-gray-300 mx-auto" />
             <h3 className="mt-4 text-lg font-medium text-gray-900">No users found</h3>
@@ -911,7 +1355,7 @@ const exportUsersMutation = useExportUsers();
             setShowEditModal(false);
             setEditingUser(null);
           }}
-          onSave={handleUpdateUser}
+          onSave={(data) => handleUpdateUser(editingUser._id, data)}
         />
       )}
       

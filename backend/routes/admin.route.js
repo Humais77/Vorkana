@@ -789,5 +789,11 @@ router.get('/system/health',
   auditLog('VIEW_SYSTEM_HEALTH', 'system'),
   adminController.getSystemHealthHandler
 );
-
+router.get('/activity/recent', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('view_dashboard'),
+  auditLog('VIEW_RECENT_ACTIVITY', 'dashboard'),
+  adminController.getRecentActivity
+);
 module.exports = router;

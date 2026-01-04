@@ -363,9 +363,7 @@ const ServiceEditModal = memo(({
     return newErrors;
   }, [formData, validateField]);
 
-  // In ServiceEditModal.jsx - Update the prepareFormData function:
-
-// Prepare form data for submission
+// In ServiceEditModal.jsx - Update the prepareFormData function:
 const prepareFormData = useCallback(() => {
   const formDataToSubmit = new FormData();
   
@@ -386,13 +384,25 @@ const prepareFormData = useCallback(() => {
   const basicFields = [
     'title', 'description', 'shortDescription', 'category', 'subcategory',
     'price', 'currency', 'deliveryTime', 'deliveryTimeUnit', 'revisions',
-    'status', 'version'
+    'status'
   ];
   
   basicFields.forEach(key => {
     if (formData[key] !== undefined && formData[key] !== null) {
       formDataToSubmit.append(key, String(formData[key]));
     }
+  });
+  
+  // ✅ CRITICAL FIX: Use service.version instead of formData.version
+  // Get the actual current version from the service object
+  const currentVersion = service?.version || 1;
+  formDataToSubmit.append('version', String(currentVersion));
+  
+  console.log('[DEBUG] Using version:', {
+    serviceVersion: service?.version,
+    formDataVersion: formData.version,
+    currentVersion,
+    serviceId: service?._id
   });
   
   // Append boolean fields
@@ -424,14 +434,15 @@ const prepareFormData = useCallback(() => {
   });
   
   // Log form data for debugging (remove in production)
-  console.log('FormData being sent:');
+  console.log('FormData being sent (WITH CORRECT VERSION):');
   for (let [key, value] of formDataToSubmit.entries()) {
-    console.log(`${key}:`, value);
+    if (key !== 'newImages') { // Don't log file blobs
+      console.log(`${key}:`, value);
+    }
   }
   
   return formDataToSubmit;
-}, [formData, imagesToRemove, newImages]);
-  // Handle form submission
+}, [formData, imagesToRemove, newImages, service]); // ✅ Add service to dependencies
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
