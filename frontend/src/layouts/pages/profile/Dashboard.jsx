@@ -1,18 +1,17 @@
-// Dashboard.js - OPTIMIZED VERSION
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { 
   useMyGigs, 
   useDeleteMultipleGigs, 
   useUpdateMultipleGigsStatus,
   extractGigsFromResponse
-} from '../../hooks/useGigs';
-import { useMyServices, useDeleteService } from '../../hooks/useServices';
-import { useGetProfile } from '../../hooks/useAuth';
+} from '../../../hooks/useGigs';
+import { useMyServices, useDeleteService } from '../../../hooks/useServices';
+import { useGetProfile } from '../../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
-import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../utils/profileUtils';
+import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../../utils/profileUtils';
 import {
   Plus,
   Trash2,

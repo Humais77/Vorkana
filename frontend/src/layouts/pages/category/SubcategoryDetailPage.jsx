@@ -13,10 +13,10 @@ import {
   Award,
   Loader
 } from 'lucide-react';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import { useCategory } from '../../hooks/useCategories';
-import { useSubcategory } from '../../hooks/useSubcategories';
-import { useServicesBySubcategory } from '../../hooks/useServices';
+import { SeoWrapper } from '../../../components/SeoWrapper';
+import { useCategory } from '../../../hooks/useCategories';
+import { useSubcategory } from '../../../hooks/useSubcategories';
+import { useServicesBySubcategory } from '../../../hooks/useServices';
 
 const SubcategoryDetailPage = () => {
   const { categoryId, subcategorySlug } = useParams();

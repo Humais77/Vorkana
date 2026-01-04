@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
-import Footer from './Footer';
+import Footer from './pages/footer/Footer.jsx';
 import AuthModal from '../components/AuthModal/AuthModal.jsx';
 
 const PublicLayout = ({

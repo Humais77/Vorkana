@@ -12,17 +12,17 @@ import PublicLayout from './layouts/PublicLayout';
 
 // Pages
 import Home from './layouts/Home';
-import GigCreate from './layouts/pages/GigCreate';
-import GigDetails from './layouts/pages/GigDetails';
-import CategoryPage from './layouts/pages/CategoryPage';
-import GigListingsPage from './layouts/pages/GigListingPage';
-import Profile from './layouts/pages/Profile';
-import Dashboard from './layouts/pages/Dashboard';
+import GigCreate from './layouts/pages/gigs/GigCreate';
+import GigDetails from './layouts/pages/gigs/GigDetails';
+import CategoryPage from './layouts/pages/category/CategoryPage';
+import GigListingsPage from './layouts/pages/gigs/GigListingPage';
+import Profile from './layouts/pages/profile/Profile';
+import Dashboard from './layouts/pages/profile/Dashboard';
 import CreateService from './layouts/pages/services/CreateService';
-import ServiceDetails from './layouts/pages/ServiceDetails';
-import ServiceListingPage from './layouts/pages/ServiceListingPage';
+import ServiceDetails from './layouts/pages/services/ServiceDetails';
+import ServiceListingPage from './layouts/pages/services/ServiceListingPage';
 import OAuthSuccess from './layouts/pages/OAuthSuccess';
-import AboutUsPage from './layouts/AboutUsPage';
+import AboutUsPage from './layouts/pages/footer/AboutUsPage';
 // Admin
 import ProtectedAdminRoute from './ProtectedAdminRoute';
 import AdminLayout from './layouts/pages/admin/AdminLayout';
@@ -36,21 +36,20 @@ import ScrollToTop from './components/ScrollToTop';
 import VerifiedPage from './layouts/pages/profile/VerifiedPage';
 
 import SearchResults from './layouts/pages/SearchResults';
-import Signin from './layouts/pages/Signin';
-import Signup from './layouts/pages/Signup';
-import PublicProfile from './layouts/pages/PublicProfile';
+import Signin from './layouts/pages/auth/Signin';
+import Signup from './layouts/pages/auth/Signup';
+import PublicProfile from './layouts/pages/profile/PublicProfile';
 import PopularServices from './components/services/PopularService';
-import SubcategoryDetailPage from './layouts/pages/SubcategoryDetailPage';
+import SubcategoryDetailPage from './layouts/pages/category/SubcategoryDetailPage';
 import PopularServicesPage from './components/services/PopularService';
 import NotFound from './layouts/pages/NotFound';
-import AdminNotFound from "./layouts/pages/AdminNotFound";
-import GigsInfoPage from './layouts/pages/GigsInfoPage';
-import ServicesInfoPage from './layouts/pages/ServicesInfoPage';
+import GigsInfoPage from './layouts/pages/gigs/GigsInfoPage';
+import ServicesInfoPage from './layouts/pages/services/ServicesInfoPage';
 
 // Import the VerificationWrapper
 import VerificationWrapper from './components/VerificationWrapper';
-import GigEdit from './layouts/pages/GigEdit';
-import EditService from './layouts/pages/EditService';
+import GigEdit from './layouts/pages/gigs/GigEdit';
+import EditService from './layouts/pages/services/EditService';
 
 const App = () => {
   useAuthSync();
@@ -164,7 +163,6 @@ const App = () => {
               </AdminLayout>
             </ProtectedAdminRoute>
           } />
-          <Route path="*" element={<AdminNotFound />} />
         </Routes>
       </BrowserRouter>
     </SecurityProvider>

@@ -2,13 +2,13 @@ import React from 'react'
 import Hero from './Hero'
 import CategoryGrid from '../components/categories/CategoryGrid'
 import Testimonials from './Testimonal'
-import CallToAction from './CallToAction'
+import CallToAction from './pages/footer/CallToAction'
 import MakeItHappen from './MakeItHappen'
 import AuthModal from '../components/AuthModal/AuthModal';
 import LogoMakerBanner from './LogoMakerBanner'
 import { useState } from 'react'
 import GetQuoteBanner from './GetQuoteBanner'
-import PopularCategoriesSection from './PopularCategoriesSection'
+import PopularCategoriesSection from '../components/home/PopularCategoriesSection'
 
 const Home = ({ onSignupClick, onSigninClick }) => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);

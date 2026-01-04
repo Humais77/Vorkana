@@ -7,9 +7,9 @@ import {
   FaChevronDown,
   FaChevronUp,
 } from 'react-icons/fa6';
-import TrackedLink from '../components/TrackedLink';
-import { useParentCategories } from "../hooks/useCategories";
-import { useSubscribe, useSubscriptionStatus, useToggleSubscription } from "../hooks/useSubscribe";
+import TrackedLink from '../../../components/TrackedLink';
+import { useParentCategories } from "../../../hooks/useCategories";
+import { useSubscribe, useSubscriptionStatus, useToggleSubscription } from "../../../hooks/useSubscribe";
 
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);

@@ -11,12 +11,12 @@ import {
   validatePassword,
   validateEmail,
   validateName
-} from "../../hooks/useAuth";
-import { useAuthStore } from "../../store/useAuthStore";
+} from "../../../hooks/useAuth";
+import { useAuthStore } from "../../../store/useAuthStore";
 import { motion } from "framer-motion";
-import auth_modal_bg from '../../assets/auth_modal_bg.png';
+import auth_modal_bg from '../../../assets/auth_modal_bg.png';
 import { FaCheck } from 'react-icons/fa';
-import { SeoWrapper } from "../../components/SeoWrapper";
+import { SeoWrapper } from "../../../components/SeoWrapper";
 
 // Structured Data
 const signupStructuredData = {

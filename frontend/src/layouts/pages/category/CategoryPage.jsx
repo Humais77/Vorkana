@@ -1,4 +1,3 @@
-// src/layouts/pages/CategoryPage.jsx - UPDATED WITH COMPACT SUBCATEGORIES
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
@@ -22,10 +21,10 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { SeoWrapper } from '../../components/SeoWrapper';
-import { useCategory } from '../../hooks/useCategories';
-import { useSubcategoriesByCategory } from '../../hooks/useSubcategories';
-import background_img from '../../assets/background_image.png'
+import { SeoWrapper } from '../../../components/SeoWrapper';
+import { useCategory } from '../../../hooks/useCategories';
+import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
+import background_img from '../../../assets/background_image.png'
 
 const CategoryPage = () => {
   const { categoryId } = useParams();
