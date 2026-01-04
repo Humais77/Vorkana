@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, RefreshCw } from 'lucide-react';
-import { useAuthStore } from '../store/useAuthStore';
-import { authAPI } from '../api/auth';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { authAPI } from '../../../api/auth';
 
 const VerifiedPage = () => {
   const [searchParams] = useSearchParams();

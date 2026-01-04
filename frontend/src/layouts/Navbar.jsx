@@ -9,7 +9,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import default_pp from '../assets/default_pp-modified.png'
 import SearchComponent from "../components/Search/SearchComponent";
 import { useParentCategories } from "../hooks/useCategories"; // Import the hook
-import Vorkanna from '../assets/Vorkanna.png'
 import { buildImageUrl } from "../utils/cloudinaryFrontend";
 const LOGO_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",

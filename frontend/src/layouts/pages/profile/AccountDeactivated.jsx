@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useReactivateAccount } from '../hooks/useAuth';
+import { useReactivateAccount } from '../../../hooks/useAuth';
 import { Mail, Lock, AlertTriangle, ArrowRight, Shield } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 

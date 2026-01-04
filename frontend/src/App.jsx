@@ -35,11 +35,6 @@ import AccountDeactivated from './layouts/pages/profile/AccountDeactivated';
 import ScrollToTop from './components/ScrollToTop';
 import VerifiedPage from './layouts/pages/profile/VerifiedPage';
 
-import CareersPage from './layouts/pages/footer/CareersPage';
-import HelpCenterPage from './layouts/pages/footer/HelpCenterPage';
-import ContactPage from './layouts/pages/footer/ContactPage';
-import TrustSafetyPage from './layouts/pages/footer/TrustSafetyPage';
-import FaqPage from './layouts/pages/footer/FaqPage';
 import SearchResults from './layouts/pages/SearchResults';
 import Signin from './layouts/pages/Signin';
 import Signup from './layouts/pages/Signup';
@@ -158,11 +153,6 @@ const App = () => {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/account-deactivated" element={<AccountDeactivated />} />
-            <Route path="/careers" element={<CareersPage />} />
-            <Route path="/help" element={<HelpCenterPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/trust" element={<TrustSafetyPage />} />
-            <Route path="/faq" element={<FaqPage />} />
             <Route path="/search" element={<SearchResults />} />
             <Route path="*" element={<NotFound />} />
           </Route>
