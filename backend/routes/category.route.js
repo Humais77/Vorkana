@@ -9,7 +9,20 @@ const {
   validateQuery ,
   validateSubcategory 
 } = require('../middleware/validators/category.validator.js');
-
+const timeout = (ms) => {
+  return (req, res, next) => {
+    res.setTimeout(ms, () => {
+      if (!res.headersSent) {
+        res.status(408).json({
+          success: false,
+          message: 'Request timeout',
+          code: 'TIMEOUT'
+        });
+      }
+    });
+    next();
+  };
+};
 // Rate limiting for admin operations
 const rateLimit = require('express-rate-limit');
 
@@ -51,6 +64,17 @@ const bulkOperationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const createLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // Lower limit for create operations
+  message: 'Too many create requests'
+});
+
+const updateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: 'Too many update requests'
+});
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 
 // Get subcategories by category
@@ -71,7 +95,7 @@ router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
 // ==========================================
 
 // Create category
-router.post('/', protect, adminOnly, adminLimiter, validateCreate, controller.createCategory);
+router.post('/', protect, adminOnly, adminLimiter,createLimiter, validateCreate, controller.createCategory);
 
 // Create subcategory
 router.post('/subcategories', 
@@ -86,7 +110,7 @@ router.post('/subcategories',
 router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
 // Update category
-router.put('/:id', protect, adminOnly, adminLimiter, validateUpdate, controller.updateCategory);
+router.put('/:id', protect, adminOnly, adminLimiter,updateLimiter, validateUpdate, controller.updateCategory);
 
 // Delete category
 router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategory);
@@ -94,11 +118,32 @@ router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategor
 // Restore category
 router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restoreCategory);
 
-// ==========================================
-// STATS AND EXPORTS (Admin only)
-// ==========================================
 
-router.get('/stats', protect, adminOnly, adminLimiter, controller.getCategoryStats);
+
+router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
 router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
-
+router.get('/repair-counts/status', protect, adminOnly, adminLimiter,controller.repairCategoryCounts);
+// Add to category.route.js
+router.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await mongoose.connection.db.admin().ping();
+    
+    // Test cache connection
+    await cache.ping();
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      cache: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
 module.exports = router;

@@ -1198,7 +1198,7 @@ const getCategoryById = async (req, res, next) => {
   }
 };
 
-// Update Category with Security (Admin Only)
+// Update Category with Security (Admin Only) - FIXED VERSION
 const updateCategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1217,7 +1217,7 @@ const updateCategory = async (req, res, next) => {
 
     const { id } = req.params;
     
-    // Security: Validate ID - with better error handling
+    // Security: Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       console.error('[UPDATE CATEGORY] Invalid ID:', id);
       return res.status(400).json({
@@ -1257,6 +1257,17 @@ const updateCategory = async (req, res, next) => {
     if (sanitizedData.metaTitle) validateForXSS('metaTitle', sanitizedData.metaTitle);
     if (sanitizedData.metaDescription) validateForXSS('metaDescription', sanitizedData.metaDescription);
     
+    // Find the existing category first
+    const existingCategory = await Category.findById(id);
+    if (!existingCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
     // Security: Check for circular parent reference
     if (sanitizedData.parentCategory) {
       if (sanitizedData.parentCategory === id) {
@@ -1268,44 +1279,109 @@ const updateCategory = async (req, res, next) => {
         });
       }
     }
-    const category = await Category.create({
+
+    // **CRITICAL FIX: Check for duplicate name, but exclude current category**
+    if (sanitizedData.name && sanitizedData.name !== existingCategory.name) {
+      const duplicate = await Category.findOne({
+        name: sanitizedData.name.trim(),
+        _id: { $ne: id }, // EXCLUDE CURRENT CATEGORY FROM DUPLICATE CHECK
+        deletedAt: null
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category with this name already exists',
+          code: 'DUPLICATE_CATEGORY',
+          requestId,
+          existingCategoryId: duplicate._id
+        });
+      }
+    }
+
+    // **ALSO FIX: Check for duplicate slug, but exclude current category**
+    if (sanitizedData.slug && sanitizedData.slug !== existingCategory.slug) {
+      const duplicateSlug = await Category.findOne({
+        slug: sanitizedData.slug.toLowerCase(),
+        _id: { $ne: id }, // EXCLUDE CURRENT CATEGORY FROM DUPLICATE CHECK
+        deletedAt: null
+      });
+
+      if (duplicateSlug) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category with this slug already exists',
+          code: 'DUPLICATE_SLUG',
+          requestId,
+          existingCategoryId: duplicateSlug._id
+        });
+      }
+    }
+
+    // Prepare update data
+    const updateData = {
       ...sanitizedData,
-      createdBy: req.user._id,
-      version: 1
-    });
+      lastUpdatedBy: req.user._id,
+      $inc: { version: 1 }
+    };
 
-    // Invalidate cache after creating new category
-    await invalidateCategoryCache();
+    // Update the category
+    const updatedCategory = await Category.findByIdAndUpdate(
+      id,
+      updateData,
+      { 
+        new: true, 
+        runValidators: true,
+        context: 'query'
+      }
+    ).populate('parentCategory', 'name slug');
 
-    // Security: Audit log
-    logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
-      name: category.name,
-      parentCategory: category.parentCategory
-    });
+    if (!updatedCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found during update',
+        code: 'UPDATE_FAILED',
+        requestId
+      });
+    }
 
-    // Security: Remove sensitive data
-    const safeCategory = category.toObject();
+    // Security: Remove sensitive data from response
+    const safeCategory = updatedCategory.toObject();
     delete safeCategory.__v;
     delete safeCategory.createdBy;
     delete safeCategory.deletedAt;
     delete safeCategory.deletedBy;
+    delete safeCategory.version;
+    delete safeCategory.lastUpdatedBy;
+
+    // Security: Audit log
+    logAudit('UPDATE', 'CATEGORY', id, req.user._id, {
+      oldName: existingCategory.name,
+      newName: updatedCategory.name,
+      changedFields: Object.keys(sanitizedData)
+    });
+
+    // Invalidate cache after update
+    await invalidateCategoryCache();
+    await invalidateSpecificCategoryCache(id);
 
     const responseTime = Date.now() - startTime;
     
-    res.status(201).json({
+    res.json({
       success: true,
+      message: 'Category updated successfully',
       data: safeCategory,
-      message: 'Category created successfully',
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
     });
+
   } catch (error) {
     // Security: Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Category with that name already exists',
+        message: 'Category with that name or slug already exists',
         code: 'DUPLICATE_CATEGORY',
         requestId
       });
@@ -1323,8 +1399,28 @@ const updateCategory = async (req, res, next) => {
       });
     }
     
-    logAudit('ERROR', 'CATEGORY', 'CREATE', req.user?._id, { error: error.message });
-    next(error);
+    // Security: Handle XSS validation errors
+    if (error.message.includes('XSS attempt')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+        code: 'XSS_ATTEMPT_DETECTED',
+        requestId
+      });
+    }
+    
+    console.error('[UPDATE CATEGORY ERROR]', error);
+    logAudit('ERROR', 'CATEGORY', 'UPDATE', req.user._id, { 
+      id: req.params.id, 
+      error: error.message 
+    });
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update category',
+      code: 'CATEGORY_UPDATE_ERROR',
+      requestId
+    });
   }
 };
 
@@ -2254,6 +2350,42 @@ const searchCategories = async (req, res, next) => {
     });
   }
 };
+const repairCategoryCounts = async (req, res, next) => {
+  const requestId = generateRequestId();
+  
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+
+    const result = await Category.repairCategoryCounts();
+    
+    // Invalidate all category cache
+    await invalidateCategoryCache();
+    
+    res.json({
+      success: true,
+      message: 'Category counts repaired successfully',
+      result,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Repair category counts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to repair category counts',
+      code: 'REPAIR_FAILED',
+      requestId
+    });
+  }
+};
 
 module.exports = {
   createCategory,
@@ -2268,4 +2400,5 @@ module.exports = {
   searchCategories,
   getSubcategoriesByCategory,
   createSubcategory,
+  repairCategoryCounts
 };

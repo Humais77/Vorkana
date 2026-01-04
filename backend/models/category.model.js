@@ -503,7 +503,43 @@ categorySchema.index({
   isActive: 1, 
   order: 1 
 }, { name: 'active_order_idx' });
+categorySchema.statics.updateServicesCount = async function(categoryId, change = 1, session = null) {
+  const options = session ? { session, new: true } : { new: true };
+  
+  if (change === 0) return this.findById(categoryId);
+  
+  const updateOperation = change > 0 
+    ? { $inc: { servicesCount: 1 } }
+    : { $inc: { servicesCount: -1 } };
+  
+  return this.findByIdAndUpdate(
+    categoryId,
+    {
+      ...updateOperation,
+      $set: { lastUpdatedAt: new Date() }
+    },
+    options
+  );
+};
 
+categorySchema.statics.updateGigsCount = async function(categoryId, change = 1, session = null) {
+  const options = session ? { session, new: true } : { new: true };
+  
+  if (change === 0) return this.findById(categoryId);
+  
+  const updateOperation = change > 0 
+    ? { $inc: { gigsCount: 1 } }
+    : { $inc: { gigsCount: -1 } };
+  
+  return this.findByIdAndUpdate(
+    categoryId,
+    {
+      ...updateOperation,
+      $set: { lastUpdatedAt: new Date() }
+    },
+    options
+  );
+};
 // Static methods
 categorySchema.statics.incrementServicesCount = async function(categoryId, session = null) {
   const options = session ? { session, new: true } : { new: true };
@@ -624,7 +660,49 @@ categorySchema.methods.restore = async function() {
   this.isActive = true;
   return this.save();
 };
-
+categorySchema.statics.repairCategoryCounts = async function() {
+  try {
+    console.log('Starting category count repair...');
+    
+    const categories = await this.find({});
+    let repairedCount = 0;
+    
+    for (const category of categories) {
+      // Get actual counts from services and gigs
+      const serviceCount = await mongoose.model('Service').countDocuments({
+        category: category._id,
+        status: 'active',
+        isActive: true,
+        deletedAt: null
+      });
+      
+      const gigCount = await mongoose.model('Gig').countDocuments({
+        projectCategory: category._id,
+        status: 'open',
+        isActive: true,
+        deletedAt: null
+      });
+      
+      // Update if counts don't match
+      if (category.servicesCount !== serviceCount || category.gigsCount !== gigCount) {
+        await this.findByIdAndUpdate(category._id, {
+          servicesCount: serviceCount,
+          gigsCount: gigCount,
+          lastUpdatedAt: new Date()
+        });
+        
+        console.log(`Repaired category ${category.name}: services=${serviceCount}, gigs=${gigCount}`);
+        repairedCount++;
+      }
+    }
+    
+    console.log(`Category count repair completed. Repaired ${repairedCount} categories.`);
+    return { repairedCount, totalCategories: categories.length };
+  } catch (error) {
+    console.error('Error repairing category counts:', error);
+    throw error;
+  }
+};
 const Category = mongoose.model('Category', categorySchema);
 
 module.exports = Category;
