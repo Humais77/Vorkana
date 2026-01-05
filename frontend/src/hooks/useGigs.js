@@ -151,42 +151,25 @@ export const useGig = (id) => {
     queryFn: () => gigsAPI.getById(id),
     enabled: !!id && id !== 'undefined',
     refetchOnWindowFocus: true,
-refetchOnReconnect: true,
+    refetchOnReconnect: true,
     gcTime: 30 * 60 * 1000,
     retry: (failureCount, error) => {
       if (error.status === 404) return false;
       return failureCount < 3;
     },
     onSuccess: (data, variables) => {
-  const updatedGig = data.data || data.gig || data;
-
-  // Instantly update the single gig cache — feels immediate!
-  queryClient.setQueryData(gigKeys.detail(variables.id), (oldData) => {
-    if (!oldData) return { gig: updatedGig, data: updatedGig };
-    return {
-      ...oldData,
-      gig: updatedGig,
-      data: updatedGig,
-    };
-  });
-
-  // Also update any list caches optimistically (optional but nice)
-  queryClient.setQueryData(gigKeys.lists(), (old) => {
-    if (!old || !Array.isArray(old.data)) return old;
-    return {
-      ...old,
-      data: old.data.map((gig) =>
-        gig._id === variables.id ? updatedGig : gig
-      ),
-    };
-  });
-
-  // Still invalidate lists to ensure freshness on next load
-  queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
-  queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
-
-  toast.success(data.message || 'Gig updated successfully!');
-},
+      const updatedGig = data.data || data.gig || data;
+      
+      // Update Zustand store
+      setGigDetails(updatedGig);
+      
+      // Update cache
+      queryClient.setQueryData(gigKeys.detail(variables.id), {
+        gig: updatedGig,
+        data: updatedGig,
+        success: true
+      });
+    }
   });
 };
 
@@ -247,42 +230,115 @@ export const useCreateGig = () => {
     },
   });
 };
+const applyOptimisticUpdate = (queryClient, gigId, updates) => {
+  // Update single gig cache
+  queryClient.setQueryData(gigKeys.detail(gigId), (old) => {
+    if (!old) return old;
+    const updatedGig = {
+      ...old.data,
+      ...old.gig,
+      ...updates,
+      // Ensure subcategory is properly structured
+      subcategory: updates.subcategory ? {
+        _id: updates.subcategory,
+        name: updates.subcategoryName || "Loading..."
+      } : old.data?.subcategory,
+      // Ensure category is properly structured
+      projectCategory: updates.projectCategory ? {
+        _id: updates.projectCategory,
+        name: updates.categoryName || "Loading..."
+      } : old.data?.projectCategory
+    };
+    
+    return {
+      ...old,
+      gig: updatedGig,
+      data: updatedGig
+    };
+  });
 
+  // Update gigs list cache
+  queryClient.setQueryData(gigKeys.myGigs(), (old) => {
+    if (!old || !old.data) return old;
+    return {
+      ...old,
+      data: old.data.map(g => {
+        if (g._id === gigId) {
+          return {
+            ...g,
+            ...updates,
+            subcategory: updates.subcategory ? {
+              _id: updates.subcategory,
+              name: updates.subcategoryName || "Loading..."
+            } : g.subcategory,
+            projectCategory: updates.projectCategory ? {
+              _id: updates.projectCategory,
+              name: updates.categoryName || "Loading..."
+            } : g.projectCategory
+          };
+        }
+        return g;
+      })
+    };
+  });
+};
+
+// Update the useUpdateGig hook
 export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      // If FormData, append version separately
-      if (data instanceof FormData) {
-        // Don't need to modify FormData - version will be appended by the frontend
-        return gigsAPI.update(id, data);
-      } else {
-        // For JSON data, ensure version is included
-        return gigsAPI.update(id, data);
-      }
+      return gigsAPI.update(id, data);
+    },
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: gigKeys.detail(id) });
+      
+      // Snapshot the previous value
+      const previousGig = queryClient.getQueryData(gigKeys.detail(id));
+      
+      // Optimistically update to the new value
+      const optimisticUpdates = {
+        ...(data instanceof FormData ? {} : data),
+        updatedAt: new Date().toISOString(),
+        isUpdating: true
+      };
+      
+      applyOptimisticUpdate(queryClient, id, optimisticUpdates);
+      
+      return { previousGig };
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: gigKeys.detail(variables.id) 
-      });
-      queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+      // Remove the updating flag and apply server data
+      const finalData = {
+        ...data.data,
+        isUpdating: undefined
+      };
       
-      toast.success(data.message || 'Gig updated successfully!');
+      applyOptimisticUpdate(queryClient, variables.id, finalData);
+      
+      // Invalidate other queries to ensure consistency
+      queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
+      
+      // Show success toast (handled in component for better UX)
     },
-    onError: (error) => {
-      if (error.code === 'SUBCATEGORY_REQUIRED') {
-        toast.error('Please select a subcategory');
-      } else if (error.code === 'VERSION_CONFLICT') {
-        toast.error('This gig was modified by another user. Please refresh and try again.');
-      } else {
-        toast.error(error.data?.message || error.message || 'Failed to update gig');
+    onError: (err, variables, context) => {
+      // Rollback to the previous value
+      if (context?.previousGig) {
+        queryClient.setQueryData(gigKeys.detail(variables.id), context.previousGig);
       }
+      
+      // Revalidate queries
+      queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
+      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+    },
+    onSettled: (data, error, variables) => {
+      // Always refetch after error or success to ensure consistency
+      queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
     },
   });
 };
-
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
   

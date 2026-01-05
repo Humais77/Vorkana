@@ -18,7 +18,8 @@ const {
   removeImage,
   setThumbnail,
   uploadThumbnail,
-  getGigsBySubcategory
+  getGigsBySubcategory,
+  errorHandler
 } = require('../controllers/gig.controller.js');
 
 const { 
@@ -208,6 +209,6 @@ router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload,
 // Delete gig (creator or admin)
 router.delete('/:id', protect, gigLimiter, deleteGig);
 
-// Admin routes
+router.use(errorHandler)
 
 module.exports = router;

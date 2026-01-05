@@ -403,22 +403,61 @@ export const gigsAPI = {
       throw error;
     }
   },
-  
   update: async (id, gigData) => {
-    try {
-      const response = await axiosInstance.put(`/api/gigs/${id}`, gigData);
+  try {
+    const config = {
+      headers: {}
+    };
+    
+    if (gigData instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
+    const response = await axiosInstance.put(`/api/gigs/${id}`, gigData, config);
+    
+    // Ensure subcategory and category are populated in the response
+    if (response.data && response.data.data) {
+      // You might need to refetch with population
+      const populatedResponse = await axiosInstance.get(`/api/gigs/${id}`, {
+        params: {
+          includeSubcategory: true,
+          includeCategory: true,
+          populate: true
+        }
+      });
       
       return {
         success: true,
-        data: response.data,
+        data: populatedResponse.data?.data || populatedResponse.data,
         message: response.message || 'Gig updated successfully',
-        ...response
+        ...populatedResponse
       };
-      
-    } catch (error) {
-      throw error;
     }
-  },
+    
+    return response;
+  } catch (error) {
+    // Enhanced error handling
+    if (error.status === 409) {
+      throw {
+        message: 'This gig was modified by another user. Please refresh and try again.',
+        code: 'VERSION_CONFLICT',
+        status: 409,
+        currentVersion: error.currentVersion
+      };
+    }
+    
+    if (error.status === 400) {
+      throw {
+        message: error.message || 'Validation failed',
+        errors: error.errors,
+        code: error.code || 'VALIDATION_ERROR',
+        status: 400
+      };
+    }
+    
+    throw error;
+  }
+},
   
  delete: async (id, options = {}) => {
   try {

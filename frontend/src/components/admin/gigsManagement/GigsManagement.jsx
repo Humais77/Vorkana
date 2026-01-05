@@ -32,7 +32,7 @@ import {
   FiUnlock,FiX
 } from 'react-icons/fi';
 import { format } from 'date-fns';
-import GigViewModal from '../GigViewModal';
+import GigViewModal from './GigViewModal';
 import GigEditModal from './GigEditModal';
 import GigDeleteModal from './GigDeleteModal';
 

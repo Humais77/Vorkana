@@ -17,27 +17,58 @@ const sanitizeGigInput = (data) => {
   if (!data || typeof data !== 'object') return data;
   
   const sanitized = { ...data };
-  const sanitizeTextFields = (value) => {
-    if (typeof value === 'string') {
-      return sanitizeText(value);
-    }
-    if (Array.isArray(value) && typeof value[0] === 'string') {
-      return value.map(sanitizeText);
-    }
-    return value;
-  };
+  
+  // List of fields that should be sanitized as text
+  const textFields = [
+    'title', 'fullName', 'oauthEmail', 'country', 'phone', 
+    'description', 'timeline', 'clientReview', 'disputeReason',
+    'slug', 'communication'
+  ];
+  
+  // List of fields that should remain as-is (numbers, booleans, etc.)
+  const preserveFields = ['budget', 'version', 'rating', 'paymentAmount', 'depositPaid'];
+  
+  // List of array fields that contain strings
+  const stringArrayFields = ['skillsRequired', 'deliverables', 'removeImages'];
   
   Object.keys(sanitized).forEach(key => {
-    // Skip version and budget from sanitization to preserve numbers
-    if (key === 'version' || key === 'budget') {
+    const value = sanitized[key];
+    
+    // Skip preserved fields
+    if (preserveFields.includes(key)) {
       return;
     }
     
-    if (typeof sanitized[key] === 'string' || 
-        (Array.isArray(sanitized[key]) && typeof sanitized[key][0] === 'string')) {
-      sanitized[key] = sanitizeTextFields(sanitized[key]);
+    // Handle string fields
+    if (textFields.includes(key) && typeof value === 'string') {
+      sanitized[key] = sanitizeText(value);
+    }
+    
+    // Handle string array fields
+    else if (stringArrayFields.includes(key) && Array.isArray(value)) {
+      sanitized[key] = value.map(item => {
+        if (typeof item === 'string') {
+          return sanitizeText(item);
+        }
+        return item;
+      }).filter(item => item !== null && item !== undefined);
+    }
+    
+    // Handle object fields recursively
+    else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      sanitized[key] = sanitizeGigInput(value);
     }
   });
+  
+  // Special handling for email - lowercase and trim
+  if (sanitized.oauthEmail && typeof sanitized.oauthEmail === 'string') {
+    sanitized.oauthEmail = sanitized.oauthEmail.toLowerCase().trim();
+  }
+  
+  // Special handling for currency - uppercase
+  if (sanitized.currency && typeof sanitized.currency === 'string') {
+    sanitized.currency = sanitized.currency.toUpperCase();
+  }
   
   return sanitized;
 };
@@ -264,17 +295,52 @@ const generateCacheKey = (prefix, params) => {
   const key = `${prefix}:${JSON.stringify(params)}`;
   return crypto.createHash('md5').update(key).digest('hex');
 };
-
-// Helper function to invalidate related cache
 const invalidateGigCache = async (gigId) => {
   try {
-    // Invalidate all cache related to this gig
-    await cache.del(`gig:*${gigId}*`);
-    await cache.del('gigs:*');
-    await cache.del('gig_stats:*');
-    console.log(`Cache invalidated for gig: ${gigId}`);
+    const cache = require('../utils/cache.js');
+    
+    // Get gig details for more targeted invalidation
+    const gig = await Gig.findById(gigId).select('projectCategory subcategory status');
+    
+    if (gig) {
+      // Invalidate specific gig cache
+      await cache.del(`gig:${gigId}`);
+      await cache.del(`gig:slug:*`); // Any slug-based cache
+      
+      // Invalidate lists that might include this gig
+      const patterns = [
+        'gigs:list:*',
+        `gigs:category:${gig.projectCategory}:*`,
+        `gigs:status:${gig.status}:*`
+      ];
+      
+      if (gig.subcategory) {
+        patterns.push(`gigs:subcategory:${gig.subcategory}:*`);
+      }
+      
+      // Also invalidate user-specific caches if applicable
+      patterns.push('gigs:user:*');
+      
+      // Delete all matching cache keys
+      for (const pattern of patterns) {
+        try {
+          const keys = await cache.keys(pattern);
+          if (keys.length > 0) {
+            await cache.del(...keys);
+          }
+        } catch (err) {
+          console.warn(`Failed to invalidate cache pattern ${pattern}:`, err.message);
+        }
+      }
+      
+      // Invalidate stats
+      await cache.del('gig_stats:*');
+      
+      console.log(`Cache invalidated for gig ${gigId} and related lists`);
+    }
   } catch (err) {
-    console.warn('Error invalidating cache:', err.message);
+    console.error('Error in cache invalidation:', err.message);
+    // Don't throw - cache invalidation failure shouldn't break the request
   }
 };
 
@@ -1251,21 +1317,25 @@ const validateGigId = (id) => {
   
   return { valid: true, cleanedId: cleanId };
 };
-// In the updateGig function, fix the version parsing:
-
+// gig.controller.js - Fixed and enhanced updateGig function
 const updateGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
+  console.log('=== UPDATE GIG STARTED ===', {
+    requestId,
+    gigId: req.params.id,
+    user: req.user?._id,
+    method: req.method,
+    contentType: req.headers['content-type']
+  });
+  
   try {
     const { id } = req.params;
     
-    console.log('=== UPDATE GIG STARTED ===');
-    console.log('Request ID:', requestId);
-    console.log('Gig ID:', id);
-    
-    // Simple ID validation
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // Validate ID
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${requestId}] Invalid gig ID: ${id}`);
       return res.status(400).json({
         success: false,
         message: 'Invalid gig ID',
@@ -1274,9 +1344,14 @@ const updateGig = async (req, res, next) => {
       });
     }
 
-    const gig = await Gig.findById(id);
+    // Find the gig
+    console.log(`[${requestId}] Finding gig: ${id}`);
+    const gig = await Gig.findById(id)
+      .populate('projectCategory', '_id name')
+      .populate('subcategory', '_id name category');
     
     if (!gig) {
+      console.error(`[${requestId}] Gig not found: ${id}`);
       return res.status(404).json({
         success: false,
         message: 'Gig not found',
@@ -1285,6 +1360,7 @@ const updateGig = async (req, res, next) => {
       });
     }
 
+    // Check if gig is deleted
     if (gig.deletedAt) {
       return res.status(400).json({
         success: false,
@@ -1294,6 +1370,7 @@ const updateGig = async (req, res, next) => {
       });
     }
 
+    // Authorization check
     const isOwner = gig.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
@@ -1308,23 +1385,11 @@ const updateGig = async (req, res, next) => {
       });
     }
 
-    // Initialize sanitizedData
-    let sanitizedData = {};
-    
-    console.log('=== PARSING REQUEST DATA ===');
-    console.log('Request body keys:', Object.keys(req.body));
-    console.log('Files:', req.files ? Object.keys(req.files) : 'No files');
-    
-    // Parse version FIRST - CRITICAL FIX
-    let requestVersion = gig.version; // Default to current version
-    
+    // Parse and validate version
+    let clientVersion = gig.version;
     if (req.body.version !== undefined) {
-      console.log('Raw version from request:', req.body.version, 'Type:', typeof req.body.version);
-      
-      // Convert to number
-      const versionNum = parseInt(req.body.version, 10);
-      if (isNaN(versionNum)) {
-        console.log('Failed to parse version as number:', req.body.version);
+      const parsedVersion = parseInt(req.body.version, 10);
+      if (isNaN(parsedVersion)) {
         return res.status(400).json({
           success: false,
           message: 'Version must be a valid number',
@@ -1332,95 +1397,41 @@ const updateGig = async (req, res, next) => {
           requestId
         });
       }
-      
-      requestVersion = versionNum;
-      console.log('Parsed version as number:', requestVersion, 'Type:', typeof requestVersion);
+      clientVersion = parsedVersion;
     }
+
+    // Version conflict check for non-admins
+    if (!isAdmin && clientVersion !== gig.version) {
+      console.warn(`[${requestId}] Version conflict: client=${clientVersion}, server=${gig.version}`);
+      return res.status(409).json({
+        success: false,
+        message: 'Gig was modified by another user. Please refresh and try again.',
+        code: 'VERSION_CONFLICT',
+        currentVersion: gig.version,
+        requestId
+      });
+    }
+
+    // Parse request data based on content type
+    let sanitizedData = {};
+    console.log(`[${requestId}] Parsing request data, content-type: ${req.headers['content-type']}`);
     
-    // Parse other fields
     if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
-      console.log('Handling multipart/form-data');
-      
-      // Parse simple text fields
-      const textFields = [
-        'title', 'fullName', 'oauthEmail', 'country', 'phone', 'projectCategory', 
-        'subcategory', 'description', 'currency', 'timeline', 'timelineUnit', 
-        'communication', 'urgency', 'visibility'
-      ];
-      
-      textFields.forEach(field => {
-        if (req.body[field] !== undefined) {
-          sanitizedData[field] = req.body[field];
-          console.log(`${field}: ${req.body[field]}`);
-        }
-      });
-      
-      // Parse budget - ensure it's a number
-      if (req.body.budget !== undefined && req.body.budget !== '') {
-        const budgetNum = parseFloat(req.body.budget);
-        if (isNaN(budgetNum)) {
-          return res.status(400).json({
-            success: false,
-            message: 'Budget must be a valid number',
-            code: 'INVALID_BUDGET',
-            requestId
-          });
-        }
-        sanitizedData.budget = budgetNum;
-        console.log(`budget: ${budgetNum} (converted from ${req.body.budget})`);
-      }
-      
-      // Parse array fields
-      ['skillsRequired', 'deliverables'].forEach(field => {
-        const values = [];
-        
-        // Look for indexed format: skillsRequired[0], skillsRequired[1], etc.
-        const arrayPattern = new RegExp(`^${field}\\[\\d+\\]$`);
-        Object.keys(req.body).forEach(key => {
-          if (arrayPattern.test(key)) {
-            const value = req.body[key];
-            if (value && value.trim()) {
-              values.push(value.trim());
-            }
-          }
-        });
-        
-        // If no indexed values, check for direct field
-        if (values.length === 0 && req.body[field]) {
-          const value = req.body[field];
-          if (Array.isArray(value)) {
-            values.push(...value);
-          } else if (typeof value === 'string') {
-            values.push(...value.split(',').map(item => item.trim()).filter(item => item));
-          }
-        }
-        
-        if (values.length > 0) {
-          sanitizedData[field] = values;
-          console.log(`${field}:`, values);
-        }
-      });
-      
-      // Handle files
-      if (req.files) {
-        console.log('Files received:', Object.keys(req.files));
-        Object.keys(req.files).forEach(key => {
-          sanitizedData[key] = req.files[key];
-        });
-      }
-      
+      // Handle multipart form data
+      console.log(`[${requestId}] Processing multipart/form-data`);
+      sanitizedData = await parseMultipartFormData(req);
     } else {
       // Handle JSON data
-      console.log('Handling JSON data');
-      sanitizedData = { ...req.body };
+      console.log(`[${requestId}] Processing JSON data`);
+      sanitizedData = sanitizeGigInput(req.body);
       
-      // Ensure budget is a number if provided
+      // Convert specific fields
       if (sanitizedData.budget !== undefined) {
         const budgetNum = parseFloat(sanitizedData.budget);
-        if (isNaN(budgetNum)) {
+        if (isNaN(budgetNum) || budgetNum < 0) {
           return res.status(400).json({
             success: false,
-            message: 'Budget must be a valid number',
+            message: 'Budget must be a valid positive number',
             code: 'INVALID_BUDGET',
             requestId
           });
@@ -1428,24 +1439,15 @@ const updateGig = async (req, res, next) => {
         sanitizedData.budget = budgetNum;
       }
     }
-    
-    console.log('=== PROCESSED DATA ===');
-    console.log('Request version:', requestVersion);
-    console.log('Sanitized data keys:', Object.keys(sanitizedData));
-    
-    // Basic validation
+
+    // Validate required fields if they're being updated
     const validationErrors = [];
-    
-    if (!sanitizedData.title || sanitizedData.title.trim().length === 0) {
+    if (sanitizedData.title !== undefined && (!sanitizedData.title || sanitizedData.title.trim().length === 0)) {
       validationErrors.push({ field: 'title', message: 'Title is required' });
     }
     
-    if (!sanitizedData.description || sanitizedData.description.trim().length === 0) {
+    if (sanitizedData.description !== undefined && (!sanitizedData.description || sanitizedData.description.trim().length === 0)) {
       validationErrors.push({ field: 'description', message: 'Description is required' });
-    }
-    
-    if (!sanitizedData.projectCategory) {
-      validationErrors.push({ field: 'projectCategory', message: 'Project category is required' });
     }
     
     if (validationErrors.length > 0) {
@@ -1457,128 +1459,126 @@ const updateGig = async (req, res, next) => {
         requestId
       });
     }
-    
-    // Validate subcategory
+
+    // Validate subcategory if being updated
     if (sanitizedData.subcategory !== undefined) {
-      if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null) {
+      if (sanitizedData.subcategory === null || sanitizedData.subcategory === '') {
         sanitizedData.subcategory = null;
       } else {
-        const subcategoryExists = await Subcategory.findOne({ 
+        // Validate subcategory exists and belongs to category
+        const subcategory = await Subcategory.findOne({
           _id: sanitizedData.subcategory,
-          category: sanitizedData.projectCategory || gig.projectCategory,
           isActive: true
         });
         
-        if (!subcategoryExists) {
+        if (!subcategory) {
           return res.status(400).json({
             success: false,
-            message: 'Subcategory not found or does not belong to selected category',
+            message: 'Subcategory not found or inactive',
             code: 'SUBCATEGORY_NOT_FOUND',
+            requestId
+          });
+        }
+        
+        // Check if subcategory belongs to the selected category
+        const categoryId = sanitizedData.projectCategory || gig.projectCategory._id.toString();
+        if (subcategory.category.toString() !== categoryId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Subcategory does not belong to the selected category',
+            code: 'SUBCATEGORY_MISMATCH',
             requestId
           });
         }
       }
     }
-    
-    // Validate budget
-    if (sanitizedData.budget !== undefined) {
-      if (typeof sanitizedData.budget !== 'number' || isNaN(sanitizedData.budget) || sanitizedData.budget < 0) {
+
+    // Handle image uploads using unified function
+    let imageOperations = {};
+    if (req.files && (req.files.images || req.files.thumbnail)) {
+      console.log(`[${requestId}] Processing image uploads`);
+      try {
+        imageOperations = await handleImageOperations(req, gig);
+        
+        // Check if we need to delete old thumbnail
+        if (imageOperations.thumbnail && gig.thumbnail && gig.thumbnail.public_id) {
+          imageOperations.imagesToDelete.push({ public_id: gig.thumbnail.public_id });
+        }
+      } catch (error) {
+        console.error(`[${requestId}] Image upload failed:`, error);
         return res.status(400).json({
           success: false,
-          message: 'Budget must be a valid positive number',
-          code: 'INVALID_BUDGET',
+          message: error.message,
+          code: 'IMAGE_UPLOAD_FAILED',
           requestId
         });
       }
     }
-    let uploadedImages = [];
-let uploadedThumbnail = null;
 
-// Handle new thumbnail upload
-if (req.files && req.files.thumbnail && req.files.thumbnail.length > 0) {
-  const thumbnailFile = req.files.thumbnail[0];
-  const thumbnailResult = await uploadGigThumbnail(thumbnailFile, gig._id); // your existing helper
-  if (thumbnailResult) {
-    uploadedThumbnail = thumbnailResult;
-  }
-}
+    // Build update data
+    const updateData = {
+      ...sanitizedData,
+      lastUpdatedBy: req.user._id,
+      $inc: { version: 1 }
+    };
 
-// Handle new images upload
-if (req.files && req.files.images && req.files.images.length > 0) {
-  uploadedImages = await uploadGigImages(req.files.images, gig._id); // your existing helper
-}
-
-// Now build the final images array
-let finalImages = [...gig.images]; // keep existing
-
-// Add new uploaded images
-if (uploadedImages.length > 0) {
-  uploadedImages.forEach(img => {
-    if (!finalImages.some(existing => existing.public_id === img.public_id)) {
-      finalImages.push(img);
+    // Handle images in update
+    if (imageOperations.images && imageOperations.images.length > 0) {
+      // Combine existing images with new ones, avoiding duplicates
+      const existingImages = gig.images || [];
+      const newImages = imageOperations.images.filter(newImg => 
+        !existingImages.some(existing => existing.public_id === newImg.public_id)
+      );
+      
+      updateData.$push = { images: { $each: newImages } };
     }
-  });
-}
 
-// Handle thumbnail
-if (uploadedThumbnail) {
-  finalImages = finalImages.filter(img => img.public_id !== gig.thumbnail?.public_id);
-  finalImages.unshift(uploadedThumbnail); // put thumbnail first
-}
+    // Handle thumbnail
+    if (imageOperations.thumbnail) {
+      updateData.thumbnail = imageOperations.thumbnail;
+    }
 
-// Enforce max 10 images
-if (finalImages.length > 10) {
-  return res.status(400).json({
-    success: false,
-    message: 'Maximum 10 images allowed',
-    code: 'MAX_IMAGES_EXCEEDED',
-    requestId
-  });
-}
+    // Remove specified images if requested
+    if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
+      updateData.$pull = { images: { public_id: { $in: sanitizedData.removeImages } } };
+      
+      // Also remove from thumbnail if it's in the list
+      if (gig.thumbnail && sanitizedData.removeImages.includes(gig.thumbnail.public_id)) {
+        updateData.thumbnail = null;
+      }
+    }
 
-// === BUILD FINAL UPDATE DATA ===
-const updateData = {
-  ...sanitizedData,
-  lastUpdatedBy: req.user._id,
-  images: finalImages,
-  thumbnail: uploadedThumbnail || gig.thumbnail, // use new or keep old
-  $inc: { version: 1 }
-};
-    
-    // Add version increment
-    updateData.$inc = { version: 1 };
-    
-    console.log('=== FINAL UPDATE DATA ===');
-    console.log('Update data:', updateData);
-    console.log('User is owner:', isOwner);
-    console.log('User is admin:', isAdmin);
-    console.log('Request version:', requestVersion);
-    console.log('Current gig version:', gig.version);
-    
-    // Build query conditions
+    console.log(`[${requestId}] Performing update with conditions:`, {
+      id,
+      version: gig.version,
+      userIsAdmin: isAdmin
+    });
+
+    // Perform update with optimistic concurrency control
     const queryConditions = { 
       _id: id,
       deletedAt: null
     };
     
-    // Only add version condition for non-owners/non-admins
-    if (!isOwner && !isAdmin) {
-      queryConditions.version = requestVersion;
-      console.log('Adding version check for non-owner/admin');
+    // Add version condition for optimistic locking (except admin overrides)
+    if (!isAdmin) {
+      queryConditions.version = gig.version;
     }
-    
-    console.log('Query conditions:', queryConditions);
-    
-    // Perform the update
+
     const updatedGig = await Gig.findOneAndUpdate(
       queryConditions,
       updateData,
       { 
         new: true,
         runValidators: true,
-        context: 'query'
+        context: 'query',
+        populate: [
+          { path: 'projectCategory', select: 'name slug icon' },
+          { path: 'subcategory', select: 'name slug icon' },
+          { path: 'createdBy', select: 'name picture' }
+        ]
       }
-    ).populate('projectCategory', 'name slug').populate('subcategory', 'name slug');
+    );
 
     if (!updatedGig) {
       // Check why update failed
@@ -1593,36 +1593,66 @@ const updateData = {
         });
       }
       
-      // If version mismatch and user is not owner/admin
-      if (!isOwner && !isAdmin && currentGig.version !== requestVersion) {
+      // Version conflict
+      if (currentGig.version !== gig.version) {
         return res.status(409).json({
           success: false,
           message: 'Gig was modified by another user. Please refresh and try again.',
           code: 'VERSION_CONFLICT',
           currentVersion: currentGig.version,
-          gigTitle: currentGig.title,
-          updatedAt: currentGig.updatedAt,
           requestId
         });
       }
       
       return res.status(400).json({
         success: false,
-        message: 'Update failed',
+        message: 'Update failed. Please try again.',
         code: 'UPDATE_FAILED',
         requestId
       });
     }
 
+    // Clean up old images from Cloudinary if needed
+    if (imageOperations.imagesToDelete && imageOperations.imagesToDelete.length > 0) {
+      try {
+        await deleteCloudinaryImages(imageOperations.imagesToDelete);
+        console.log(`[${requestId}] Deleted ${imageOperations.imagesToDelete.length} old images from Cloudinary`);
+      } catch (error) {
+        console.error(`[${requestId}] Failed to delete old images:`, error);
+        // Don't fail the request, just log the error
+      }
+    }
+
     // Invalidate cache
     await invalidateGigCache(id);
 
-    // Success response
+    // Log audit
+    logAudit('UPDATE', 'GIG', id, req.user._id, {
+      fieldsUpdated: Object.keys(sanitizedData),
+      hasImages: !!(req.files && (req.files.images || req.files.thumbnail)),
+      newVersion: updatedGig.version
+    });
+
+    // Prepare response
+    const safeGig = updatedGig.toObject ? updatedGig.toObject() : updatedGig;
+    
+    // Remove sensitive information
+    delete safeGig.__v;
+    delete safeGig.lastUpdatedBy;
+    delete safeGig.deletedAt;
+    delete safeGig.deletedBy;
+    delete safeGig.communicationHistory;
+    
+    if (safeGig.createdBy && safeGig.createdBy.email) {
+      delete safeGig.createdBy.email;
+    }
+
     const responseTime = Date.now() - startTime;
+    console.log(`[${requestId}] Update completed in ${responseTime}ms`);
     
     res.json({
       success: true,
-      data: updatedGig,
+      data: safeGig,
       message: 'Gig updated successfully',
       newVersion: updatedGig.version,
       requestId,
@@ -1631,7 +1661,23 @@ const updateData = {
     });
 
   } catch (error) {
-    console.error('Update gig error:', error);
+    console.error(`[${requestId}] Update gig error:`, error);
+    
+    // Clean up uploaded files if error occurred
+    if (req.files && (req.files.images || req.files.thumbnail)) {
+      try {
+        const uploadedImages = [];
+        if (req.files.images) uploadedImages.push(...req.files.images);
+        if (req.files.thumbnail) uploadedImages.push(...req.files.thumbnail);
+        
+        if (uploadedImages.length > 0) {
+          // Extract public_ids from uploaded files if they were uploaded to Cloudinary
+          // This is a simplified version - you'd need to track which files were successfully uploaded
+        }
+      } catch (cleanupError) {
+        console.error(`[${requestId}] Error during cleanup:`, cleanupError);
+      }
+    }
     
     if (error.code === 11000) {
       return res.status(400).json({
@@ -1660,10 +1706,123 @@ const updateData = {
     
     logAudit('ERROR', 'GIG', 'UPDATE', req.user._id, { 
       id: req.params.id, 
-      error: error.message 
+      error: error.message,
+      stack: error.stack
     });
+    
     next(error);
   }
+};
+
+// Helper function for parsing multipart form data
+const parseMultipartFormData = async (req) => {
+  const data = {};
+  
+  // Parse simple text fields
+  const textFields = [
+    'title', 'fullName', 'oauthEmail', 'country', 'phone', 'projectCategory', 
+    'subcategory', 'description', 'currency', 'timeline', 'timelineUnit', 
+    'communication', 'urgency', 'visibility', 'status', 'version',
+    'removeImages'  // For removing specific images
+  ];
+  
+  textFields.forEach(field => {
+    if (req.body[field] !== undefined && req.body[field] !== '') {
+      data[field] = req.body[field];
+    }
+  });
+  
+  // Parse budget
+  if (req.body.budget !== undefined && req.body.budget !== '') {
+    const budgetNum = parseFloat(req.body.budget);
+    if (!isNaN(budgetNum)) {
+      data.budget = budgetNum;
+    }
+  }
+  
+  // Parse array fields
+  ['skillsRequired', 'deliverables', 'removeImages'].forEach(field => {
+    const values = [];
+    
+    // Check for indexed format
+    const arrayPattern = new RegExp(`^${field}\\[\\d+\\]$`);
+    Object.keys(req.body).forEach(key => {
+      if (arrayPattern.test(key)) {
+        const value = req.body[key];
+        if (value && value.trim()) {
+          values.push(value.trim());
+        }
+      }
+    });
+    
+    // If no indexed values, check direct field
+    if (values.length === 0 && req.body[field]) {
+      const value = req.body[field];
+      if (Array.isArray(value)) {
+        values.push(...value);
+      } else if (typeof value === 'string') {
+        values.push(...value.split(',').map(item => item.trim()).filter(item => item));
+      }
+    }
+    
+    if (values.length > 0) {
+      data[field] = values;
+    }
+  });
+  
+  // Sanitize the data
+  return sanitizeGigInput(data);
+};
+
+// Unified image operations handler
+const handleImageOperations = async (req, gig) => {
+  const operations = {
+    images: [],
+    thumbnail: null,
+    imagesToDelete: []
+  };
+  
+  const existingImages = gig.images || [];
+  
+  // Handle thumbnail upload
+  if (req.files.thumbnail && req.files.thumbnail.length > 0) {
+    console.log('Processing thumbnail upload');
+    const thumbnailResult = await uploadGigThumbnail(req.files.thumbnail[0], gig._id);
+    if (thumbnailResult) {
+      operations.thumbnail = thumbnailResult;
+      
+      // Check if this image already exists
+      const isDuplicate = existingImages.some(img => img.public_id === thumbnailResult.public_id);
+      if (!isDuplicate) {
+        operations.images.push(thumbnailResult);
+      }
+    }
+  }
+  
+  // Handle regular image uploads
+  if (req.files.images && req.files.images.length > 0) {
+    console.log(`Processing ${req.files.images.length} image uploads`);
+    const uploadedImages = await uploadGigImages(req.files.images, gig._id);
+    
+    // Filter out duplicates
+    const newImages = uploadedImages.filter(newImg => 
+      !existingImages.some(existing => existing.public_id === newImg.public_id)
+    );
+    
+    operations.images.push(...newImages);
+  }
+  
+  // Validate total images don't exceed limit
+  const totalImages = existingImages.length + operations.images.length;
+  if (totalImages > 10) {
+    // Clean up uploaded images
+    if (operations.images.length > 0) {
+      await deleteCloudinaryImages(operations.images);
+    }
+    throw new Error('Cannot have more than 10 images. Current: ' + existingImages.length);
+  }
+  
+  return operations;
 };
 const getGigsBySubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -2228,32 +2387,33 @@ const uploadThumbnail = async (req, res, next) => {
   }
 };
 
-// Delete Gig
 const deleteGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  console.log('[DELETE GIG] Received request:', {
+  
+  console.log('[DELETE GIG] Request:', {
+    requestId,
     id: req.params.id,
-    params: req.params,
-    query: req.query,
-    user: req.user?.email
+    user: req.user?.email,
+    role: req.user?.role,
+    query: req.query
   });
+  
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
 
-    console.log('[DELETE GIG] Validating ID:', id);
-    
-    // Improved ID validation
-    if (!id || id === '[object Object]' || id === 'undefined' || id === 'null') {
+    // Validate ID
+    if (!id || id === 'undefined' || id === 'null' || id === '[object Object]') {
       console.error('[DELETE GIG] Invalid ID format:', id);
       return res.status(400).json({
         success: false,
-        message: 'Invalid gig ID',
+        message: 'Invalid gig ID format',
         code: 'INVALID_ID',
         requestId
       });
     }
+    
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -2262,11 +2422,15 @@ const deleteGig = async (req, res, next) => {
         requestId
       });
     }
- console.log('[DELETE GIG] Looking for gig with ID:', id);
-    const gig = await Gig.findById(id);
+
+    // Find the gig with necessary relations
+    console.log(`[${requestId}] Finding gig: ${id}`);
+    const gig = await Gig.findById(id)
+      .populate('projectCategory', '_id name')
+      .populate('subcategory', '_id name');
     
     if (!gig) {
-      console.error('[DELETE GIG] Gig not found:', id);
+      console.error(`[${requestId}] Gig not found: ${id}`);
       return res.status(404).json({
         success: false,
         message: 'Gig not found',
@@ -2275,6 +2439,7 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
+    // Check if already deleted
     if (gig.deletedAt) {
       return res.status(400).json({
         success: false,
@@ -2284,6 +2449,7 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
+    // Authorization check
     const isOwner = gig.createdBy.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
     
@@ -2297,88 +2463,169 @@ const deleteGig = async (req, res, next) => {
       });
     }
 
-    if (force !== 'true' && gig.status === 'in_progress') {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete gig that is in progress',
-        code: 'GIG_IN_PROGRESS',
-        requestId
-      });
+    // Check if gig can be deleted
+    if (force !== 'true') {
+      const cannotDeleteStatuses = ['in_progress', 'assigned', 'completed'];
+      if (cannotDeleteStatuses.includes(gig.status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot delete gig with status: ${gig.status}`,
+          code: 'GIG_NOT_DELETABLE',
+          requestId
+        });
+      }
     }
 
     let result;
     const now = new Date();
     
+    // Permanent deletion (admin only)
     if (permanent === 'true' && isAdmin) {
-      if (gig.status === 'open') {
-        await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
-      }
-      // Removed Bid and Message deletion as requested
+      console.log(`[${requestId}] Permanent delete requested by admin`);
       
+      // Decrement category counts if gig was open
+      if (gig.status === 'open') {
+        try {
+          await mongoose.model('Category').decrementGigsCount(gig.projectCategory._id);
+          console.log(`[${requestId}] Decremented category count: ${gig.projectCategory._id}`);
+          
+          if (gig.subcategory) {
+            await mongoose.model('Subcategory').decrementGigsCount(gig.subcategory._id);
+            console.log(`[${requestId}] Decremented subcategory count: ${gig.subcategory._id}`);
+          }
+        } catch (error) {
+          console.error(`[${requestId}] Error decrementing counts:`, error);
+          // Continue with deletion even if count decrement fails
+        }
+      }
+      
+      // Delete images from Cloudinary
+      try {
+        const imagesToDelete = [];
+        
+        if (gig.thumbnail && gig.thumbnail.public_id) {
+          imagesToDelete.push({ public_id: gig.thumbnail.public_id });
+        }
+        
+        if (gig.images && gig.images.length > 0) {
+          gig.images.forEach(img => {
+            if (img.public_id) {
+              imagesToDelete.push({ public_id: img.public_id });
+            }
+          });
+        }
+        
+        if (imagesToDelete.length > 0) {
+          await deleteCloudinaryImages(imagesToDelete);
+          console.log(`[${requestId}] Deleted ${imagesToDelete.length} images from Cloudinary`);
+        }
+      } catch (error) {
+        console.error(`[${requestId}] Error deleting images:`, error);
+        // Continue with deletion even if image deletion fails
+      }
+      
+      // Perform hard delete
       result = await Gig.deleteOne({ _id: id });
       
+      if (result.deletedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Gig not found during deletion',
+          code: 'DELETE_FAILED',
+          requestId
+        });
+      }
+      
       logAudit('PERMANENT_DELETE', 'GIG', id, req.user._id, {
-        title: gig.title || 'Unknown',
-        createdBy: gig.createdBy,
+        title: gig.title,
+        status: gig.status,
         force: force === 'true'
       });
       
-      const responseTime = Date.now() - startTime;
-      
-      return res.json({
-        success: true,
-        message: 'Gig permanently deleted',
-        requestId,
-        timestamp: now.toISOString(),
-        responseTime: `${responseTime}ms`
-      });
     } else {
+      // Soft delete
+      console.log(`[${requestId}] Soft delete requested`);
+      
+      // Decrement category counts if gig was open
+      if (gig.status === 'open') {
+        try {
+          await mongoose.model('Category').decrementGigsCount(gig.projectCategory._id);
+          console.log(`[${requestId}] Decremented category count for soft delete`);
+          
+          if (gig.subcategory) {
+            await mongoose.model('Subcategory').decrementGigsCount(gig.subcategory._id);
+            console.log(`[${requestId}] Decremented subcategory count for soft delete`);
+          }
+        } catch (error) {
+          console.error(`[${requestId}] Error decrementing counts for soft delete:`, error);
+        }
+      }
+      
+      // Update gig with soft delete fields
       result = await Gig.findByIdAndUpdate(
         id,
         {
           isActive: false,
+          status: gig.status === 'open' ? 'closed' : gig.status,
           deletedAt: now,
           deletedBy: req.user._id,
-          lastUpdatedBy: req.user._id
+          lastUpdatedBy: req.user._id,
+          $inc: { version: 1 }
         },
         {
           runValidators: false,
-          new: true
+          new: true,
+          select: '_id title slug status isActive deletedAt'
         }
       );
       
-      if (gig.status === 'open') {
-        await mongoose.model('Category').decrementGigsCount(gig.projectCategory);
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          message: 'Gig not found during soft delete',
+          code: 'SOFT_DELETE_FAILED',
+          requestId
+        });
       }
       
       logAudit('SOFT_DELETE', 'GIG', id, req.user._id, {
-        title: gig.title || 'Unknown',
-        createdBy: gig.createdBy
-      });
-      
-      // Invalidate cache after deletion
-      await invalidateGigCache(id);
-      
-      const responseTime = Date.now() - startTime;
-      
-      return res.json({
-        success: true,
-        message: 'Gig deleted successfully',
-        data: {
-          _id: gig._id,
-          title: gig.title || 'Unknown',
-          slug: gig.slug,
-          isActive: false,
-          deletedAt: now
-        },
-        requestId,
-        timestamp: now.toISOString(),
-        responseTime: `${responseTime}ms`
+        title: gig.title,
+        status: gig.status
       });
     }
+    
+    // Invalidate cache
+    await invalidateGigCache(id);
+    
+    const responseTime = Date.now() - startTime;
+    console.log(`[${requestId}] Delete completed in ${responseTime}ms`);
+    
+    res.json({
+      success: true,
+      message: permanent === 'true' ? 'Gig permanently deleted' : 'Gig deleted successfully',
+      data: permanent === 'true' ? null : result,
+      requestId,
+      timestamp: now.toISOString(),
+      responseTime: `${responseTime}ms`
+    });
 
   } catch (error) {
-    console.error('Delete gig error:', error);
+    console.error(`[${requestId}] Delete gig error:`, error);
+    
+    const errorResponse = {
+      success: false,
+      message: 'Failed to delete gig',
+      code: 'DELETE_ERROR',
+      requestId,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (error.name === 'CastError') {
+      errorResponse.message = 'Invalid gig ID format';
+      errorResponse.code = 'INVALID_ID';
+      return res.status(400).json(errorResponse);
+    }
+    
     logAudit('ERROR', 'GIG', 'DELETE', req.user._id, { 
       id: req.params.id, 
       error: error.message 
@@ -2813,6 +3060,224 @@ const exportGigs = async (req, res, next) => {
     next(error);
   }
 };
+const errorHandler = (err, req, res, next) => {
+  const requestId = req.requestId || generateRequestId();
+  
+  console.error(`[ERROR_HANDLER] ${requestId}:`, {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    user: req.user?._id
+  });
+  
+  // Mongoose validation errors
+  if (err.name === 'ValidationError') {
+    const errors = Object.values(err.errors).map(e => ({
+      field: e.path,
+      message: e.message,
+      type: e.kind
+    }));
+    
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors,
+      code: 'VALIDATION_ERROR',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Duplicate key error
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyPattern)[0];
+    return res.status(409).json({
+      success: false,
+      message: `${field} already exists`,
+      code: 'DUPLICATE_KEY',
+      field,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Cast error (invalid ObjectId)
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid ${err.path}: ${err.value}`,
+      code: 'INVALID_ID',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Cloudinary errors
+  if (err.http_code && err.http_code >= 400) {
+    return res.status(400).json({
+      success: false,
+      message: 'Image upload failed',
+      code: 'CLOUDINARY_ERROR',
+      details: err.message,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // JWT errors
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication failed',
+      code: 'AUTH_ERROR',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Rate limit errors
+  if (err.name === 'RateLimitError') {
+    return res.status(429).json({
+      success: false,
+      message: 'Too many requests',
+      code: 'RATE_LIMIT_EXCEEDED',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Multer errors
+  if (err.name === 'MulterError') {
+    return res.status(400).json({
+      success: false,
+      message: `File upload error: ${err.message}`,
+      code: 'UPLOAD_ERROR',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Default error
+  const statusCode = err.statusCode || 500;
+  const message = process.env.NODE_ENV === 'production' 
+    ? 'Internal server error' 
+    : err.message;
+  
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    code: 'INTERNAL_ERROR',
+    requestId,
+    timestamp: new Date().toISOString(),
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+};
+// Add this to gig.controller.js
+const healthCheck = async (req, res) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  const checks = {
+    database: { status: 'unknown', latency: 0 },
+    cache: { status: 'unknown', latency: 0 },
+    cloudinary: { status: 'unknown', latency: 0 },
+    storage: { status: 'unknown', latency: 0 }
+  };
+  
+  try {
+    // Check database connection
+    const dbStart = Date.now();
+    await mongoose.connection.db.admin().ping();
+    checks.database = {
+      status: 'healthy',
+      latency: Date.now() - dbStart,
+      connection: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    };
+    
+    // Check cache connection
+    const cacheStart = Date.now();
+    try {
+      const cache = require('../utils/cache.js');
+      const ping = await cache.ping();
+      checks.cache = {
+        status: ping === 'PONG' ? 'healthy' : 'unhealthy',
+        latency: Date.now() - cacheStart
+      };
+    } catch (cacheErr) {
+      checks.cache = {
+        status: 'unhealthy',
+        latency: Date.now() - cacheStart,
+        error: cacheErr.message
+      };
+    }
+    
+    // Check Cloudinary configuration
+    if (process.env.CLOUDINARY_CLOUD_NAME) {
+      checks.cloudinary = {
+        status: 'configured',
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME
+      };
+    } else {
+      checks.cloudinary = {
+        status: 'not_configured',
+        warning: 'Cloudinary not configured'
+      };
+    }
+    
+    // Check file storage
+    const storageDir = path.join(__dirname, '../../public/uploads/temp');
+    const storageStart = Date.now();
+    try {
+      fs.accessSync(storageDir, fs.constants.W_OK);
+      checks.storage = {
+        status: 'healthy',
+        latency: Date.now() - storageStart,
+        writable: true
+      };
+    } catch (storageErr) {
+      checks.storage = {
+        status: 'unhealthy',
+        latency: Date.now() - storageStart,
+        error: storageErr.message,
+        writable: false
+      };
+    }
+    
+    // Determine overall status
+    const allHealthy = Object.values(checks).every(check => 
+      check.status === 'healthy' || check.status === 'configured' || check.status === 'not_configured'
+    );
+    
+    const status = allHealthy ? 'healthy' : 'degraded';
+    const responseTime = Date.now() - startTime;
+    
+    res.status(allHealthy ? 200 : 503).json({
+      status,
+      checks,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      responseTime: `${responseTime}ms`,
+      requestId,
+      version: process.env.npm_package_version || '1.0.0'
+    });
+    
+  } catch (error) {
+    console.error(`[HEALTH_CHECK_ERROR] ${requestId}:`, error);
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.status(503).json({
+      status: 'unhealthy',
+      checks,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`,
+      requestId
+    });
+  }
+};
 
 module.exports = {
   createGig,
@@ -2828,5 +3293,7 @@ module.exports = {
   removeImage,
   setThumbnail,
   uploadThumbnail,
-  getGigsBySubcategory
+  getGigsBySubcategory,
+  errorHandler,
+  healthCheck
 };

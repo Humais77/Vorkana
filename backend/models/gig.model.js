@@ -471,57 +471,61 @@ gigSchema.pre('save', async function () {
   }
 });
 
-// Post-save middleware - update category and subcategory counts
-gigSchema.post('save', async function (doc) {
+gigSchema.pre('save', async function() {
+  // Store the original status for comparison
+  if (this.isModified('status')) {
+    this._originalStatus = this._originalStatus || this.status;
+  }
+});
+gigSchema.pre('save',async function() {
+  // Additional security checks
+  if (this.title && this.title.length > 200) {
+    return next(new Error('Title exceeds maximum length'));
+  }
+  
+  // Prevent NoSQL injection
+  const dangerousChars = /[$]|\.\./;
+  Object.keys(this.toObject()).forEach(key => {
+    if (typeof this[key] === 'string' && dangerousChars.test(this[key])) {
+      return next(new Error(`Potentially dangerous characters in ${key}`));
+    }
+  });
+});
+
+// Update post-save middleware
+gigSchema.post('save', async function(doc) {
   try {
-    const Category = mongoose.model('Category');
-    const Subcategory = mongoose.model('Subcategory');
-
-    if (doc.isNew && doc.status === 'open') {
-      // Increment category count
-      await Category.incrementGigsCount(doc.projectCategory);
-      
-      // Increment subcategory count if exists
-      if (doc.subcategory) {
-        await Subcategory.incrementGigsCount(doc.subcategory);
-      }
-    } else if (this.isModified('status')) {
-      const wasOpen = this._originalStatus === 'open';
-      const isNowOpen = doc.status === 'open';
-
-      if (wasOpen && !isNowOpen) {
-        // Decrement category count
-        await Category.decrementGigsCount(doc.projectCategory);
-        
-        // Decrement subcategory count if exists
-        if (doc.subcategory) {
-          await Subcategory.decrementGigsCount(doc.subcategory);
-        }
-      } else if (!wasOpen && isNowOpen) {
-        // Increment category count
-        await Category.incrementGigsCount(doc.projectCategory);
-        
-        // Increment subcategory count if exists
-        if (doc.subcategory) {
-          await Subcategory.incrementGigsCount(doc.subcategory);
-        }
-      }
+    // Only update counts if status changed
+    if (doc._originalStatus !== undefined && doc._originalStatus !== doc.status) {
+      await updateGigCounts(doc, doc._originalStatus);
+      // Clear the stored status
+      delete doc._originalStatus;
+    }
+    
+    // Handle new gig creation
+    if (this.isNew && doc.status === 'open') {
+      await updateGigCounts(doc, null);
     }
   } catch (error) {
-    console.error('Error updating category/subcategory gig count:', error);
+    console.error('Error in gig post-save middleware:', error);
   }
 });
 
-// Post-delete middleware - decrement counts
-gigSchema.post('findOneAndDelete', async function (doc) {
+// Update post-delete middleware
+gigSchema.post('findOneAndDelete', async function(doc) {
   if (doc && doc.status === 'open') {
     try {
+      const Category = mongoose.model('Category');
+      const Subcategory = mongoose.model('Subcategory');
+      
       // Decrement category count
-      await mongoose.model('Category').decrementGigsCount(doc.projectCategory);
+      await Category.updateGigsCount(doc.projectCategory, -1);
+      console.log(`Decremented category ${doc.projectCategory} gig count on delete`);
       
       // Decrement subcategory count if exists
       if (doc.subcategory) {
-        await mongoose.model('Subcategory').decrementGigsCount(doc.subcategory);
+        await Subcategory.decrementGigsCount(doc.subcategory);
+        console.log(`Decremented subcategory ${doc.subcategory} gig count on delete`);
       }
     } catch (error) {
       console.error('Error decrementing gig count on delete:', error);
@@ -633,7 +637,46 @@ gigSchema.statics.incrementViews = async function(gigId) {
     { new: true }
   );
 };
-
+const updateGigCounts = async function(doc, oldStatus) {
+  try {
+    const Category = mongoose.model('Category');
+    const Subcategory = mongoose.model('Subcategory');
+    
+    // Get the current status
+    const currentDoc = doc || this;
+    const wasOpen = oldStatus === 'open';
+    const isNowOpen = currentDoc.status === 'open';
+    
+    console.log(`Gig Count Update: ID=${currentDoc._id}, Old=${oldStatus}, New=${currentDoc.status}, Category=${currentDoc.projectCategory}`);
+    
+    // Only update counts if category exists
+    if (currentDoc.projectCategory) {
+      // Update category count
+      if (!wasOpen && isNowOpen) {
+        // Gig became open - increment count
+        await Category.updateGigsCount(currentDoc.projectCategory, 1);
+        console.log(`Incremented category ${currentDoc.projectCategory} gig count`);
+      } else if (wasOpen && !isNowOpen) {
+        // Gig became closed/assigned - decrement count
+        await Category.updateGigsCount(currentDoc.projectCategory, -1);
+        console.log(`Decremented category ${currentDoc.projectCategory} gig count`);
+      }
+      
+      // Update subcategory count if exists
+      if (currentDoc.subcategory) {
+        if (!wasOpen && isNowOpen) {
+          await Subcategory.incrementGigsCount(currentDoc.subcategory);
+          console.log(`Incremented subcategory ${currentDoc.subcategory} gig count`);
+        } else if (wasOpen && !isNowOpen) {
+          await Subcategory.decrementGigsCount(currentDoc.subcategory);
+          console.log(`Decremented subcategory ${currentDoc.subcategory} gig count`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error updating gig counts:', error.message);
+  }
+};
 const Gig = mongoose.model('Gig', gigSchema);
 
 module.exports = Gig;

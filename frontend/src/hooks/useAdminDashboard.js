@@ -13,82 +13,74 @@ export const useAdminDashboard = () => {
       try {
         const response = await adminAPI.getDashboardStats();
         
-        if (response.data.success) {
-          const stats = response.data.data;
-          
-          // Extract subcategory stats from categories or directly from stats
-          const subcategoryStats = stats.categories || {};
-          const subcategories = stats.subcategories || {};
-          
-          // Store in Zustand with subcategory support
-          setDashboardStats({
-            totalUsers: stats.overview?.totalUsers || 0,
-            totalCategories: stats.categories?.totalCategories || 0,
-            totalSubcategories: subcategoryStats.totalSubcategories || 
-                               subcategories.total || 
-                               stats.categories?.totalSubcategories || 0,
-            totalServices: stats.services?.totalServices || 0,
-            totalGigs: stats.gigs?.totalGigs || 0,
-            activeUsers: stats.overview?.activeUsers || 0,
-            activeCategories: stats.categories?.activeCategories || 0,
-            activeSubcategories: subcategoryStats.activeSubcategories || 
-                                subcategories.active || 
-                                stats.categories?.activeSubcategories || 0,
-            activeServices: stats.services?.activeServices || 0,
-            activeGigs: stats.gigs?.activeGigs || 0,
-            lastUpdated: new Date().toISOString()
-          });
-          
-          return stats;
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Failed to fetch stats');
         }
-        
-        throw new Error(response.data.message || 'Failed to fetch dashboard stats');
-      } catch (error) {
-        console.error('Dashboard error:', error);
-        
-        // Return empty stats with subcategory fields
-        const emptyStats = {
-          overview: {
-            totalUsers: 0,
-            activeUsers: 0
-          },
-          categories: {
-            totalCategories: 0,
-            activeCategories: 0,
-            totalSubcategories: 0,
-            activeSubcategories: 0
-          },
-          services: {
-            totalServices: 0,
-            activeServices: 0
-          },
-          gigs: {
-            totalGigs: 0,
-            activeGigs: 0
-          }
+
+        const stats = response.data.data;
+
+        console.log('[DASHBOARD STATS] Raw data:', stats); // ← ADD THIS FOR DEBUGGING
+
+        // Extract safely with fallbacks
+        const overview = stats.overview || {};
+        const categories = stats.categories || {};
+        const services = stats.services || {};
+        const gigs = stats.gigs || {};
+
+        const dashboardData = {
+          totalUsers: overview.totalUsers || 0,
+          activeUsers: overview.activeUsers || 0,
+          
+          totalCategories: categories.totalCategories || 0,
+          activeCategories: categories.activeCategories || 0,
+          
+          totalSubcategories: categories.totalSubcategories || 0,
+          activeSubcategories: categories.activeSubcategories || 0,
+          
+          totalServices: services.totalServices || 0,
+          activeServices: services.activeServices || 0,
+          
+          totalGigs: gigs.totalGigs || 0,
+          activeGigs: gigs.activeGigs || 0,
+          
+          lastUpdated: new Date().toISOString()
         };
-        
-        setDashboardStats({
+
+        console.log('[DASHBOARD STATS] Processed for store:', dashboardData);
+
+        // Update Zustand store
+        setDashboardStats(dashboardData);
+
+        return stats; // Return full stats if needed elsewhere
+      } catch (error) {
+        console.error('Dashboard fetch error:', error);
+
+        // Fallback: zero everything
+        const fallback = {
           totalUsers: 0,
-          totalCategories: 0,
-          totalSubcategories: 0,
-          totalServices: 0,
-          totalGigs: 0,
           activeUsers: 0,
+          totalCategories: 0,
           activeCategories: 0,
+          totalSubcategories: 0,
           activeSubcategories: 0,
+          totalServices: 0,
           activeServices: 0,
+          totalGigs: 0,
           activeGigs: 0,
           lastUpdated: new Date().toISOString()
-        });
-        
-        return emptyStats;
+        };
+
+        setDashboardStats(fallback);
+
+        toast.error('Failed to load dashboard stats');
+        return fallback;
       }
     },
-    staleTime: 60000, // 1 minute
-    retry: 2,
+    staleTime: 60000,
+    retry: 3,
+    refetchOnWindowFocus: true,
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to load dashboard');
+      toast.error('Dashboard loading failed');
     }
   });
 };
@@ -222,8 +214,15 @@ export const useUpdateUser = () => {
         return response;
       } catch (error) {
         console.error('[USE UPDATE USER] Error:', error);
-        console.error('[USE UPDATE USER] Error response:', error.response?.data);
-        throw error;
+        
+        // Re-throw the error with more context
+        throw {
+          ...error,
+          userFriendlyMessage: error.response?.data?.message || 
+                              error.response?.data?.error || 
+                              'Failed to update user. Please try again.',
+          validationErrors: error.response?.data?.errors || []
+        };
       }
     },
     onMutate: async ({ id, data }) => {
@@ -571,13 +570,41 @@ export const useUpdateService = () => {
     }
   });
 };
-
 export const useDeleteService = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => adminAPI.deleteService(id),
-    onMutate: async (id) => {
+    mutationFn: async (params) => {
+      // Handle both string ID and object with options
+      let id;
+      let options = {};
+      
+      if (typeof params === 'string') {
+        id = params;
+      } else if (params && typeof params === 'object') {
+        id = params.id || params._id;
+        options = {
+          permanent: params.permanent || false,
+          force: params.force || false
+        };
+      } else {
+        throw new Error('Invalid parameters for delete service');
+      }
+      
+      // Validate ID
+      if (!id || id === 'undefined' || id === 'null') {
+        throw new Error('Invalid service ID');
+      }
+      
+      console.log('[USE DELETE SERVICE] Deleting with:', { id, options });
+      return await adminAPI.deleteService(id, options);
+    },
+    onMutate: async (params) => {
+      // Extract ID from params (could be string or object)
+      const id = typeof params === 'string' ? params : (params?.id || params?._id);
+      
+      if (!id) return;
+      
       await queryClient.cancelQueries(['admin', 'services']);
       
       const previousServices = queryClient.getQueryData(['admin', 'services']);
@@ -1320,15 +1347,25 @@ export const useRecentActivities = (limit = 10) => {
     queryKey: ['admin', 'dashboard', 'activities', limit],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getRecentActivities(limit);
-        return response.data;
+        const response = await adminAPI.getRecentActivity(limit);
+        return response;
       } catch (error) {
         console.error('Recent activities error:', error);
-        return { data: [] };
+        // Return empty array on error
+        return { 
+          data: [],
+          success: false,
+          message: error.message 
+        };
       }
     },
-    staleTime: 30000,
-    retry: 2
+    staleTime: 30000, // 30 seconds
+    retry: 1,
+    refetchInterval: 60000, // Refetch every minute for real-time updates
+    refetchOnWindowFocus: true,
+    onError: (error) => {
+      console.error('Failed to fetch recent activities:', error);
+    }
   });
 };
 
@@ -1365,4 +1402,62 @@ export const useSubcategoriesByCategory = (categoryId, params = {}) => {
     enabled: !!categoryId,
     staleTime: 300000,
   });
+};
+export const useRepairCategoryCounts = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => adminAPI.repairCategoryCounts(),
+    onMutate: () => {
+      toast.loading('Repairing category counts...', {
+        id: 'repair-counts'
+      });
+    },
+    onSuccess: (response) => {
+      toast.dismiss('repair-counts');
+      
+      if (response.data.success) {
+        toast.success(response.data.message || 'Category counts repaired successfully');
+        
+        // Invalidate and refetch all relevant queries
+        queryClient.invalidateQueries(['admin', 'categories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+        queryClient.invalidateQueries(['admin', 'categories', 'stats']);
+        
+        const result = response.data.result;
+        toast.success(`Repaired ${result.repairedCount} out of ${result.totalCategories} categories`, {
+          duration: 5000
+        });
+      } else {
+        toast.error(response.data.message || 'Repair failed');
+      }
+    },
+    onError: (error) => {
+      toast.dismiss('repair-counts');
+      toast.error(error.response?.data?.message || 'Failed to repair category counts');
+    }
+  });
+};
+export const useRepairAllCounts = () => {
+  const repairCategory = useRepairCategoryCounts();
+  const repairSubcategory = useRepairSubcategoryCounts();
+
+  const repairAll = async () => {
+    try {
+      // Repair categories first, then subcategories
+      await repairCategory.mutateAsync();
+      await repairSubcategory.mutateAsync();
+      
+      return { success: true, message: 'All counts repaired successfully' };
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  return {
+    mutate: repairAll,
+    isLoading: repairCategory.isLoading || repairSubcategory.isLoading,
+    isError: repairCategory.isError || repairSubcategory.isError,
+    error: repairCategory.error || repairSubcategory.error
+  };
 };
