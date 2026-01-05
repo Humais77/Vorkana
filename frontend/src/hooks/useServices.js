@@ -293,45 +293,49 @@ export const useCreateService = () => {
   });
 };
 
-// FIXED: Correct useUpdateService hook
 export const useUpdateService = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, data, files }) => {
-      console.log('useUpdateService called with:', { id, hasData: !!data, hasFiles: !!files });
-      
-      // If files is FormData, use it directly with our axiosInstance
-      if (files instanceof FormData) {
-        console.log('Sending FormData to server');
-        const response = await axiosInstance.put(`/api/services/${id}`, files, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-        return response.data;
-      }
-      
-      // Otherwise use the servicesAPI.update method
-      console.log('Sending JSON data to server');
-      return servicesAPI.update(id, data);
+    mutationFn: async ({ id, data, headers }) => {
+      const response = await axiosInstance.put(`api/services/${id}`, data, {
+        headers: headers || {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
     },
     onSuccess: (data, variables) => {
-      console.log('Update successful:', data);
-      if (data.success) {
-        queryClient.invalidateQueries(['myServices']);
-        queryClient.invalidateQueries(['services']);
-        queryClient.invalidateQueries(['service', variables.id]);
-        toast.success(data.message || 'Service updated successfully!');
+      // Invalidate and refetch
+      queryClient.invalidateQueries({
+        queryKey: ['service', variables.id]
+      });
+      
+      // Also invalidate service lists
+      queryClient.invalidateQueries({
+        queryKey: ['services']
+      });
+      
+      // Update the cache immediately with new data
+      if (data.service) {
+        queryClient.setQueryData(['service', variables.id], data.service);
       }
     },
     onError: (error) => {
-      console.error('Update service error:', error);
-      toast.error(error.message || 'Failed to update service');
-    },
+      // Handle version conflict specifically
+      if (error.response?.status === 409) {
+        const errorData = error.response.data;
+        
+        // You can trigger a refresh of the service data
+        if (errorData.code === 'VERSION_CONFLICT') {
+          queryClient.invalidateQueries({
+            queryKey: ['service', variables.id]
+          });
+        }
+      }
+    }
   });
 };
-
 export const useDeleteService = () => {
   const queryClient = useQueryClient();
   

@@ -41,7 +41,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService, useUpdateService } from '../../../hooks/useServices';
 import { useCategories } from '../../../hooks/useCategories';
@@ -129,7 +129,7 @@ const EditService = () => {
 
   // Zustand stores
   const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
-
+const queryClient = useQueryClient();
   // TanStack Query hooks
   const {
     data: serviceData,
@@ -196,8 +196,6 @@ const EditService = () => {
   });
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [versionConflict, setVersionConflict] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Refs
@@ -231,9 +229,6 @@ const EditService = () => {
         navigate(`/services/${id}`);
         return;
       }
-
-      // Set current version
-      setCurrentVersion(service.version || 1);
 
       // Populate form
       setFormData({
@@ -269,29 +264,34 @@ const EditService = () => {
     }
   }, [serviceData, currentUser, id, navigate]);
 
-  // Handle successful update
   useEffect(() => {
-    if (updateSuccess && updatedServiceData) {
-      setSuccess(true);
-      toast.success(updatedServiceData.message || "Service updated successfully!");
+  if (updateSuccess && updatedServiceData) {
+    setSuccess(true);
+    toast.success(updatedServiceData.message || "Service updated successfully!");
 
-      // Refresh service data
-      refetchService();
+    // Invalidate the service cache BEFORE redirecting
+    queryClient.invalidateQueries({
+      queryKey: ['service', id]
+    });
+    
+    // Also invalidate any service lists that might contain this service
+    queryClient.invalidateQueries({
+      queryKey: ['services']
+    });
 
-      // Navigate back after delay
-      setTimeout(() => {
-        navigate(`/services/${id}`);
-      }, 2000);
-    }
-  }, [updateSuccess, updatedServiceData, navigate, id, refetchService]);
-
+    // Shorter delay for redirect
+    setTimeout(() => {
+      navigate(`/services/${id}`, {
+        // Pass navigation state to trigger refresh
+        state: { refresh: true }
+      });
+    }, 500); // Reduced from 2000ms to 500ms
+  }
+}, [updateSuccess, updatedServiceData, navigate, id, queryClient]);
   // Handle update errors
   useEffect(() => {
     if (updateError) {
-      if (updateError.message?.includes('version') || updateError.code === 'VERSION_CONFLICT') {
-        setVersionConflict(true);
-        toast.error('This service was modified by another user. Please refresh and try again.');
-      } else if (updateError.message?.includes('SUBCATEGORY')) {
+       if (updateError.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Please select a valid subcategory' }));
         toast.error('Subcategory validation failed');
       } else {
@@ -599,15 +599,6 @@ const EditService = () => {
 const handleSubmit = useCallback(async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
-  setVersionConflict(false);
-
-  // Check version conflict
-  if (serviceData?.version && serviceData.version > currentVersion) {
-    setVersionConflict(true);
-    toast.error('Service data is outdated. Please refresh.');
-    setIsSubmitting(false);
-    return;
-  }
 
   if (!isAuthenticated) {
     toast.error("Please sign in to update services");
@@ -621,23 +612,17 @@ const handleSubmit = useCallback(async (e) => {
   }
 
   try {
-    const shortDesc = formData.shortDescription?.trim() || ''; // FIXED: Add safe access
-    const finalShortDesc = shortDesc.length >= 20 ? shortDesc : 
-      (formData.description ? formData.description.substring(0, 150) + '...' : 
-       'Professional service');
-
-    const finalSubcategory = formData.subcategory || null;
-
-    // Create FormData
+    // Create FormData properly
     const formDataToSend = new FormData();
 
-    // Append all text data as JSON - FIXED: Use safe trimming
+    // Prepare JSON data WITHOUT version
     const jsonData = {
       title: (formData.title || '').trim(),
       description: (formData.description || '').trim(),
-      shortDescription: finalShortDesc,
+      shortDescription: formData.shortDescription?.trim() || 
+        (formData.description ? formData.description.substring(0, 150) + '...' : ''),
       category: formData.category,
-      subcategory: finalSubcategory,
+      subcategory: formData.subcategory || null,
       price: parseFloat(formData.price || 0),
       currency: formData.currency || "USD",
       deliveryTime: parseInt(formData.deliveryTime || 1),
@@ -650,48 +635,46 @@ const handleSubmit = useCallback(async (e) => {
       faqs: formData.faqs || [],
       metaTitle: (formData.metaTitle || '').trim(),
       metaDescription: (formData.metaDescription || '').trim(),
-      status: formData.status || "active",
-      version: currentVersion
+      status: formData.status || "active"
+      // REMOVED: version: currentVersion
     };
 
-    // Add existing thumbnail and images to JSON if not being replaced
+    console.log('Submitting WITHOUT version field');
+
+    // Add thumbnail if not being replaced
     if (!thumbnailFile && existingThumbnail) {
       jsonData.thumbnail = existingThumbnail;
-      console.log('Including existing thumbnail in JSON');
     }
 
+    // Add existing images if not being replaced
     if (existingImages.length > 0 && uploadedImages.length === 0) {
       jsonData.images = existingImages;
-      console.log(`Including ${existingImages.length} existing images in JSON`);
     }
 
     // Append JSON data
     formDataToSend.append('data', JSON.stringify(jsonData));
-    console.log('JSON data appended to FormData');
 
     // Append thumbnail file if exists
     if (thumbnailFile && thumbnailFile.file) {
-      console.log('Appending thumbnail file:', thumbnailFile.file.name);
       formDataToSend.append('thumbnail', thumbnailFile.file);
     }
 
-    // Append new image files if exist
+    // Append new image files
     if (uploadedImages.length > 0) {
-      console.log(`Appending ${uploadedImages.length} image files`);
       uploadedImages.forEach((img, index) => {
         if (img.file) {
           formDataToSend.append('images', img.file);
-          console.log(`Appended image ${index + 1}: ${img.file.name}`);
         }
       });
     }
 
-    // Call updateService with FormData
-    console.log('Calling updateService API...');
-    updateService({
+    // Call updateService
+    await updateService({
       id: id,
-      data: jsonData, // Pass JSON data separately for reference
-      files: formDataToSend // Pass FormData for files
+      data: formDataToSend,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     });
 
   } catch (error) {
@@ -699,8 +682,7 @@ const handleSubmit = useCallback(async (e) => {
     toast.error(error.message || "Failed to update service");
     setIsSubmitting(false);
   }
-}, [formData, currentVersion, isAuthenticated, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, serviceData, validateForm, updateService]);
-
+}, [formData, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, validateForm, updateService, isAuthenticated]);
 
 
 
@@ -714,7 +696,7 @@ const handleSubmit = useCallback(async (e) => {
     setIsRefreshing(true);
     try {
       await refetchService();
-      setVersionConflict(false);
+    
       toast.success('Service data refreshed successfully!');
     } catch (error) {
       toast.error('Failed to refresh service data');
@@ -880,44 +862,6 @@ const handleSubmit = useCallback(async (e) => {
                   {allErrors.form && (
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
                       <p className="text-red-600 font-medium">{allErrors.form}</p>
-                    </div>
-                  )}
-
-                  {versionConflict && (
-                    <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-                      <div className="flex items-start">
-                        <AlertCircle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
-                        <div>
-                          <h3 className="font-semibold text-orange-800 mb-2">Version Conflict</h3>
-                          <p className="text-orange-700 mb-3">
-                            This service was modified by another user. Please refresh to get the latest version.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={handleRefreshService}
-                              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              Refresh Service Data
-                            </button>
-                            <button
-                              onClick={() => {
-                                setVersionConflict(false);
-                                toast('Continuing with current data', {
-                                  icon: '⚠️',
-                                  style: {
-                                    background: '#f59e0b',
-                                    color: 'white',
-                                  },
-                                });
-                              }}
-                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
-                            >
-                              Continue Anyway
-                            </button>
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   )}
 
@@ -1819,10 +1763,7 @@ const handleSubmit = useCallback(async (e) => {
                         <span className="text-emerald-100">New Thumbnail:</span>
                         <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">Current Version:</span>
-                        <span className="font-medium">{currentVersion}</span>
-                      </div>
+                      
                     </div>
                   </div>
 

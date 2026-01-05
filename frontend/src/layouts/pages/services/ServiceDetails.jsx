@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link ,useLocation} from 'react-router-dom';
 import { 
   Star, 
   Heart, 
@@ -45,6 +45,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Import Zustand stores and TanStack Query hooks
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -180,7 +181,9 @@ const SAFETY_ITEMS = [
 const ServiceDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  
+   const location = useLocation();
+   const queryClient = useQueryClient();
+   
   const { user, isAuthenticated } = useAuthStore();
   const { 
     data: service, 
@@ -188,7 +191,21 @@ const ServiceDetails = () => {
     error, 
     refetch 
   } = useService(id);
-
+useEffect(() => {
+    // Check if we're coming from edit with refresh flag
+    if (location.state?.refresh) {
+      // Clear any cached data for this service
+      queryClient.invalidateQueries({
+        queryKey: ['service', id]
+      });
+      
+      // Force a fresh refetch
+      refetch();
+      
+      // Clear the navigation state
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, id, queryClient, refetch, navigate, location.pathname]);
   // Local state
   const [isLiked, setIsLiked] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
