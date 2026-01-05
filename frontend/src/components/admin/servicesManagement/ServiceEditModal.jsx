@@ -100,7 +100,6 @@ const parseServiceData = (service) => {
     faqs: parseArrayField(service.faqs),
     packages: parseArrayField(service.packages),
     requirements: parseArrayField(service.requirements),
-    version: service.version || 1,
     images: parseArrayField(service.images)
   };
 };
@@ -136,7 +135,6 @@ const ServiceEditModal = memo(({
     faqs: [],
     packages: [],
     requirements: [],
-    version: 1,
     images: []
   });
   
@@ -393,17 +391,6 @@ const prepareFormData = useCallback(() => {
     }
   });
   
-  // ✅ CRITICAL FIX: Use service.version instead of formData.version
-  // Get the actual current version from the service object
-  const currentVersion = service?.version || 1;
-  formDataToSubmit.append('version', String(currentVersion));
-  
-  console.log('[DEBUG] Using version:', {
-    serviceVersion: service?.version,
-    formDataVersion: formData.version,
-    currentVersion,
-    serviceId: service?._id
-  });
   
   // Append boolean fields
   const booleanFields = ['isFeatured', 'isRecommended', 'isPopular'];
@@ -432,14 +419,6 @@ const prepareFormData = useCallback(() => {
   newImages.forEach((file, index) => {
     formDataToSubmit.append(`newImages`, file);
   });
-  
-  // Log form data for debugging (remove in production)
-  console.log('FormData being sent (WITH CORRECT VERSION):');
-  for (let [key, value] of formDataToSubmit.entries()) {
-    if (key !== 'newImages') { // Don't log file blobs
-      console.log(`${key}:`, value);
-    }
-  }
   
   return formDataToSubmit;
 }, [formData, imagesToRemove, newImages, service]); // ✅ Add service to dependencies
@@ -519,7 +498,6 @@ const prepareFormData = useCallback(() => {
       faqs: [],
       packages: [],
       requirements: [],
-      version: 1,
       images: []
     });
     setErrors({});
@@ -585,10 +563,7 @@ const prepareFormData = useCallback(() => {
               <FiStar className="h-4 w-4 mr-2 text-yellow-500" />
               <span className="font-medium">{service.rating?.toFixed(1) || '0.0'} rating</span>
             </div>
-            <div className="flex items-center text-sm text-gray-600">
-              <FiHash className="h-4 w-4 mr-2 text-blue-500" />
-              <span className="font-medium">Version {formData.version}</span>
-            </div>
+            
             <div className="flex items-center text-sm text-gray-600">
               <span className="font-medium">Created: {new Date(service.createdAt).toLocaleDateString()}</span>
             </div>

@@ -268,19 +268,7 @@ images: Joi.array()
     .messages({
       'array.max': 'Cannot upload more than 10 images',
     }),
-
-  thumbnail: Joi.alternatives().try(
-    // Accept string URLs
-    Joi.string()
-      .pattern(/^https?:\/\//)
-      .messages({
-        'string.pattern.base': 'Thumbnail must be a valid URL'
-      }),
-    // Accept thumbnail objects
-    imageObjectSchema
-  ).required().messages({
-    'any.required': 'Thumbnail is required'
-  }),
+thumbnail: Joi.any().optional(), 
 
   tags: Joi.array()
     .items(Joi.string().max(30).custom((value) => sanitizeText(value), 'XSS prevention'))
