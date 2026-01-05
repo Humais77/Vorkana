@@ -142,40 +142,21 @@ router.post("/logout",
 router.get("/verify-email/:token", 
   verifyEmail
 );
-router.get("/verify/:token", verifyEmailRedirect);
+router.get("/verify/:token", (req, res) => {
+  const { token } = req.params;
+  res.redirect(`${process.env.FRONTEND_URL}/verification/redirect?token=${token}`);
+});
 router.post("/resend-verification", 
   passwordResetLimiter,
   validateRequest({ body: { email: { type: 'string', format: 'email', required: true } } }),
   resendVerificationEmail
 );
+
 router.get("/verified-status", (req, res) => {
   const { token, status } = req.query;
   
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Verification Status - Vorkanna</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <script>
-        // Post message to parent window
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'email-verification',
-            token: '${token}',
-            status: '${status}'
-          }, '${process.env.FRONTEND_URL}');
-          window.close();
-        }
-      </script>
-    </head>
-    <body>
-      <p>Please close this window and return to the app.</p>
-    </body>
-    </html>
-  `;
-  
-  res.send(html);
+  // Simply redirect to frontend with query params
+  res.redirect(`${process.env.FRONTEND_URL}/verification/status?token=${token}&status=${status}`);
 });
 router.get("/check-verification", checkVerificationStatus);
 // ========== PASSWORD MANAGEMENT ROUTES ==========
@@ -185,7 +166,16 @@ router.post("/forgot-password",
   forgotPassword
 );
 
-router.get("/reset/redirect/:token", resetPasswordRedirect); // Add this line
+router.get("/reset/redirect/:token", (req, res) => {
+  const { token } = req.params;
+  
+  // Validate token format
+  if (!token || token.length !== 64) {
+    return res.redirect(`${process.env.FRONTEND_URL}/reset/invalid`);
+  }
+  
+  res.redirect(`${process.env.FRONTEND_URL}/reset/redirect?token=${token}`);
+}); // Add this line
 router.post("/reset-password", 
   passwordResetLimiter,
   resetPasswordValidation,

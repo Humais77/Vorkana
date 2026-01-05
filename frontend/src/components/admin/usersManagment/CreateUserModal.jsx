@@ -1,4 +1,4 @@
-// CreateUserModal.jsx - Enhanced with validation
+// CreateUserModal.jsx
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminAPI } from '../../../api/admin';
@@ -15,7 +15,7 @@ import {
   FiFileText,
   FiX,
   FiCheck,
-  FiAlertCircle
+  FiHash
 } from 'react-icons/fi';
 
 const CreateUserModal = ({ onClose, onSuccess }) => {
@@ -25,7 +25,6 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
     name: '',
     email: '',
     password: '',
-    confirmPassword: '',
     phoneNumber: '',
     dateOfBirth: '',
     gender: '',
@@ -47,19 +46,9 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
     }
   });
   const [newLanguage, setNewLanguage] = useState('');
-  const [errors, setErrors] = useState({});
-  const [touched, setTouched] = useState({});
-
-  const handleBlur = (field) => {
-    setTouched(prev => ({ ...prev, [field]: true }));
-    validateField(field, formData[field]);
-  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
-    // Clear error for this field
-    setErrors(prev => ({ ...prev, [name]: undefined }));
     
     if (name.startsWith('privacySettings.')) {
       const settingName = name.split('.')[1];
@@ -75,154 +64,11 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
         ...prev,
         [name]: type === 'checkbox' ? checked : value
       }));
-      
-      // Validate on change for specific fields
-      if (['name', 'email', 'password', 'phoneNumber'].includes(name)) {
-        validateField(name, value);
-      }
     }
-  };
-
-  const validateField = (field, value) => {
-    let error = '';
-    
-    switch (field) {
-      case 'name':
-        if (!value.trim()) {
-          error = 'Name is required';
-        } else if (value.trim().length < 2) {
-          error = 'Name must be at least 2 characters';
-        } else if (value.trim().length > 50) {
-          error = 'Name cannot exceed 50 characters';
-        }
-        break;
-        
-      case 'email':
-        if (!value.trim()) {
-          error = 'Email is required';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          error = 'Invalid email format';
-        }
-        break;
-        
-      case 'password':
-        if (!value) {
-          error = 'Password is required';
-        } else if (value.length < 8) {
-          error = 'Password must be at least 8 characters';
-        } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(value)) {
-          error = 'Password must contain uppercase, lowercase, number, and special character';
-        }
-        break;
-        
-      case 'confirmPassword':
-        if (value !== formData.password) {
-          error = 'Passwords do not match';
-        }
-        break;
-        
-      case 'phoneNumber':
-        if (value && value.trim() !== '') {
-          const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
-          const cleanPhone = value.replace(/[\s\-\(\)\.]/g, '');
-          if (!phoneRegex.test(value) || cleanPhone.length < 8 || cleanPhone.length > 16) {
-            error = 'Phone number should start with + and have 7-15 digits';
-          }
-        }
-        break;
-        
-      case 'dateOfBirth':
-        if (value) {
-          const dob = new Date(value);
-          const today = new Date();
-          const age = today.getFullYear() - dob.getFullYear();
-          const monthDiff = today.getMonth() - dob.getMonth();
-          const adjustedAge = (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) ? age - 1 : age;
-          
-          if (adjustedAge < 13 || adjustedAge > 120) {
-            error = 'Age must be between 13 and 120 years';
-          }
-        }
-        break;
-        
-      case 'bio':
-        if (value && value.length > 500) {
-          error = 'Bio cannot exceed 500 characters';
-        }
-        break;
-        
-      case 'picture':
-        if (value && !/^https?:\/\/.+/.test(value)) {
-          error = 'Please enter a valid URL starting with http:// or https://';
-        }
-        break;
-    }
-    
-    if (error) {
-      setErrors(prev => ({ ...prev, [field]: error }));
-    }
-    
-    return !error;
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    // Required fields
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-    
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
-    }
-    
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(formData.password)) {
-      newErrors.password = 'Password must contain uppercase, lowercase, number, and special character';
-    }
-    
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-    
-    // Optional fields validation
-    if (formData.phoneNumber && formData.phoneNumber.trim() !== '') {
-      const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
-      const cleanPhone = formData.phoneNumber.replace(/[\s\-\(\)\.]/g, '');
-      if (!phoneRegex.test(formData.phoneNumber) || cleanPhone.length < 8 || cleanPhone.length > 16) {
-        newErrors.phoneNumber = 'Invalid phone number format';
-      }
-    }
-    
-    if (formData.dateOfBirth) {
-      const dob = new Date(formData.dateOfBirth);
-      const today = new Date();
-      const age = today.getFullYear() - dob.getFullYear();
-      const monthDiff = today.getMonth() - dob.getMonth();
-      const adjustedAge = (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) ? age - 1 : age;
-      
-      if (adjustedAge < 13 || adjustedAge > 120) {
-        newErrors.dateOfBirth = 'Age must be between 13 and 120 years';
-      }
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleAddLanguage = () => {
     if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
-      if (newLanguage.trim().length > 50) {
-        toast.error('Language name cannot exceed 50 characters');
-        return;
-      }
-      
       setFormData(prev => ({
         ...prev,
         languages: [...prev.languages, newLanguage.trim()]
@@ -238,109 +84,93 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
     }));
   };
 
+  const validateForm = () => {
+    const errors = [];
+
+    if (!formData.name.trim()) errors.push('Name is required');
+    if (!formData.email.trim()) errors.push('Email is required');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.push('Invalid email format');
+    if (!formData.password) errors.push('Password is required');
+    if (formData.password.length < 8) errors.push('Password must be at least 8 characters');
+    if (formData.phoneNumber && !/^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/im.test(formData.phoneNumber)) {
+      errors.push('Invalid phone number format');
+    }
+    if (formData.dateOfBirth) {
+      const dob = new Date(formData.dateOfBirth);
+      const today = new Date();
+      const age = today.getFullYear() - dob.getFullYear();
+      if (age < 13 || age > 120) errors.push('Age must be between 13 and 120 years');
+    }
+
+    return errors;
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  const errors = validateForm();
+  if (errors.length > 0) {
+    errors.forEach(error => toast.error(error));
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // Prepare data for API
+    const userData = {
+      ...formData,
+      // Ensure empty strings are converted to appropriate values
+      phoneNumber: formData.phoneNumber || '',
+      bio: formData.bio || '',
+      gender: formData.gender || '',
+      country: formData.country || '',
+      city: formData.city || '',
+      occupation: formData.occupation || '',
+      education: formData.education || '',
+      picture: formData.picture || null,
+      languages: formData.languages.length > 0 ? formData.languages : [],
+      // Set emailVerified to true for admin-created users
+      emailVerified: true,
+      isActive: true,
+      // Add createdByAdmin field if needed by backend
+      createdByAdmin: true
+    };
+
+    console.log('Submitting user data:', JSON.stringify(userData, null, 2));
+
+    const response = await adminAPI.createUser(userData);
     
-    // Mark all fields as touched
-    const allFields = Object.keys(formData);
-    const touchedFields = {};
-    allFields.forEach(field => {
-      touchedFields[field] = true;
-    });
-    setTouched(touchedFields);
-    
-    if (!validateForm()) {
-      toast.error('Please fix validation errors');
-      return;
+    if (response.data.success) {
+      toast.success('User created successfully!');
+      queryClient.invalidateQueries(['admin', 'users']);
+      queryClient.invalidateQueries(['admin', 'dashboard']);
+      onSuccess?.();
+      onClose();
+    } else {
+      toast.error(response.data.message || 'Failed to create user');
     }
+  } catch (error) {
+    console.error('Create user error:', error);
+    console.error('Create user error details:', error.response?.data);
     
-    setLoading(true);
-    try {
-      const userData = {
-        ...formData,
-        phoneNumber: formData.phoneNumber || '',
-        bio: formData.bio || '',
-        gender: formData.gender || '',
-        country: formData.country || '',
-        city: formData.city || '',
-        occupation: formData.occupation || '',
-        education: formData.education || '',
-        picture: formData.picture || null,
-        languages: formData.languages.length > 0 ? formData.languages : [],
-        emailVerified: true,
-        isActive: true,
-        createdByAdmin: true
-      };
-
-      // Remove confirmPassword from submission
-      delete userData.confirmPassword;
-
-      console.log('Submitting user data:', JSON.stringify(userData, null, 2));
-
-      const response = await adminAPI.createUser(userData);
-      
-      if (response.data.success) {
-        toast.success('User created successfully!');
-        queryClient.invalidateQueries(['admin', 'users']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
-        onSuccess?.();
-        onClose();
-      } else {
-        toast.error(response.data.message || 'Failed to create user');
-      }
-    } catch (error) {
-      console.error('Create user error:', error);
-      
-      // Handle validation errors from backend
-      if (error.response?.data?.errors) {
-        const backendErrors = {};
-        error.response.data.errors.forEach(err => {
-          const fieldMatch = err.match(/`(.+?)`/);
-          if (fieldMatch) {
-            backendErrors[fieldMatch[1]] = err;
-          }
-        });
-        setErrors(backendErrors);
-        toast.error('Please fix validation errors');
-      } else if (error.response?.data?.message) {
-        toast.error(error.response.data.message);
-      } else {
-        toast.error(error.message || 'Failed to create user');
-      }
-    } finally {
-      setLoading(false);
+    // Show more detailed error message
+    const errorMessage = error.response?.data?.message || 
+                        error.response?.data?.error || 
+                        error.message || 
+                        'Failed to create user';
+    
+    // If there are validation errors, show them
+    if (error.response?.data?.errors) {
+      error.response.data.errors.forEach(err => {
+        toast.error(err);
+      });
+    } else {
+      toast.error(errorMessage);
     }
-  };
-
-  const renderField = (label, name, type = 'text', placeholder = '', required = true) => {
-    const hasError = errors[name] && touched[name];
-    
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-        <input
-          type={type}
-          name={name}
-          value={formData[name]}
-          onChange={handleChange}
-          onBlur={() => handleBlur(name)}
-          placeholder={placeholder}
-          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-            hasError ? 'border-red-500' : 'border-gray-300'
-          }`}
-          required={required}
-        />
-        {hasError && (
-          <p className="mt-1 text-sm text-red-600 flex items-center">
-            <FiAlertCircle className="h-4 w-4 mr-1" />
-            {errors[name]}
-          </p>
-        )}
-      </div>
-    );
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -364,115 +194,89 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Basic Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {renderField('Full Name', 'name', 'text', 'Enter full name')}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Enter full name"
+                  required
+                />
+              </div>
               
-              <div className="relative">
-                <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  onBlur={() => handleBlur('email')}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.email && touched.email ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="user@example.com"
-                  required
-                />
-                {errors.email && touched.email && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.email}
-                  </p>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address *
+                </label>
+                <div className="relative">
+                  <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="user@example.com"
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="relative">
-                <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  onBlur={() => handleBlur('password')}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.password && touched.password ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="Minimum 8 characters"
-                  minLength={8}
-                  required
-                />
-                {errors.password && touched.password && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.password}
-                  </p>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password *
+                </label>
+                <div className="relative">
+                  <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <input
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Minimum 8 characters"
+                    minLength={8}
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="relative">
-                <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  onBlur={() => handleBlur('confirmPassword')}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.confirmPassword && touched.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="Confirm password"
-                  minLength={8}
-                  required
-                />
-                {errors.confirmPassword && touched.confirmPassword && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.confirmPassword}
-                  </p>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <FiPhone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <input
+                    type="tel"
+                    name="phoneNumber"
+                    value={formData.phoneNumber}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="+1234567890"
+                  />
+                </div>
               </div>
 
-              <div className="relative">
-                <FiPhone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="tel"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  onBlur={() => handleBlur('phoneNumber')}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.phoneNumber && touched.phoneNumber ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="+1234567890"
-                />
-                {errors.phoneNumber && touched.phoneNumber && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.phoneNumber}
-                  </p>
-                )}
-              </div>
-
-              <div className="relative">
-                <FiCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="date"
-                  name="dateOfBirth"
-                  value={formData.dateOfBirth}
-                  onChange={handleChange}
-                  onBlur={() => handleBlur('dateOfBirth')}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.dateOfBirth && touched.dateOfBirth ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.dateOfBirth && touched.dateOfBirth && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.dateOfBirth}
-                  </p>
-                )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date of Birth
+                </label>
+                <div className="relative">
+                  <FiCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <input
+                    type="date"
+                    name="dateOfBirth"
+                    value={formData.dateOfBirth}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
               </div>
 
               <div>
@@ -502,22 +306,33 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Location Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                name="country"
-                value={formData.country}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="Enter country"
-              />
-              <input
-                type="text"
-                name="city"
-                value={formData.city}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="Enter city"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Country
+                </label>
+                <input
+                  type="text"
+                  name="country"
+                  value={formData.country}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Enter country"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  City
+                </label>
+                <input
+                  type="text"
+                  name="city"
+                  value={formData.city}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Enter city"
+                />
+              </div>
             </div>
           </div>
 
@@ -528,22 +343,73 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Professional Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                name="occupation"
-                value={formData.occupation}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="e.g., Software Engineer"
-              />
-              <input
-                type="text"
-                name="education"
-                value={formData.education}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                placeholder="e.g., Bachelor's in Computer Science"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Occupation
+                </label>
+                <input
+                  type="text"
+                  name="occupation"
+                  value={formData.occupation}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="e.g., Software Engineer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Education
+                </label>
+                <input
+                  type="text"
+                  name="education"
+                  value={formData.education}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="e.g., Bachelor's in Computer Science"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Languages
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {formData.languages.map((lang, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                    >
+                      {lang}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLanguage(index)}
+                        className="ml-1.5 text-indigo-600 hover:text-indigo-800"
+                      >
+                        <FiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newLanguage}
+                    onChange={(e) => setNewLanguage(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLanguage())}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Add a language"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddLanguage}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -562,46 +428,141 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
                   name="bio"
                   value={formData.bio}
                   onChange={handleChange}
-                  onBlur={() => handleBlur('bio')}
                   rows={3}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.bio && touched.bio ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   placeholder="Tell us about yourself..."
                   maxLength={500}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {formData.bio.length}/500 characters
                 </p>
-                {errors.bio && touched.bio && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.bio}
-                  </p>
-                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Profile Picture URL
+                  </label>
+                  <input
+                    type="url"
+                    name="picture"
+                    value={formData.picture}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="https://example.com/profile.jpg"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Account Settings */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center">
+              <FiGlobe className="h-4 w-4 mr-2" />
+              Account Settings
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Role *
+                </label>
+                <select
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                >
+                  <option value="user">User</option>
+                  <option value="seller">Seller</option>
+                  <option value="buyer">Buyer</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Profile Picture URL
+                  Account Type
                 </label>
-                <input
-                  type="url"
-                  name="picture"
-                  value={formData.picture}
+                <select
+                  name="accountType"
+                  value={formData.accountType}
                   onChange={handleChange}
-                  onBlur={() => handleBlur('picture')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                    errors.picture && touched.picture ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="https://example.com/profile.jpg"
-                />
-                {errors.picture && touched.picture && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center">
-                    <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.picture}
-                  </p>
-                )}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="basic">Basic</option>
+                  <option value="premium">Premium</option>
+                  <option value="business">Business</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Privacy Settings */}
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <h5 className="text-sm font-medium text-gray-900 mb-3">Privacy Settings</h5>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Profile Visibility
+                  </label>
+                  <select
+                    name="privacySettings.profileVisibility"
+                    value={formData.privacySettings.profileVisibility}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="public">Public</option>
+                    <option value="registered">Registered Users Only</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="privacySettings.showEmail"
+                      checked={formData.privacySettings.showEmail}
+                      onChange={handleChange}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Show Email</span>
+                  </label>
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="privacySettings.showPhone"
+                      checked={formData.privacySettings.showPhone}
+                      onChange={handleChange}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Show Phone</span>
+                  </label>
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="privacySettings.showLocation"
+                      checked={formData.privacySettings.showLocation}
+                      onChange={handleChange}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Show Location</span>
+                  </label>
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="privacySettings.showLastSeen"
+                      checked={formData.privacySettings.showLastSeen}
+                      onChange={handleChange}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Show Last Seen</span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>

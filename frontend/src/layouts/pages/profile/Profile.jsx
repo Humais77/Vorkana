@@ -427,43 +427,36 @@ const Profile = () => {
     };
   }, [user, formData, isLoadingProfile]);
 
- useEffect(() => {
-  if (user && !isLoadingProfile) {
-    const initialFormData = {
-      bio: user.bio || '',
-      phoneNumber: user.phoneNumber || '',
-      country: user.country || '',
-      city: user.city || '',
-      languages: user.languages || [],
-      occupation: user.occupation || '',
-      education: user.education || '',
-      gender: user.gender || '',
-      dateOfBirth: user.dateOfBirth ? formatDateForInput(user.dateOfBirth) : '',
-      github: user.github || '',
-      linkedin: user.linkedin || '',
-      website: user.website || '',
-      privacySettings: user.privacySettings || {
-        profileVisibility: 'public',
-        showEmail: false,
-        showPhone: false,
-        showLocation: true,
-        showLastSeen: true
-      }
-    };
-    
-    // Only update if there's an actual difference
-    setFormData(prev => {
-      if (JSON.stringify(prev) !== JSON.stringify(initialFormData)) {
-        return initialFormData;
-      }
-      return prev;
-    });
+useEffect(() => {
+  if (!user || isLoadingProfile) return;
 
-    if (profileCompletion < 60) {
-      setShowSetupPrompt(true);
+  setFormData({
+    bio: user.bio || '',
+    phoneNumber: user.phoneNumber || '',
+    country: user.country || '',
+    city: user.city || '',
+    languages: user.languages || [],
+    occupation: user.occupation || '',
+    education: user.education || '',
+    gender: user.gender || '',
+    dateOfBirth: user.dateOfBirth
+      ? formatDateForInput(user.dateOfBirth)
+      : '',
+    github: user.github || '',
+    linkedin: user.linkedin || '',
+    website: user.website || '',
+    privacySettings: user.privacySettings || {
+      profileVisibility: 'public',
+      showEmail: false,
+      showPhone: false,
+      showLocation: true,
+      showLastSeen: true
     }
-  }
-}, [user, isLoadingProfile, profileCompletion]);
+  });
+
+  setShowSetupPrompt(user.profileCompletion < 60);
+}, [user, isLoadingProfile]);
+
   const handleProfilePictureClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);

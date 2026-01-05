@@ -56,7 +56,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['pending', 'verified', 'expired', 'cancelled'],
       default: 'pending',
-      index: true
     },
     registrationData: {
       type: mongoose.Schema.Types.Mixed,
@@ -66,7 +65,6 @@ const userSchema = new mongoose.Schema(
     verificationToken: {
       type: String,
       select: false,
-      index: true
     },
     verificationTokenExpires: {
       type: Date,

@@ -161,15 +161,6 @@ const PublicProfile = () => {
     }
   };
   
-  const handleContact = () => {
-    if (!isAuthenticated) {
-      toast.error('Please sign in to contact this user');
-      navigate('/sign-in');
-      return;
-    }
-    setShowContactModal(true);
-  };
-  
   const handleBack = () => {
     navigate(-1);
   };
@@ -445,41 +436,10 @@ const PublicProfile = () => {
                         <span>Member for {memberDuration}</span>
                       </div>
                     </div>
-                    
-                    {/* Rating Stats */}
-                    <div className="flex flex-wrap gap-6">
-                      <div className="flex items-center gap-2">
-                        {renderStars(profile.rating || 0)}
-                        <span className="text-gray-600">({profile.totalReviews || 0} reviews)</span>
-                      </div>
-                      
-                      {profile.responseRate !== undefined && profile.responseRate > 0 && (
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-600">{profile.responseRate}% response rate</span>
-                        </div>
-                      )}
-                      
-                      {profile.responseTime !== undefined && profile.responseTime > 0 && (
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-600">Avg. response: {profile.responseTime}h</span>
-                        </div>
-                      )}
-                    </div>
+                
                   </div>
                 </div>
                 
-                {/* Contact Button */}
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleContact}
-                    className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-colors font-medium flex items-center gap-2"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    Contact {isOwnProfile ? 'Me' : profile.name.split(' ')[0]}
-                  </button>
-                </div>
               </div>
               
               {/* Bio Section */}
@@ -517,46 +477,6 @@ const PublicProfile = () => {
                 </div>
               )}
               
-              {/* Stats Section */}
-              <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                  <Activity className="w-6 h-6 text-emerald-600" />
-                  Profile Stats
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  <div className="text-center p-4 bg-gray-50 rounded-xl">
-                    <div className="text-3xl font-bold text-gray-900 mb-2">
-                      {profile.completedOrders || 0}
-                    </div>
-                    <div className="text-sm text-gray-600">Orders Completed</div>
-                  </div>
-                  
-                  <div className="text-center p-4 bg-gray-50 rounded-xl">
-                    <div className="text-3xl font-bold text-gray-900 mb-2">
-                      {profile.totalReviews || 0}
-                    </div>
-                    <div className="text-sm text-gray-600">Total Reviews</div>
-                  </div>
-                  
-                  {profile.responseRate !== undefined && (
-                    <div className="text-center p-4 bg-gray-50 rounded-xl">
-                      <div className="text-3xl font-bold text-gray-900 mb-2">
-                        {profile.responseRate}%
-                      </div>
-                      <div className="text-sm text-gray-600">Response Rate</div>
-                    </div>
-                  )}
-                  
-                  {profile.responseTime !== undefined && (
-                    <div className="text-center p-4 bg-gray-50 rounded-xl">
-                      <div className="text-3xl font-bold text-gray-900 mb-2">
-                        {profile.responseTime}h
-                      </div>
-                      <div className="text-sm text-gray-600">Avg Response Time</div>
-                    </div>
-                  )}
-                </div>
-              </div>
               
               {/* Personal Information */}
               <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
