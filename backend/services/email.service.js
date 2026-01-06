@@ -112,22 +112,29 @@ class EmailService {
     }
   }
 
-  // Specific email templates
-  async sendVerificationEmail(user, token) {
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${token}`;
-    
-    return this.sendEmail(
-      user.email,
-      'Verify Your Email Address - Vorkanna',
-      'verify-email',
-      {
-        name: user.name,
-        verificationUrl,
-        expiresIn: '24 hours',
-        buttonText: 'Verify Email Address'
-      }
-    );
-  }
+  async sendVerificationEmail(email, name, token) {
+  // For HTTP-only cookies, we'll verify via API endpoint
+  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${token}`;
+  
+  return this.sendEmail(
+    email,
+    'Verify Your Email Address - Vorkanna',
+    'verify-email',
+    {
+      name: name || 'User',
+      verificationUrl,
+      expiresIn: '24 hours',
+      buttonText: 'Verify Email Address',
+      // Add cookie-specific instructions
+      cookieNotice: `
+        <p style="color: #666; font-size: 14px; margin-top: 20px;">
+          <strong>Note:</strong> After verification, you will be automatically logged in.
+          Make sure your browser accepts cookies from our domain.
+        </p>
+      `
+    }
+  );
+}
 
   async sendPasswordResetEmail(user, token) {
   // Use frontend reset password page directly
@@ -147,17 +154,44 @@ class EmailService {
 }
 
   async sendWelcomeEmail(user) {
-    return this.sendEmail(
-      user.email,
-      'Welcome to Vorkanna! 🎉',
-      'welcome',
-      {
-        name: user.name,
-        dashboardUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`,
-        buttonText: 'Go to Dashboard'
-      }
-    );
-  }
+  return this.sendEmail(
+    user.email,
+    'Welcome to Vorkanna! 🎉',
+    'welcome',
+    {
+      name: user.name,
+      dashboardUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`,
+      buttonText: 'Go to Dashboard',
+      // Add cookie notice
+      cookieInfo: `
+        <p style="color: #666; font-size: 14px; margin-top: 15px;">
+          <strong>Security Tip:</strong> Your authentication is now handled securely via HTTP-only cookies.
+          This provides better protection against XSS attacks.
+        </p>
+      `
+    }
+  );
+}
+
+// Add new template for cookie migration notice
+async sendSecurityUpdateEmail(user) {
+  return this.sendEmail(
+    user.email,
+    'Security Update: Enhanced Authentication - Vorkanna',
+    'security-update',
+    {
+      name: user.name,
+      updateDate: new Date().toLocaleDateString(),
+      features: [
+        'HTTP-only cookie authentication for better security',
+        'Automatic session management',
+        'Enhanced CSRF protection',
+        'Secure token refresh'
+      ],
+      actionRequired: 'No action required from your side. Enjoy the enhanced security!'
+    }
+  );
+}
 
   async sendPasswordChangedEmail(user, ipAddress = 'Unknown') {
     return this.sendEmail(

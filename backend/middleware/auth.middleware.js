@@ -7,29 +7,31 @@ const crypto = require('crypto');
 const { ipKeyGenerator } = require('express-rate-limit');
 
 const tokenBlacklist = new Set();
-
 const protect = async (req, res, next) => {
   try {
     let token;
     
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    // Try to get token from cookies first (preferred), then from Authorization header
+    if (req.cookies?.access_token) {
+      token = req.cookies.access_token;
+    } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
-    }
-    else if (req.cookies?.token) {
-      token = req.cookies.token;
     }
     
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Not authorized, no token'
+        message: 'Not authorized, no token provided'
       });
     }
     
+    // Check if token is blacklisted (for logout functionality)
     if (tokenBlacklist.has(token)) {
+      // Clear the invalid cookie
+      res.clearCookie('access_token');
       return res.status(401).json({
         success: false,
-        message: 'Token has been revoked'
+        message: 'Session has been terminated'
       });
     }
     
@@ -37,6 +39,8 @@ const protect = async (req, res, next) => {
     
     const user = await User.findById(decoded.id);
     if (!user) {
+      // Clear invalid cookie
+      res.clearCookie('access_token');
       return res.status(401).json({
         success: false,
         message: 'User no longer exists'
@@ -56,8 +60,10 @@ const protect = async (req, res, next) => {
   } catch (error) {
     console.error('Protect middleware error:', error.name, error.message);
     
+    // Clear invalid cookie on any error
+    res.clearCookie('access_token');
+    
     if (error.name === 'JsonWebTokenError') {
-      // Check specific JWT errors
       if (error.message.includes('invalid signature')) {
         return res.status(401).json({
           success: false,
@@ -79,11 +85,11 @@ const protect = async (req, res, next) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        message: 'Token expired'
+        message: 'Token expired',
+        code: 'TOKEN_EXPIRED'
       });
     }
     
-    // Don't expose internal error details
     res.status(500).json({
       success: false,
       message: 'Authentication error'
@@ -91,6 +97,41 @@ const protect = async (req, res, next) => {
   }
 };
 
+// ========== NEW MIDDLEWARE: CSRF PROTECTION ==========
+const csrfProtection = (req, res, next) => {
+  // Skip CSRF for GET, HEAD, OPTIONS
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  
+  // Verify CSRF token for state-changing operations
+  const csrfToken = req.headers['x-csrf-token'] || req.body._csrf;
+  const cookieCsrfToken = req.cookies['XSRF-TOKEN'];
+  
+  if (!csrfToken || !cookieCsrfToken || csrfToken !== cookieCsrfToken) {
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid CSRF token'
+    });
+  }
+  
+  next();
+};
+
+// ========== NEW MIDDLEWARE: SET CSRF TOKEN ==========
+const setCsrfToken = (req, res, next) => {
+  // Generate CSRF token for new sessions
+  if (!req.cookies['XSRF-TOKEN']) {
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, {
+      httpOnly: false, // Must be accessible by JavaScript
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+  }
+  next();
+};
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -376,10 +417,11 @@ const userOnly = (req, res, next) => {
 const optionalAuth = (req, res, next) => {
   let token;
   
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+  // Check cookies first
+  if (req.cookies?.access_token) {
+    token = req.cookies.access_token;
+  } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies?.token) {
-    token = req.cookies.token;
   }
   
   if (token) {
@@ -394,7 +436,10 @@ const optionalAuth = (req, res, next) => {
         })
         .catch(() => next());
     } catch (error) {
-      // Silently fail for optional auth
+      // Silently fail for optional auth, but clear invalid cookie
+      if (req.cookies?.access_token) {
+        res.clearCookie('access_token');
+      }
       next();
     }
   } else {
@@ -490,5 +535,6 @@ module.exports = {
   securityHeaders,
   requestSizeLimiter,
   errorLogger,
-  getClientIp
+  getClientIp,
+  csrfProtection,setCsrfToken
 };

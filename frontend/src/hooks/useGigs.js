@@ -46,26 +46,63 @@ export const useMyGigs = (filters = {}) => {
     queryKey: ['myGigs', filters, user?._id],
     queryFn: async () => {
       if (!user?._id) {
-        throw new Error('User not authenticated');
+        // ✅ Instead of throwing, redirect to login or handle gracefully
+        console.log('User not authenticated, cookies might be expired');
+        
+        // Check if we have a user in localStorage (for display purposes)
+        const storedUser = localStorage.getItem('userInfo');
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          console.log('Found user in storage, cookies might need refresh');
+          
+          // Try to refresh session
+          try {
+            const response = await fetch('/api/auth/session', {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            });
+            
+            if (response.ok) {
+              const sessionData = await response.json();
+              if (sessionData.authenticated) {
+                // Session refreshed, continue with request
+                return gigsAPI.getAll({
+                  ...filters,
+                  createdBy: parsedUser._id,
+                  includeSubcategory: true,
+                });
+              }
+            }
+          } catch (error) {
+            console.log('Session refresh failed:', error);
+          }
+        }
+        
+        throw new Error('Please login to view your gigs');
       }
       
       return gigsAPI.getAll({
         ...filters,
         createdBy: user._id,
-        includeSubcategory: true, // Always include subcategory
+        includeSubcategory: true,
       });
     },
     enabled: !!user?._id,
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     onError: (error) => {
-      if (error.message !== 'User not authenticated') {
+      if (error.message === 'Please login to view your gigs') {
+        toast.error('Please login to view your gigs');
+        // Optional: Redirect to login
+        // window.location.href = '/signin';
+      } else if (error.message !== 'User not authenticated') {
         toast.error('Failed to load your gigs');
       }
     }
   });
 };
-
 export const useGigs = (params = {}) => {
   return useQuery({
     queryKey: ['gigs', params],
@@ -179,28 +216,40 @@ export const useCreateGig = () => {
   
   return useMutation({
     mutationFn: async (gigData) => {
-      // Validate subcategory is required
-      if (!gigData.subcategory && !(gigData instanceof FormData)) {
-        throw {
-          message: 'Subcategory is required',
-          code: 'SUBCATEGORY_REQUIRED',
-          status: 400
-        };
-      }
-      
-      // If FormData, check for subcategory
-      if (gigData instanceof FormData) {
-        const subcategory = gigData.get('subcategory');
-        if (!subcategory) {
+      try {
+        // Validate subcategory is required
+        if (!gigData.subcategory && !(gigData instanceof FormData)) {
           throw {
             message: 'Subcategory is required',
             code: 'SUBCATEGORY_REQUIRED',
             status: 400
           };
         }
+        
+        // If FormData, check for subcategory
+        if (gigData instanceof FormData) {
+          const subcategory = gigData.get('subcategory');
+          if (!subcategory) {
+            throw {
+              message: 'Subcategory is required',
+              code: 'SUBCATEGORY_REQUIRED',
+              status: 400
+            };
+          }
+        }
+        
+        return gigsAPI.create(gigData);
+      } catch (error) {
+        // Check if it's an auth error
+        if (error.response?.status === 401 || error.message?.includes('Authentication')) {
+          throw {
+            message: 'Your session has expired. Please login again.',
+            code: 'AUTH_EXPIRED',
+            status: 401
+          };
+        }
+        throw error;
       }
-      
-      return gigsAPI.create(gigData);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['gigs'] });
@@ -216,7 +265,13 @@ export const useCreateGig = () => {
     onError: (error) => {
       let errorMessage = error.message || 'Failed to create gig';
       
-      if (error.code === 'SUBCATEGORY_REQUIRED') {
+      if (error.code === 'AUTH_EXPIRED') {
+        errorMessage = 'Your session has expired. Please login again.';
+        // Optional: Redirect to login
+        setTimeout(() => {
+          window.location.href = '/signin';
+        }, 2000);
+      } else if (error.code === 'SUBCATEGORY_REQUIRED') {
         errorMessage = 'Please select a subcategory';
       } else if (error.code === 'CATEGORY_NOT_FOUND') {
         errorMessage = 'Please select a valid category';
@@ -289,7 +344,18 @@ export const useUpdateGig = () => {
   
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      return gigsAPI.update(id, data);
+      try {
+        return gigsAPI.update(id, data);
+      } catch (error) {
+        if (error.response?.status === 401 || error.message?.includes('Authentication')) {
+          throw {
+            message: 'Your session has expired. Please login again.',
+            code: 'AUTH_EXPIRED',
+            status: 401
+          };
+        }
+        throw error;
+      }
     },
     onMutate: async ({ id, data }) => {
       // Cancel any outgoing refetches
@@ -343,17 +409,19 @@ export const useDeleteGig = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, options = {} }) => gigsAPI.delete(id, options),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: gigKeys.popular() });
-      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
-      
-      if (variables.options?.permanent) {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
+    mutationFn: ({ id, options = {} }) => {
+      try {
+        return gigsAPI.delete(id, options);
+      } catch (error) {
+        if (error.response?.status === 401 || error.message?.includes('Authentication')) {
+          throw {
+            message: 'Your session has expired. Please login again.',
+            code: 'AUTH_EXPIRED',
+            status: 401
+          };
+        }
+        throw error;
       }
-      
-      toast.success(data.message || 'Gig deleted successfully!');
     },
     onError: (error) => {
       if (error.code === 'GIG_IN_PROGRESS') {

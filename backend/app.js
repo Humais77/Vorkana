@@ -9,6 +9,8 @@ const http = require('http');
 const compression = require('compression'); // ADD THIS
 const responseTime = require('response-time'); // ADD THIS
 const morgan = require('morgan'); // ADD THIS for logging
+const { csrfProtection, generateCsrfToken } = require('./middleware/csrf.js');
+const { isProduction, isHTTPS } = require('./config/cookies.js');
 
 dotenv.config();
 
@@ -90,14 +92,19 @@ if (process.env.NODE_ENV === 'development') {
 // ==================== SECURITY MIDDLEWARE ====================
 
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
+app.use(generateCsrfToken);
 
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   process.env.FRONTEND_URL
 ].filter(Boolean);
+if (isProduction) {
+  app.set('trust proxy', 1); // Trust first proxy
+  console.log('✅ Running in production mode with proxy trust');
+}
 
-// Optimized CORS configuration
+// Update CORS for production
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || process.env.NODE_ENV === 'test') return callback(null, true);
@@ -113,35 +120,50 @@ const corsOptions = {
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
-    'X-Request-ID',
-    'X-CSRF-Token',
-    'Accept',
-    'X-Admin-Request', 
-    'X-Admin-Token',
-    'X-Request-Source',
-    'X-Client-Version',
-    'Cache-Control', 
-    'If-Modified-Since'
+    'X-Request-ID', // ADD THIS
+    'X-CSRF-Token', // Make sure this is included
+    'X-Requested-With',
+    'Accept'
   ],
   exposedHeaders: [
     'X-Request-ID',
+    'X-CSRF-Token', // ADD THIS
+    'set-cookie',
     'X-Total-Count',
-    'X-Total-Pages',
-    'X-Page-Size',
-    'X-Current-Page',
-    'X-Response-Time',
-    'X-CSRF-Token',
-    'X-Admin-Access',
-    'ETag', // For caching
-    'Last-Modified'
+    'X-Response-Time'
   ],
   credentials: true,
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
-
+// Add HTTPS redirect middleware for production
+if (isProduction) {
+  app.use((req, res, next) => {
+    // Redirect HTTP to HTTPS
+    if (!req.secure && req.get('X-Forwarded-Proto') !== 'https') {
+      return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
 app.use(cors(corsOptions));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", process.env.FRONTEND_URL]
+    }
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
 security(app);
 
 // ==================== RATE LIMITING ====================
@@ -179,7 +201,6 @@ const globalLimiter = rateLimit({
   skipFailedRequests: false
 });
 app.use(globalLimiter);
-
 // ==================== BODY PARSING OPTIMIZATIONS ====================
 
 app.use(hpp({

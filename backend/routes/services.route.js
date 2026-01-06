@@ -1,8 +1,8 @@
-// service.route.js - Remove local storage configurations
+// service.route.js - Updated with CSRF protection
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/services.controller.js');
-const { protect, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
+const { protect, adminOnly, optionalAuth, csrfProtection } = require('../middleware/auth.middleware.js');
 const { 
   validateCreate, 
   validateUpdate, 
@@ -14,10 +14,10 @@ const rateLimit = require('express-rate-limit');
 const { 
   upload, 
   thumbnailUpload, 
-  handleMulterError,
-  processUploadToCloudinary 
+  handleMulterError
 } = require('../middleware/upload.middleware.js');
 
+// Rate limiters
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -29,6 +29,10 @@ const serviceLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return req.user?._id ? `${ip}-${req.user._id}` : ip;
+  }
 });
 
 const bulkOperationLimiter = rateLimit({
@@ -41,7 +45,7 @@ const bulkOperationLimiter = rateLimit({
     code: 'BULK_RATE_LIMIT_EXCEEDED'
   },
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false
 });
 
 const imageUploadLimiter = rateLimit({
@@ -54,7 +58,7 @@ const imageUploadLimiter = rateLimit({
     code: 'IMAGE_UPLOAD_LIMIT_EXCEEDED'
   },
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false
 });
 
 // Create combined upload middleware
@@ -64,84 +68,49 @@ const uploadWithThumbnail = upload.fields([
 ]);
 
 // ============================================
-// PUBLIC ROUTES
+// PUBLIC ROUTES (No authentication required)
 // ============================================
 
-// Get all services
 router.get('/', optionalAuth, validateQuery, controller.getServices);
-
-// Search services
 router.get('/search', optionalAuth, validateQuery, controller.searchServices);
-
-// Get similar services
 router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
+router.get('/popular', optionalAuth, serviceLimiter, controller.getPopularServices);
+router.get('/popular/category', optionalAuth, serviceLimiter, controller.getPopularServicesByCategory);
+router.get('/category/:categoryId', optionalAuth, serviceLimiter, controller.getServicesByCategory);
+router.get('/subcategory/:subcategoryId', optionalAuth, serviceLimiter, controller.getServicesBySubcategory);
+router.get('/subcategory/slug/:slug', optionalAuth, serviceLimiter, controller.getServicesBySubcategorySlug);
+router.get('/with-stats', optionalAuth, serviceLimiter, controller.getServicesWithCategoryStats);
+router.get('/:id', optionalAuth, controller.getServiceById);
+
+// ============================================
+// PROTECTED ROUTES (Authentication required)
+// ============================================
 
 // Get my services
 router.get('/my-services', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   validateQuery, 
   controller.getMyServices
 );
 
-// Get service by ID or slug
-router.get('/:id', optionalAuth, controller.getServiceById);
-
-// Get popular services
-router.get('/popular', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getPopularServices
-);
-
-// Get popular services by category
-router.get('/popular/category', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getPopularServicesByCategory
-);
-
-// Get all active services
-router.get('/all/active', 
-  protect, 
-  controller.getAllActiveServices
-);
-
-// Get services by category
-router.get('/category/:categoryId', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesByCategory
-);
-
-// Get services by subcategory ID
-router.get('/subcategory/:subcategoryId', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesBySubcategory
-);
-
-// Get services by subcategory slug
-router.get('/subcategory/slug/:slug', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesBySubcategorySlug
-);
-
-// ============================================
-// PROTECTED ROUTES
-// ============================================
-
 // Like/Unlike service
-router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
+router.post('/:id/like', 
+  protect, 
+  csrfProtection, // ADD CSRF
+  serviceLimiter, 
+  controller.toggleLike
+);
 
 // ============================================
-// USER ROUTES (Service creators)
+// USER ROUTES (Service creators - with CSRF)
 // ============================================
 
-// Create service with Cloudinary uploads
+// Create service
 router.post('/', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   uploadWithThumbnail, 
   handleMulterError, 
@@ -149,9 +118,10 @@ router.post('/',
   controller.createService
 );
 
-// Update my service
+// Update service
 router.put('/:id', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   uploadWithThumbnail,
   handleMulterError, 
@@ -159,46 +129,49 @@ router.put('/:id',
   controller.updateService
 );
 
-// Delete my service
+// Delete service
 router.delete('/:id', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.deleteService
 );
 
-// Restore my service
+// Restore service
 router.patch('/:id/restore', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.restoreService
 );
 
-// Upload additional images to my service (Cloudinary)
+// Image management
 router.post('/:id/images', 
   protect, 
+  csrfProtection, // ADD CSRF
   imageUploadLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
   controller.uploadImages
 );
 
-// Remove specific image from my service (Cloudinary)
 router.delete('/:id/images/:publicId', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.removeImage
 );
 
-// Set existing image as thumbnail for my service
 router.put('/:id/thumbnail/:publicId', 
   protect, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.setThumbnail
 );
 
-// Upload new thumbnail for my service (Cloudinary)
 router.post('/:id/thumbnail', 
   protect, 
+  csrfProtection, // ADD CSRF
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
@@ -206,13 +179,14 @@ router.post('/:id/thumbnail',
 );
 
 // ============================================
-// ADMIN ROUTES
+// ADMIN ROUTES (Admin only - with CSRF)
 // ============================================
 
 // Admin create service
 router.post('/admin/create', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   uploadWithThumbnail,
   handleMulterError, 
@@ -224,15 +198,17 @@ router.post('/admin/create',
 router.get('/admin/services', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   validateQuery, 
   controller.getAdminServices
 );
 
-// Update any service (admin)
+// Admin update service
 router.put('/admin/:id', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
@@ -240,170 +216,176 @@ router.put('/admin/:id',
   controller.updateService
 );
 
-// Delete any service (admin)
+// Admin delete service
 router.delete('/admin/:id', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.deleteService
 );
 
-// Get admin stats
+// Admin stats
 router.get('/admin/stats', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.getServiceStats
 );
 
-// Bulk operations (admin)
+// Bulk operations
 router.post('/admin/bulk', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   bulkOperationLimiter, 
   validateBulk, 
   controller.bulkUpdateServices
 );
 
-// Export services (admin)
+// Export services
 router.get('/admin/export', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   validateQuery, 
   controller.exportServices
 );
 
-// Upload additional images (admin)
+// Admin image management
 router.post('/admin/:id/images', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   imageUploadLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
   controller.uploadImages
 );
 
-// Remove specific image (admin)
 router.delete('/admin/:id/images/:publicId', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.removeImage
 );
 
-// Set existing image as thumbnail (admin)
 router.put('/admin/:id/thumbnail/:publicId', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.setThumbnail
 );
 
-// Upload new thumbnail (admin)
 router.post('/admin/:id/thumbnail', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
   controller.uploadThumbnail
 );
 
-// Toggle popular status (admin)
+// Toggle popular status
 router.patch('/:id/popular', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   controller.togglePopularStatus
 );
 
 // ============================================
-// BATCH OPERATION ROUTES (Admin only)
+// BATCH OPERATIONS (Admin only)
 // ============================================
 
-// Batch update services status
 router.patch('/batch/status', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   bulkOperationLimiter, 
   controller.bulkUpdateServices
 );
 
-// Batch feature/unfeature services
 router.patch('/batch/feature', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   bulkOperationLimiter, 
   controller.bulkUpdateServices
 );
 
-// Batch recommend/unrecommend services
 router.patch('/batch/recommend', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   bulkOperationLimiter, 
   controller.bulkUpdateServices
 );
 
-// Batch popular/unpopular services
 router.patch('/batch/popular', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   bulkOperationLimiter, 
   controller.bulkUpdateServices
 );
 
 // ============================================
-// HEALTH CHECK ROUTES
+// HEALTH CHECK & METRICS
 // ============================================
 
-// Service health check
 router.get('/health/check', (req, res) => {
   res.json({
     success: true,
     message: 'Service routes are operational',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memoryUsage: process.memoryUsage()
+    version: '1.0.0',
+    features: {
+      authentication: true,
+      csrfProtection: true,
+      fileUploads: true,
+      rateLimiting: true
+    }
   });
 });
 
-// Service metrics
 router.get('/metrics/overview', 
   protect, 
   adminOnly, 
+  csrfProtection, // ADD CSRF
   serviceLimiter, 
   (req, res) => {
     res.json({
       success: true,
       metrics: {
         routes: {
-          public: 4,
-          protected: 1,
+          public: 9,
+          protected: 2,
           user: 8,
           admin: 11,
-          total: 24
+          total: 30
         },
-        features: {
-          fileUploads: true,
-          imageManagement: true,
-          bulkOperations: true,
-          search: true,
-          stats: true,
-          export: true,
+        security: {
+          csrfProtection: true,
           rateLimiting: true,
-          cloudinaryUpload: true
+          fileValidation: true,
+          authentication: true
         }
       }
     });
 });
 
-// Get services with stats
-router.get('/with-stats', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesWithCategoryStats
+// Get all active services
+router.get('/all/active', 
+  protect, 
+  csrfProtection, // ADD CSRF
+  controller.getAllActiveServices
 );
 
 module.exports = router;

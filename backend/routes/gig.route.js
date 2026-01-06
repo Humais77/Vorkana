@@ -1,3 +1,4 @@
+// gig.route.js - Updated with proper CORS and security headers
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -13,7 +14,6 @@ const {
   getGigStats,
   searchGigs,
   exportGigs,
-  // New image-related functions
   uploadImages,
   removeImage,
   setThumbnail,
@@ -27,7 +27,7 @@ const {
   validateUpdate, 
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const { protect, optionalAuth, adminOnly, csrfProtection, setCsrfToken } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
 
 // Configure multer storage
@@ -92,7 +92,7 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Configure multer for images (different from regular files)
+// Configure multer for images
 const imageFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|webp|gif/i;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
@@ -177,38 +177,130 @@ const gigLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return req.user?._id ? `${ip}-${req.user._id}` : ip;
+  }
 });
 
+// ============================================
+// PUBLIC ROUTES (No authentication required)
+// ============================================
+
 router.get('/', optionalAuth, validateQuery, getGigs);
-
-// New route: Get gigs by subcategory
-router.get('/subcategory/:subcategoryId', 
-  optionalAuth, 
-  validateQuery, 
-  getGigsBySubcategory
-);
-
+router.get('/subcategory/:subcategoryId', optionalAuth, validateQuery, getGigsBySubcategory);
 router.get('/search', optionalAuth, validateQuery, searchGigs);
-router.get('/stats', protect, gigLimiter, getGigStats);
-router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
-router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
 router.get('/:id', optionalAuth, getGigById);
 
-// Protected routes (all authenticated users)
-router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
+// ============================================
+// PROTECTED ROUTES (Authentication required)
+// ============================================
 
-// Update gig (creator or admin)
-router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+router.post('/', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken, // ✅ Add CSRF token for new requests
+  gigLimiter, 
+  handleMultipleFileFields, 
+  validateCreate, 
+  createGig
+);
 
-// Image management routes
-router.post('/:id/images/upload', protect, gigLimiter, handleImageUpload, uploadImages);
-router.delete('/:id/images/:publicId', protect, gigLimiter, removeImage);
-router.put('/:id/thumbnail/:publicId', protect, gigLimiter, setThumbnail);
-router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload, uploadThumbnail);
+// Update gig
+router.put('/:id', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  handleMultipleFileFields, 
+  validateUpdate, 
+  updateGig
+);
 
-// Delete gig (creator or admin)
-router.delete('/:id', protect, gigLimiter, deleteGig);
+// Image management
+router.post('/:id/images/upload', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  handleImageUpload, 
+  uploadImages
+);
 
-router.use(errorHandler)
+router.delete('/:id/images/:publicId', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  removeImage
+);
+
+router.put('/:id/thumbnail/:publicId', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  setThumbnail
+);
+
+router.post('/:id/thumbnail/upload', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  handleThumbnailUpload, 
+  uploadThumbnail
+);
+
+// Delete gig
+router.delete('/:id', 
+  protect, // ✅ Uses cookie-based auth
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  deleteGig
+);
+// ============================================
+// ADMIN ROUTES (Admin only)
+// ============================================
+router.get('/stats', 
+  protect, // ✅ Uses cookie-based auth
+  adminOnly, 
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  getGigStats
+);
+
+router.get('/export', 
+  protect, // ✅ Uses cookie-based auth
+  adminOnly, 
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  validateQuery, 
+  exportGigs
+);
+
+router.patch('/:id/restore', 
+  protect, // ✅ Uses cookie-based auth
+  adminOnly, 
+  csrfProtection,
+  setCsrfToken,
+  gigLimiter, 
+  restoreGig
+);
+
+// Add health check route
+router.get('/health/check', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Gig routes are operational',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
+});
+
+router.use(errorHandler);
 
 module.exports = router;

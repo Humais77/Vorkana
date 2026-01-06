@@ -1,25 +1,26 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-
-// Create axios instance with default configuration
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 15000, // Increased timeout for better UX
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // CRITICAL: This sends cookies with requests
 });
-
-// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Get CSRF token from cookie (non-httpOnly cookie)
+    const csrfToken = getCsrfTokenFromCookie();
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken;
     }
     
-    // Add request ID for tracking
+    // No longer need Authorization header for cookies
+    // Remove any existing Authorization header to prevent conflicts
+    delete config.headers.Authorization;
+    
     config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     return config;
@@ -29,87 +30,86 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor with enhanced error handling
+// Helper to get CSRF token from cookie
+function getCsrfTokenFromCookie() {
+  if (typeof document === 'undefined') return null;
+  
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'XSRF-TOKEN') {
+      return decodeURIComponent(value);
+    }
+  }
+  return null;
+}
+
+// Response interceptor with improved error handling
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle token expiration - ONLY for authenticated requests
+    // Handle 401 - Token expired or invalid
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      // Check if this is a login/register request - don't try to refresh token for auth endpoints
+      // Skip refresh for auth endpoints
       const isAuthEndpoint = originalRequest.url.includes('/api/auth/login') || 
                             originalRequest.url.includes('/api/auth/register');
       
       if (isAuthEndpoint) {
-        // For login/register failures, just reject with the original error
         return Promise.reject(error);
       }
       
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          // No refresh token available, reject with original error
-          return Promise.reject(error);
-        }
-        
-        const response = await axiosInstance.post('/api/auth/refresh-token', {
-          refreshToken
-        });
-        
-        const { token, refreshToken: newRefreshToken } = response.data;
-        
-        // Store new tokens
-        localStorage.setItem('userToken', token);
-        localStorage.setItem('refreshToken', newRefreshToken);
-        
-        // Update original request with new token
-        originalRequest.headers.Authorization = `Bearer ${token}`;
-        
+        // Attempt to refresh token
+        await axiosInstance.post('/api/auth/refresh-token');
+        // Retry original request
         return axiosInstance(originalRequest);
       } catch (refreshError) {
-        // Clear all auth data and redirect to login
-        localStorage.removeItem('userToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('userInfo');
+        // Refresh failed - clear local storage and redirect
+        clearAuthData();
         
-        // Only redirect if we're not already on auth pages
-        if (!window.location.pathname.includes('/signin') && 
-            !window.location.pathname.includes('/signup')) {
-          window.location.href = '/signin';
+        // Only redirect if not already on auth pages
+        if (window.location.pathname !== '/signin' && 
+            window.location.pathname !== '/signup') {
+          window.location.href = '/signin?session=expired';
         }
         
         return Promise.reject(refreshError);
       }
     }
     
-    // For 401 errors on login, don't show "No refresh token available"
-    if (error.response?.status === 401 && 
-        originalRequest.url.includes('/api/auth/login')) {
-      // Return the original error with backend message
-      return Promise.reject(error);
-    }
-    
-    // Handle other error cases
-    if (error.response) {
-      const { status, data } = error.response;
-      
-      // Handle rate limiting
-      if (status === 429) {
-        console.warn('Rate limited:', data.message);
-      }
-      
-      // Handle account lock
-      if (status === 423) {
-        console.warn('Account locked:', data.message);
+    // Handle 403 - CSRF token issues
+    if (error.response?.status === 403 && error.response.data?.message?.includes('CSRF')) {
+      // Get new CSRF token
+      try {
+        const response = await axiosInstance.get('/api/auth/csrf-token');
+        if (response.data.csrfToken) {
+          // Retry with new CSRF token
+          originalRequest.headers['X-CSRF-Token'] = response.data.csrfToken;
+          return axiosInstance(originalRequest);
+        }
+      } catch (csrfError) {
+        console.error('Failed to get new CSRF token:', csrfError);
       }
     }
     
     return Promise.reject(error);
   }
 );
+
+// Utility to clear all auth data
+function clearAuthData() {
+  // Clear localStorage
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('userToken');
+  localStorage.removeItem('refreshToken');
+  
+  // Clear sessionStorage
+  sessionStorage.clear();
+}
 
 // Validation utilities
 export const validatePassword = (password) => {
@@ -171,146 +171,103 @@ export const authAPI = {
   login: async (userData) => {
     const response = await axiosInstance.post('/api/auth/login', userData);
     
-    if (response.data.token && response.data.refreshToken) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
+    // Store user info only, tokens are in cookies
+    if (response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
       
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      // Store CSRF token for immediate use
+      if (response.data.csrfToken) {
+        localStorage.setItem('csrfToken', response.data.csrfToken);
       }
     }
     
     return response.data;
   },
-register: async (userData) => {
+  
+  register: async (userData) => {
     const response = await axiosInstance.post('/api/auth/register', userData);
+    
+    // Store CSRF token from registration
+    if (response.data.csrfToken) {
+      localStorage.setItem('csrfToken', response.data.csrfToken);
+    }
+    
     return response.data;
   },
+  
   logout: async (deviceToken = null) => {
     try {
       await axiosInstance.post('/api/auth/logout', { deviceToken });
     } finally {
-      localStorage.removeItem('userToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userInfo');
+      clearAuthData();
     }
   },
   
-  refreshToken: async (refreshToken) => {
-    const response = await axiosInstance.post('/api/auth/refresh-token', { refreshToken });
+  refreshToken: async () => {
+    // No need to pass refresh token - it's in cookies
+    const response = await axiosInstance.post('/api/auth/refresh-token');
+    
+    if (response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    }
+    
     return response.data;
   },
   
   // Profile management
   getProfile: async () => {
     const response = await axiosInstance.get('/api/auth/profile');
+    
     if (response.data.success && response.data.user) {
       localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
+    
     return response.data;
   },
   
-updateProfile: async (userData) => {
-  try {
-    console.log('🚀 Updating profile with data:', {
-      fields: Object.keys(userData),
-      hasPrivacySettings: 'privacySettings' in userData
-    });
+  updateProfile: async (userData) => {
+    const response = await axiosInstance.put('/api/auth/profile', userData);
     
-    // Clean the data - remove undefined, null, and empty strings
-    const cleanData = {};
-    Object.keys(userData).forEach(key => {
-      const value = userData[key];
-      
-      // Skip undefined and null
-      if (value === undefined || value === null) return;
-      
-      // Handle empty strings for optional fields
-      if (typeof value === 'string' && value.trim() === '') {
-        // For optional fields, you can send empty string or skip
-        // Let's skip for cleaner data
-        return;
-      }
-      
-      // Handle arrays
-      if (Array.isArray(value)) {
-        if (value.length > 0) {
-          cleanData[key] = value;
-        }
-        return;
-      }
-      
-      // Handle objects (like privacySettings)
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        const nestedClean = {};
-        Object.keys(value).forEach(nestedKey => {
-          const nestedValue = value[nestedKey];
-          if (nestedValue !== undefined && nestedValue !== null) {
-            nestedClean[nestedKey] = nestedValue;
-          }
-        });
-        if (Object.keys(nestedClean).length > 0) {
-          cleanData[key] = nestedClean;
-        }
-        return;
-      }
-      
-      // For other values (numbers, booleans, non-empty strings)
-      cleanData[key] = value;
-    });
-    
-    console.log('🧹 Cleaned data for API:', cleanData);
-    
-    // SIMPLIFIED - Remove the custom header
-    const response = await axiosInstance.put('/api/auth/profile', cleanData);
-    
-    console.log('✅ Update response:', {
-      success: response.data.success,
-      message: response.data.message,
-      hasUserData: !!response.data.user
-    });
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    }
     
     return response.data;
-  } catch (error) {
-    console.error('❌ Update profile error:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      message: error.response?.data?.message,
-      errors: error.response?.data?.errors,
-      data: error.response?.data
-    });
-    
-    // Provide better error message
-    const errorMessage = error.response?.data?.message || 
-                       error.response?.statusText || 
-                       'Failed to update profile';
-    
-    throw new Error(errorMessage);
-  }
-},
+  },
   
   changePassword: async (currentPassword, newPassword) => {
     const response = await axiosInstance.post('/api/auth/change-password', {
       currentPassword,
       newPassword
     });
+    
+    // Update user info if returned
+    if (response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    }
+    
     return response.data;
   },
   
   // Email verification
- verifyEmail: async (token) => {
+  verifyEmail: async (token) => {
     const response = await axiosInstance.get(`/api/auth/verify-email/${token}`);
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      
+      // Store CSRF token
+      if (response.data.csrfToken) {
+        localStorage.setItem('csrfToken', response.data.csrfToken);
+      }
+    }
+    
     return response.data;
   },
   
   // Check verification status
   checkVerificationStatus: async (email) => {
-    const response = await axiosInstance.get(`/api/auth/check-verification?email=${email}`);
-    return response.data;
-  },
-  
-  resendVerification: async (email) => {
-    const response = await axiosInstance.post('/api/auth/resend-verification', { email });
+    const response = await axiosInstance.get(`/api/auth/check-verification?email=${encodeURIComponent(email)}`);
     return response.data;
   },
   
@@ -325,13 +282,16 @@ updateProfile: async (userData) => {
       token,
       newPassword
     });
-    if (response.data.success && response.data.token) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      
+      // Store CSRF token
+      if (response.data.csrfToken) {
+        localStorage.setItem('csrfToken', response.data.csrfToken);
       }
     }
+    
     return response.data;
   },
   
@@ -349,31 +309,51 @@ updateProfile: async (userData) => {
       email,
       password
     });
-    if (response.data.success && response.data.token) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      
+      // Store CSRF token
+      if (response.data.csrfToken) {
+        localStorage.setItem('csrfToken', response.data.csrfToken);
       }
     }
+    
     return response.data;
   },
   
-  // Public profiles
-  getPublicProfile: async (userId) => {
-    const response = await axiosInstance.get(`/api/auth/profile/${userId}/public`);
+  // Session management
+  getSessionStatus: async () => {
+    const response = await axiosInstance.get('/api/auth/session');
+    
+    if (response.data.success && response.data.authenticated && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    }
+    
     return response.data;
   },
   
-  // OAuth
-  googleAuth: () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    window.location.href = `${backendUrl}/api/auth/google`;
+  // CSRF token
+  getCsrfToken: async () => {
+    const response = await axiosInstance.get('/api/auth/csrf-token');
+    return response.data;
+  },
+  
+  // Check auth status
+  checkAuth: async () => {
+    try {
+      const response = await axiosInstance.get('/api/auth/session');
+      return response.data;
+    } catch (error) {
+      return { success: false, authenticated: false };
+    }
   },
   
   // Utility functions
   isAuthenticated: () => {
-    return !!localStorage.getItem('userToken');
+    // Check if we have user info and if cookies might be present
+    const userInfo = localStorage.getItem('userInfo');
+    return !!userInfo;
   },
   
   getCurrentUser: () => {
@@ -386,36 +366,14 @@ updateProfile: async (userData) => {
   },
   
   clearAuthData: () => {
-    localStorage.removeItem('userToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('userInfo');
+    clearAuthData();
   },
   
-  // Check if email is verified
-  isEmailVerified: () => {
-    try {
-      const userInfo = localStorage.getItem('userInfo');
-      if (!userInfo) return false;
-      const user = JSON.parse(userInfo);
-      return user.emailVerified === true;
-    } catch (error) {
-      return false;
-    }
-  },
-  
-  // Check if user is admin
-  isAdmin: () => {
-    try {
-      const userInfo = localStorage.getItem('userInfo');
-      if (!userInfo) return false;
-      const user = JSON.parse(userInfo);
-      return user.role === 'admin';
-    } catch (error) {
-      return false;
-    }
+  // Get CSRF token from storage
+  getStoredCsrfToken: () => {
+    return localStorage.getItem('csrfToken');
   }
 };
-
 // User management API functions
 export const userAPI = {
   switchRole: async (role) => {

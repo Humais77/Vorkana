@@ -9,6 +9,7 @@ const {
   validateQuery ,
   validateSubcategory 
 } = require('../middleware/validators/category.validator.js');
+const mongoose = require("mongoose");
 const timeout = (ms) => {
   return (req, res, next) => {
     res.setTimeout(ms, () => {
@@ -77,6 +78,32 @@ const updateLimiter = rateLimit({
 });
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 
+router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
+router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
+router.get('/repair-counts/status', protect, adminOnly, adminLimiter,controller.repairCategoryCounts);
+// Add to category.route.js
+router.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await mongoose.connection.db.admin().ping();
+    
+    // Test cache connection
+    await cache.ping();
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      cache: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
 // Get subcategories by category
 router.get('/:categoryId/subcategories', 
   publicLimiter, 
@@ -120,30 +147,4 @@ router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restor
 
 
 
-router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
-router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
-router.get('/repair-counts/status', protect, adminOnly, adminLimiter,controller.repairCategoryCounts);
-// Add to category.route.js
-router.get('/health', async (req, res) => {
-  try {
-    // Test database connection
-    await mongoose.connection.db.admin().ping();
-    
-    // Test cache connection
-    await cache.ping();
-    
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      database: 'connected',
-      cache: 'connected'
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error.message
-    });
-  }
-});
 module.exports = router;

@@ -3,6 +3,8 @@ const { promisify } = require('util');
 const User = require('../models/user.model.js');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit'); 
+const { csrfProtection: baseCsrfProtection } = require('./auth.middleware.js');
+
 // Security: Rate limiting for admin dashboard
 const adminDashboardLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -243,10 +245,25 @@ const auditLog = (action, resource) => {
     next();
   };
 };
+const adminCsrfProtection = (req, res, next) => {
+  // Skip CSRF for GET, HEAD, OPTIONS
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  
+  // Skip CSRF for health checks
+  if (req.path.includes('/health')) {
+    return next();
+  }
+  
+  // Use base CSRF protection
+  return baseCsrfProtection(req, res, next);
+};
 
 module.exports = {
   verifyAdmin,
   requirePermission,
   adminDashboardLimiter,
-  auditLog
+  auditLog,
+  csrfProtection: adminCsrfProtection
 };

@@ -31,9 +31,8 @@ import {
   Eye,
   Trash2,
   Image as ImageIcon,
-  Plus,
-  Grid3x3,
-  Edit
+  Edit,
+  Briefcase
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -150,6 +149,10 @@ const GigEdit = () => {
     isSuccess: updateSuccess,
     data: updatedGigData
   } = useUpdateGig();
+ const [shouldRedirect, setShouldRedirect] = useState({
+    toGigPage: false,
+    toDashboard: false
+  });
 
   // Initial form state
   const initialFormData = useMemo(() => ({
@@ -187,12 +190,13 @@ const GigEdit = () => {
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [versionConflict, setVersionConflict] = useState(false);
   const [currentVersion, setCurrentVersion] = useState(1);
-const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
   // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
-
+  
   // Memoized values
   const subcategoriesData = useSubcategoriesByCategory(formData.projectCategory, {
     enabled: !!formData.projectCategory
@@ -208,15 +212,93 @@ const [isRefreshing, setIsRefreshing] = useState(false);
     form: errors.form || gigError?.message || authError || categoryError?.message || updateError?.message
   }), [errors, gigError, authError, categoryError, updateError]);
 
-  // Initialize form with gig data
-  useEffect(() => {
+ // Loading state
+  if (gigLoading || categoryLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
+                <div className="space-y-4">
+                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-full"></div>
+                </div>
+              </div>
+              <div className="lg:col-span-1">
+                <div className="bg-gray-200 rounded-2xl h-96"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (gigError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error Loading Gig</h2>
+          <p className="text-gray-600 mb-8">{gigError.message}</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleRefreshGig}
+              className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/gigs')}
+              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            >
+              Browse Gigs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Success state
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <div className="bg-white rounded-2xl p-12 shadow-xl">
+            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Gig Updated Successfully!</h2>
+            <p className="text-gray-600 text-lg mb-8">
+              Your gig has been updated. Redirecting to gig page...
+            </p>
+            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
+            <div className="mt-8">
+              <button
+                onClick={() => navigate(`/gig/${id}`)}
+                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
+              >
+                View Updated Gig
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+useEffect(() => {
     if (gigData?.gig || gigData) {
       const gig = gigData.gig || gigData;
       
       // Check if user is owner
       if (currentUser && gig.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
         toast.error('You can only edit your own gigs');
-        navigate(`/gig/${id}`);
+        setShouldRedirect(prev => ({ ...prev, toGigPage: true }));
         return;
       }
 
@@ -257,8 +339,7 @@ const [isRefreshing, setIsRefreshing] = useState(false);
       // Set gig details in store
       setGigDetails(gig);
     }
-  }, [gigData, currentUser, id, navigate, setGigDetails]);
-
+  }, [gigData, currentUser, id, setGigDetails]);
   // Sync categories from query to store
   useEffect(() => {
     if (categoriesData && categoriesData.length > 0) {
@@ -281,30 +362,32 @@ const [isRefreshing, setIsRefreshing] = useState(false);
       }, 2000);
     }
   }, [updateSuccess, updatedGigData, navigate, id, refetchGig]);
-useEffect(() => {
-  if (updateError) {
-    // Check if user is owner or admin
-    const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
-    const isAdmin = currentUser?.role === 'admin';
-    
-    if (updateError.code === 'VERSION_CONFLICT' && (isOwner || isAdmin)) {
-      // Owners and admins should not see version conflict errors
-      // Just refresh the data silently
-      refetchGig();
-      return;
+
+  useEffect(() => {
+    if (updateError) {
+      // Check if user is owner or admin
+      const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
+      const isAdmin = currentUser?.role === 'admin';
+      
+      if (updateError.code === 'VERSION_CONFLICT' && (isOwner || isAdmin)) {
+        // Owners and admins should not see version conflict errors
+        // Just refresh the data silently
+        refetchGig();
+        return;
+      }
+      
+      if (updateError.code === 'VERSION_CONFLICT') {
+        setVersionConflict(true);
+        toast.error('This gig was modified by another user. Please refresh and try again.');
+      } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
+        setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
+        toast.error('Subcategory is required');
+      } else {
+        toast.error(updateError.message || 'Failed to update gig');
+      }
     }
-    
-    if (updateError.code === 'VERSION_CONFLICT') {
-      setVersionConflict(true);
-      toast.error('This gig was modified by another user. Please refresh and try again.');
-    } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
-      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-      toast.error('Subcategory is required');
-    } else {
-      toast.error(updateError.message || 'Failed to update gig');
-    }
-  }
-}, [updateError, currentUser, gigData, refetchGig]);
+  }, [updateError, currentUser, gigData, refetchGig]);
+
   // Cleanup
   useEffect(() => {
     return () => {
@@ -316,14 +399,20 @@ useEffect(() => {
     };
   }, [clearGigDetails, uploadedImages, thumbnailFile]);
 
-  // Profile completion check
-  useEffect(() => {
-    if (!isProfileCompleteEnough(currentUser, 70)) {
+useEffect(() => {
+    if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
       toast.error('Please complete your profile before editing gigs');
+      setShouldRedirect(prev => ({ ...prev, toDashboard: true }));
+    }
+  }, [currentUser]);
+  useEffect(() => {
+    if (shouldRedirect.toGigPage) {
+      navigate(`/gig/${id}`);
+    }
+    if (shouldRedirect.toDashboard) {
       navigate('/dashboard');
     }
-  }, [currentUser, navigate]);
-
+  }, [shouldRedirect, id, navigate]);
   // Get category name for display
   const getCategoryName = useCallback(() => {
     if (!formData.projectCategory) return "";
@@ -575,192 +664,140 @@ useEffect(() => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories]);
-// In the handleSubmit function - FIX THE VERSION CONFLICT HANDLING
-const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
-  setVersionConflict(false);
 
-  console.log('=== SUBMIT DEBUG INFO ===');
-  console.log('Gig ID:', id);
-  console.log('Current Version:', currentVersion);
-  console.log('User ID:', currentUser?._id);
-  console.log('Gig Owner ID:', gigData?.gig?.createdBy?._id);
-  console.log('Is Owner:', currentUser?._id === gigData?.gig?.createdBy?._id);
-  console.log('Is Admin:', currentUser?.role === 'admin');
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setVersionConflict(false);
 
-  if (!isAuthenticated) {
-    toast.error("Please sign in to update gigs");
-    setIsSubmitting(false);
-    return;
-  }
-
-  if (!validateForm()) {
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    // Verify gig exists
-    if (!gigData?.gig && !gigData) {
-      toast.error('Gig data not loaded. Please refresh the page.');
+    if (!isAuthenticated) {
+      toast.error("Please sign in to update gigs");
       setIsSubmitting(false);
       return;
     }
 
-    const gig = gigData.gig || gigData;
-    
-    // Check ownership
-    const isOwner = currentUser?._id === gig.createdBy?._id;
-    const isAdmin = currentUser?.role === 'admin';
-    
-    if (!isOwner && !isAdmin) {
-      toast.error('You can only edit your own gigs');
+    if (!validateForm()) {
       setIsSubmitting(false);
       return;
     }
 
-    // Validate ID
-    if (!id || id === 'undefined' || id === 'null') {
-      toast.error('Invalid gig ID');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const formDataObj = new FormData();
-
-    // Append fields with proper formatting
-    const appendField = (key, value) => {
-      if (value !== undefined && value !== null && value !== '') {
-        formDataObj.append(key, String(value));
+    try {
+      // Verify gig exists
+      if (!gigData?.gig && !gigData) {
+        toast.error('Gig data not loaded. Please refresh the page.');
+        setIsSubmitting(false);
+        return;
       }
-    };
 
-    appendField('title', formData.title.trim());
-    appendField('fullName', formData.fullName.trim());
-    appendField('oauthEmail', formData.oauthEmail.trim().toLowerCase());
-    appendField('country', formData.country.trim());
-    appendField('phone', formData.phone.trim());
-    appendField('projectCategory', formData.projectCategory);
-    
-    // Handle subcategory - can be empty string
-    formDataObj.append('subcategory', formData.subcategory || '');
-    
-    appendField('description', formData.description.trim());
-    appendField('budget', parseFloat(formData.budget));
-    appendField('currency', formData.currency);
-    appendField('timeline', formData.timeline.trim());
-    appendField('timelineUnit', formData.timelineUnit);
-    appendField('communication', formData.communication);
-    appendField('urgency', formData.urgency);
-    appendField('visibility', formData.visibility);
-    
- console.log('FormData contents before sending:');
-  for (let pair of formDataObj.entries()) {
-    console.log(`${pair[0]}: ${pair[1]} (type: ${typeof pair[1]})`);
-  }
-    // Append skills as array format
-    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-      formData.skillsRequired.forEach((skill, index) => {
-        formDataObj.append(`skillsRequired[${index}]`, skill);
-      });
-    }
+      const gig = gigData.gig || gigData;
+      
+      // Check ownership
+      const isOwner = currentUser?._id === gig.createdBy?._id;
+      const isAdmin = currentUser?.role === 'admin';
+      
+      if (!isOwner && !isAdmin) {
+        toast.error('You can only edit your own gigs');
+        setIsSubmitting(false);
+        return;
+      }
 
-    // Append deliverables as array format
-    if (formData.deliverables && formData.deliverables.length > 0) {
-      formData.deliverables.forEach((deliverable, index) => {
-        formDataObj.append(`deliverables[${index}]`, deliverable);
-      });
-    }
+      // Validate ID
+      if (!id || id === 'undefined' || id === 'null') {
+        toast.error('Invalid gig ID');
+        setIsSubmitting(false);
+        return;
+      }
 
-    // Append thumbnail
-    if (thumbnailFile) {
-      formDataObj.append('thumbnail', thumbnailFile.file);
-    }
+      const formDataObj = new FormData();
 
-    // Append new images
-    uploadedImages.forEach((image) => {
-      formDataObj.append('images', image.file);
-    });
+      // Append fields with proper formatting
+      const appendField = (key, value) => {
+        if (value !== undefined && value !== null && value !== '') {
+          formDataObj.append(key, String(value));
+        }
+      };
 
-    // Debug log
-    console.log('FormData Contents:');
-    for (let pair of formDataObj.entries()) {
-      console.log(`${pair[0]}: ${pair[1]} (type: ${typeof pair[1]})`);
-    }
-    
-    // Call update mutation
-    updateGig({
-      id: id,
-      data: formDataObj,
-    });
-
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    toast.error(error.message || "Failed to update gig");
-    setIsSubmitting(false);
-  }
-}, [formData, currentVersion, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig, gigData, currentUser]);
-
-// In the version conflict error handling - FIX THE LOGIC
-useEffect(() => {
-  if (updateError) {
-    const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
-    const isAdmin = currentUser?.role === 'admin';
-    
-    if (updateError.code === 'VERSION_CONFLICT') {
-      if (isOwner || isAdmin) {
-        // For owners/admins, just refresh and continue
-        toast('Refreshing to get latest version...', {
-          icon: '🔄',
-          style: {
-            background: '#3b82f6',
-            color: 'white',
-          },
+      appendField('title', formData.title.trim());
+      appendField('fullName', formData.fullName.trim());
+      appendField('oauthEmail', formData.oauthEmail.trim().toLowerCase());
+      appendField('country', formData.country.trim());
+      appendField('phone', formData.phone.trim());
+      appendField('projectCategory', formData.projectCategory);
+      
+      // Handle subcategory - can be empty string
+      formDataObj.append('subcategory', formData.subcategory || '');
+      
+      appendField('description', formData.description.trim());
+      appendField('budget', parseFloat(formData.budget));
+      appendField('currency', formData.currency);
+      appendField('timeline', formData.timeline.trim());
+      appendField('timelineUnit', formData.timelineUnit);
+      appendField('communication', formData.communication);
+      appendField('urgency', formData.urgency);
+      appendField('visibility', formData.visibility);
+      
+      // Append skills as array format
+      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+        formData.skillsRequired.forEach((skill, index) => {
+          formDataObj.append(`skillsRequired[${index}]`, skill);
         });
-        refetchGig();
-      } else {
-        // For others, show version conflict error
-        setVersionConflict(true);
-        toast.error('This gig was modified by another user. Please refresh and try again.');
       }
-    } else if (updateError.code === 'SUBCATEGORY_NOT_FOUND') {
-      toast.error('Please select a valid subcategory');
-    } else {
-      toast.error(updateError.message || 'Failed to update gig');
+
+      // Append deliverables as array format
+      if (formData.deliverables && formData.deliverables.length > 0) {
+        formData.deliverables.forEach((deliverable, index) => {
+          formDataObj.append(`deliverables[${index}]`, deliverable);
+        });
+      }
+
+      // Append thumbnail
+      if (thumbnailFile) {
+        formDataObj.append('thumbnail', thumbnailFile.file);
+      }
+
+      // Append new images
+      uploadedImages.forEach((image) => {
+        formDataObj.append('images', image.file);
+      });
+      
+      // Call update mutation
+      updateGig({
+        id: id,
+        data: formDataObj,
+      });
+
+    } catch (error) {
+      console.error("Error in handleSubmit:", error);
+      toast.error(error.message || "Failed to update gig");
+      setIsSubmitting(false);
     }
-  }
-}, [updateError, currentUser, gigData, refetchGig]);
+  }, [formData, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig, gigData, currentUser]);
 
-
-
-
-
-
-
-const handleRefreshGig = useCallback(async () => {
-  setIsRefreshing(true);
-  try {
-    const { data: refreshedData } = await refetchGig();
-    if (refreshedData?.gig || refreshedData) {
-      const gig = refreshedData.gig || refreshedData;
-      setVersionConflict(false);
-      toast.success('Gig data refreshed successfully! Latest version: ' + (gig.version || 1));
+  const handleRefreshGig = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const { data: refreshedData } = await refetchGig();
+      if (refreshedData?.gig || refreshedData) {
+        const gig = refreshedData.gig || refreshedData;
+        setVersionConflict(false);
+        toast.success('Gig data refreshed successfully! Latest version: ' + (gig.version || 1));
+      }
+    } catch (error) {
+      toast.error('Failed to refresh gig data');
+    } finally {
+      setIsRefreshing(false);
     }
-  } catch (error) {
-    toast.error('Failed to refresh gig data');
-  } finally {
-    setIsRefreshing(false);
-  }
-}, [refetchGig]);
-useEffect(() => {
-  // Refresh gig data when component mounts to ensure fresh version
-  if (id && !gigLoading) {
-    refetchGig().then(() => {
-      console.log('Gig data refreshed on mount');
-    });
-  }
-}, [id]);
+  }, [refetchGig]);
+
+  useEffect(() => {
+    // Refresh gig data when component mounts to ensure fresh version
+    if (id && !gigLoading) {
+      refetchGig().then(() => {
+        console.log('Gig data refreshed on mount');
+      });
+    }
+  }, [id, gigLoading, refetchGig]);
+
   const formatBudget = useCallback((budget) => {
     const num = parseFloat(budget);
     return isNaN(num) ? "0" : num.toLocaleString('en-US', {
@@ -768,84 +805,174 @@ useEffect(() => {
       maximumFractionDigits: 2
     });
   }, []);
-
-  // Loading state
-  if (gigLoading || categoryLoading) {
+ if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
-                <div className="space-y-4">
-                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full"></div>
-                </div>
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-emerald-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
+ 
+  // Memoized render functions
+  const renderTopInfo = useMemo(() => (
+    <div className="max-w-6xl mx-auto mb-8">
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 md:p-8 shadow-lg border border-emerald-100">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="md:w-2/3">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
+                <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
-              <div className="lg:col-span-1">
-                <div className="bg-gray-200 rounded-2xl h-96"></div>
+              <div>
+                <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
+                  Edit Gig
+                </h1>
+                <p className="text-emerald-700 font-medium text-sm md:text-base">
+                  Update your project details
+                </p>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (gigError) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error Loading Gig</h2>
-          <p className="text-gray-600 mb-8">{gigError.message}</p>
-          <div className="flex gap-4 justify-center">
-            <button
-              onClick={handleRefreshGig}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/gigs')}
-              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Browse Gigs
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <div className="bg-white rounded-2xl p-12 shadow-xl">
-            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Gig Updated Successfully!</h2>
-            <p className="text-gray-600 text-lg mb-8">
-              Your gig has been updated. Redirecting to gig page...
+            <p className="text-gray-600 text-sm md:text-base">
+              Make changes to your gig to keep it relevant and attractive to freelancers.
             </p>
-            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
-            <div className="mt-8">
-              <button
-                onClick={() => navigate(`/gig/${id}`)}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
-              >
-                View Updated Gig
-              </button>
+          </div>
+          <div className="md:w-1/3 w-full">
+            <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
+                <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
+                Quick Tips
+              </h3>
+              <ul className="space-y-2 text-xs md:text-sm text-gray-600">
+                {QUICK_TIPS.map((tip, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  ), []);
+
+  const renderRightPanel = useMemo(() => (
+    <div className="lg:col-span-1">
+      <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <Eye className="mr-3" size={20} />
+            <h2 className="text-xl font-bold">Gig Preview</h2>
+          </div>
+          <p className="text-emerald-100 text-sm">
+            Review your changes before updating. This preview shows how your gig will appear to others.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Current Information</h3>
+            <ul className="space-y-2 text-sm">
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Title:</span>
+                <span className="font-medium truncate max-w-[150px]">
+                  {formData.title || 'Not set'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Category:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getCategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Subcategory:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getSubcategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Budget:</span>
+                <span className="font-medium">
+                  ${formatBudget(formData.budget)}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Timeline:</span>
+                <span className="font-medium">{formData.timeline || 'Not set'}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Urgency:</span>
+                <span className="font-medium capitalize">{formData.urgency}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Visibility:</span>
+                <span className="font-medium capitalize">{formData.visibility}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Skills:</span>
+                <span className="font-medium">{formData.skillsRequired.length} added</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Deliverables:</span>
+                <span className="font-medium">{formData.deliverables.length} added</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Total Images:</span>
+                <span className="font-medium">
+                  {existingImages.length + uploadedImages.length}/10
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Changes Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Form Fields Updated:</span>
+                <span className="font-medium">Multiple</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">New Images:</span>
+                <span className="font-medium">{uploadedImages.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">New Thumbnail:</span>
+                <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Current Version:</span>
+                <span className="font-medium">{currentVersion}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Update Tips</h3>
+            <ul className="space-y-2 text-sm text-emerald-100">
+              <li className="flex items-start gap-2">
+                <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>Update at least once a month to stay relevant</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>Clear requirements attract better proposals</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>High-quality images increase engagement</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), [formData, getCategoryName, getSubcategoryName, formatBudget, existingImages, uploadedImages, thumbnailFile, currentVersion]);
 
   return (
     <SeoWrapper
@@ -855,48 +982,8 @@ useEffect(() => {
       canonical={`${window.location.origin}/edit-gig/${id}`}
       structuredData={GIG_EDIT_STRUCTURED_DATA}
     >
-      <div ref={topContainerRef} className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
-        {/* Header */}
-        <div className="max-w-6xl mx-auto mb-8">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 md:p-8 shadow-lg border border-blue-100">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="md:w-2/3">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
-                    <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
-                      Edit Gig
-                    </h1>
-                    <p className="text-blue-700 font-medium text-sm md:text-base">
-                      Update your project details
-                    </p>
-                  </div>
-                </div>
-                <p className="text-gray-600 text-sm md:text-base">
-                  Make changes to your gig to keep it relevant and attractive to freelancers.
-                </p>
-              </div>
-              <div className="md:w-1/3 w-full">
-                <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
-                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
-                    <Info className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
-                    Quick Tips
-                  </h3>
-                  <ul className="space-y-2 text-xs md:text-sm text-gray-600">
-                    {QUICK_TIPS.map((tip, index) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <span>{tip}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div ref={topContainerRef} className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-8 md:py-12 px-4">
+        {renderTopInfo}
 
         {/* Main Content */}
         <div className="max-w-6xl mx-auto">
@@ -912,52 +999,52 @@ useEffect(() => {
                     </div>
                   )}
 
-               {versionConflict && (
-  <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-    <div className="flex items-start">
-      <AlertCircle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
-      <div>
-        <h3 className="font-semibold text-orange-800 mb-2">Version Conflict</h3>
-        <p className="text-orange-700 mb-3">
-          This gig was modified by another user. Please refresh to get the latest version.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleRefreshGig}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
-          >
-            <RefreshCw className="h-3 w-3" />
-            Refresh Gig Data
-          </button>
-          {/* Only show "Continue Anyway" for owners/admins */}
-          {(currentUser?._id === gigData?.gig?.createdBy?._id || currentUser?.role === 'admin') && (
-            <button
-              onClick={() => {
-                setVersionConflict(false);
-                toast('Continuing with current data', {
-                  icon: '⚠️',
-                  style: {
-                    background: '#f59e0b',
-                    color: 'white',
-                  },
-                });
-              }}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
-            >
-              Continue Anyway (Owner/Admin Override)
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                  {versionConflict && (
+                    <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+                      <div className="flex items-start">
+                        <AlertCircle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
+                        <div>
+                          <h3 className="font-semibold text-orange-800 mb-2">Version Conflict</h3>
+                          <p className="text-orange-700 mb-3">
+                            This gig was modified by another user. Please refresh to get the latest version.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={handleRefreshGig}
+                              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Refresh Gig Data
+                            </button>
+                            {/* Only show "Continue Anyway" for owners/admins */}
+                            {(currentUser?._id === gigData?.gig?.createdBy?._id || currentUser?.role === 'admin') && (
+                              <button
+                                onClick={() => {
+                                  setVersionConflict(false);
+                                  toast('Continuing with current data', {
+                                    icon: '⚠️',
+                                    style: {
+                                      background: '#f59e0b',
+                                      color: 'white',
+                                    },
+                                  });
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
+                              >
+                                Continue Anyway (Owner/Admin Override)
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <form onSubmit={handleSubmit}>
                     {/* Basic Information */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-blue-600" />
+                        <FileText className="h-5 w-5 text-emerald-600" />
                         Basic Information
                       </h2>
                       <div className="space-y-6">
@@ -971,7 +1058,7 @@ useEffect(() => {
                             name="title"
                             value={formData.title}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             placeholder="e.g., Build a responsive e-commerce website"
                             required
                           />
@@ -990,7 +1077,7 @@ useEffect(() => {
                               name="projectCategory"
                               value={formData.projectCategory}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                               required
                             >
                               <option value="">Select a category</option>
@@ -1014,13 +1101,13 @@ useEffect(() => {
                               name="subcategory"
                               value={formData.subcategory}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                               disabled={!formData.projectCategory || subcategoriesData.isLoading}
                               required={subcategories.length > 0}
                             >
                               <option value="">
                                 {subcategoriesData.isLoading ? 'Loading...' : 
-                                 subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
+                                  subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
                               </option>
                               {subcategories.map((subcategory) => (
                                 <option key={subcategory._id} value={subcategory._id}>
@@ -1046,7 +1133,7 @@ useEffect(() => {
                               name="budget"
                               value={formData.budget}
                               onChange={handleInputChange}
-                              className="w-full pl-10 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full pl-10 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                               placeholder="Enter your budget"
                               min="5"
                               max="100000"
@@ -1057,7 +1144,7 @@ useEffect(() => {
                           <div className="flex justify-between mt-2">
                             <p className="text-xs text-gray-500">Minimum $5, maximum $100,000</p>
                             {formData.budget && (
-                              <span className="text-sm font-semibold text-blue-600">
+                              <span className="text-sm font-semibold text-emerald-600">
                                 ${formatBudget(formData.budget)}
                               </span>
                             )}
@@ -1076,7 +1163,7 @@ useEffect(() => {
                             name="currency"
                             value={formData.currency}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                           >
                             {CURRENCY_OPTIONS.map(currency => (
                               <option key={currency.value} value={currency.value}>
@@ -1091,7 +1178,7 @@ useEffect(() => {
                     {/* Contact Information */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <User className="h-5 w-5 text-blue-600" />
+                        <User className="h-5 w-5 text-emerald-600" />
                         Contact Information
                       </h2>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1105,7 +1192,7 @@ useEffect(() => {
                             name="fullName"
                             value={formData.fullName}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             required
                           />
                         </div>
@@ -1120,7 +1207,7 @@ useEffect(() => {
                             name="oauthEmail"
                             value={formData.oauthEmail}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             required
                           />
                         </div>
@@ -1135,7 +1222,7 @@ useEffect(() => {
                             name="country"
                             value={formData.country}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             required
                           />
                         </div>
@@ -1150,7 +1237,7 @@ useEffect(() => {
                             name="phone"
                             value={formData.phone}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             required
                           />
                         </div>
@@ -1160,7 +1247,7 @@ useEffect(() => {
                     {/* Project Details */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-blue-600" />
+                        <FileText className="h-5 w-5 text-emerald-600" />
                         Project Details
                       </h2>
                       <div className="space-y-6">
@@ -1174,7 +1261,7 @@ useEffect(() => {
                             value={formData.description}
                             onChange={handleInputChange}
                             rows="6"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             placeholder="Describe your project in detail..."
                             required
                           />
@@ -1200,7 +1287,7 @@ useEffect(() => {
                               name="timeline"
                               value={formData.timeline}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                               placeholder="e.g., 2 weeks"
                               required
                             />
@@ -1218,7 +1305,7 @@ useEffect(() => {
                               name="timelineUnit"
                               value={formData.timelineUnit}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             >
                               {DELIVERY_TIME_UNITS.map(unit => (
                                 <option key={unit.value} value={unit.value}>
@@ -1247,7 +1334,7 @@ useEffect(() => {
                                 <div className={`
                                   w-full px-3 py-2 text-center border rounded-lg cursor-pointer
                                   ${formData.communication === method
-                                    ? 'border-blue-500 bg-blue-50 text-blue-600'
+                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
                                     : 'border-gray-300 hover:border-gray-400'
                                   }
                                 `}>
@@ -1279,7 +1366,7 @@ useEffect(() => {
                                     ? level === 'urgent' ? 'border-red-500 bg-red-50 text-red-600'
                                       : level === 'high' ? 'border-orange-500 bg-orange-50 text-orange-600'
                                         : level === 'medium' ? 'border-yellow-500 bg-yellow-50 text-yellow-600'
-                                          : 'border-green-500 bg-green-50 text-green-600'
+                                          : 'border-emerald-500 bg-emerald-50 text-emerald-600'
                                     : 'border-gray-300 hover:border-gray-400'
                                   }
                                 `}>
@@ -1308,7 +1395,7 @@ useEffect(() => {
                                 <div className={`
                                   w-full px-3 py-3 text-center border rounded-lg cursor-pointer
                                   ${formData.visibility === visibility.value
-                                    ? 'border-blue-500 bg-blue-50 text-blue-600'
+                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
                                     : 'border-gray-300 hover:border-gray-400'
                                   }
                                 `}>
@@ -1325,7 +1412,7 @@ useEffect(() => {
                     {/* Skills & Deliverables */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <Target className="h-5 w-5 text-blue-600" />
+                        <Target className="h-5 w-5 text-emerald-600" />
                         Skills & Deliverables
                       </h2>
                       <div className="space-y-6">
@@ -1354,12 +1441,12 @@ useEffect(() => {
                           {formData.skillsRequired.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-2">
                               {formData.skillsRequired.map((skill, index) => (
-                                <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+                                <div key={index} className="flex items-center bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
                                   {skill}
                                   <button
                                     type="button"
                                     onClick={() => removeSkill(index)}
-                                    className="ml-2 text-blue-600 hover:text-blue-800"
+                                    className="ml-2 text-emerald-600 hover:text-emerald-800"
                                   >
                                     <X size={14} />
                                   </button>
@@ -1414,7 +1501,7 @@ useEffect(() => {
                     {/* Images Section */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <ImageIcon className="h-5 w-5 text-blue-600" />
+                        <ImageIcon className="h-5 w-5 text-emerald-600" />
                         Images
                       </h2>
 
@@ -1440,7 +1527,7 @@ useEffect(() => {
                                   </button>
                                 </div>
                                 {existingThumbnail?.public_id === image.public_id && (
-                                  <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                                  <div className="absolute top-2 left-2 bg-emerald-500 text-white text-xs px-2 py-1 rounded">
                                     Thumbnail
                                   </div>
                                 )}
@@ -1453,7 +1540,7 @@ useEffect(() => {
                       {/* New Images Upload */}
                       <div className="mb-6">
                         <h3 className="font-semibold text-gray-900 mb-4">Add New Images</h3>
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors">
                           <input
                             type="file"
                             id="image-upload"
@@ -1525,7 +1612,7 @@ useEffect(() => {
 
                         {existingThumbnail && !thumbnailFile && (
                           <div className="mb-4">
-                            <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg">
+                            <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-lg">
                               <img
                                 src={existingThumbnail.url}
                                 alt="Current thumbnail"
@@ -1568,7 +1655,7 @@ useEffect(() => {
                             </button>
                           </div>
                         ) : (
-                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
+                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors">
                             <input
                               type="file"
                               id="thumbnail-upload"
@@ -1604,7 +1691,7 @@ useEffect(() => {
                       <button
                         type="submit"
                         disabled={isSubmitting || updateLoading}
-                        className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {isSubmitting || updateLoading ? (
                           <>
@@ -1619,140 +1706,29 @@ useEffect(() => {
                         )}
                       </button>
                       <button
-  onClick={handleRefreshGig}
-  disabled={isRefreshing}
-  className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
->
-  {isRefreshing ? (
-    <>
-      <Loader2 className="h-4 w-4 animate-spin" />
-      Refreshing...
-    </>
-  ) : (
-    <>
-      <RefreshCw className="h-4 w-4" />
-      Refresh
-    </>
-  )}
-</button>
+                        onClick={handleRefreshGig}
+                        disabled={isRefreshing}
+                        className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {isRefreshing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Refreshing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-4 w-4" />
+                            Refresh
+                          </>
+                        )}
+                      </button>
                     </div>
                   </form>
                 </div>
               </div>
             </div>
 
-            {/* Right Panel - Preview & Info */}
-            <div className="lg:col-span-1">
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
-                <div className="mb-6">
-                  <div className="flex items-center mb-4">
-                    <Eye className="mr-3" size={20} />
-                    <h2 className="text-xl font-bold">Gig Preview</h2>
-                  </div>
-                  <p className="text-blue-100 text-sm">
-                    Review your changes before updating. This preview shows how your gig will appear to others.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Current Information</h3>
-                    <ul className="space-y-2 text-sm">
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Title:</span>
-                        <span className="font-medium truncate max-w-[150px]">
-                          {formData.title || 'Not set'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Category:</span>
-                        <span className="font-medium truncate max-w-[120px]">
-                          {getCategoryName() || 'Not selected'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Subcategory:</span>
-                        <span className="font-medium truncate max-w-[120px]">
-                          {getSubcategoryName() || 'Not selected'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Budget:</span>
-                        <span className="font-medium">
-                          ${formatBudget(formData.budget)}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Timeline:</span>
-                        <span className="font-medium">{formData.timeline || 'Not set'}</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Urgency:</span>
-                        <span className="font-medium capitalize">{formData.urgency}</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Visibility:</span>
-                        <span className="font-medium capitalize">{formData.visibility}</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Skills:</span>
-                        <span className="font-medium">{formData.skillsRequired.length} added</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Deliverables:</span>
-                        <span className="font-medium">{formData.deliverables.length} added</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-blue-100">Total Images:</span>
-                        <span className="font-medium">
-                          {existingImages.length + uploadedImages.length}/10
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Changes Summary</h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-blue-100">Form Fields Updated:</span>
-                        <span className="font-medium">Multiple</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-blue-100">New Images:</span>
-                        <span className="font-medium">{uploadedImages.length}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-blue-100">New Thumbnail:</span>
-                        <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-blue-100">Current Version:</span>
-                        <span className="font-medium">{currentVersion}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Update Tips</h3>
-                    <ul className="space-y-2 text-sm text-blue-100">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>Update at least once a month to stay relevant</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>Clear requirements attract better proposals</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>High-quality images increase engagement</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {renderRightPanel}
           </div>
         </div>
       </div>

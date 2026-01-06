@@ -8,64 +8,153 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // ✅ This sends cookies with requests
 });
+
+// ✅ DEBUG: Add logging to see what's happening
+console.log('Gig API initialized, cookies:', document.cookie);
+
+// Helper to get CSRF token from cookie
+function getCsrfToken() {
+  if (typeof document === 'undefined') return null;
+  
+  // Always read from cookie first
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'XSRF-TOKEN') {
+      console.log('Found XSRF-TOKEN in cookie:', value?.substring(0, 10) + '...');
+      const token = decodeURIComponent(value);
+      
+      // Also update localStorage to keep them in sync
+      localStorage.setItem('csrfToken', token);
+      console.log('Updated localStorage with cookie token');
+      
+      return token;
+    }
+  }
+  
+  console.warn('XSRF-TOKEN not found in cookies');
+  return null;
+}
+
+// Helper to get CSRF token from localStorage
+function getCsrfTokenFromStorage() {
+  try {
+    const token = localStorage.getItem('csrfToken');
+    console.log('CSRF token from localStorage:', token?.substring(0, 10) + '...');
+    return token;
+  } catch (error) {
+    console.error('Error getting CSRF token from storage:', error);
+    return null;
+  }
+}
 
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken') || 
-                  localStorage.getItem('token') || 
-                  sessionStorage.getItem('userToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Try multiple sources for CSRF token
+    const csrfToken = getCsrfToken();
+    
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken;
+      console.log(`[${config.method?.toUpperCase()} ${config.url}] Adding CSRF token from cookie:`, csrfToken.substring(0, 10) + '...');
+    } else {
+      console.warn(`[${config.method?.toUpperCase()} ${config.url}] No CSRF token found in cookies!`);
     }
     
-    if (config.data instanceof FormData) {
-      delete config.headers['Content-Type'];
-    }
+    // Add request ID for tracking
+    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`[${config.method?.toUpperCase()} ${config.url}] Headers:`, {
+      'X-CSRF-Token': config.headers['X-CSRF-Token'] ? 'Present' : 'Missing',
+      'Content-Type': config.headers['Content-Type'],
+      'X-Request-ID': config.headers['X-Request-ID']
+    });
     
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('Request interceptor error:', error);
+    return Promise.reject(error);
+  }
 );
 
 axiosInstance.interceptors.response.use(
   (response) => {
-    if (response.data && response.data.success !== undefined) {
-      return response.data;
+    console.log(`[${response.config.method?.toUpperCase()} ${response.config.url}] Success:`, response.status);
+    
+    // Check if response contains a new CSRF token (from login/register)
+    if (response.data?.csrfToken) {
+      console.log('New CSRF token received from server response, storing...');
+      localStorage.setItem('csrfToken', response.data.csrfToken);
     }
-    return {
-      success: true,
-      data: response.data,
-      status: response.status
-    };
+    
+    return response;
   },
-  (error) => {
-    if (!error.response) {
-      return Promise.reject({
-        success: false,
-        message: 'Network error. Please check your connection.',
-        code: 'NETWORK_ERROR',
-        status: 0
-      });
-    }
+  async (error) => {
+    const originalRequest = error.config;
     
-    if (error.response.status === 500) {
-      return Promise.reject({
-        success: false,
-        message: 'Server error. Please try again later.',
-        code: 'SERVER_ERROR',
-        status: 500,
-        data: error.response.data
-      });
-    }
-    
-    return Promise.reject(error.response.data || {
-      success: false,
-      message: error.message,
-      status: error.response.status
+    console.log(`[${originalRequest.method?.toUpperCase()} ${originalRequest.url}] Error:`, {
+      status: error.response?.status,
+      message: error.response?.data?.message,
+      code: error.response?.data?.code
     });
+    
+    // Handle 403 - CSRF token issues
+    if (error.response?.status === 403 && 
+        (error.response.data?.message?.includes('CSRF') || 
+         error.response.data?.code === 'CSRF_TOKEN_INVALID')) {
+      
+      console.log('CSRF token validation failed, attempting to get new token...');
+      
+      try {
+        // Clear old tokens
+        localStorage.removeItem('csrfToken');
+        
+        // Get new CSRF token from dedicated endpoint
+        const csrfResponse = await axiosInstance.get('/api/auth/csrf-token', {
+          headers: {
+            // Don't send old CSRF token for this request
+          }
+        });
+        
+        console.log('CSRF token response:', csrfResponse.data);
+        
+        if (csrfResponse.data.success && csrfResponse.data.csrfToken) {
+          const newCsrfToken = csrfResponse.data.csrfToken;
+          console.log('Got new CSRF token:', newCsrfToken.substring(0, 10) + '...');
+          
+          // Store in localStorage
+          localStorage.setItem('csrfToken', newCsrfToken);
+          
+          // Update the original request with new CSRF token
+          originalRequest.headers['X-CSRF-Token'] = newCsrfToken;
+          
+          console.log('Retrying original request with new CSRF token...');
+          return axiosInstance(originalRequest);
+        }
+      } catch (csrfError) {
+        console.error('Failed to get new CSRF token:', csrfError);
+        
+        // If it's an auth error, redirect to login
+        if (csrfError.response?.status === 401) {
+          console.log('Authentication required, redirecting to login...');
+          window.location.href = '/signin?csrf_error=true';
+        }
+      }
+    }
+    
+    return Promise.reject(error);
   }
 );
+
+// Utility to clear all auth data
+function clearAuthData() {
+  console.log('Clearing auth data...');
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('csrfToken');
+  sessionStorage.clear();
+}
 
 const cleanParams = (params) => {
   const cleaned = {};
@@ -362,13 +451,14 @@ export const gigsAPI = {
     }
   },
 
-  create: async (formData) => {
+ create: async (formData) => {
     try {
       const config = {
         headers: {},
         timeout: 60000
       };
       
+      // Don't set Content-Type header for FormData - browser will set it with boundary
       if (formData instanceof FormData) {
         delete config.headers['Content-Type'];
       }
@@ -383,23 +473,7 @@ export const gigsAPI = {
       };
       
     } catch (error) {
-      if (error.status === 400) {
-        throw {
-          message: error.message || 'Validation failed',
-          errors: error.errors,
-          code: error.code || 'VALIDATION_ERROR',
-          status: 400
-        };
-      }
-      
-      if (error.status === 401) {
-        throw {
-          message: 'Please sign in to create a gig',
-          code: 'AUTH_REQUIRED',
-          status: 401
-        };
-      }
-      
+      console.error('Create gig API error:', error.response?.data || error.message);
       throw error;
     }
   },

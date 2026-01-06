@@ -56,7 +56,9 @@ export const useLogin = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
-        setAuth(data.user, data.token, data.refreshToken);
+        // Set user info only (tokens are in cookies)
+        setAuth(data.user);
+        
         toast.success(data.message || 'Login successful!');
         
         if (data.requiresVerification) {
@@ -69,11 +71,8 @@ export const useLogin = () => {
           navigate('/dashboard');
         }
       } else {
-        // Show backend error message directly
-        const errorMsg = data.message || 'Login failed';
-        setError(errorMsg);
-        toast.error(errorMsg);
-        // DO NOT navigate here - stay on login page
+        setError(data.message || 'Login failed');
+        toast.error(data.message || 'Login failed');
       }
     },
     onError: (error) => {
@@ -159,7 +158,12 @@ export const useRegister = () => {
     onSuccess: (data) => {
       if (data.success) {
         toast.success(data.message || 'Registration initiated!');
-        // Redirect to verification page with email
+        
+        // Store CSRF token if provided
+        if (data.csrfToken) {
+          localStorage.setItem('csrfToken', data.csrfToken);
+        }
+        
         navigate('/verify-email', { 
           state: { 
             email: data.user?.email,
@@ -167,9 +171,8 @@ export const useRegister = () => {
           }
         });
       } else {
-        const errorMsg = data.message || 'Registration failed';
-        setError(errorMsg);
-        toast.error(errorMsg);
+        setError(data.message || 'Registration failed');
+        toast.error(data.message || 'Registration failed');
       }
     },
     onError: (error) => {
@@ -211,11 +214,35 @@ export const useLogout = () => {
       navigate('/');
     },
     onError: (error) => {
-      // Still logout even if API call fails
+      // Still logout locally even if API fails
       logout();
       toast.error('Logged out locally');
       navigate('/');
     },
+  });
+};
+
+// Updated session check hook
+export const useSessionCheck = () => {
+  const setAuth = useAuthStore((state) => state.setAuth);
+  
+  return useQuery({
+    queryKey: ['sessionCheck'],
+    queryFn: async () => {
+      try {
+        const response = await authAPI.getSessionStatus();
+        
+        if (response.success && response.authenticated && response.user) {
+          setAuth(response.user);
+        }
+        
+        return response;
+      } catch (error) {
+        return { success: false, authenticated: false };
+      }
+    },
+    retry: 1,
+    staleTime: 1000 * 60, // 1 minute
   });
 };
 
@@ -262,45 +289,74 @@ export const useChangePassword = () => {
   });
 };
 
-// In useAuth.js - Update the useGetProfile hook
 export const useGetProfile = (options = {}) => {
   const setUser = useAuthStore((state) => state.setUser);
-  const token = useAuthStore((state) => state.token);
   
   return useQuery({
     queryKey: ['userProfile'],
     queryFn: async () => {
       try {
         const response = await authAPI.getProfile();
+        
         if (response.success && response.user) {
           // Add cache busting to picture URL
           if (response.user.picture) {
             response.user.picture = `${response.user.picture.split('?')[0]}?t=${Date.now()}`;
           }
+          
           setUser(response.user);
         }
+        
         return response;
       } catch (error) {
         console.error('Error fetching profile:', error);
+        
+        // If unauthorized, clear auth
+        if (error.response?.status === 401) {
+          useAuthStore.getState().logout();
+        }
+        
         throw error;
       }
     },
-    enabled: !!token && !options.skip, // Skip if requested
+    enabled: !options.skip,
     retry: 2,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 1000 * 60 * 2, // 2 minutes - shorter for fresh data
-    cacheTime: 1000 * 60 * 5, // 5 minutes
-    refetchOnWindowFocus: true, // Refresh when tab becomes active
-    refetchOnMount: options.refetchOnMount !== false, // Refetch on mount by default
+    staleTime: 1000 * 60 * 2,
+    cacheTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
+    refetchOnMount: options.refetchOnMount !== false,
     refetchOnReconnect: true,
-    onError: (error) => {
-      if (error.response?.status === 401) {
-        useAuthStore.getState().logout();
-      }
-    },
-    ...options, // Allow overriding default options
   });
 };
+
+// Updated CSRF token hook
+export const useCsrfToken = () => {
+  return useQuery({
+    queryKey: ['csrfToken'],
+    queryFn: async () => {
+      try {
+        return await authAPI.getCsrfToken();
+      } catch (error) {
+        console.error('Failed to get CSRF token:', error);
+        throw error;
+      }
+    },
+    retry: 2,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+};
+
+// Hook to initialize auth on app load
+export const useAuthInitializer = () => {
+  const sessionCheck = useSessionCheck();
+  const csrfToken = useCsrfToken();
+  
+  return {
+    isLoading: sessionCheck.isLoading || csrfToken.isLoading,
+    isAuthenticated: sessionCheck.data?.authenticated || false,
+    user: sessionCheck.data?.user || null,
+  };
+}
 // In useAuth.js - improve the useUpdateProfile hook
 export const useUpdateProfile = () => {
   const setUser = useAuthStore((state) => state.setUser);

@@ -343,31 +343,33 @@ const invalidateGigCache = async (gigId) => {
     // Don't throw - cache invalidation failure shouldn't break the request
   }
 };
-
+const verifyUserCookieAuth = (req) => {
+  // With cookie-based auth, req.user should already be set by the protect middleware
+  if (!req.user) {
+    throw new Error('Authentication required. Please login again.');
+  }
+  return req.user;
+};
 // Create Gig
 const createGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Unauthorized',
-        code: 'UNAUTHORIZED',
-        requestId
-      });
-    }
-
+    // ✅ Updated: Use cookie-based auth verification
+    const user = verifyUserCookieAuth(req);
+    
     const sanitizedData = sanitizeGigInput(req.body);
-     if (!sanitizedData.subcategory) {
+    
+    if (!sanitizedData.subcategory) {
       return res.status(400).json({
         success: false,
         message: 'Subcategory is required',
         code: 'SUBCATEGORY_REQUIRED',
         requestId
       });
-    }    
+    }
+    
     if (!mongoose.Types.ObjectId.isValid(sanitizedData.projectCategory)) {
       return res.status(400).json({
         success: false,
@@ -377,7 +379,7 @@ const createGig = async (req, res, next) => {
       });
     }
 
-     const category = await Category.findOne({ 
+    const category = await Category.findOne({ 
       _id: sanitizedData.projectCategory,
       isActive: true
     });
@@ -393,27 +395,26 @@ const createGig = async (req, res, next) => {
 
     // Validate subcategory exists, is active, and belongs to the selected category
     const subcategory = await Subcategory.findOne({ 
-  _id: sanitizedData.subcategory,
-  category: sanitizedData.projectCategory,
-  isActive: true
-});
-
+      _id: sanitizedData.subcategory,
+      category: sanitizedData.projectCategory,
+      isActive: true
+    });
     
     if (!subcategory) {
-  return res.status(400).json({
-    success: false,
-    message: 'Subcategory not found, inactive, or does not belong to the selected category',
-    code: 'SUBCATEGORY_NOT_FOUND',
-    requestId
-  });
-}
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory not found, inactive, or does not belong to the selected category',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
 
     const gigData = {
       ...sanitizedData,
       title: sanitizedData.title || `Project ${Date.now()}`,
-      fullName: req.user.name || sanitizedData.fullName || 'User',
-      oauthEmail: req.user.email || sanitizedData.oauthEmail,
-      createdBy: req.user._id,
+      fullName: user.name || sanitizedData.fullName || 'User',
+      oauthEmail: user.email || sanitizedData.oauthEmail,
+      createdBy: user._id, 
       version: 1,
       images: [],
       thumbnail: null
@@ -1321,18 +1322,18 @@ const validateGigId = (id) => {
 const updateGig = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
   console.log('=== UPDATE GIG STARTED ===', {
     requestId,
     gigId: req.params.id,
-    user: req.user?._id,
+    user: req.user?._id, // ✅ Uses cookie-based user
     method: req.method,
     contentType: req.headers['content-type']
   });
   
+  
   try {
     const { id } = req.params;
-    
+     const user = verifyUserCookieAuth(req);
     // Validate ID
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       console.error(`[${requestId}] Invalid gig ID: ${id}`);
@@ -1371,9 +1372,9 @@ const updateGig = async (req, res, next) => {
     }
 
     // Authorization check
-    const isOwner = gig.createdBy.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === 'admin';
-    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+  const isOwner = gig.createdBy.toString() === user._id.toString();
+    const isAdmin = user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === user._id.toString();
     
     if (!isOwner && !isAdmin && !isAssigned) {
       logAudit('UNAUTHORIZED_UPDATE', 'GIG', id, req.user._id);
@@ -1960,7 +1961,7 @@ const uploadImages = async (req, res, next) => {
   
   try {
     const { id } = req.params;
-    
+    const user = verifyUserCookieAuth(req);
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -1981,9 +1982,9 @@ const uploadImages = async (req, res, next) => {
       });
     }
 
-    const isOwner = gig.createdBy.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === 'admin';
-    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === req.user._id.toString();
+    const isOwner = gig.createdBy.toString() === user._id.toString();
+    const isAdmin = user.role === 'admin';
+    const isAssigned = gig.assignedTo && gig.assignedTo.toString() === user._id.toString();
     
     if (!isOwner && !isAdmin && !isAssigned) {
       return res.status(403).json({
@@ -2402,7 +2403,7 @@ const deleteGig = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { permanent = 'false', force = 'false' } = req.query;
-
+ const user = verifyUserCookieAuth(req);
     // Validate ID
     if (!id || id === 'undefined' || id === 'null' || id === '[object Object]') {
       console.error('[DELETE GIG] Invalid ID format:', id);
@@ -2450,8 +2451,8 @@ const deleteGig = async (req, res, next) => {
     }
 
     // Authorization check
-    const isOwner = gig.createdBy.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === 'admin';
+   const isOwner = gig.createdBy.toString() === user._id.toString();
+    const isAdmin = user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
       logAudit('UNAUTHORIZED_DELETE', 'GIG', id, req.user._id);
@@ -2734,6 +2735,7 @@ const getGigStats = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
+     const user = verifyUserCookieAuth(req);
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -2970,6 +2972,7 @@ const exportGigs = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
+     const user = verifyUserCookieAuth(req);
     if (req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,

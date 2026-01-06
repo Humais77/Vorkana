@@ -1,51 +1,80 @@
+// useAuthSync.js - Updated for cookies
 import { useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import { authAPI } from '../api/auth';
 
 export const useAuthSync = () => {
-  const syncFromStorage = useAuthStore((state) => state.syncFromStorage);
   const checkSessionValidity = useAuthStore((state) => state.checkSessionValidity);
   const updateLastActivity = useAuthStore((state) => state.updateLastActivity);
+  const setUser = useAuthStore((state) => state.setUser);
   
   useEffect(() => {
-    // Initial sync
-    syncFromStorage();
-    
-    // Check session validity
+    // Check session validity on mount
     checkSessionValidity();
     
-    const handleStorageChange = (event) => {
-      if (event.key?.startsWith('auth-') || event.key === 'userToken' || event.key === 'userInfo') {
-        syncFromStorage();
+    // Sync user info from localStorage on mount
+    const syncUserFromStorage = () => {
+      try {
+        const userInfo = localStorage.getItem('userInfo');
+        if (userInfo) {
+          const user = JSON.parse(userInfo);
+          setUser(user);
+        }
+      } catch (error) {
+        console.error('Error syncing user from storage:', error);
       }
     };
     
+    syncUserFromStorage();
+    
+    // Periodically check session with server
+    const checkAuthStatus = async () => {
+      try {
+        const response = await authAPI.getSessionStatus();
+        if (response.success && response.authenticated && response.user) {
+          setUser(response.user);
+        } else if (response.authenticated === false) {
+          useAuthStore.getState().logout();
+        }
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+      }
+    };
+    
+    // Initial check
+    checkAuthStatus();
+    
+    // Check every 5 minutes
+    const intervalId = setInterval(checkAuthStatus, 5 * 60 * 1000);
+    
+    // Activity listeners
     const handleUserActivity = () => {
       updateLastActivity();
     };
     
-    // Listen for storage changes
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Listen for user activity
     const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
     activityEvents.forEach(event => {
       window.addEventListener(event, handleUserActivity, { passive: true });
     });
     
-    // Check session validity periodically
-    const intervalId = setInterval(() => {
-      checkSessionValidity();
-    }, 60000); // Check every minute
+    // Storage change listener for user info
+    const handleStorageChange = (event) => {
+      if (event.key === 'userInfo') {
+        syncUserFromStorage();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
     
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(intervalId);
       activityEvents.forEach(event => {
         window.removeEventListener(event, handleUserActivity);
       });
-      clearInterval(intervalId);
+      window.removeEventListener('storage', handleStorageChange);
     };
-  }, [syncFromStorage, checkSessionValidity, updateLastActivity]);
+  }, [checkSessionValidity, updateLastActivity, setUser]);
 };
 
 // Custom hook for protected routes
@@ -77,19 +106,5 @@ export const useAdminRoute = () => {
     }
   }, [isAuthenticated, user, loading, navigate]);
   
-  return { isAuthenticated, user: user, loading, isAdmin: user?.role === 'admin' };
-};
-
-// Custom hook for email verification check
-export const useEmailVerificationCheck = (redirectPath = '/verify-email') => {
-  const { isAuthenticated, user, loading } = useAuthStore();
-  const navigate = useNavigate();
-  
-  useEffect(() => {
-    if (!loading && isAuthenticated && user && !user.emailVerified) {
-      navigate(redirectPath);
-    }
-  }, [isAuthenticated, user, loading, navigate, redirectPath]);
-  
-  return { isEmailVerified: user?.emailVerified, loading };
+  return { isAuthenticated, user, loading, isAdmin: user?.role === 'admin' };
 };

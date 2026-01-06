@@ -173,8 +173,66 @@ const optimizeDatabase = async () => {
     console.error('Database optimization error:', error.message);
   }
 };
-// ========== CONTROLLER FUNCTIONS ==========
+const getCookieConfig = (type = 'access') => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const baseConfig = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    domain: isProduction ? process.env.COOKIE_DOMAIN : 'localhost',
+    path: '/'
+  };
 
+  switch (type) {
+    case 'access':
+      return {
+        ...baseConfig,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      };
+    case 'refresh':
+      return {
+        ...baseConfig,
+        path: '/api/auth/refresh', // Restricted to refresh endpoint
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      };
+    case 'csrf':
+      return {
+        ...baseConfig,
+        httpOnly: false, // CSRF token needs JavaScript access
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      };
+    default:
+      return baseConfig;
+  }
+};
+
+// Helper function to set all auth cookies
+const setAuthCookies = (res, userId) => {
+  const token = generateToken(userId);
+  const refreshToken = generateRefreshToken(userId);
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+
+  // Set access token cookie
+  res.cookie('access_token', token, getCookieConfig('access'));
+  
+  // Set refresh token cookie
+  res.cookie('refresh_token', refreshToken, getCookieConfig('refresh'));
+  
+  // Set CSRF token cookie
+  res.cookie('XSRF-TOKEN', csrfToken, getCookieConfig('csrf'));
+  
+  // Also set CSRF token in header for immediate use
+  res.setHeader('X-CSRF-Token', csrfToken);
+
+  return { token, refreshToken, csrfToken };
+};
+
+// Helper function to clear all auth cookies
+const clearAuthCookies = (res) => {
+  res.clearCookie('access_token', getCookieConfig('access'));
+  res.clearCookie('refresh_token', getCookieConfig('refresh'));
+  res.clearCookie('XSRF-TOKEN', getCookieConfig('csrf'));
+};
 // Register new user
 const register = asyncHandler(async (req, res) => {
   try {
@@ -202,12 +260,20 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
+    // Check password strength
+    if (!validatePassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character (@$!%*?&)'
+      });
+    }
+
     // 2. Check for existing user
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     
     if (existingUser) {
       // If user exists and is verified
-      if (existingUser.emailVerified) {
+      if (existingUser.emailVerified && existingUser.registrationStatus === 'verified') {
         return res.status(409).json({
           success: false,
           message: 'User already exists with this email'
@@ -240,7 +306,6 @@ const register = asyncHandler(async (req, res) => {
       registrationStatus: 'pending',
       emailVerified: false,
       isActive: false,
-      // Don't set other fields yet
     });
 
     // 5. Generate verification token
@@ -257,12 +322,18 @@ const register = asyncHandler(async (req, res) => {
       // Don't fail registration if email fails
     }
 
+    // 8. Set CSRF token for immediate use (even before verification)
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, getCookieConfig('csrf'));
+    res.setHeader('X-CSRF-Token', csrfToken);
+
     console.log(`✅ Registration initiated for: ${email}`);
 
     res.status(201).json({
       success: true,
       message: 'Registration successful! Please check your email to verify your account.',
       requiresVerification: true,
+      csrfToken, // Send CSRF token in response for immediate use
       user: {
         email: user.email,
         registrationStatus: 'pending'
@@ -286,7 +357,44 @@ const register = asyncHandler(async (req, res) => {
     });
   }
 });
+const cookieConfig = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days for access token
+  path: '/',
+  domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined
+};
 
+const refreshCookieConfig = {
+  ...cookieConfig,
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days for refresh token
+  path: '/api/auth/refresh' // Only accessible to refresh endpoint
+};
+const csrfCookieConfig = {
+  httpOnly: false, // Must be accessible by JavaScript
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // CHANGED
+  domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined,
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  path: '/'
+};
+
+const setCsrfTokenCookie = (res) => {
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+  
+  // Override with explicit settings
+  res.cookie('XSRF-TOKEN', csrfToken, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined,
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/'
+  });
+  
+  return csrfToken;
+};
 const login = asyncHandler(async (req, res) => {
   try {
     const { email, password, deviceToken, deviceType } = req.body;
@@ -325,7 +433,7 @@ const login = asyncHandler(async (req, res) => {
       });
     }
 
-    console.log('✅ User found:', {
+     console.log('✅ User found:', {
       id: user._id,
       email: user.email,
       hasPassword: !!user.password,
@@ -335,6 +443,27 @@ const login = asyncHandler(async (req, res) => {
       isActive: user.isActive
     });
 
+    // FIX: Check if user is verified but password is missing
+    if (!user.password && user.registrationStatus === 'verified' && user.emailVerified) {
+      console.log('⚠️ User verified but password missing. Checking registration data...');
+      
+      // If password is in registrationData, migrate it
+      if (user.registrationData?.password) {
+        console.log('🔄 Migrating password from registration data...');
+        user.password = user.registrationData.password;
+        user.registrationData = undefined;
+        await user.save({ validateBeforeSave: false });
+        console.log('✅ Password migrated successfully');
+      } else {
+        // Password not found anywhere, user needs to reset password
+        console.log('❌ No password found for verified user');
+        return res.status(401).json({
+          success: false,
+          message: 'Password not found. Please use "Forgot Password" to set a new password.',
+          code: 'PASSWORD_NOT_FOUND'
+        });
+      }
+    }
     // 3. Check if account is locked
     if (user.lockUntil && user.lockUntil > Date.now()) {
       const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
@@ -384,14 +513,12 @@ const login = asyncHandler(async (req, res) => {
     user.lastLoginAt = new Date();
     user.lastSeenAt = new Date();
     user.suspiciousActivityDetected = false;
-    
+  const cookies = setAuthCookies(res, user._id);
+
+    // Update last seen
+    user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
 
-    // 6. Generate tokens
-    const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    // 7. Prepare user response
     const userResponse = {
       _id: user._id,
       name: user.name,
@@ -412,11 +539,9 @@ const login = asyncHandler(async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      token,
-      refreshToken,
+      csrfToken: cookies.csrfToken, // Send CSRF token in response
       user: userResponse
     });
-
   } catch (error) {
     console.error('🔥 Login error:', error.message);
     console.error('Error stack:', error.stack);
@@ -785,11 +910,7 @@ const changePassword = async (req, res) => {
     await invalidateUserCache(user._id);
 
     // Invalidate current token
-    const authToken = req.headers.authorization?.split(' ')[1];
-    if (authToken) {
-      blacklist.add(authToken);
-    }
-
+     const cookies = setAuthCookies(res, user._id);
     // Log password change
     logSecurityEvent('PASSWORD_CHANGED', user._id, ip, {
       passwordChangedAt: new Date().toISOString()
@@ -803,10 +924,10 @@ const changePassword = async (req, res) => {
       // Don't fail the operation if email fails
     }
 
-    res.json({
+  res.json({
       success: true,
-      message: 'Password changed successfully. Please login again.',
-      requiresReauth: true,
+      message: 'Password changed successfully. New session started.',
+      csrfToken: cookies.csrfToken,
       securityAlertSent: true
     });
 
@@ -831,8 +952,6 @@ const changePassword = async (req, res) => {
   }
 };
 
-// Verify email with token validation
-// auth.controller.js - Updated verifyEmail function
 const verifyEmail = asyncHandler(async (req, res) => {
   try {
     const { token } = req.params;
@@ -844,40 +963,73 @@ const verifyEmail = asyncHandler(async (req, res) => {
       });
     }
 
-    // Find user by verification token OR check if already verified
+    // Find user by verification token
     const user = await User.findByVerificationToken(token);
     
     if (!user) {
       // Check if user might already be verified
-      // Try to find the user by email (from token hash)
       const crypto = require('crypto');
       const hashedToken = crypto
         .createHash('sha256')
         .update(token)
         .digest('hex');
       
-      // Find any user who had this token (even if cleared)
       const potentialUser = await User.findOne({
         $or: [
           { verificationToken: hashedToken },
           { 'registrationData.email': { $exists: true } }
         ]
-      });
+      }).select('+registrationData +verificationToken +verificationTokenExpires');
       
       if (potentialUser) {
-        // Check if user is already verified
         if (potentialUser.emailVerified && potentialUser.registrationStatus === 'verified') {
-          console.log(`✅ User already verified: ${potentialUser.email}`);
+          // If user is verified but password might not be set, check and fix
+          if (!potentialUser.password && potentialUser.registrationData?.password) {
+            console.log('⚠️ User verified but password not migrated. Fixing...');
+            await completePasswordMigration(potentialUser);
+          }
+          
+          // User already verified, set cookies and login
+          const cookies = setAuthCookies(res, potentialUser._id);
+          
           return res.json({
             success: true,
-            message: 'Email is already verified. You can now login to your account.',
+            message: 'Email is already verified. You are now logged in.',
             alreadyVerified: true,
-            email: potentialUser.email,
-            redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin?verified=true&email=${encodeURIComponent(potentialUser.email)}`
+            csrfToken: cookies.csrfToken,
+            user: {
+              _id: potentialUser._id,
+              name: potentialUser.name,
+              email: potentialUser.email,
+              role: potentialUser.role,
+              emailVerified: true
+            }
           });
         }
         
-        // Check if registration expired
+        // Check if registration is pending but not completed
+        if (potentialUser.registrationStatus === 'pending' && potentialUser.registrationData) {
+          console.log('🔄 Completing pending registration...');
+          await potentialUser.verifyAndCompleteRegistration();
+          await potentialUser.save({ validateBeforeSave: false });
+          
+          const cookies = setAuthCookies(res, potentialUser._id);
+          
+          return res.json({
+            success: true,
+            message: 'Email verified successfully! You are now logged in.',
+            verified: true,
+            csrfToken: cookies.csrfToken,
+            user: {
+              _id: potentialUser._id,
+              name: potentialUser.name,
+              email: potentialUser.email,
+              role: potentialUser.role,
+              emailVerified: true
+            }
+          });
+        }
+        
         if (potentialUser.registrationExpiresAt && potentialUser.registrationExpiresAt < Date.now()) {
           return res.status(400).json({
             success: false,
@@ -887,7 +1039,6 @@ const verifyEmail = asyncHandler(async (req, res) => {
         }
       }
       
-      console.log('Verification failed: Invalid token or expired');
       return res.status(400).json({
         success: false,
         message: 'Invalid or expired verification token',
@@ -897,19 +1048,52 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
     console.log(`Found user for verification: ${user.email}`);
 
-    // Complete the registration process
+    // IMPORTANT: Complete the registration process
     await user.verifyAndCompleteRegistration();
+    
+    // Save with validation to ensure password is set
+    await user.save();
+    
+    // Clear sensitive fields
+    user.registrationData = undefined;
+    user.verificationToken = undefined;
+    user.verificationTokenExpires = undefined;
+    user.registrationExpiresAt = undefined;
+    
     await user.save({ validateBeforeSave: false });
 
     console.log(`✅ Email verified for: ${user.email}`);
+    console.log(`✅ Password set: ${!!user.password}`);
+
+    // Set auth cookies for auto-login
+    const cookies = setAuthCookies(res, user._id);
+
+    // Send welcome email
+    try {
+      await EmailService.sendWelcomeEmail(user);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+    }
 
     // Return success response
     res.json({
       success: true,
-      message: 'Email verified successfully! You can now login to your account.',
+      message: 'Email verified successfully! You are now logged in.',
       verified: true,
-      email: user.email,
-      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin?verified=true&email=${encodeURIComponent(user.email)}`
+      csrfToken: cookies.csrfToken,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture,
+        emailVerified: true,
+        phoneNumber: user.phoneNumber,
+        country: user.country,
+        city: user.city,
+        bio: user.bio,
+        rating: user.rating
+      }
     });
 
   } catch (error) {
@@ -923,6 +1107,30 @@ const verifyEmail = asyncHandler(async (req, res) => {
   }
 });
 
+// Helper function to fix users with missing passwords
+async function completePasswordMigration(user) {
+  try {
+    if (user.registrationData?.password && !user.password) {
+      console.log(`Migrating password for user: ${user.email}`);
+      
+      // Set password from registration data
+      user.password = user.registrationData.password;
+      
+      // Clear registration data
+      user.registrationData = undefined;
+      
+      // Save the user (password will be hashed by pre-save middleware)
+      await user.save();
+      
+      console.log(`✅ Password migrated for: ${user.email}`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Password migration error:', error);
+    return false;
+  }
+}
 const resendVerificationEmail = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
@@ -1195,7 +1403,7 @@ const resetPassword = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     console.log(`✅ Password reset successful for: ${user.email}`);
-
+const cookies = setAuthCookies(res, user._id);
     // Log password reset
     logSecurityEvent('PASSWORD_RESET_SUCCESS', user._id, ip, { email: user.email });
 
@@ -1210,7 +1418,8 @@ const resetPassword = asyncHandler(async (req, res) => {
     // Return success WITHOUT tokens (user should login separately)
     res.json({
       success: true,
-      message: 'Password reset successful! Please login with your new password.',
+      message: 'Password reset successful! You are now logged in.',
+      csrfToken: cookies.csrfToken,
       user: {
         _id: user._id,
         name: user.name,
@@ -1240,33 +1449,36 @@ const resetPassword = asyncHandler(async (req, res) => {
     });
   }
 });
-
-// Enhanced logout
 const logout = async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const { deviceToken } = req.body;
+    const { deviceToken, logoutAllDevices = false } = req.body;
     
-    if (token) {
-      // Add to blacklist with TTL (7 days in production)
-      blacklist.add(token);
-      
-      // In production with Redis:
-      // await redis.setex(`blacklist:${token}`, 604800, '1');
-    }
+    // Clear all auth cookies
+    clearAuthCookies(res);
 
     // Remove device token for push notifications
     if (deviceToken && req.user) {
       const user = await User.findById(req.user._id);
       if (user) {
         await user.removeDeviceToken(deviceToken);
-        // Invalidate cache for this user
         await invalidateUserCache(user._id);
       }
     }
 
+    // Logout from all devices if requested
+    if (logoutAllDevices && req.user) {
+      const user = await User.findById(req.user._id);
+      if (user) {
+        user.deviceTokens = []; // Clear all device tokens
+        await user.save({ validateBeforeSave: false });
+      }
+    }
+
     // Log logout event
-    logSecurityEvent('LOGOUT', req.user?._id, req.ip, { deviceTokenRemoved: !!deviceToken });
+    logSecurityEvent('LOGOUT', req.user?._id, req.ip, { 
+      deviceTokenRemoved: !!deviceToken,
+      logoutAllDevices 
+    });
 
     res.json({
       success: true,
@@ -1280,13 +1492,12 @@ const logout = async (req, res) => {
     });
   }
 };
-
-// Enhanced refresh token
 const refreshToken = async (req, res) => {
   try {
-    const { refreshToken: oldRefreshToken, deviceToken } = req.body;
+    const refreshToken = req.cookies.refresh_token;
+    const { deviceToken } = req.body;
     
-    if (!oldRefreshToken) {
+    if (!refreshToken) {
       return res.status(400).json({
         success: false,
         message: 'Refresh token is required'
@@ -1294,11 +1505,14 @@ const refreshToken = async (req, res) => {
     }
 
     // Verify refresh token
-    const decoded = await verifyRefreshToken(oldRefreshToken);
+    const decoded = await verifyRefreshToken(refreshToken);
     
     // Check if user still exists and is active
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive) {
+      // Clear invalid cookies
+      clearAuthCookies(res);
+      
       return res.status(401).json({
         success: false,
         message: 'User not found or account inactive'
@@ -1314,17 +1528,15 @@ const refreshToken = async (req, res) => {
     user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
 
-    // Generate new tokens
-    const newToken = generateToken(user._id);
-    const newRefreshToken = generateRefreshToken(user._id);
+    // Generate new auth cookies
+    const cookies = setAuthCookies(res, user._id);
 
     // Log token refresh
     logSecurityEvent('TOKEN_REFRESHED', user._id, req.ip, { deviceTokenUpdated: !!deviceToken });
 
     res.json({
       success: true,
-      token: newToken,
-      refreshToken: newRefreshToken,
+      csrfToken: cookies.csrfToken,
       user: {
         _id: user._id,
         name: user.name,
@@ -1338,7 +1550,9 @@ const refreshToken = async (req, res) => {
 
   } catch (error) {
     console.error('Refresh token error:', error);
-    logSecurityEvent('TOKEN_REFRESH_ERROR', null, req.ip, { error: error.message });
+    
+    // Clear invalid cookies
+    clearAuthCookies(res);
     
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return res.status(401).json({
@@ -1615,9 +1829,8 @@ const reactivateAccount = async (req, res) => {
     // Invalidate cache for this user
     await invalidateUserCache(user._id);
 
-    // Generate new tokens
-    const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    // Set auth cookies for auto-login
+    const cookies = setAuthCookies(res, user._id);
 
     // Log reactivation
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
@@ -1627,14 +1840,12 @@ const reactivateAccount = async (req, res) => {
       await EmailService.sendAccountReactivatedEmail(user);
     } catch (emailError) {
       console.error('Failed to send account reactivated email:', emailError);
-      // Don't fail reactivation if email fails
     }
 
     res.json({
       success: true,
       message: 'Account reactivated successfully',
-      token,
-      refreshToken,
+      csrfToken: cookies.csrfToken,
       user: {
         _id: user._id,
         name: user.name,
@@ -2349,7 +2560,42 @@ const resetPasswordRedirect = async (req, res) => {
     res.status(500).send(errorHtml);
   }
 };
+const getSessionStatus = asyncHandler(async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.json({
+        success: true,
+        authenticated: false
+      });
+    }
 
+    // Generate new CSRF token for the session
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, getCookieConfig('csrf'));
+    res.setHeader('X-CSRF-Token', csrfToken);
+
+    res.json({
+      success: true,
+      authenticated: true,
+      csrfToken,
+      user: {
+        _id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        picture: req.user.picture,
+        emailVerified: req.user.emailVerified,
+        isOnline: req.user.isOnline
+      }
+    });
+  } catch (error) {
+    console.error('Get session status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error checking session status'
+    });
+  }
+});
 module.exports = {
   register,
   login,
@@ -2370,5 +2616,8 @@ module.exports = {
   verifyEmailRedirect,
   resetPasswordRedirect,
   handleJSONErrors,
-  checkVerificationStatus
+  checkVerificationStatus,
+  getSessionStatus, // Add this
+  setAuthCookies,   // Add this for testing/development
+  clearAuthCookies  // Add this for testing/development
 };

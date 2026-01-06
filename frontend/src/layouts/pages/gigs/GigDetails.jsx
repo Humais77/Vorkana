@@ -74,7 +74,6 @@ const GigDetails = () => {
   const deleteGigMutation = useDeleteGig();
   
   // Extract gig data from response
-  const gig = gigResponse?.gig || gigResponse;
   
   // Local state
   const [isLiked, setIsLiked] = useState(false);
@@ -89,10 +88,80 @@ const GigDetails = () => {
     force: false
   });
 
+
+  const gig = gigResponse?.gig || gigResponse;
+
   // Check if current user is the gig owner
   const isGigOwner = user && gig && gig.createdBy?._id === user._id;
   const isAdmin = user?.role === 'admin';
+   useEffect(() => {
+    if (gig) {
+      setGigDetails(gig);
+      setViewCount(Math.floor(Math.random() * 500) + 100);
+    }
+  }, [gig, setGigDetails]);
+  // Cleanup when component unmounts
+  useEffect(() => {
+    return () => {
+      clearGigDetails();
+    };
+  }, [clearGigDetails]);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
+                <div className="space-y-4">
+                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-full"></div>
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                </div>
+              </div>
+              <div className="lg:col-span-1">
+                <div className="bg-gray-200 rounded-2xl h-96"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  if (error || !gig) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">
+            {error?.response?.status === 404 ? 'Gig Not Found' : 'Error Loading Gig'}
+          </h3>
+          <p className="text-gray-600 mb-8 max-w-md mx-auto">
+            {error?.response?.data?.message || 
+             error?.message || 
+             "The gig you're looking for doesn't exist or has been removed."}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={handleRefresh}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/gigs')}
+              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              Browse Gigs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   // Structured Data for SEO (Schema.org)
   const generateStructuredData = () => {
     if (!gig) return null;
@@ -175,22 +244,6 @@ const GigDetails = () => {
 
     return [structuredData, breadcrumbList];
   };
-
-  // Update gig details in store when data loads
-  useEffect(() => {
-    if (gig) {
-      setGigDetails(gig);
-      // Set derived state
-      setViewCount(Math.floor(Math.random() * 500) + 100);
-    }
-  }, [gig, setGigDetails]);
-
-  // Cleanup when component unmounts
-  useEffect(() => {
-    return () => {
-      clearGigDetails();
-    };
-  }, [clearGigDetails]);
 
   // Handle share
   const handleShare = async () => {
@@ -447,62 +500,6 @@ const GigDetails = () => {
     return new Date(lastSeenAt) > fiveMinutesAgo;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
-                <div className="space-y-4">
-                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full"></div>
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                </div>
-              </div>
-              <div className="lg:col-span-1">
-                <div className="bg-gray-200 rounded-2xl h-96"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !gig) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-4">
-            {error?.response?.status === 404 ? 'Gig Not Found' : 'Error Loading Gig'}
-          </h3>
-          <p className="text-gray-600 mb-8 max-w-md mx-auto">
-            {error?.response?.data?.message || 
-             error?.message || 
-             "The gig you're looking for doesn't exist or has been removed."}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={handleRefresh}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/gigs')}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
-            >
-              Browse Gigs
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const thumbnailImage = getThumbnailImage();
   const galleryImages = getGalleryImages();
@@ -572,56 +569,6 @@ const GigDetails = () => {
           Delete
         </button>
 
-        {/* More Options Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setShowMoreMenu(!showMoreMenu)}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="More options"
-            aria-expanded={showMoreMenu}
-            aria-haspopup="true"
-            disabled={isDeleting}
-          >
-            <MoreVertical className="h-5 w-5 text-gray-600" aria-hidden="true" />
-          </button>
-
-          {showMoreMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1">
-              <button
-                onClick={() => {
-                  setShowMoreMenu(false);
-                  navigate(`/gig/${id}/analytics`);
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-              >
-                <Activity className="h-4 w-4" aria-hidden="true" />
-                View Analytics
-              </button>
-              <button
-                onClick={() => {
-                  setShowMoreMenu(false);
-                  handleRefresh();
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-              >
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                Refresh Data
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() => {
-                  setShowMoreMenu(false);
-                  setDeleteOptions({ permanent: true, force: false });
-                  setShowDeleteDialog(true);
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-              >
-                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                Permanent Delete
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     );
   };
@@ -826,50 +773,6 @@ const GigDetails = () => {
                   </div>
                 </div>
 
-                {/* Owner Notice */}
-                {isGigOwner && (
-                  <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <User className="h-5 w-5 text-blue-600" aria-hidden="true" />
-                        </div>
-                      </div>
-                      <div className="ml-3 flex-1">
-                        <h3 className="font-semibold text-blue-800">You are the owner of this gig</h3>
-                        <p className="text-sm text-blue-700 mt-1">
-                          You can edit gig details, manage images, or delete this gig using the buttons above.
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          <button
-                            onClick={handleEditGig}
-                            className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5"
-                            aria-label="Edit gig details"
-                          >
-                            <Edit className="h-3 w-3" aria-hidden="true" />
-                            Edit Details
-                          </button>
-                          <button
-                            onClick={() => navigate(`/gig/${id}/manage-images`)}
-                            className="text-sm bg-white hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-300 flex items-center gap-1.5"
-                            aria-label="Manage gig images"
-                          >
-                            <ImageIcon className="h-3 w-3" aria-hidden="true" />
-                            Manage Images
-                          </button>
-                          <button
-                            onClick={() => navigate(`/gig/${id}/analytics`)}
-                            className="text-sm bg-white hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-300 flex items-center gap-1.5"
-                            aria-label="View gig analytics"
-                          >
-                            <Activity className="h-3 w-3" aria-hidden="true" />
-                            View Analytics
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Enhanced User Info */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">

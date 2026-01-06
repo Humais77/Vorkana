@@ -1,5 +1,5 @@
+// AppContext.jsx - Simplified version
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { useAuthStore } from '../store/useAuthStore';
 
 const AppContext = createContext();
 
@@ -14,32 +14,21 @@ export const useApp = () => {
 export const AppProvider = ({ children }) => {
   const [theme, setTheme] = useState('light');
   const [notifications, setNotifications] = useState([]);
-  const syncFromStorage = useAuthStore((state) => state.syncFromStorage);
-  
-  // Sync auth on mount
-  React.useEffect(() => {
-    syncFromStorage();
-    
-    // Listen for storage changes (for OAuth redirects)
-    const handleStorageChange = () => {
-      syncFromStorage();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [syncFromStorage]);
   
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   }, []);
   
   const addNotification = useCallback((notification) => {
-    setNotifications((prev) => [...prev, notification]);
+    const id = Math.random().toString(36).substr(2, 9);
+    const notificationWithId = { ...notification, id };
+    
+    setNotifications((prev) => [...prev, notificationWithId]);
     
     // Auto remove after 5 seconds
     setTimeout(() => {
       setNotifications((prev) => 
-        prev.filter((n) => n.id !== notification.id)
+        prev.filter((n) => n.id !== notificationWithId.id)
       );
     }, 5000);
   }, []);

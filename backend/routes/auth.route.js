@@ -1,32 +1,51 @@
 const express = require("express");
 const passport = require("passport");
 const crypto = require("crypto");
-const { 
-  register, 
-  login, 
-  getProfile, 
-  updateProfile, 
-  changePassword,
-  forgotPassword, 
-  resetPassword,
-  verifyEmail,
-  resendVerificationEmail,
+const {  register,
+  login,
   logout,
   refreshToken,
+  getProfile,
+  updateProfile,
+  changePassword,
+  verifyEmail,
+  resendVerificationEmail,
+  forgotPassword,
+  resetPassword,
   getPublicProfile,
   deactivateAccount,
   reactivateAccount,
-  verifyEmailRedirect,checkVerificationStatus, resetPasswordRedirect, 
+  generateToken,
+  generateRefreshToken,
+  verifyEmailRedirect,
+  resetPasswordRedirect,
+  handleJSONErrors,
+  checkVerificationStatus,
+  getSessionStatus, // Add this
+  setAuthCookies,   // Add this for testing/development
+  clearAuthCookies 
 } = require("../controllers/auth.controller.js");
 const { 
-  protect, 
-  verifyEmailToken, 
+ protect,
+  authorize,
+  adminOnly,
+  userOnly,
+  optionalAuth,
+  rateLimiter,
   authLimiter,
   passwordResetLimiter,
   registerLimiter,
-  validateRequest 
+  validateRequest,
+  verifyEmailToken,
+  logRequest,
+  tokenBlacklist,
+  securityHeaders,
+  requestSizeLimiter,
+  errorLogger,
+  getClientIp,
+  setCsrfToken
 } = require("../middleware/auth.middleware.js");
-
+const { csrfProtection, generateCsrfToken } = require('../middleware/csrf.js');
 const router = express.Router();
 
 // ========== VALIDATION SCHEMAS ==========
@@ -132,6 +151,20 @@ router.post("/refresh-token",
   authLimiter,
   refreshToken
 );
+router.get("/csrf-token", 
+  setCsrfToken,
+  (req, res) => {
+    res.json({
+      success: true,
+      csrfToken: req.cookies['XSRF-TOKEN']
+    });
+  }
+);
+router.get("/session",
+  optionalAuth,
+  getSessionStatus
+);
+
 
 router.post("/logout", 
   protect,
@@ -190,12 +223,14 @@ router.get("/profile",
 
 router.put("/profile", 
   protect,
+  csrfProtection, // Add CSRF protection
   updateProfileValidation,
   updateProfile
 );
 
 router.post("/change-password", 
   protect,
+  csrfProtection, // Add CSRF protection
   changePasswordValidation,
   changePassword
 );
@@ -203,9 +238,11 @@ router.post("/change-password",
 // ========== ACCOUNT MANAGEMENT ROUTES ==========
 router.post("/deactivate", 
   protect,
+  csrfProtection, // Add CSRF protection
   deactivateValidation,
   deactivateAccount
 );
+
 
 router.post("/reactivate", 
   reactivateValidation,
@@ -263,32 +300,44 @@ router.get("/google/callback",
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
       }
       
-      const token = require('../controllers/auth.controller.js').generateToken(user._id);
-      const refreshToken = require('../controllers/auth.controller.js').generateRefreshToken(user._id);
+      // Generate tokens
+      const token = generateToken(user._id);
+      const refreshToken = generateRefreshToken(user._id);
+      const csrfToken = crypto.randomBytes(32).toString('hex');
       
-      const userData = encodeURIComponent(JSON.stringify({
-        token,
-        refreshToken,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          picture: user.picture,
-          role: user.role,
-          emailVerified: user.emailVerified,
-          phoneNumber: user.phoneNumber,
-          country: user.country,
-          city: user.city,
-          bio: user.bio,
-          rating: user.rating,
-          completedOrders: user.completedOrders,
-          isOnline: user.isOnline
-        }
-      }));
+      // Set HTTP-only cookies
+      res.cookie('access_token', token, cookieConfig);
+      res.cookie('refresh_token', refreshToken, refreshCookieConfig);
+      res.cookie('XSRF-TOKEN', csrfToken, csrfCookieConfig);
       
-      res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
+      // Store CSRF token in header for immediate use
+      res.setHeader('X-CSRF-Token', csrfToken);
+      
+      // Redirect to success page
+      res.redirect(`${process.env.FRONTEND_URL}/oauth-success`);
     })(req, res, next);
   }
 );
 
+// Add CSRF cookie config
+const csrfCookieConfig = {
+  httpOnly: false, // Must be accessible by JavaScript
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  path: '/'
+};
+const cookieConfig = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/'
+};
+
+const refreshCookieConfig = {
+  ...cookieConfig,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+  path: '/api/auth/refresh'
+};
 module.exports = router;

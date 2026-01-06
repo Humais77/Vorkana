@@ -452,8 +452,16 @@ userSchema.virtual('fullLocation').get(function () {
   return parts.length > 0 ? parts.join(', ') : null;
 });
 
-// ========== MIDDLEWARE ==========
+// In user.model.js - update the pre-save hook
 userSchema.pre('save', async function () {
+  // If user is verified but password is in registrationData, move it
+  if (this.registrationStatus === 'verified' && 
+      this.registrationData?.password && 
+      !this.password) {
+    this.password = this.registrationData.password;
+    this.registrationData = undefined;
+  }
+
   // Don't hash password for pending registrations
   if (this.registrationStatus === 'pending') {
     return;
@@ -461,6 +469,7 @@ userSchema.pre('save', async function () {
 
   if (!this.isModified('password') || !this.password) return;
 
+  // If password is already hashed, don't hash again
   if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$')) {
     return;
   }
@@ -472,7 +481,6 @@ userSchema.pre('save', async function () {
     throw error;
   }
 });
-
 // ========== INSTANCE METHODS ==========
 userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.password) return false;

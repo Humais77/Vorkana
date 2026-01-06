@@ -106,7 +106,7 @@ const CategoryGrid = () => {
         const fetchedCategories = await categoriesAPI.getAll({
           parentCategory: null, // Only get top-level categories
           includeSubcategories: false,
-          limit: 9,
+          limit: 10,
           sortBy: 'name',
           order: 'asc'
         });
@@ -202,7 +202,7 @@ const CategoryGrid = () => {
               Loading categories...
             </p>
           </div>
-          <div className="flex flex-wrap justify-center gap-3 md:gap-4">
+         <div className="flex flex-wrap items-start gap-3 md:gap-4">
             {[...Array(10)].map((_, index) => (
               <div
                 key={index}
@@ -298,7 +298,8 @@ const CategoryGridView = ({
         {/* Category Grid */}
         <div className="relative">
           {/* For lg screens: 10 categories in one row */}
-          <div className="hidden lg:flex justify-center gap-5">
+          <div className="hidden lg:flex items-start gap-5">
+
   {categories.slice(0, 10).map((cat) => {
     const subcategories = subcategoriesMap[cat.id] || [];
     const hasSubcategories = subcategories.length > 0;
@@ -307,7 +308,7 @@ const CategoryGridView = ({
     return (
       <div 
         key={cat.id}
-        className="flex flex-col items-center relative"
+        className="flex flex-col items-start relative"
       >
         {/* Main Category Card - FIXED SIZE */}
         <div
@@ -327,12 +328,12 @@ const CategoryGridView = ({
               {cat.icon}
             </div>
             
-            {/* Fixed height container for text */}
-            <div className="h-10 flex items-center justify-center w-full">
-              <span className="text-sm font-medium text-gray-800 group-hover:text-gray-900 text-center leading-tight px-1 line-clamp-2 break-words">
-                {cat.name}
-              </span>
-            </div>
+            <div className="h-[40px] flex items-center justify-center">
+  <span className="line-clamp-2 leading-snug break-words text-center">
+    {cat.name}
+  </span>
+</div>
+
             
             {cat.servicesCount > 0 && (
               <span className="text-xs text-gray-500 mt-auto pt-2">
@@ -402,7 +403,7 @@ const CategoryGridView = ({
 
           {/* For md/sm screens: 4 per row with show more text button */}
           <div className="lg:hidden">
-  <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
+   <div className="grid grid-cols-4 sm:grid-cols-4 gap-4 items-start">
     {displayCategories.map((cat) => {
       const subcategories = subcategoriesMap[cat.id] || [];
       const hasSubcategories = subcategories.length > 0;

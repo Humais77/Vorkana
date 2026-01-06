@@ -738,113 +738,125 @@ const GigCreate = () => {
   }, [activeStep, validateStep]);
 
   const handleSubmit = useCallback(async (e, status = 'draft') => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    if (!isAuthenticated) {
-      setErrors(prev => ({
-        ...prev,
-        form: "Please sign in to create a gig."
-      }));
-      setActiveStep(1);
-      toast.error("Please sign in first");
-      setIsSubmitting(false);
-      return;
+  if (!isAuthenticated) {
+    setErrors(prev => ({
+      ...prev,
+      form: "Please sign in to create a gig."
+    }));
+    setActiveStep(1);
+    toast.error("Please sign in first");
+    setIsSubmitting(false);
+    return;
+  }
+
+  // Validate all steps
+  let hasError = false;
+  for (let step = 1; step <= 4; step++) {
+    if (!validateStep(step)) {
+      setActiveStep(step);
+      hasError = true;
+      break;
+    }
+  }
+
+  if (hasError) {
+    setIsSubmitting(false);
+    return;
+  }
+
+  try {
+    const formDataObj = new FormData();
+
+    const gigData = {
+      title: formData.title.trim(),
+      fullName: formData.fullName.trim(),
+      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+      country: formData.country.trim(),
+      phone: formData.phone.trim(),
+      projectCategory: formData.projectCategory,
+      subcategory: formData.subcategory || undefined,
+      description: formData.description.trim(),
+      budget: parseFloat(formData.budget),
+      currency: formData.currency,
+      timeline: formData.timeline.trim(),
+      timelineUnit: formData.timelineUnit,
+      communication: formData.communication,
+      urgency: formData.urgency,
+      visibility: formData.visibility,
+      status: status
+    };
+
+    if (subcategories.length > 0 && !gigData.subcategory) {
+      throw new Error('Subcategory is required for this category');
     }
 
-    // Validate all steps
-    let hasError = false;
-    for (let step = 1; step <= 4; step++) {
-      if (!validateStep(step)) {
-        setActiveStep(step);
-        hasError = true;
-        break;
+    // Append all basic fields
+    Object.keys(gigData).forEach(key => {
+      if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
+        formDataObj.append(key, gigData[key].toString());
       }
+    });
+
+    // Append skillsRequired as comma-separated string
+    if (formData.skillsRequired && formData.skillsRequired.length > 0) {
+      formDataObj.append('skillsRequired', formData.skillsRequired.join(','));
     }
 
-    if (hasError) {
-      setIsSubmitting(false);
-      return;
+    // Append deliverables as comma-separated string
+    if (formData.deliverables && formData.deliverables.length > 0) {
+      formDataObj.append('deliverables', formData.deliverables.join(','));
     }
 
-    try {
-      const formDataObj = new FormData();
-
-      const gigData = {
-        title: formData.title.trim(),
-        fullName: formData.fullName.trim(),
-        oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-        country: formData.country.trim(),
-        phone: formData.phone.trim(),
-        projectCategory: formData.projectCategory,
-        subcategory: formData.subcategory || undefined,
-        description: formData.description.trim(),
-        budget: parseFloat(formData.budget),
-        currency: formData.currency,
-        timeline: formData.timeline.trim(),
-        timelineUnit: formData.timelineUnit,
-        communication: formData.communication,
-        urgency: formData.urgency,
-        visibility: formData.visibility,
-        status: status
-      };
-
-      if (subcategories.length > 0 && !gigData.subcategory) {
-        throw new Error('Subcategory is required for this category');
-      }
-
-      Object.keys(gigData).forEach(key => {
-        if (gigData[key] !== null && gigData[key] !== undefined && gigData[key] !== '') {
-          if (typeof gigData[key] === 'object') {
-            formDataObj.append(key, JSON.stringify(gigData[key]));
-          } else {
-            formDataObj.append(key, gigData[key]);
-          }
+    // Append thumbnail if exists
+    if (thumbnailFile && thumbnailFile.file) {
+      formDataObj.append('thumbnail', thumbnailFile.file);
+    }
+    
+    // Append images as individual files
+    if (uploadedImages.length > 0) {
+      uploadedImages.forEach((image, index) => {
+        if (image.file) {
+          formDataObj.append('images', image.file);
         }
       });
+    }
 
-      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-        formData.skillsRequired.forEach((skill, index) => {
-          formDataObj.append(`skillsRequired[${index}]`, skill);
-        });
-      }
+    // Debug log
+    console.log('Submitting gig data:', gigData);
+    console.log('Has thumbnail:', !!thumbnailFile);
+    console.log('Has images:', uploadedImages.length);
+    
+    for (let [key, value] of formDataObj.entries()) {
+      console.log(`${key}:`, value instanceof File ? `File: ${value.name}` : value);
+    }
 
-      if (formData.deliverables && formData.deliverables.length > 0) {
-        formData.deliverables.forEach((deliverable, index) => {
-          formDataObj.append(`deliverables[${index}]`, deliverable);
-        });
-      }
+    // Clear any previous errors
+    setErrors({});
+    
+    // Use the React Query mutation
+    createGig(formDataObj);
 
-      if (thumbnailFile) {
-        formDataObj.append('thumbnail', thumbnailFile.file);
-      }
-      
-      uploadedImages.forEach((image) => {
-        formDataObj.append('images', image.file);
-      });
-
-      setErrors({});
-      createGig(formDataObj);
-
-    } catch (error) {
-      if (error.message.includes('subcategory') || error.message.includes('Subcategory')) {
-        setErrors(prev => ({
-          ...prev,
-          subcategory: error.message
-        }));
-        setActiveStep(3);
-      }
-      console.error("Error in handleSubmit:", error);
-      toast.error("Failed to prepare gig data. Please try again.");
+  } catch (error) {
+    if (error.message.includes('subcategory') || error.message.includes('Subcategory')) {
       setErrors(prev => ({
         ...prev,
-        form: error.message || "Something went wrong. Please try again."
+        subcategory: error.message
       }));
-    } finally {
-      setIsSubmitting(false);
+      setActiveStep(3);
     }
-  }, [formData, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig, subcategories]);
-
+    console.error("Error in handleSubmit:", error);
+    toast.error("Failed to prepare gig data. Please try again.");
+    setErrors(prev => ({
+      ...prev,
+      form: error.message || "Something went wrong. Please try again."
+    }));
+  } finally {
+    setIsSubmitting(false);
+  }
+}, [formData, thumbnailFile, uploadedImages, isAuthenticated, validateStep, createGig, subcategories]);
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
     toast.success("Refreshing categories...");
