@@ -16,22 +16,21 @@ const {
   thumbnailUpload, 
   handleMulterError
 } = require('../middleware/upload.middleware.js');
-
+const { ipKeyGenerator } = require('express-rate-limit');
 // Rate limiters
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  skipSuccessfulRequests: false,
-  message: {
-    success: false,
-    message: 'Too many requests, please try again later.',
-    code: 'RATE_LIMIT_EXCEEDED'
-  },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  // ✅ FIXED: Use ipKeyGenerator
+  keyGenerator: (req, res) => {
+    const ip = ipKeyGenerator(req, res);
     return req.user?._id ? `${ip}-${req.user._id}` : ip;
+  },
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.'
   }
 });
 

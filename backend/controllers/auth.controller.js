@@ -514,7 +514,9 @@ const login = asyncHandler(async (req, res) => {
     user.lastSeenAt = new Date();
     user.suspiciousActivityDetected = false;
   const cookies = setAuthCookies(res, user._id);
-
+const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, getCookieConfig('csrf'));
+    res.setHeader('X-CSRF-Token', csrfToken);
     // Update last seen
     user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
@@ -2569,23 +2571,27 @@ const getSessionStatus = asyncHandler(async (req, res) => {
       });
     }
 
-    // Generate new CSRF token for the session
     const csrfToken = crypto.randomBytes(32).toString('hex');
-    res.cookie('XSRF-TOKEN', csrfToken, getCookieConfig('csrf'));
+    
+    // Set cookie with proper config
+    res.cookie('XSRF-TOKEN', csrfToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/'
+    });
+    
+    // Also set header
     res.setHeader('X-CSRF-Token', csrfToken);
-
-    res.json({
+res.status(201).json({
       success: true,
-      authenticated: true,
-      csrfToken,
+      message: 'Registration successful! Please check your email to verify your account.',
+      requiresVerification: true,
+      csrfToken, // Send in response
       user: {
-        _id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        role: req.user.role,
-        picture: req.user.picture,
-        emailVerified: req.user.emailVerified,
-        isOnline: req.user.isOnline
+        email: user.email,
+        registrationStatus: 'pending'
       }
     });
   } catch (error) {

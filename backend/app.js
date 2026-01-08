@@ -11,7 +11,7 @@ const responseTime = require('response-time'); // ADD THIS
 const morgan = require('morgan'); // ADD THIS for logging
 const { csrfProtection, generateCsrfToken } = require('./middleware/csrf.js');
 const { isProduction, isHTTPS } = require('./config/cookies.js');
-
+const { ipKeyGenerator } = require('express-rate-limit');
 dotenv.config();
 
 // Validate environment variables
@@ -173,7 +173,7 @@ const MemoryStore = require('express-rate-limit').MemoryStore;
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500, // Reduced from 1000 for better memory management
+  max: 500,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
@@ -181,24 +181,29 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new MemoryStore(),
-  // FIXED: Proper IP key generator
+  
+  // ✅ FIXED: Use ipKeyGenerator properly
   keyGenerator: (req, res) => {
-    // Use the built-in helper for IPv6 support
-    const ipKeyGenerator = require('express-rate-limit').ipKeyGenerator;
+    // Get the IP using the built-in ipKeyGenerator
     const ip = ipKeyGenerator(req, res);
     
-    // Add user agent for additional uniqueness (optional)
+    // Optional: Add user agent for additional uniqueness
     const userAgent = req.headers['user-agent'] || '';
-    return `${ip}:${Buffer.from(userAgent).toString('base64').slice(0, 10)}`;
+    const userAgentHash = Buffer.from(userAgent).toString('base64').slice(0, 10);
+    
+    // If user is logged in, include their ID
+    if (req.user?._id) {
+      return `${ip}:${req.user._id}:${userAgentHash}`;
+    }
+    
+    return `${ip}:${userAgentHash}`;
   },
+  
   skip: (req) => {
-    // Skip rate limiting for health checks and static files
     return req.path === '/health' || 
            req.path.startsWith('/public/') ||
            req.method === 'OPTIONS';
-  },
-  skipSuccessfulRequests: false,
-  skipFailedRequests: false
+  }
 });
 app.use(globalLimiter);
 // ==================== BODY PARSING OPTIMIZATIONS ====================

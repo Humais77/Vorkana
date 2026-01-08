@@ -4,6 +4,8 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { ipKeyGenerator } = require('express-rate-limit');
+
 const {
   createGig,
   getGigs,
@@ -27,7 +29,8 @@ const {
   validateUpdate, 
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const { protect, optionalAuth, adminOnly, csrfProtection, setCsrfToken } = require('../middleware/auth.middleware.js');
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf.js');
+const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
 
 // Configure multer storage
@@ -177,12 +180,17 @@ const gigLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  
+  // ✅ FIXED: Use ipKeyGenerator properly
+  keyGenerator: (req, res) => {
+    // Use the built-in ipKeyGenerator
+    const ip = ipKeyGenerator(req, res);
+    
+    // Include user ID if authenticated
     return req.user?._id ? `${ip}-${req.user._id}` : ip;
   }
 });
-
+router.use(setCsrfToken);
 // ============================================
 // PUBLIC ROUTES (No authentication required)
 // ============================================
@@ -197,66 +205,54 @@ router.get('/:id', optionalAuth, getGigById);
 // ============================================
 
 router.post('/', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken, // ✅ Add CSRF token for new requests
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   handleMultipleFileFields, 
   validateCreate, 
   createGig
 );
 
-// Update gig
 router.put('/:id', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   handleMultipleFileFields, 
   validateUpdate, 
   updateGig
 );
 
-// Image management
+// Image management routes
 router.post('/:id/images/upload', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   handleImageUpload, 
   uploadImages
 );
-
 router.delete('/:id/images/:publicId', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   removeImage
 );
 
 router.put('/:id/thumbnail/:publicId', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   setThumbnail
 );
-
 router.post('/:id/thumbnail/upload', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   handleThumbnailUpload, 
   uploadThumbnail
 );
-
-// Delete gig
 router.delete('/:id', 
-  protect, // ✅ Uses cookie-based auth
-  csrfProtection,
-  setCsrfToken,
+  protect,
+  csrfProtection, // CSRF check
   gigLimiter, 
   deleteGig
 );
