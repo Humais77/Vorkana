@@ -142,7 +142,6 @@ const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
   
-  // Form state with all fields from service model
  const [formData, setFormData] = useState({
   title: '',
   description: '',
@@ -169,6 +168,7 @@ const CreateService = () => {
   isRecommended: false,
   isPopular: false,
 });
+
   // NOW declare the subcategory hook AFTER formData is defined
   const { 
     data: subcategoriesData,
@@ -278,19 +278,20 @@ const handleSuccessfulNavigation = (serviceId) => {
   }
 };
 
+// Update the useEffect for successful creation
 useEffect(() => {
   if (createServiceMutation.isSuccess && createServiceMutation.data) {
     console.log('Service creation success:', createServiceMutation.data);
     
-    // Try multiple ways to get the service ID
     let serviceId = null;
     
-    if (createServiceMutation.data.serviceId) {
-      serviceId = createServiceMutation.data.serviceId;
+    // Try multiple ways to get the service ID
+    if (createServiceMutation.data.service?._id) {
+      serviceId = createServiceMutation.data.service._id;
     } else if (createServiceMutation.data.service?._id) {
       serviceId = createServiceMutation.data.service._id;
-    } else if (createServiceMutation.data.data?._id) {
-      serviceId = createServiceMutation.data.data._id;
+    } else if (createServiceMutation.data.serviceId) {
+      serviceId = createServiceMutation.data.serviceId;
     } else if (createServiceMutation.data._id) {
       serviceId = createServiceMutation.data._id;
     }
@@ -301,19 +302,19 @@ useEffect(() => {
       setCreatedServiceId(serviceId);
       setSuccess(true);
       setActiveStep(5);
-      toast.success('Service created! Redirecting...');
+      toast.success('Service created successfully!');
       
-      // Navigate after a short delay
+      // Use setTimeout to ensure state updates complete
       setTimeout(() => {
-        handleSuccessfulNavigation(serviceId);
-      }, 1500);
+        navigate(`/services/${serviceId}`);
+      }, 2000);
     } else {
       console.error('No service ID found in response:', createServiceMutation.data);
-      toast.error('Service created but could not redirect. Please check your services.');
+      toast.error('Service created but could not find ID. Please check your services list.');
+      navigate('/profile?tab=services');
     }
   }
 }, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
-
   // Memoized handlers
 const handleInputChange = useCallback((e) => {
   const { name, value, type, checked } = e.target;
@@ -535,51 +536,65 @@ useEffect(() => {
     toast.success('FAQ removed');
   }, []);
 
-
-  const handleImageUpload = useCallback(async (files) => {
-    if (uploadingImages) return;
+// In CreateService.jsx - Update image upload handling
+const handleImageUpload = useCallback(async (files) => {
+  if (uploadingImages) return;
+  
+  const newFiles = Array.from(files);
+  
+  // Validate file count
+  if (uploadedImages.length + newFiles.length > 10) {
+    toast.error('Maximum 10 images allowed');
+    return;
+  }
+  
+  const validFiles = [];
+  
+  // Validate each file
+  for (const file of newFiles) {
+    if (!file || !file.type) {
+      console.warn('Invalid file object:', file);
+      continue;
+    }
     
-    const newFiles = Array.from(files);
-    
-    // Validate file count
-    if (uploadedImages.length + newFiles.length > 10) {
-      toast.error('Maximum 10 images allowed');
+    if (file.size && file.size > 5 * 1024 * 1024) {
+      toast.error(`${file.name || 'File'} exceeds 5MB limit`);
       return;
     }
     
-    // Validate each file
-    for (const file of newFiles) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} exceeds 5MB limit`);
-        return;
-      }
-      
-      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-        toast.error(`${file.name} is not a valid image type`);
-        return;
-      }
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      toast.error(`${file.name || 'File'} is not a valid image type`);
+      return;
     }
     
-    setUploadingImages(true);
+    validFiles.push(file);
+  }
+  
+  if (validFiles.length === 0) {
+    toast.error('No valid images to upload');
+    return;
+  }
+  
+  setUploadingImages(true);
+  
+  try {
+    const previewImages = validFiles.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name || 'image',
+      size: file.size || 0,
+      type: file.type
+    }));
     
-    try {
-      const previewImages = newFiles.map(file => ({
-        file,
-        preview: URL.createObjectURL(file),
-        name: file.name,
-        size: file.size,
-        type: file.type
-      }));
-      
-      setUploadedImages(prev => [...prev, ...previewImages]);
-      toast.success(`${newFiles.length} image(s) added successfully`);
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      toast.error('Failed to add images');
-    } finally {
-      setUploadingImages(false);
-    }
-  }, [uploadingImages, uploadedImages]);
+    setUploadedImages(prev => [...prev, ...previewImages]);
+    toast.success(`${validFiles.length} image(s) added successfully`);
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    toast.error('Failed to add images');
+  } finally {
+    setUploadingImages(false);
+  }
+}, [uploadingImages, uploadedImages]);
 
   const handleThumbnailUpload = useCallback((file) => {
   if (uploadingThumbnail) return;
@@ -1517,6 +1532,34 @@ useEffect(() => {
                 </div>
               </div>
             </div>
+            // Add this after the form tag in CreateService.jsx
+{Object.keys(errors).length > 0 && (
+  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+    <h3 className="text-red-800 font-bold mb-2 flex items-center">
+      <AlertCircle className="mr-2" size={20} />
+      Please fix the following errors:
+    </h3>
+    <ul className="text-red-600 list-disc pl-5">
+      {Object.entries(errors).map(([field, message]) => (
+        <li key={field} className="mb-1">
+          <button
+            type="button"
+            onClick={() => {
+              const element = document.querySelector(`[name="${field}"]`);
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.focus();
+              }
+            }}
+            className="text-left hover:underline"
+          >
+            {message}
+          </button>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
           </div>
         );
 
@@ -1777,90 +1820,93 @@ useEffect(() => {
     handleRemoveFAQ
   ]);
 
-  // Memoized navigation buttons
-  const renderNavigationButtons = useMemo(() => {
-    if (activeStep === 5) return null;
+  /// Update the navigation buttons to show proper loading states
+const renderNavigationButtons = useMemo(() => {
+  if (activeStep === 5) return null;
 
-    return (
-      <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
-        {activeStep > 1 && activeStep < 5 && (
+  const isProcessing = createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting;
+
+  return (
+    <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
+      {activeStep > 1 && activeStep < 5 && (
+        <button
+          type="button"
+          onClick={prevStep}
+          className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isProcessing}
+          aria-label="Go back to previous step"
+        >
+          <ArrowLeft className="mr-2" size={20} />
+          Back
+        </button>
+      )}
+
+      {activeStep < 4 ? (
+        <button
+          type="button"
+          onClick={nextStep}
+          className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
+          disabled={isProcessing}
+          aria-label="Continue to next step"
+        >
+          Save & Continue
+          <ChevronRight className="ml-2" size={20} />
+        </button>
+      ) : activeStep === 4 ? (
+        <div className="flex flex-col sm:flex-row gap-4 w-full">
           <button
             type="button"
-            onClick={prevStep}
-            className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={createServiceMutation.isPending}
-            aria-label="Go back to previous step"
+            onClick={(e) => handleSubmit(e, 'draft')}
+            disabled={isProcessing}
+            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Save service as draft"
           >
-            <ArrowLeft className="mr-2" size={20} />
-            Back
+            {isProcessing ? (
+              <>
+                <Loader2 className="mr-2 animate-spin" size={20} />
+                {createServiceMutation.isPending ? 'Creating...' : 'Saving...'}
+              </>
+            ) : (
+              <>
+                <Save className="mr-2" size={20} />
+                Save as Draft
+              </>
+            )}
           </button>
-        )}
 
-        {activeStep < 4 ? (
           <button
             type="button"
-            onClick={nextStep}
-            className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
-            disabled={createServiceMutation.isPending}
-            aria-label="Continue to next step"
+            onClick={(e) => handleSubmit(e, 'active')}
+            disabled={isProcessing}
+            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Publish service"
           >
-            Save & Continue
-            <ChevronRight className="ml-2" size={20} />
+            {isProcessing ? (
+              <>
+                <Loader2 className="mr-2 animate-spin" size={20} />
+                {createServiceMutation.isPending ? 'Publishing...' : 'Processing...'}
+              </>
+            ) : (
+              <>
+                <Zap className="mr-2" size={20} />
+                Publish Service
+              </>
+            )}
           </button>
-        ) : activeStep === 4 ? (
-          <div className="flex flex-col sm:flex-row gap-4 w-full">
-            <button
-              type="submit"
-              disabled={createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting}
-              className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Save service as draft"
-            >
-              {createServiceMutation.isPending || isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 animate-spin" size={20} />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2" size={20} />
-                  Save as Draft
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => handleSubmit(e, 'active')}
-              disabled={createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting}
-              className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Publish service"
-            >
-              {createServiceMutation.isPending || isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 animate-spin" size={20} />
-                  Publishing...
-                </>
-              ) : (
-                <>
-                  <Zap className="mr-2" size={20} />
-                  Publish Service
-                </>
-              )}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    );
-  }, [
-    activeStep,
-    createServiceMutation.isPending,
-    categoryLoading,
-    subcategoryLoading,
-    isSubmitting,
-    prevStep,
-    nextStep,
-    handleSubmit
-  ]);
+        </div>
+      ) : null}
+    </div>
+  );
+}, [
+  activeStep,
+  createServiceMutation.isPending,
+  categoryLoading,
+  subcategoryLoading,
+  isSubmitting,
+  prevStep,
+  nextStep,
+  handleSubmit
+]);
 
   // Memoized left panel content
   const renderLeftPanel = useMemo(() => {

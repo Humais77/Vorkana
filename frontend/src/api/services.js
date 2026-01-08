@@ -351,42 +351,78 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     throw new Error(error.response?.data?.message || 'Failed to fetch category services');
   }
 },
-  create: async (serviceData, files = null) => {
-    try {
-      let formData;
+// In services.js - Update the create method
+create: async (serviceData, files = null) => {
+  try {
+    let formData;
+    
+    if (files instanceof FormData) {
+      formData = files;
+    } else {
+      formData = new FormData();
       
-      if (files instanceof FormData) {
-        formData = files;
-      } else {
-        formData = new FormData();
-        
-        // Append service data as JSON
-        formData.append('data', JSON.stringify(serviceData));
-        
-        // Append files if provided
-        if (serviceData.thumbnailFile) {
-          formData.append('thumbnail', serviceData.thumbnailFile);
-        }
-        
-        if (serviceData.imageFiles && Array.isArray(serviceData.imageFiles)) {
-          serviceData.imageFiles.forEach(file => {
-            formData.append('images', file);
-          });
-        }
+      // Append service data as JSON
+      formData.append('data', JSON.stringify(serviceData));
+      
+      // Append files if provided
+      if (serviceData?.thumbnailFile) {
+        formData.append('thumbnail', serviceData.thumbnailFile);
       }
       
-      const response = await axiosInstance.post('/api/services', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return response.data;
-      
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to create service');
+      if (serviceData?.imageFiles && Array.isArray(serviceData.imageFiles)) {
+        serviceData.imageFiles.forEach(file => {
+          formData.append('images', file);
+        });
+      }
     }
-  },
+    
+    const response = await axiosInstance.post('/api/services', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    // Ensure consistent response structure
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        message: response.data.message || 'Service created successfully',
+        service: response.data.service || response.data.data,
+        serviceId: response.data.service?._id || response.data.data?._id
+      };
+    }
+    
+    return response.data;
+    
+  } catch (error) {
+    console.error('Create service error:', error);
+    console.error('Error details:', error.response?.data);
+    
+    let errorMessage = 'Failed to create service';
+    if (error.response) {
+      const { data, status } = error.response;
+      
+      if (status === 400) {
+        if (data.errors) {
+          const validationErrors = data.errors.map(err => err.message).join(', ');
+          errorMessage = `Validation failed: ${validationErrors}`;
+        } else {
+          errorMessage = data?.message || errorMessage;
+        }
+      } else if (status === 401) {
+        errorMessage = 'Please login to create a service';
+      } else if (status === 403) {
+        errorMessage = 'You do not have permission to create services';
+      } else if (status === 404) {
+        errorMessage = 'Category or subcategory not found';
+      } else {
+        errorMessage = data?.message || errorMessage;
+      }
+    }
+    
+    throw new Error(errorMessage);
+  }
+},
   
   
   // Add method to get admin services
@@ -409,23 +445,33 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     }
   },
   
-  update: async (id, updateData, formData = null) => {
+// In services.js - Update the update method
+update: async (id, updateData, options = {}) => {
   try {
-    let response;
+    console.log('Updating service:', id);
     
-    if (formData instanceof FormData) {
-      // If FormData is provided, use it directly
+    let response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    if (updateData instanceof FormData) {
       console.log('Sending FormData to update service');
-      response = await axiosInstance.put(`/api/services/${id}`, formData, {
+      response = await axiosInstance.put(`/api/services/${id}`, updateData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        signal: controller.signal,
+        timeout: 30000
       });
     } else {
-      // Otherwise send JSON data
       console.log('Sending JSON data to update service');
-      response = await axiosInstance.put(`/api/services/${id}`, updateData);
+      response = await axiosInstance.put(`/api/services/${id}`, updateData, {
+        signal: controller.signal,
+        timeout: 30000
+      });
     }
+
+    clearTimeout(timeoutId);
     
     console.log('Update response:', response.data);
     
@@ -445,6 +491,14 @@ getByCategory: async (categoryIdentifier, params = {}) => {
     console.error('Update service error:', error);
     console.error('Error response:', error.response?.data);
     
+    if (error.code === 'ECONNABORTED' || error.name === 'AbortError') {
+      throw new Error('Request timeout. Please try a smaller update.');
+    }
+    
+    if (!navigator.onLine) {
+      throw new Error('No internet connection. Please check your network.');
+    }
+    
     let errorMessage = 'Failed to update service';
     if (error.response) {
       const { data, status } = error.response;
@@ -458,9 +512,15 @@ getByCategory: async (categoryIdentifier, params = {}) => {
         errorMessage = 'Service not found';
       } else if (status === 409) {
         errorMessage = 'Service was modified by another user. Please refresh and try again.';
+      } else if (status === 413) {
+        errorMessage = 'File size too large. Please reduce image sizes.';
+      } else if (status === 422) {
+        errorMessage = data?.message || 'Invalid data provided';
       } else {
         errorMessage = data?.message || errorMessage;
       }
+    } else if (error.request) {
+      errorMessage = 'No response from server. Please check your connection.';
     }
     
     throw new Error(errorMessage);

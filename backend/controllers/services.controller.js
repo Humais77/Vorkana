@@ -501,10 +501,11 @@ const createService = async (req, res, next) => {
     delete safeService.__v;
     delete safeService.lastUpdatedBy;
 
-    res.status(201).json({
+   res.status(201).json({
       success: true,
-      service: safeService,
       message: 'Service created successfully',
+      service: safeService,
+      serviceId: service._id,
       requestId,
       timestamp: new Date().toISOString()
     });
@@ -1439,8 +1440,10 @@ const incrementViewCountAsync = async (serviceId) => {
     console.error('Failed to increment view count:', error.message);
   }
 };
+// In service.controller.js - Update the updateService function
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
+  const startTime = Date.now();
   
   try {
     const { id } = req.params;
@@ -1454,7 +1457,11 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    const service = await Service.findById(id);
+    // Set timeout for response
+    req.setTimeout(25000); // 25 second timeout
+    res.setTimeout(25000);
+
+    const service = await Service.findById(id).lean();
     
     if (!service) {
       return res.status(404).json({
@@ -1478,44 +1485,32 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Handle FormData parsing
-    let bodyData = req.body;
-    let newThumbnail = null;
-    let newImages = [];
-    
-    console.log('Request headers:', req.headers['content-type']);
-    console.log('Request has files:', !!req.files);
-    console.log('Request files:', req.files);
-
-    // Handle file uploads from multer - FIXED: Check FormData structure
+    // Parse FormData
+    let bodyData = {};
     if (req.headers['content-type']?.includes('multipart/form-data')) {
-      console.log('Processing multipart/form-data');
-      
-      // Check if body contains JSON data
-      if (req.body.data && typeof req.body.data === 'string') {
+      if (req.body.data) {
         try {
           bodyData = JSON.parse(req.body.data);
-          console.log('Parsed JSON data from FormData');
         } catch (parseError) {
           console.error('Error parsing JSON from FormData:', parseError);
-          // If parsing fails, use the body as-is
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid JSON data in FormData',
+            code: 'INVALID_FORM_DATA',
+            requestId
+          });
         }
       }
       
-      // Handle thumbnail upload - FIXED: Proper file access
-      if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
-        console.log('Processing thumbnail upload');
+      // Handle file uploads - only process if files exist
+      if (req.files?.thumbnail?.[0]) {
         const thumbnailFile = req.files.thumbnail[0];
-        console.log('Thumbnail file details:', {
-          originalname: thumbnailFile.originalname,
-          mimetype: thumbnailFile.mimetype,
-          size: thumbnailFile.size
+        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails', {
+          timeout: 10000 // 10 second timeout for upload
         });
         
-        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
-        
-        if (thumbnailUpload.length > 0) {
-          newThumbnail = {
+        if (thumbnailUpload[0]) {
+          bodyData.thumbnail = {
             url: thumbnailUpload[0].url,
             public_id: thumbnailUpload[0].public_id,
             width: thumbnailUpload[0].width,
@@ -1524,17 +1519,15 @@ const updateService = async (req, res, next) => {
             format: thumbnailUpload[0].format,
             uploadedAt: new Date()
           };
-          
-          console.log('New thumbnail uploaded successfully:', newThumbnail.url);
         }
       }
       
-      // Handle images upload - FIXED: Proper file access
-      if (req.files && req.files.images && Array.isArray(req.files.images)) {
-        console.log(`Processing ${req.files.images.length} image uploads`);
-        const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+      if (req.files?.images && Array.isArray(req.files.images)) {
+        const imageUploads = await processUploadToCloudinary(req.files.images, 'services', {
+          timeout: 15000 // 15 second timeout for uploads
+        });
         
-        newImages = imageUploads.map(img => ({
+        bodyData.newImages = imageUploads.map(img => ({
           url: img.url,
           public_id: img.public_id,
           width: img.width,
@@ -1543,9 +1536,9 @@ const updateService = async (req, res, next) => {
           format: img.format,
           uploadedAt: new Date()
         }));
-        
-        console.log(`${newImages.length} new images uploaded successfully`);
       }
+    } else {
+      bodyData = req.body;
     }
 
     // Sanitize input
@@ -1563,47 +1556,16 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    // FIXED: Handle thumbnail from new upload first, then from JSON
-    if (newThumbnail) {
-      console.log('Using newly uploaded thumbnail');
-      // Delete old thumbnail from Cloudinary if exists
-      if (service.thumbnail && service.thumbnail.public_id) {
-        try {
-          await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
-          console.log('Old thumbnail deleted from Cloudinary');
-        } catch (error) {
-          console.error('Error deleting old thumbnail:', error);
-        }
-      }
-      sanitizedData.thumbnail = newThumbnail;
-    } else if (sanitizedData.thumbnail) {
-      // Handle thumbnail from JSON data
-      console.log('Processing thumbnail from JSON data');
-      if (typeof sanitizedData.thumbnail === 'string') {
-        // Convert string URL to thumbnail object
-        sanitizedData.thumbnail = {
-          url: sanitizedData.thumbnail.trim(),
-          public_id: service.thumbnail?.public_id || `thumbnail-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
-          uploadedAt: new Date()
-        };
-      }
-      // If it's already an object, keep it as is
-      console.log('Thumbnail from JSON:', sanitizedData.thumbnail?.url?.substring(0, 50) || 'none');
-    } else {
-      // Preserve existing thumbnail if no new one provided
-      sanitizedData.thumbnail = service.thumbnail;
-      console.log('Preserving existing thumbnail');
-    }
-
-    // FIXED: Handle images from new upload first, then from JSON
-    if (newImages.length > 0) {
-      console.log('Processing newly uploaded images');
+    // Handle images efficiently
+    if (sanitizedData.newImages) {
       const existingImages = service.images || [];
-      const updatedImages = [...existingImages, ...newImages];
+      const updatedImages = [...existingImages, ...sanitizedData.newImages];
       
       if (updatedImages.length > 10) {
-        // Delete newly uploaded images from Cloudinary
-        await deleteCloudinaryImages(newImages.map(img => ({ public_id: img.public_id })));
+        // Clean up uploaded images
+        if (sanitizedData.newImages.length > 0) {
+          await deleteCloudinaryImages(sanitizedData.newImages.map(img => ({ public_id: img.public_id })));
+        }
         return res.status(400).json({
           success: false,
           message: 'Cannot have more than 10 images',
@@ -1613,88 +1575,39 @@ const updateService = async (req, res, next) => {
       }
       
       sanitizedData.images = updatedImages;
-      console.log(`Added ${newImages.length} new images, total: ${updatedImages.length}`);
-    } else if (sanitizedData.images && Array.isArray(sanitizedData.images)) {
-      // Handle images from JSON data
-      console.log('Processing images from JSON data');
-      sanitizedData.images = sanitizedData.images.map((img, index) => {
-        if (typeof img === 'string') {
-          // Convert string URL to image object
-          return {
-            url: img.trim(),
-            public_id: service.images?.[index]?.public_id || `image-${Date.now()}-${index}`,
-            uploadedAt: new Date()
-          };
-        }
-        // If it's already an object, keep it
-        return img;
-      });
-      console.log(`Processed ${sanitizedData.images.length} images from JSON`);
-    } else {
-      // Preserve existing images if no new ones provided
-      sanitizedData.images = service.images || [];
-      console.log('Preserving existing images');
+      delete sanitizedData.newImages;
     }
 
+    // Handle thumbnail
+    if (sanitizedData.thumbnail) {
+      // If new thumbnail uploaded, delete old one
+      if (service.thumbnail && service.thumbnail.public_id) {
+        try {
+          await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }], {
+            timeout: 5000
+          });
+        } catch (error) {
+          console.warn('Failed to delete old thumbnail:', error);
+        }
+      }
+    } else if (service.thumbnail) {
+      // Keep existing thumbnail if no new one
+      sanitizedData.thumbnail = service.thumbnail;
+    }
 
     // Handle subcategory validation
     if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null || sanitizedData.subcategory === undefined) {
-  // If subcategory is empty but was previously set, keep the existing one
-  if (service.subcategory) {
-    sanitizedData.subcategory = service.subcategory;
-    console.log('Using existing subcategory:', service.subcategory);
-  } else {
-    // If no existing subcategory, set to null
-    sanitizedData.subcategory = null;
-  }
-}
-if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() === '') {
-  // Generate short description from description if not provided
-  if (sanitizedData.description) {
-    sanitizedData.shortDescription = sanitizedData.description.substring(0, 150) + '...';
-  } else if (service.description) {
-    sanitizedData.shortDescription = service.description.substring(0, 150) + '...';
-  } else {
-    return res.status(400).json({
-      success: false,
-      message: 'Short description is required',
-      code: 'SHORT_DESCRIPTION_REQUIRED',
-      requestId
-    });
-  }
-}
-
-    // Handle category change
-    if (sanitizedData.category && sanitizedData.category !== service.category.toString()) {
-      const category = await Category.findOne({ 
-        _id: sanitizedData.category, 
-        isActive: true 
-      });
-      
-      if (!category) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category not found or inactive',
-          code: 'CATEGORY_NOT_FOUND',
-          requestId
-        });
+      if (service.subcategory) {
+        sanitizedData.subcategory = service.subcategory;
       }
-      
-      if (sanitizedData.subcategory && sanitizedData.subcategory !== service.subcategory?.toString()) {
-        const subcategory = await Subcategory.findOne({ 
-          _id: sanitizedData.subcategory,
-          category: sanitizedData.category,
-          isActive: true
-        });
-        
-        if (!subcategory) {
-          return res.status(400).json({
-            success: false,
-            message: 'Subcategory does not belong to the new category',
-            code: 'SUBCATEGORY_MISMATCH',
-            requestId
-          });
-        }
+    }
+
+    // Generate short description if missing
+    if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() === '') {
+      if (sanitizedData.description) {
+        sanitizedData.shortDescription = sanitizedData.description.substring(0, 150) + '...';
+      } else if (service.description) {
+        sanitizedData.shortDescription = service.description.substring(0, 150) + '...';
       }
     }
 
@@ -1705,55 +1618,18 @@ if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() ===
       $inc: { version: 1 }
     };
 
-    console.log('Update data includes:', {
-      hasThumbnail: !!updateData.thumbnail,
-      thumbnailUrl: updateData.thumbnail?.url?.substring(0, 50) || 'none',
-      imagesCount: updateData.images?.length || 0,
-      totalKeys: Object.keys(updateData).length
-    });
-
-    if (sanitizedData.status && sanitizedData.status !== service.status) {
-      if (sanitizedData.status === 'active' && !service.publishedAt) {
-        updateData.publishedAt = new Date();
-      }
-    }
-
-    const currentVersion = sanitizedData.version !== undefined ? sanitizedData.version : service.version;
-    delete updateData.version;
-
-    const queryConditions = { _id: id };
-    if (bodyData.version !== undefined || sanitizedData.version !== undefined) {
-      queryConditions.version = currentVersion;
-    }
-
-    console.log('Executing update with data keys:', Object.keys(updateData));
-    
+    // Perform update
     const updatedService = await Service.findOneAndUpdate(
-      queryConditions,
+      { _id: id },
       updateData,
       { 
         new: true,
         runValidators: true,
-        context: 'query'
+        maxTimeMS: 10000 // 10 second query timeout
       }
-    ).populate('category', 'name slug').populate('subcategory', 'name slug').populate('createdBy', 'name picture');
+    ).select('-__v -lastUpdatedBy -deletedAt -deletedBy -version').lean();
 
     if (!updatedService) {
-      // Check for version conflict
-      const currentDoc = await Service.findById(id);
-      if (currentDoc && (bodyData.version !== undefined || sanitizedData.version !== undefined)) {
-        return res.status(409).json({
-          success: false,
-          message: 'Service was modified by another user. Please refresh and try again.',
-          code: 'VERSION_CONFLICT',
-          currentVersion: currentDoc.version,
-          serviceTitle: currentDoc.title,
-          updatedAt: currentDoc.updatedAt,
-          requestId,
-          suggestion: 'Refresh the page to get the latest version before making changes'
-        });
-      }
-      
       return res.status(404).json({
         success: false,
         message: 'Service not found during update',
@@ -1762,45 +1638,34 @@ if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() ===
       });
     }
 
-    // Invalidate cache
-    await invalidateServiceCache(id);
+    // Invalidate cache (async, don't wait)
+    invalidateServiceCache(id).catch(console.warn);
 
-    logAudit('UPDATE', 'SERVICE', updatedService._id, req.user._id, {
-      updatedFields: Object.keys(sanitizedData),
-      oldVersion: currentVersion,
-      newVersion: updatedService.version,
-      statusChanged: sanitizedData.status ? sanitizedData.status !== service.status : false,
-      imagesUpdated: newImages.length > 0,
-      thumbnailUpdated: !!newThumbnail,
-      versionChecked: (bodyData.version !== undefined || sanitizedData.version !== undefined),
-      hasThumbnail: !!updatedService.thumbnail,
-      hasImages: updatedService.images?.length > 0
-    });
-
-    const safeService = updatedService.toObject();
-    delete safeService.__v;
-    delete safeService.lastUpdatedBy;
-
+    const responseTime = Date.now() - startTime;
+    
+    // Return minimal response for speed
     res.json({
       success: true,
-      service: safeService,
       message: 'Service updated successfully',
-      newVersion: updatedService.version,
-      thumbnailUpdated: !!newThumbnail,
-      imagesUpdated: newImages.length > 0,
+      service: updatedService,
+      thumbnailUpdated: !!bodyData.thumbnail,
+      imagesUpdated: !!bodyData.newImages,
       requestId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
     });
 
   } catch (error) {
-    console.error('Update service error:', error);
+    const responseTime = Date.now() - startTime;
+    console.error('Update service error after', responseTime, 'ms:', error);
     
-    if (error.code === 11000) {
-      return res.status(400).json({
+    if (error.name === 'MongooseError' && error.message.includes('buffering timed out')) {
+      return res.status(408).json({
         success: false,
-        message: 'Service with similar title already exists',
-        code: 'DUPLICATE_SERVICE',
-        requestId
+        message: 'Database operation timeout',
+        code: 'DATABASE_TIMEOUT',
+        requestId,
+        responseTime: `${responseTime}ms`
       });
     }
     
@@ -1815,10 +1680,21 @@ if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() ===
       });
     }
     
-    logAudit('ERROR', 'SERVICE', 'UPDATE', req.user._id, { 
+    // Clean up uploaded files on error
+    if (bodyData?.newImages?.length > 0) {
+      try {
+        await deleteCloudinaryImages(bodyData.newImages.map(img => ({ public_id: img.public_id })));
+      } catch (cleanupError) {
+        console.warn('Error cleaning up uploaded images:', cleanupError);
+      }
+    }
+    
+    logAudit('ERROR', 'SERVICE', 'UPDATE', req.user?._id, { 
       id: req.params.id, 
-      error: error.message 
+      error: error.message,
+      responseTime
     });
+    
     next(error);
   }
 };

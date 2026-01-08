@@ -439,52 +439,112 @@ const queryClient = useQueryClient();
     toast.success('FAQ removed');
   }, []);
 
-  const handleImageUpload = useCallback(async (files) => {
-    if (uploadingImages) return;
-    
-    const newFiles = Array.from(files);
-    
-    // Validate total image count
-    const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
-    if (totalImages > 10) {
-      toast.error('Maximum 10 images allowed');
+  // Create a utility function to optimize images before upload
+const optimizeImageBeforeUpload = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
+  return new Promise((resolve) => {
+    if (file.size < 500 * 1024) { // If already small (<500KB)
+      resolve(file);
       return;
     }
+
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
     
-    // Validate each file
-    for (const file of newFiles) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} exceeds 5MB limit`);
-        return;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      
+      // Calculate new dimensions
+      if (width > maxWidth) {
+        height = Math.round(height * (maxWidth / width));
+        width = maxWidth;
+      }
+      if (height > maxHeight) {
+        width = Math.round(width * (maxHeight / height));
+        height = maxHeight;
       }
       
-      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-        toast.error(`${file.name} is not a valid image type`);
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      canvas.toBlob(
+        (blob) => {
+          const optimizedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(optimizedFile);
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+    
+    img.src = URL.createObjectURL(file);
+  });
+};
+
+// Use it in your image upload handler
+const handleImageUpload = useCallback(async (files) => {
+  if (uploadingImages) return;
+  
+  const newFiles = Array.from(files);
+  
+  // Validate total image count
+  const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
+  if (totalImages > 10) {
+    toast.error('Maximum 10 images allowed');
+    return;
+  }
+  
+  setUploadingImages(true);
+  
+  try {
+    const optimizedFiles = await Promise.all(
+      newFiles.map(async (file) => {
+        // Skip optimization for already small files
+        if (file.size < 500 * 1024) {
+          return file;
+        }
+        
+        try {
+          return await optimizeImageBeforeUpload(file);
+        } catch (error) {
+          console.warn('Failed to optimize image, using original:', error);
+          return file;
+        }
+      })
+    );
+    
+    // Validate optimized files
+    for (const file of optimizedFiles) {
+      if (file.size > 2 * 1024 * 1024) { // Max 2MB after optimization
+        toast.error(`${file.name} is too large after optimization`);
+        setUploadingImages(false);
         return;
       }
     }
     
-    setUploadingImages(true);
+    const previewImages = optimizedFiles.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isNew: true
+    }));
     
-    try {
-      const previewImages = newFiles.map(file => ({
-        file,
-        preview: URL.createObjectURL(file),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        isNew: true
-      }));
-      
-      setUploadedImages(prev => [...prev, ...previewImages]);
-      toast.success(`${newFiles.length} image(s) added successfully`);
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      toast.error('Failed to add images');
-    } finally {
-      setUploadingImages(false);
-    }
-  }, [uploadingImages, existingImages, uploadedImages]);
+    setUploadedImages(prev => [...prev, ...previewImages]);
+    toast.success(`${newFiles.length} image(s) added successfully`);
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    toast.error('Failed to add images');
+  } finally {
+    setUploadingImages(false);
+  }
+}, [uploadingImages, existingImages, uploadedImages]);
 
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
@@ -596,9 +656,11 @@ const queryClient = useQueryClient();
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories, thumbnailFile, existingThumbnail]);
+// In EditService.jsx - Update the handleSubmit function
 const handleSubmit = useCallback(async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
+  setErrors({});
 
   if (!isAuthenticated) {
     toast.error("Please sign in to update services");
@@ -612,10 +674,12 @@ const handleSubmit = useCallback(async (e) => {
   }
 
   try {
-    // Create FormData properly
+    // Create FormData with proper timeout handling
     const formDataToSend = new FormData();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    // Prepare JSON data WITHOUT version
+    // Prepare JSON data WITHOUT circular references
     const jsonData = {
       title: (formData.title || '').trim(),
       description: (formData.description || '').trim(),
@@ -628,28 +692,41 @@ const handleSubmit = useCallback(async (e) => {
       deliveryTime: parseInt(formData.deliveryTime || 1),
       deliveryTimeUnit: formData.deliveryTimeUnit || "days",
       revisions: parseInt(formData.revisions || 1),
-      tags: formData.tags || [],
-      searchKeywords: formData.searchKeywords || [],
-      features: formData.features || [],
-      requirements: formData.requirements || [],
-      faqs: formData.faqs || [],
-      metaTitle: (formData.metaTitle || '').trim(),
-      metaDescription: (formData.metaDescription || '').trim(),
       status: formData.status || "active"
-      // REMOVED: version: currentVersion
     };
 
-    console.log('Submitting WITHOUT version field');
+    // Only include if they have values
+    if (formData.tags?.length > 0) jsonData.tags = formData.tags;
+    if (formData.searchKeywords?.length > 0) jsonData.searchKeywords = formData.searchKeywords;
+    if (formData.features?.length > 0) jsonData.features = formData.features;
+    if (formData.requirements?.length > 0) jsonData.requirements = formData.requirements;
+    if (formData.faqs?.length > 0) jsonData.faqs = formData.faqs;
+    if (formData.metaTitle?.trim()) jsonData.metaTitle = formData.metaTitle.trim();
+    if (formData.metaDescription?.trim()) jsonData.metaDescription = formData.metaDescription.trim();
 
     // Add thumbnail if not being replaced
     if (!thumbnailFile && existingThumbnail) {
-      jsonData.thumbnail = existingThumbnail;
+      jsonData.thumbnail = {
+        url: existingThumbnail.url,
+        public_id: existingThumbnail.public_id
+      };
     }
 
     // Add existing images if not being replaced
     if (existingImages.length > 0 && uploadedImages.length === 0) {
-      jsonData.images = existingImages;
+      jsonData.images = existingImages.map(img => ({
+        url: img.url,
+        public_id: img.public_id
+      }));
     }
+
+    console.log('Submitting update with data:', {
+      title: jsonData.title,
+      category: jsonData.category,
+      subcategory: jsonData.subcategory,
+      imagesCount: jsonData.images?.length || 0,
+      hasThumbnail: !!jsonData.thumbnail
+    });
 
     // Append JSON data
     formDataToSend.append('data', JSON.stringify(jsonData));
@@ -657,6 +734,7 @@ const handleSubmit = useCallback(async (e) => {
     // Append thumbnail file if exists
     if (thumbnailFile && thumbnailFile.file) {
       formDataToSend.append('thumbnail', thumbnailFile.file);
+      console.log('Adding new thumbnail file');
     }
 
     // Append new image files
@@ -666,32 +744,41 @@ const handleSubmit = useCallback(async (e) => {
           formDataToSend.append('images', img.file);
         }
       });
+      console.log(`Adding ${uploadedImages.length} new images`);
     }
 
-    // Call updateService
+    // Add timeout signal
+    const signal = controller.signal;
+
+    // Call updateService with timeout handling
     await updateService({
       id: id,
       data: formDataToSend,
       headers: {
         'Content-Type': 'multipart/form-data'
-      }
+      },
+      signal: signal
     });
+
+    clearTimeout(timeoutId);
 
   } catch (error) {
     console.error("Error in handleSubmit:", error);
-    toast.error(error.message || "Failed to update service");
+    
+    if (error.name === 'AbortError') {
+      toast.error('Request timeout. Please try a smaller update or check your connection.');
+    } else if (error.message?.includes('SUBCATEGORY')) {
+      setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
+      toast.error('Please select a valid subcategory');
+    } else if (error.message?.includes('Category not found')) {
+      toast.error('Selected category no longer exists. Please refresh and select again.');
+    } else {
+      toast.error(error.message || 'Failed to update service. Please try again.');
+    }
+    
     setIsSubmitting(false);
   }
 }, [formData, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, validateForm, updateService, isAuthenticated]);
-
-
-
-
-
-
-
-
-
   const handleRefreshService = useCallback(async () => {
     setIsRefreshing(true);
     try {
