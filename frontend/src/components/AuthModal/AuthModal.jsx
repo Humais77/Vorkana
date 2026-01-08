@@ -92,6 +92,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     };
   }, []);
 
+  // SIMPLIFIED: Remove validation from change handlers for better performance
   const handleSigninChange = useCallback((e) => {
     const { name, value } = e.target;
     setSigninData(prev => ({ ...prev, [name]: value }));
@@ -114,18 +115,26 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
     
-    // Password validation for real-time feedback
-    if (name === 'password') {
-      const validation = validatePassword(value);
-      if (!validation.valid) {
-        setPasswordStrength(validation.message);
-      } else {
-        setPasswordStrength('Strong password');
-      }
-    }
-    
     clearError();
   }, [errors, clearError]);
+
+  // Debounced password validation - only update on blur or when user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (signupData.password) {
+        const validation = validatePassword(signupData.password);
+        if (!validation.valid) {
+          setPasswordStrength(validation.message);
+        } else {
+          setPasswordStrength('Strong password');
+        }
+      } else {
+        setPasswordStrength('');
+      }
+    }, 300); // 300ms delay
+
+    return () => clearTimeout(timer);
+  }, [signupData.password]);
 
   const validateSignin = useCallback(() => {
     const newErrors = {};
@@ -240,24 +249,27 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     setShowPassword(prev => !prev);
   }, []);
 
-  // Password strength indicator
+  // Password strength indicator - moved to useEffect for better performance
   const getPasswordStrengthColor = useCallback(() => {
     if (!signupData.password) return 'gray';
     const validation = validatePassword(signupData.password);
     return validation.valid ? 'green' : 'red';
   }, [signupData.password]);
 
-  // Password requirements checklist
-  const passwordRequirements = useMemo(() => [
-    { text: "At least 8 characters", met: signupData.password.length >= 8 },
-    { text: "One uppercase letter", met: /[A-Z]/.test(signupData.password) },
-    { text: "One lowercase letter", met: /[a-z]/.test(signupData.password) },
-    { text: "One number", met: /\d/.test(signupData.password) },
-    { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(signupData.password) },
-  ], [signupData.password]);
+  // Password requirements checklist - memoized with dependency
+  const passwordRequirements = useMemo(() => {
+    const pwd = signupData.password;
+    return [
+      { text: "At least 8 characters", met: pwd.length >= 8 },
+      { text: "One uppercase letter", met: /[A-Z]/.test(pwd) },
+      { text: "One lowercase letter", met: /[a-z]/.test(pwd) },
+      { text: "One number", met: /\d/.test(pwd) },
+      { text: "One special character (@$!%*?&)", met: /[@$!%*?&]/.test(pwd) },
+    ];
+  }, [signupData.password]);
 
   // Render social buttons (removed Facebook & Apple)
-  const renderSocialButtons = () => (
+  const renderSocialButtons = useCallback(() => (
     <div className="space-y-4">
       <button
         onClick={handleGoogleAuth}
@@ -282,10 +294,10 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
         Continue with {activeTab === 'signin' ? 'email' : 'email'}
       </button>
     </div>
-  );
+  ), [activeTab, handleGoogleAuth, loading, isSubmitting]);
 
   // Helper function to format error messages
-  const formatErrorMessage = (error) => {
+  const formatErrorMessage = useCallback((error) => {
     if (!error) return '';
     
     // Capitalize first letter
@@ -297,329 +309,332 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
     }
     
     return formatted;
-  };
+  }, []);
 
-  // Render email form
-  const renderEmailForm = () => (
-    <div className="overflow-y-auto max-h-[500px] pr-2">
-      {/* Back Button */}
-      <button
-        onClick={() => setShowEmailForm(false)}
-        className="flex items-center text-gray-600 hover:text-gray-900 mb-4 transition-colors text-base"
-        disabled={isSubmitting}
-      >
-        <ArrowLeft className="w-4 h-4 mr-2" />
-        Back
-      </button>
+  // Render email form - useCallback to memoize
+  const renderEmailForm = useCallback(() => {
+    const handleEmailBlur = (field, value) => {
+      if (field === 'email' && value && !validateEmail(value)) {
+        setErrors(prev => ({ ...prev, email: "Please enter a valid email address" }));
+      }
+    };
 
-      <div className="text-center mb-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-2">
-          Continue with your email {activeTab === 'signup' ? '' : 'or username'}
-        </h3>
-      </div>
+    const handlePasswordBlur = (value, isSignup = false) => {
+      if (!value) {
+        setErrors(prev => ({ ...prev, password: "Password is required" }));
+      } else if (isSignup) {
+        const validation = validatePassword(value);
+        if (!validation.valid) {
+          setErrors(prev => ({ ...prev, password: validation.message }));
+        }
+      }
+    };
 
-      {/* Error Display - Show detailed backend errors */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fadeIn">
-          <div className="flex items-start">
-            <AlertCircle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-red-700 font-medium text-sm">
-                {formatErrorMessage(error)}
-              </p>
-              {error.includes('locked') && (
-                <p className="text-red-600 text-xs mt-1">
-                  Please wait or contact support if you believe this is an error.
-                </p>
-              )}
-              {error.includes('deactivated') && (
-                <p className="text-red-600 text-xs mt-1">
-                  Contact support to reactivate your account.
-                </p>
-              )}
-              {error.includes('Invalid email or password') && (
-                <p className="text-red-600 text-xs mt-1">
-                  Please check your credentials and try again.
-                </p>
-              )}
-            </div>
-          </div>
+    const handleNameBlur = (value) => {
+      if (value) {
+        const validation = validateName(value);
+        if (!validation.valid) {
+          setErrors(prev => ({ ...prev, name: validation.message }));
+        }
+      }
+    };
+
+    return (
+      <div className="overflow-y-auto max-h-[500px] pr-2">
+        {/* Back Button */}
+        <button
+          onClick={() => setShowEmailForm(false)}
+          className="flex items-center text-gray-600 hover:text-gray-900 mb-4 transition-colors text-base"
+          disabled={isSubmitting}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back
+        </button>
+
+        <div className="text-center mb-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-2">
+            Continue with your email {activeTab === 'signup' ? '' : 'or username'}
+          </h3>
         </div>
-      )}
 
-      {activeTab === 'signin' ? (
-        /* SIGN IN EMAIL FORM */
-        <form onSubmit={handleSigninSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Email Address
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={signinData.email}
-              onChange={handleSigninChange}
-              onBlur={(e) => {
-                // Validate on blur for instant feedback
-                if (e.target.value && !validateEmail(e.target.value)) {
-                  setErrors(prev => ({ ...prev, email: "Please enter a valid email address" }));
-                }
-              }}
-              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
-              placeholder="you@example.com"
-              disabled={loading || loginMutation.isPending || isSubmitting}
-              autoFocus
-            />
-            {errors.email && (
-              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
-            )}
+        {/* Error Display - Show detailed backend errors */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fadeIn">
+            <div className="flex items-start">
+              <AlertCircle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-red-700 font-medium text-sm">
+                  {formatErrorMessage(error)}
+                </p>
+                {error.includes('locked') && (
+                  <p className="text-red-600 text-xs mt-1">
+                    Please wait or contact support if you believe this is an error.
+                  </p>
+                )}
+                {error.includes('deactivated') && (
+                  <p className="text-red-600 text-xs mt-1">
+                    Contact support to reactivate your account.
+                  </p>
+                )}
+                {error.includes('Invalid email or password') && (
+                  <p className="text-red-600 text-xs mt-1">
+                    Please check your credentials and try again.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
+        )}
 
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-semibold text-gray-700">
-                Password
+        {activeTab === 'signin' ? (
+          /* SIGN IN EMAIL FORM */
+          <form onSubmit={handleSigninSubmit} className="space-y-4">
+            <div>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                Email Address
               </label>
-              <button
-                type="button"
-                className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-                onClick={() => {
-                  onClose();
-                  navigate('/forgot-password');
-                }}
-                disabled={isSubmitting}
-              >
-                Forgot password?
-              </button>
-            </div>
-            <div className="relative">
               <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                value={signinData.password}
+                type="email"
+                name="email"
+                value={signinData.email}
                 onChange={handleSigninChange}
-                onBlur={(e) => {
-                  // Validate on blur for instant feedback
-                  if (!e.target.value) {
-                    setErrors(prev => ({ ...prev, password: "Password is required" }));
-                  }
-                }}
-                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
-                placeholder="••••••••"
+                onBlur={(e) => handleEmailBlur('email', e.target.value)}
+                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
+                placeholder="you@example.com"
                 disabled={loading || loginMutation.isPending || isSubmitting}
+                autoFocus
               />
-              <button
-                type="button"
-                onClick={togglePasswordVisibility}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                disabled={isSubmitting}
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
+              {errors.email && (
+                <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
+              )}
             </div>
-            {errors.password && (
-              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
-            )}
-          </div>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="rememberMe"
-              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
-            />
-            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600">
-              Remember me on this device
-            </label>
-          </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-sm font-semibold text-gray-700">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                  onClick={() => {
+                    onClose();
+                    navigate('/forgot-password');
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={signinData.password}
+                  onChange={handleSigninChange}
+                  onBlur={(e) => handlePasswordBlur(e.target.value, false)}
+                  className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
+                  placeholder="••••••••"
+                  disabled={loading || loginMutation.isPending || isSubmitting}
+                />
+                <button
+                  type="button"
+                  onClick={togglePasswordVisibility}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  disabled={isSubmitting}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
+              )}
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading || loginMutation.isPending || isSubmitting}
-            className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base"
-          >
-            {loginMutation.isPending || isSubmitting ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                Signing In...
-              </>
-            ) : (
-              <>
-                <LogIn className="mr-2" size={20} />
-                Sign In
-              </>
-            )}
-          </button>
-        </form>
-      ) : (
-        /* SIGN UP EMAIL FORM */
-        <form onSubmit={handleSignupSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={signupData.name}
-              onChange={handleSignupChange}
-              onBlur={(e) => {
-                // Validate on blur for instant feedback
-                if (e.target.value) {
-                  const validation = validateName(e.target.value);
-                  if (!validation.valid) {
-                    setErrors(prev => ({ ...prev, name: validation.message }));
-                  }
-                }
-              }}
-              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
-              placeholder="John Doe"
-              disabled={loading || registerMutation.isPending || isSubmitting}
-              autoFocus
-              required
-            />
-            {errors.name && (
-              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.name}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Email Address *
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={signupData.email}
-              onChange={handleSignupChange}
-              onBlur={(e) => {
-                // Validate on blur for instant feedback
-                if (e.target.value && !validateEmail(e.target.value)) {
-                  setErrors(prev => ({ ...prev, email: "Please enter a valid email address" }));
-                }
-              }}
-              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
-              placeholder="you@example.com"
-              disabled={loading || registerMutation.isPending || isSubmitting}
-              required
-            />
-            {errors.email && (
-              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Password *
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
               <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                value={signupData.password}
+                type="checkbox"
+                id="rememberMe"
+                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+              />
+              <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600">
+                Remember me on this device
+              </label>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || loginMutation.isPending || isSubmitting}
+              className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base"
+            >
+              {loginMutation.isPending || isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  Signing In...
+                </>
+              ) : (
+                <>
+                  <LogIn className="mr-2" size={20} />
+                  Sign In
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          /* SIGN UP EMAIL FORM */
+          <form onSubmit={handleSignupSubmit} className="space-y-4">
+            <div>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={signupData.name}
                 onChange={handleSignupChange}
-                onBlur={(e) => {
-                  // Validate on blur for instant feedback
-                  if (e.target.value) {
-                    const validation = validatePassword(e.target.value);
-                    if (!validation.valid) {
-                      setErrors(prev => ({ ...prev, password: validation.message }));
-                    }
-                  }
-                }}
-                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
-                placeholder="••••••••"
+                onBlur={(e) => handleNameBlur(e.target.value)}
+                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
+                placeholder="John Doe"
+                disabled={loading || registerMutation.isPending || isSubmitting}
+                autoFocus
+                required
+              />
+              {errors.name && (
+                <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.name}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                Email Address *
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={signupData.email}
+                onChange={handleSignupChange}
+                onBlur={(e) => handleEmailBlur('email', e.target.value)}
+                className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
+                placeholder="you@example.com"
                 disabled={loading || registerMutation.isPending || isSubmitting}
                 required
               />
+              {errors.email && (
+                <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.email}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                Password *
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={signupData.password}
+                  onChange={handleSignupChange}
+                  onBlur={(e) => handlePasswordBlur(e.target.value, true)}
+                  className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
+                  placeholder="••••••••"
+                  disabled={loading || registerMutation.isPending || isSubmitting}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={togglePasswordVisibility}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  disabled={isSubmitting}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+
+              {/* Password strength indicator */}
+              {signupData.password && (
+                <div className={`mt-3 p-3 rounded text-sm animate-fadeIn ${getPasswordStrengthColor() === 'green'
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                  <div className="flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    {passwordStrength}
+                  </div>
+                </div>
+              )}
+
+              {errors.password && (
+                <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
+              )}
+
+              {/* Password requirements checklist */}
+              <div className="mt-4 space-y-2">
+                {passwordRequirements.map((req, index) => (
+                  <div key={index} className="flex items-center text-sm">
+                    <div className={`w-3.5 h-3.5 rounded-full mr-2.5 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
+                      {req.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Terms Agreement */}
+            <div className="flex items-start mt-6">
+              <input
+                type="checkbox"
+                id="terms"
+                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 mt-1"
+                required
+              />
+              <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
+                I agree to the Vorkanna Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
+              </label>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || registerMutation.isPending || isSubmitting}
+              className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base mt-4"
+            >
+              {registerMutation.isPending || isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  Creating Account...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="mr-2" size={20} />
+                  Create Account
+                </>
+              )}
+            </button>
+
+            <p className="text-sm text-gray-500 text-center mt-4">
+              Already have an account?{' '}
               <button
                 type="button"
-                onClick={togglePasswordVisibility}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                onClick={() => {
+                  onSwitchTab('signin');
+                  setShowEmailForm(false);
+                }}
+                className="text-emerald-600 hover:text-emerald-700 font-medium"
                 disabled={isSubmitting}
               >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                Sign in here
               </button>
-            </div>
-
-            {/* Password strength indicator */}
-            {signupData.password && (
-              <div className={`mt-3 p-3 rounded text-sm animate-fadeIn ${getPasswordStrengthColor() === 'green'
-                  ? 'bg-green-50 text-green-700 border border-green-200'
-                  : 'bg-red-50 text-red-700 border border-red-200'
-                }`}>
-                <div className="flex items-center">
-                  <AlertCircle className="w-4 h-4 mr-2" />
-                  {passwordStrength}
-                </div>
-              </div>
-            )}
-
-            {errors.password && (
-              <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.password}</p>
-            )}
-
-            {/* Password requirements checklist */}
-            <div className="mt-4 space-y-2">
-              {passwordRequirements.map((req, index) => (
-                <div key={index} className="flex items-center text-sm">
-                  <div className={`w-3.5 h-3.5 rounded-full mr-2.5 ${req.met ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
-                    {req.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Terms Agreement */}
-          <div className="flex items-start mt-6">
-            <input
-              type="checkbox"
-              id="terms"
-              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 mt-1"
-              required
-            />
-            <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
-              I agree to the Vorkanna Terms of Service and Privacy Policy. I understand that I will receive account-related emails.
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || registerMutation.isPending || isSubmitting}
-            className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base mt-4"
-          >
-            {registerMutation.isPending || isSubmitting ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                Creating Account...
-              </>
-            ) : (
-              <>
-                <UserPlus className="mr-2" size={20} />
-                Create Account
-              </>
-            )}
-          </button>
-
-          <p className="text-sm text-gray-500 text-center mt-4">
-            Already have an account?{' '}
-            <button
-              type="button"
-              onClick={() => {
-                onSwitchTab('signin');
-                setShowEmailForm(false);
-              }}
-              className="text-emerald-600 hover:text-emerald-700 font-medium"
-              disabled={isSubmitting}
-            >
-              Sign in here
-            </button>
-          </p>
-        </form>
-      )}
-    </div>
-  );
+            </p>
+          </form>
+        )}
+      </div>
+    );
+  }, [
+    activeTab, error, formatErrorMessage, handleSigninSubmit, handleSignupSubmit,
+    signinData.email, signinData.password, signupData.name, signupData.email,
+    signupData.password, showPassword, loading, loginMutation.isPending,
+    registerMutation.isPending, isSubmitting, togglePasswordVisibility,
+    getPasswordStrengthColor, passwordRequirements, onClose, navigate, onSwitchTab
+  ]);
 
   // Animations
   const modalAnimation = useMemo(() => ({
@@ -744,15 +759,4 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   );
 };
 
-// Add CSS animations
-const styles = `
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-5px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .animate-fadeIn {
-    animation: fadeIn 0.2s ease-out;
-  }
-`;
-
-export default React.memo(AuthModal);
+export default AuthModal;

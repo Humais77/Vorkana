@@ -288,5 +288,17 @@ deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { param
     adminApi.get('/api/admin/users/dropdown', {
       params: { role, limit: 100 }
     }),
-  
+  getRecentActivity: async (limit = 10) => {
+  try {
+    const response = await axios.get(`/api/admin/activity/recent`, {
+      
+      params: { limit }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching recent activity:', error);
+    throw error;
+  }
+},
+repairCategoryCounts: () => adminApi.post('/api/categories/repair-counts'),
 };

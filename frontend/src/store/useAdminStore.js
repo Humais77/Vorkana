@@ -94,17 +94,15 @@ export const useAdminStore = create(
           categoriesLastFetched: Date.now() 
         });
       },
-      
-      // ADD THIS FUNCTION - setServices
       setServices: (data) => {
-        const services = Array.isArray(data) ? data : data?.data || [];
-        const pagination = data?.pagination || null;
-        set({ 
-          services, 
-          servicesPagination: pagination,
-          servicesLastFetched: Date.now() 
-        });
-      },
+  const services = Array.isArray(data) ? data : data?.data || [];
+  const pagination = data?.pagination || null;
+  set({ 
+    services, 
+    servicesPagination: pagination,
+    servicesLastFetched: Date.now() 
+  });
+},
       
       setSelectedUser: (user) => set({ selectedUser: user }),
       setSelectedCategory: (category) => set({ selectedCategory: category }),
@@ -222,15 +220,6 @@ export const useAdminStore = create(
         gigsFilters: { ...get().gigsFilters, ...filters }
       }),
       
-      setServices: (data) => {
-        const services = Array.isArray(data) ? data : data?.data || [];
-        const pagination = data?.pagination || null;
-        set({ 
-          services, 
-          servicesPagination: pagination,
-          servicesLastFetched: Date.now() 
-        });
-      },
       
       setSelectedService: (service) => set({ selectedService: service }),
       
