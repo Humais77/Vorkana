@@ -26,7 +26,7 @@ import { useGigs } from '../../../hooks/useGigs';
 import { useCategories } from '../../../hooks/useServices';
 import { toast } from 'react-hot-toast';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-import heroBg from "../../../assets/bg.png";
+import heroBg from "../../../../assets/bg.png";
 
 const GigListingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();

@@ -45,22 +45,43 @@ export const useSubcategories = (params = {}, options = {}) => {
 /**
  * Hook to get subcategories by category ID
  */
+// hooks/useSubcategories.js - Updated version
 export const useSubcategoriesByCategory = (categoryId, options = {}) => {
+  // Extract the actual ID from different possible formats
+  const getValidCategoryId = useCallback(() => {
+    if (!categoryId) return null;
+    
+    // If it's an object with _id property
+    if (typeof categoryId === 'object' && categoryId !== null) {
+      return categoryId._id || null;
+    }
+    
+    // If it's already a string
+    if (typeof categoryId === 'string') {
+      return categoryId.trim();
+    }
+    
+    // If it's a number or other type, convert to string
+    return String(categoryId);
+  }, [categoryId]);
+
+  const validCategoryId = getValidCategoryId();
+  
   return useQuery({
-    queryKey: ['subcategories', 'category', categoryId],
+    queryKey: ['subcategories', 'category', validCategoryId],
     queryFn: async () => {
       try {
-        // Validate categoryId before making the request
-        if (!categoryId || categoryId.trim() === '') {
+        // Use the extracted valid category ID
+        if (!validCategoryId || validCategoryId.trim() === '') {
           return {
             subcategories: [],
             category: null,
             count: 0,
-            error: 'No category ID provided'
+            error: 'No valid category ID provided'
           };
         }
 
-        const result = await subcategoriesAPI.getByCategory(categoryId);
+        const result = await subcategoriesAPI.getByCategory(validCategoryId);
         
         // Ensure consistent response structure
         return {
@@ -79,11 +100,11 @@ export const useSubcategoriesByCategory = (categoryId, options = {}) => {
         };
       }
     },
-    enabled: !!categoryId && categoryId.trim() !== '',
+    enabled: !!validCategoryId && validCategoryId.trim() !== '',
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    retry: 1, // Retry once on failure
+    retry: 1,
     ...options,
   });
 };

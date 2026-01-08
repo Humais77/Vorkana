@@ -44,12 +44,20 @@ import {
   Info
 } from 'lucide-react';
 
-// Memoized Stats Card
-const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, subText }) => (
-  <div className={`${colorClass} rounded-2xl p-6 border ${colorClass.includes('blue') ? 'border-blue-100' : colorClass.includes('green') ? 'border-green-100' : 'border-orange-100'}`}>
-    <div className="flex items-center">
-      <Icon className={`w-5 h-5 ${colorClass.includes('blue') ? 'text-blue-600' : colorClass.includes('green') ? 'text-green-600' : 'text-orange-600'} mr-2`} />
-      <span className={`text-sm font-medium ${colorClass.includes('blue') ? 'text-blue-900' : colorClass.includes('green') ? 'text-green-900' : 'text-orange-900'}`}>{title}</span>
+const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, subText, onClick }) => (
+  <motion.div 
+    whileHover={{ y: -4, scale: 1.02 }}
+    className={`${colorClass} rounded-2xl p-6 border ${colorClass.includes('blue') ? 'border-blue-100' : colorClass.includes('green') ? 'border-green-100' : 'border-orange-100'} ${onClick ? 'cursor-pointer hover:shadow-lg transition-all duration-300' : ''}`}
+    onClick={onClick}
+  >
+    <div className="flex items-center justify-between">
+      <div className="flex items-center">
+        <Icon className={`w-5 h-5 ${colorClass.includes('blue') ? 'text-blue-600' : colorClass.includes('green') ? 'text-green-600' : 'text-orange-600'} mr-2`} />
+        <span className={`text-sm font-medium ${colorClass.includes('blue') ? 'text-blue-900' : colorClass.includes('green') ? 'text-green-900' : 'text-orange-900'}`}>{title}</span>
+      </div>
+      {onClick && (
+        <ArrowRight className="w-4 h-4 text-gray-400" />
+      )}
     </div>
     <p className={`text-2xl font-bold ${colorClass.includes('blue') ? 'text-blue-900' : colorClass.includes('green') ? 'text-green-900' : 'text-orange-900'} mt-2`}>{value}</p>
     <div className="flex items-center mt-1">
@@ -58,10 +66,39 @@ const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, subTex
       </span>
     </div>
     {subText && <p className="text-xs text-gray-500 mt-1">{subText}</p>}
-    </div>
+  </motion.div>
 ));
 StatsCard.displayName = 'StatsCard';
 
+const NoActiveGigs = memo(({ onCreateGig, canCreateContent }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-8 text-center mb-8"
+  >
+    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+      <FileText className="w-8 h-8 text-blue-600" />
+    </div>
+    <h3 className="text-lg font-semibold text-blue-900 mb-2">No Active Gigs Yet</h3>
+    <p className="text-blue-800 mb-6 max-w-md mx-auto">
+      Active gigs are those with "open" or "active" status. Start creating gigs to attract clients and grow your business.
+    </p>
+    <button
+      onClick={onCreateGig}
+      disabled={!canCreateContent}
+      className={`inline-flex items-center px-5 py-3 rounded-xl font-medium ${
+        canCreateContent 
+          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90'
+          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+      } transition-opacity`}
+      title={!canCreateContent ? "Complete your profile to create gigs" : ""}
+    >
+      <Plus className="w-5 h-5 mr-2" />
+      Create Your First Gig
+    </button>
+  </motion.div>
+));
+NoActiveGigs.displayName = 'NoActiveGigs';
 // Memoized Profile Warning Banner
 const ProfileWarningBanner = memo(({ profileCompletion, profileSuggestions, onCompleteProfile, isLoading }) => {
   // Don't show banner while loading
@@ -642,7 +679,25 @@ const Dashboard = () => {
       toast.error('Failed to delete gigs');
     }
   }, [selectedGigs, deleteMultipleGigsMutation, resetSelection]);
+const activeGigs = useMemo(() => 
+  gigs.filter(gig => gig.status === 'active' || gig.status === 'open'), 
+  [gigs]
+);
 
+const handleViewAllGigs = useCallback(() => {
+  setActiveTab('gigs');
+  setStatusFilter('all');
+}, []);
+
+const handleViewGig = useCallback((gigId) => {
+  navigate(`/gig/${gigId}`);
+}, [navigate]);
+
+// Add a handler for clicking on stats cards
+const handleActiveGigsClick = useCallback(() => {
+  setActiveTab('gigs');
+  setStatusFilter('active');
+}, []);
   const handleDeleteServices = useCallback(async () => {
     if (selectedServices.length === 0) {
       toast.error('Please select services to delete');
@@ -818,29 +873,51 @@ useEffect(() => {
         />
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <StatsCard
-            title="Total Services"
-            value={stats.totalServices}
-            subValue={`(${stats.activeServices} active)`}
-            icon={Package}
-            colorClass="bg-blue-50"
-          />
-          <StatsCard
-            title="Active Services"
-            value={stats.activeServices}
-            subValue={`of ${stats.totalServices} total`}
-            icon={CheckCircle}
-            colorClass="bg-green-50"
-          />
-          <StatsCard
-            title="Total Gigs"
-            value={stats.totalGigs}
-            subValue={`(${stats.activeGigs} active)`}
-            icon={FileText}
-            colorClass="bg-orange-50"
-          />
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+  <StatsCard
+    title="Total Services"
+    value={stats.totalServices}
+    subValue={`(${stats.activeServices} active)`}
+    icon={Package}
+    colorClass="bg-blue-50"
+    onClick={() => {
+      setActiveTab('services');
+      setServiceStatusFilter('all');
+    }}
+  />
+  <StatsCard
+    title="Active Services"
+    value={stats.activeServices}
+    subValue={`of ${stats.totalServices} total`}
+    icon={CheckCircle}
+    colorClass="bg-green-50"
+    onClick={() => {
+      setActiveTab('services');
+      setServiceStatusFilter('active');
+    }}
+  />
+  <StatsCard
+    title="Total Gigs"
+    value={stats.totalGigs}
+    subValue={`(${stats.activeGigs} active)`}
+    icon={FileText}
+    colorClass="bg-orange-50"
+    onClick={() => {
+      setActiveTab('gigs');
+      setStatusFilter('all');
+    }}
+  />
+  <StatsCard
+    title="Active Gigs"
+    value={stats.activeGigs}
+    subValue={`of ${stats.totalGigs} total`}
+    icon={TrendingUp}
+    colorClass="bg-purple-50"
+    onClick={handleActiveGigsClick}
+    subText="Click to view active gigs"
+  />
+</div>
+
          <div className="flex items-center gap-3">
   <Link
     to="/what-are-services"
