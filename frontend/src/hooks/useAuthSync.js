@@ -1,21 +1,24 @@
+// useAuthSync.js - Updated for cookie-based auth
 import { useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import { useCheckAuth } from './useAuth';
 
 export const useAuthSync = () => {
   const syncFromStorage = useAuthStore((state) => state.syncFromStorage);
   const checkSessionValidity = useAuthStore((state) => state.checkSessionValidity);
   const updateLastActivity = useAuthStore((state) => state.updateLastActivity);
+  const { refetch: checkAuth } = useCheckAuth();
   
   useEffect(() => {
     // Initial sync
     syncFromStorage();
     
-    // Check session validity
-    checkSessionValidity();
+    // Check auth with server (cookies)
+    checkAuth();
     
     const handleStorageChange = (event) => {
-      if (event.key?.startsWith('auth-') || event.key === 'userToken' || event.key === 'userInfo') {
+      if (event.key === 'userInfo') {
         syncFromStorage();
       }
     };
@@ -36,7 +39,9 @@ export const useAuthSync = () => {
     // Check session validity periodically
     const intervalId = setInterval(() => {
       checkSessionValidity();
-    }, 60000); // Check every minute
+      // Refresh auth check every 5 minutes
+      checkAuth();
+    }, 5 * 60 * 1000);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -45,42 +50,41 @@ export const useAuthSync = () => {
       });
       clearInterval(intervalId);
     };
-  }, [syncFromStorage, checkSessionValidity, updateLastActivity]);
+  }, [syncFromStorage, checkSessionValidity, updateLastActivity, checkAuth]);
 };
 
-// Custom hook for protected routes
 export const useProtectedRoute = (redirectPath = '/signin') => {
   const { isAuthenticated, user, loading } = useAuthStore();
   const navigate = useNavigate();
+  const { data: authCheck } = useCheckAuth();
   
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!loading && authCheck?.isAuthenticated === false) {
       navigate(redirectPath);
     }
-  }, [isAuthenticated, loading, navigate, redirectPath]);
+  }, [loading, authCheck, navigate, redirectPath]);
   
   return { isAuthenticated, user, loading };
 };
 
-// Custom hook for admin routes
 export const useAdminRoute = () => {
   const { isAuthenticated, user, loading } = useAuthStore();
   const navigate = useNavigate();
+  const { data: authCheck } = useCheckAuth();
   
   useEffect(() => {
     if (!loading) {
-      if (!isAuthenticated) {
+      if (authCheck?.isAuthenticated === false) {
         navigate('/signin');
       } else if (user?.role !== 'admin') {
         navigate('/');
       }
     }
-  }, [isAuthenticated, user, loading, navigate]);
+  }, [isAuthenticated, user, loading, navigate, authCheck]);
   
   return { isAuthenticated, user: user, loading, isAdmin: user?.role === 'admin' };
 };
 
-// Custom hook for email verification check
 export const useEmailVerificationCheck = (redirectPath = '/verify-email') => {
   const { isAuthenticated, user, loading } = useAuthStore();
   const navigate = useNavigate();

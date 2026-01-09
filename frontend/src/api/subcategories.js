@@ -10,62 +10,68 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // IMPORTANT: Enables cookie sending
 });
-const getSecureToken = () => {
-  // Try secure storage in order of preference
-  try {
-    // 1. HttpOnly cookie (most secure)
-    const httpOnlyToken = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('auth_token='))
-      ?.split('=')[1];
-    
-    if (httpOnlyToken) return httpOnlyToken;
-    
-    // 2. Secure localStorage with encryption in production
-    const rawToken = localStorage.getItem('userToken');
-    if (rawToken && process.env.NODE_ENV === 'development') {
-      return rawToken; // Only in dev
-    }
-    
-    // In production, decrypt or use different storage
-    if (rawToken && process.env.NODE_ENV === 'production') {
-      // Consider using crypto-js for encryption
-      // return decryptToken(rawToken);
-      return rawToken; // Temporary - implement encryption
-    }
-  } catch (error) {
-    console.error('Token retrieval error:', error);
-    return null;
-  }
-  return null;
-};
-// Request interceptor
+
+// Request interceptor - simplified
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = getSecureToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // Add request ID
+    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor for cookie-based auth
 axiosInstance.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized
-      localStorage.removeItem('userToken');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Handle 401 - Token expired
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      // Skip auth endpoints
+      if (originalRequest.url.includes('/api/auth')) {
+        return Promise.reject(error);
+      }
+      
+      try {
+        // Try to refresh token via cookie
+        await axiosInstance.post('/api/auth/refresh', {}, {
+          withCredentials: true
+        });
+        
+        // Retry original request
+        return axiosInstance(originalRequest);
+      } catch (refreshError) {
+        // Clear client-side state
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('userInfo');
+        }
+        
+        // Redirect to login if not on auth pages
+        if (!window.location.pathname.includes('/signin') && 
+            !window.location.pathname.includes('/signup')) {
+          window.location.href = '/signin';
+        }
+        
+        return Promise.reject(refreshError);
+      }
     }
+    
+    if (error.response?.status === 401) {
+      // Clear auth data on unauthorized
+      localStorage.removeItem('userInfo');
+    }
+    
     return Promise.reject(error);
   }
 );
 
-// Validation Schema
+// Validation Schema (unchanged)
 const SubcategorySchema = z.object({
   name: z.string()
     .min(2, 'Subcategory name must be at least 2 characters')
@@ -87,6 +93,7 @@ const SubcategorySchema = z.object({
     .optional()
     .default('📁'),
 });
+
 
 // Main API object
 export const subcategoriesAPI = {

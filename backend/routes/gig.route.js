@@ -179,35 +179,26 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.get('/', optionalAuth, validateQuery, getGigs);
-
-// New route: Get gigs by subcategory
-router.get('/subcategory/:subcategoryId', 
-  optionalAuth, 
-  validateQuery, 
-  getGigsBySubcategory
-);
-
-router.get('/search', optionalAuth, validateQuery, searchGigs);
+// Protected stats and export routes
 router.get('/stats', protect, gigLimiter, getGigStats);
 router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
-router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
+router.get('/', optionalAuth, validateQuery, getGigs);
+router.get('/search', optionalAuth, validateQuery, searchGigs);
+router.get('/subcategory/:subcategoryId', optionalAuth, validateQuery, getGigsBySubcategory);
 router.get('/:id', optionalAuth, getGigById);
 
-// Protected routes (all authenticated users)
+// Protected routes - authentication via cookies
 router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
-
-// Update gig (creator or admin)
 router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+router.delete('/:id', protect, gigLimiter, deleteGig);
+router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
 
-// Image management routes
+// Protected image management routes
 router.post('/:id/images/upload', protect, gigLimiter, handleImageUpload, uploadImages);
 router.delete('/:id/images/:publicId', protect, gigLimiter, removeImage);
 router.put('/:id/thumbnail/:publicId', protect, gigLimiter, setThumbnail);
 router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload, uploadThumbnail);
 
-// Delete gig (creator or admin)
-router.delete('/:id', protect, gigLimiter, deleteGig);
 
 router.use(errorHandler)
 

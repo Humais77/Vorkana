@@ -1,3 +1,4 @@
+// gigs.js - Updated for cookie-based authentication
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
@@ -8,26 +9,22 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken') || 
-                  localStorage.getItem('token') || 
-                  sessionStorage.getItem('userToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
     
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
     
+    config.headers['X-Request-ID'] = `gig_req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     return config;
   },
   (error) => Promise.reject(error)
 );
-
 axiosInstance.interceptors.response.use(
   (response) => {
     if (response.data && response.data.success !== undefined) {
@@ -46,6 +43,21 @@ axiosInstance.interceptors.response.use(
         message: 'Network error. Please check your connection.',
         code: 'NETWORK_ERROR',
         status: 0
+      });
+    }
+    
+    if (error.response.status === 401) {
+      localStorage.removeItem('userInfo');
+      if (window.location.pathname !== '/signin' && 
+          window.location.pathname !== '/signup') {
+        window.location.href = '/signin?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+      
+      return Promise.reject({
+        success: false,
+        message: 'Session expired. Please login again.',
+        code: 'SESSION_EXPIRED',
+        status: 401
       });
     }
     
@@ -86,6 +98,7 @@ const cleanParams = (params) => {
         cleaned[key] = value.filter(v => v && v !== '');
       }
       else if (typeof value === 'object' && !(value instanceof Date)) {
+        // Handle nested objects
       }
       else if (value instanceof Date) {
         cleaned[key] = value.toISOString();
@@ -110,7 +123,7 @@ export const gigsAPI = {
         status: 'open',
         populate: true,
         includeCategory: true,
-        includeSubcategory: true, // Added subcategory inclusion
+        includeSubcategory: true,
         includeClient: true,
         lean: true
       };
@@ -188,7 +201,7 @@ export const gigsAPI = {
       const params = {
         populate: 'true',
         includeCategory: 'true',
-        includeSubcategory: 'true', // Added subcategory
+        includeSubcategory: 'true',
         includeClient: 'true',
         includeSeller: 'true'
       };
@@ -403,130 +416,119 @@ export const gigsAPI = {
       throw error;
     }
   },
+  
   update: async (id, gigData) => {
-  try {
-    const config = {
-      headers: {}
-    };
-    
-    if (gigData instanceof FormData) {
-      delete config.headers['Content-Type'];
+    try {
+      const config = {
+        headers: {}
+      };
+      
+      if (gigData instanceof FormData) {
+        delete config.headers['Content-Type'];
+      }
+      
+      const response = await axiosInstance.put(`/api/gigs/${id}`, gigData, config);
+      
+      // Ensure subcategory and category are populated
+      if (response.data && response.data.data) {
+        const populatedResponse = await axiosInstance.get(`/api/gigs/${id}`, {
+          params: {
+            includeSubcategory: true,
+            includeCategory: true,
+            populate: true
+          }
+        });
+        
+        return {
+          success: true,
+          data: populatedResponse.data?.data || populatedResponse.data,
+          message: response.message || 'Gig updated successfully',
+          ...populatedResponse
+        };
+      }
+      
+      return response;
+    } catch (error) {
+      if (error.status === 409) {
+        throw {
+          message: 'This gig was modified by another user. Please refresh and try again.',
+          code: 'VERSION_CONFLICT',
+          status: 409,
+          currentVersion: error.currentVersion
+        };
+      }
+      
+      if (error.status === 400) {
+        throw {
+          message: error.message || 'Validation failed',
+          errors: error.errors,
+          code: error.code || 'VALIDATION_ERROR',
+          status: 400
+        };
+      }
+      
+      if (error.status === 401) {
+        throw {
+          message: 'Please sign in to update this gig',
+          code: 'AUTH_REQUIRED',
+          status: 401
+        };
+      }
+      
+      throw error;
     }
-    
-    const response = await axiosInstance.put(`/api/gigs/${id}`, gigData, config);
-    
-    // Ensure subcategory and category are populated in the response
-    if (response.data && response.data.data) {
-      // You might need to refetch with population
-      const populatedResponse = await axiosInstance.get(`/api/gigs/${id}`, {
-        params: {
-          includeSubcategory: true,
-          includeCategory: true,
-          populate: true
+  },
+  
+  delete: async (id, options = {}) => {
+    try {
+      console.log('[GIGS API] Deleting gig with ID:', id);
+      console.log('[GIGS API] Delete options:', options);
+      
+      let gigId;
+      
+      if (typeof id === 'object') {
+        if (id._id) {
+          gigId = id._id;
+        } else if (id.id) {
+          gigId = id.id;
+        } else {
+          gigId = JSON.stringify(id);
         }
+        console.log('[GIGS API] Converted object ID to string:', gigId);
+      } else {
+        gigId = String(id).trim();
+      }
+      
+      if (!gigId || gigId === 'undefined' || gigId === 'null' || gigId === '[object Object]') {
+        console.error('[GIGS API] Invalid ID after processing:', gigId);
+        throw {
+          success: false,
+          message: 'Invalid gig ID',
+          code: 'INVALID_ID',
+          status: 400
+        };
+      }
+      
+      const config = {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      // Use the regular gigs endpoint (cookies handle auth)
+      const response = await axiosInstance.delete(`/api/gigs/${gigId}`, {
+        params: options,
+        ...config
       });
       
-      return {
-        success: true,
-        data: populatedResponse.data?.data || populatedResponse.data,
-        message: response.message || 'Gig updated successfully',
-        ...populatedResponse
-      };
+      return response;
+      
+    } catch (error) {
+      console.error('[GIGS API] Delete error:', error);
+      throw error;
     }
-    
-    return response;
-  } catch (error) {
-    // Enhanced error handling
-    if (error.status === 409) {
-      throw {
-        message: 'This gig was modified by another user. Please refresh and try again.',
-        code: 'VERSION_CONFLICT',
-        status: 409,
-        currentVersion: error.currentVersion
-      };
-    }
-    
-    if (error.status === 400) {
-      throw {
-        message: error.message || 'Validation failed',
-        errors: error.errors,
-        code: error.code || 'VALIDATION_ERROR',
-        status: 400
-      };
-    }
-    
-    throw error;
-  }
-},
+  },
   
- delete: async (id, options = {}) => {
-  try {
-    console.log('[GIGS API] Deleting gig with ID:', id);
-    console.log('[GIGS API] Delete options:', options);
-    
-    let gigId;
-    
-    if (typeof id === 'object') {
-      if (id._id) {
-        gigId = id._id;
-      } else if (id.id) {
-        gigId = id.id;
-      } else {
-        gigId = JSON.stringify(id);
-      }
-      console.log('[GIGS API] Converted object ID to string:', gigId);
-    } else {
-      gigId = String(id).trim();
-    }
-    
-    if (!gigId || gigId === 'undefined' || gigId === 'null' || gigId === '[object Object]') {
-      console.error('[GIGS API] Invalid ID after processing:', gigId);
-      throw {
-        success: false,
-        message: 'Invalid gig ID',
-        code: 'INVALID_ID',
-        status: 400
-      };
-    }
-    
-    const config = {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    // ✅ FIX: Use regular user endpoint, not admin endpoint
-    // Check if user is admin (you need to get this from your auth store)
-    const token = localStorage.getItem('userToken') || localStorage.getItem('token');
-    let isAdmin = false;
-    
-    if (token) {
-      try {
-        // Decode token to check role
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        isAdmin = payload.role === 'admin';
-      } catch (err) {
-        console.warn('[GIGS API] Could not decode token:', err);
-      }
-    }
-    
-    // Use different endpoint based on user role
-    const endpoint = isAdmin 
-      ? `/api/admin/gigs/${gigId}` 
-      : `/api/gigs/${gigId}`;
-    
-    const response = await axiosInstance.delete(endpoint, {
-      data: { id: gigId, ...options },
-      ...config
-    });
-    
-    return response;
-    
-  } catch (error) {
-    console.error('[GIGS API] Delete error:', error);
-    throw error;
-  }
-},
   getStats: async () => {
     try {
       const response = await axiosInstance.get('/api/gigs/stats');
@@ -558,5 +560,22 @@ export const gigsAPI = {
     } catch (error) {
       throw error;
     }
+  },
+  
+  // Search gigs
+  search: async (params = {}) => {
+    try {
+      const cleanedParams = cleanParams(params);
+      const response = await axiosInstance.get('/api/gigs/search', {
+        params: cleanedParams
+      });
+      
+      return response;
+    } catch (error) {
+      throw error;
+    }
   }
 };
+
+// Export axios instance for other services
+export { axiosInstance };

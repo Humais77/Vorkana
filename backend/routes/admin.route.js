@@ -2,10 +2,12 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller.js');
 const { 
-  verifyAdmin, 
-  requirePermission, 
-  adminDashboardLimiter,
-  auditLog 
+ verifyAdmin,
+   requirePermission,
+   adminDashboardLimiter,
+   auditLog,
+   setAdminCookie,
+   clearAdminCookies
 } = require('../middleware/admin.middleware.js');
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
@@ -18,7 +20,40 @@ const User = require('../models/user.model.js');
 
 // Security: Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
+router.post('/login', 
+  adminApiLimiter,
+  // Validation middleware
+  (req, res, next) => {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+    
+    if (!validator.isEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+    
+    next();
+  },
+  adminController.adminLogin
+);
 
+router.post('/logout',
+  verifyAdmin,
+  adminController.adminLogout
+);
+
+router.get('/session',
+  verifyAdmin,
+  adminController.checkAdminSession
+);
 // ============================================
 // SUBCATEGORY MANAGEMENT ROUTES
 // ============================================
@@ -272,7 +307,19 @@ router.delete('/subcategories/:id',
 
 // Subcategory dropdown for specific category
 
-
+router.post('/refresh',
+  // Custom middleware to get refresh token from cookie
+  (req, res, next) => {
+    const refreshToken = req.cookies?.refreshToken;
+    
+    if (refreshToken) {
+      req.body.refreshToken = refreshToken;
+    }
+    
+    next();
+  },
+  adminController.refreshAdminToken
+);
 // ============================================
 // EXISTING ROUTES (keep these as they are)
 // ============================================

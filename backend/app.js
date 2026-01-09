@@ -97,7 +97,6 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
-// Optimized CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || process.env.NODE_ENV === 'test') return callback(null, true);
@@ -132,10 +131,10 @@ const corsOptions = {
     'X-Response-Time',
     'X-CSRF-Token',
     'X-Admin-Access',
-    'ETag', // For caching
+    'ETag',
     'Last-Modified'
   ],
-  credentials: true,
+  credentials: true, // IMPORTANT: Allows cookies
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204

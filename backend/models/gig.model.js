@@ -487,7 +487,7 @@ gigSchema.pre('save',async function() {
   const dangerousChars = /[$]|\.\./;
   Object.keys(this.toObject()).forEach(key => {
     if (typeof this[key] === 'string' && dangerousChars.test(this[key])) {
-      return next(new Error(`Potentially dangerous characters in ${key}`));
+       throw new Error(`Potentially dangerous characters in ${key}`);
     }
   });
 });

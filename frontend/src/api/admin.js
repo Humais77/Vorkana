@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
-// In adminApi.js - Enhanced interceptor
+// Create admin axios instance with cookie support
 const adminApi = axios.create({
   baseURL: API_URL,
   timeout: 15000,
@@ -10,48 +10,26 @@ const adminApi = axios.create({
     'Content-Type': 'application/json',
     'X-Admin-Request': 'true'
   },
-  // Add withCredentials for cookies
-  withCredentials: true
+  withCredentials: true, // IMPORTANT: Enables cookie sending
 });
 
-// Request interceptor - FIXED version
+// Request interceptor - Simplified for cookies
 adminApi.interceptors.request.use(
   (config) => {
     console.log('[ADMIN API] Request to:', config.url);
     
-    // Try multiple token sources
-    let token = null;
-    
-    // 1. Check localStorage
-    token = localStorage.getItem('adminToken') || localStorage.getItem('userToken');
-    console.log('[ADMIN API] Token from localStorage:', token ? 'Present' : 'Missing');
-    
-    // 2. Check cookies (will be sent automatically with withCredentials)
-    
-    // 3. Check sessionStorage as fallback
-    if (!token) {
-      token = sessionStorage.getItem('adminToken');
-      console.log('[ADMIN API] Token from sessionStorage:', token ? 'Present' : 'Missing');
-    }
-    
-    if (token) {
-      // Clean the token (remove quotes if present)
-      token = token.replace(/^"(.*)"$/, '$1').trim();
-      console.log('[ADMIN API] Setting Authorization header');
-      config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      console.warn('[ADMIN API] No token found for request');
-    }
-    
     // Add CSRF token if available
-    const csrfToken = localStorage.getItem('csrfToken');
+    const csrfToken = getCsrfToken();
     if (csrfToken) {
       config.headers['X-CSRF-Token'] = csrfToken;
     }
     
+    // Cookies are sent automatically with withCredentials: true
+    // No need to manually set Authorization header
+    
     console.log('[ADMIN API] Request headers:', {
-      Authorization: config.headers.Authorization ? 'Present' : 'Missing',
-      'X-CSRF-Token': config.headers['X-CSRF-Token'] ? 'Present' : 'Missing'
+      'X-CSRF-Token': config.headers['X-CSRF-Token'] ? 'Present' : 'Missing',
+      withCredentials: 'true'
     });
     
     return config;
@@ -62,7 +40,7 @@ adminApi.interceptors.request.use(
   }
 );
 
-// Response interceptor - FIXED version
+// Response interceptor - Updated for cookie-based auth
 adminApi.interceptors.response.use(
   (response) => {
     console.log('[ADMIN API] Response from:', response.config.url, 'Status:', response.status);
@@ -77,42 +55,41 @@ adminApi.interceptors.response.use(
     
     const originalRequest = error.config;
     
-    // Handle 401 Unauthorized
+    // Handle 401 Unauthorized (token expired)
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      console.log('[ADMIN API] Attempting token refresh...');
+      console.log('[ADMIN API] Attempting token refresh via cookie...');
       
       try {
-        const refreshToken = localStorage.getItem('adminRefreshToken');
-        if (!refreshToken) {
-          console.warn('[ADMIN API] No refresh token available');
-          // Redirect to login
-          window.location.href = '/admin/login';
-          return Promise.reject(error);
-        }
-        
-        const response = await axios.post(`${API_URL}/api/admin/refresh-token`, {
-          refreshToken
-        }, {
+        // Try to refresh token via cookie
+        await axios.post(`${API_URL}/api/auth/refresh`, {}, {
           withCredentials: true
         });
         
-        if (response.data.success) {
-          console.log('[ADMIN API] Token refresh successful');
-          localStorage.setItem('adminToken', response.data.token);
-          localStorage.setItem('adminRefreshToken', response.data.refreshToken);
-          
-          // Retry original request
-          originalRequest.headers.Authorization = `Bearer ${response.data.token}`;
-          return adminApi(originalRequest);
-        }
+        console.log('[ADMIN API] Token refresh successful');
+        
+        // Retry original request
+        return adminApi(originalRequest);
       } catch (refreshError) {
         console.error('[ADMIN API] Token refresh failed:', refreshError);
-        // Clear tokens and redirect
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminRefreshToken');
-        window.location.href = '/admin/login';
+        
+        // Clear admin state and redirect to login
+        localStorage.removeItem('adminInfo');
+        sessionStorage.removeItem('adminInfo');
+        
+        // Check if we're not already on login page
+        if (!window.location.pathname.includes('/admin/login') &&
+            !window.location.pathname.includes('/signin')) {
+          window.location.href = '/admin/login';
+        }
+      }
+    }
+    
+    // Handle 403 Forbidden (not admin)
+    if (error.response?.status === 403) {
+      if (!window.location.pathname.includes('/admin')) {
+        window.location.href = '/';
       }
     }
     
@@ -135,6 +112,18 @@ adminApi.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Helper function to get CSRF token from cookies
+const getCsrfToken = () => {
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'XSRF-TOKEN' || name === 'csrf_token') {
+      return decodeURIComponent(value);
+    }
+  }
+  return null;
+};
 export const adminAPI = {
   // Dashboard - returns comprehensive data
   getDashboardStats: () => adminApi.get('/api/admin/dashboard'),

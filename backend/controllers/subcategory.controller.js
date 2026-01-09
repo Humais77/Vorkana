@@ -32,6 +32,15 @@ const createSubcategory = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -84,7 +93,7 @@ const createSubcategory = async (req, res, next) => {
       metaTitle: metaTitle?.trim(),
       metaDescription: metaDescription?.trim(),
       metaKeywords: Array.isArray(metaKeywords) ? metaKeywords.map(k => k.trim()) : [],
-      createdBy: req.user._id,
+      createdBy: req.user._id, // From cookies
       isActive: true
     });
 
@@ -312,7 +321,7 @@ const getSubcategoryById = async (req, res, next) => {
   }
 };
 
-// Get Subcategories by Category (Optimized)
+// Get Subcategories by Category
 const getSubcategoriesByCategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -394,7 +403,12 @@ const getSubcategoriesByCategory = async (req, res, next) => {
     next(error);
   }
 };
+
+// Get Subcategory by Slug
 const getSubcategoryBySlug = async (req, res) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const { slug } = req.params;
     
@@ -407,29 +421,45 @@ const getSubcategoryBySlug = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Subcategory not found',
-        code: 'NOT_FOUND'
+        code: 'NOT_FOUND',
+        requestId
       });
     }
     
     res.json({
       success: true,
-      data: subcategory
+      data: subcategory,
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${Date.now() - startTime}ms`
     });
     
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Server error',
-      code: 'SERVER_ERROR'
+      code: 'SERVER_ERROR',
+      requestId
     });
   }
 };
+
 // Update Subcategory
 const updateSubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
+    // Authentication from cookies
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -519,7 +549,7 @@ const updateSubcategory = async (req, res, next) => {
       }
     }
 
-    updateData.lastUpdatedBy = req.user._id;
+    updateData.lastUpdatedBy = req.user._id; // From cookies
 
     const updatedSubcategory = await Subcategory.findByIdAndUpdate(
       id,
@@ -563,12 +593,22 @@ const updateSubcategory = async (req, res, next) => {
   }
 };
 
-// Delete Subcategory (Soft Delete)
+// Delete Subcategory
 const deleteSubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
+    // Authentication from cookies
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -639,8 +679,8 @@ const deleteSubcategory = async (req, res, next) => {
     // Soft delete
     subcategory.isActive = false;
     subcategory.deletedAt = new Date();
-    subcategory.deletedBy = req.user._id;
-    subcategory.lastUpdatedBy = req.user._id;
+    subcategory.deletedBy = req.user._id; // From cookies
+    subcategory.lastUpdatedBy = req.user._id; // From cookies
     
     await subcategory.save();
 
@@ -665,6 +705,16 @@ const restoreSubcategory = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
+    // Authentication from cookies
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -718,7 +768,7 @@ const restoreSubcategory = async (req, res, next) => {
     subcategory.isActive = true;
     subcategory.deletedAt = null;
     subcategory.deletedBy = null;
-    subcategory.lastUpdatedBy = req.user._id;
+    subcategory.lastUpdatedBy = req.user._id; // From cookies
     
     await subcategory.save();
 
@@ -744,6 +794,16 @@ const bulkUpdateSubcategories = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
+    // Authentication from cookies
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
+
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -820,7 +880,7 @@ const bulkUpdateSubcategories = async (req, res, next) => {
         break;
     }
 
-    updateData.lastUpdatedBy = req.user._id;
+    updateData.lastUpdatedBy = req.user._id; // From cookies
     updateData.updatedAt = now;
 
     const result = await Subcategory.updateMany(

@@ -1,3 +1,4 @@
+// SecurityContext.jsx - Add cookie check
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'react-hot-toast';
@@ -18,7 +19,7 @@ export const SecurityProvider = ({ children }) => {
     const checks = [];
     const now = new Date();
 
-    // 1. Check if user is authenticated
+    // 1. Check if user is authenticated (via cookies)
     checks.push({
       id: 'auth',
       name: 'Authentication',
@@ -27,22 +28,23 @@ export const SecurityProvider = ({ children }) => {
       severity: 'high'
     });
 
-    // 2. Check if email is verified
-    checks.push({
-      id: 'email',
-      name: 'Email Verification',
-      status: user?.emailVerified || false,
-      message: user?.emailVerified ? 'Email verified' : 'Email not verified',
-      severity: 'medium'
-    });
-
-    // 3. Check if using HTTPS
+    // 2. Check if using HTTPS
     const isHttps = window.location.protocol === 'https:';
     checks.push({
       id: 'https',
       name: 'HTTPS Connection',
       status: isHttps || window.location.hostname === 'localhost',
       message: isHttps ? 'Secure connection' : 'Not using HTTPS',
+      severity: 'high'
+    });
+
+    // 3. Check if cookies are enabled
+    const cookiesEnabled = navigator.cookieEnabled;
+    checks.push({
+      id: 'cookies',
+      name: 'Cookies Enabled',
+      status: cookiesEnabled,
+      message: cookiesEnabled ? 'Cookies enabled' : 'Cookies disabled',
       severity: 'high'
     });
 
@@ -53,6 +55,15 @@ export const SecurityProvider = ({ children }) => {
       name: 'Security Headers',
       status: hasSecurityHeaders,
       message: hasSecurityHeaders ? 'Headers present' : 'Missing security headers',
+      severity: 'medium'
+    });
+
+    // 5. Check if email is verified
+    checks.push({
+      id: 'email',
+      name: 'Email Verification',
+      status: user?.emailVerified || false,
+      message: user?.emailVerified ? 'Email verified' : 'Email not verified',
       severity: 'medium'
     });
 
@@ -77,7 +88,10 @@ export const SecurityProvider = ({ children }) => {
 
   const checkSecurityHeaders = async () => {
     try {
-      const response = await fetch('/api/health', { method: 'HEAD' });
+      const response = await fetch('/api/health', { 
+        method: 'HEAD',
+        credentials: 'include' // Include cookies
+      });
       const headers = response.headers;
       
       return headers.has('x-content-type-options') && 
@@ -92,7 +106,6 @@ export const SecurityProvider = ({ children }) => {
   useEffect(() => {
     runSecurityChecks();
     
-    // Re-run checks every 5 minutes
     const interval = setInterval(runSecurityChecks, 5 * 60 * 1000);
     
     return () => clearInterval(interval);

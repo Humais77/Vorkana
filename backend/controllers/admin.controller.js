@@ -48,6 +48,282 @@ const generateRefreshToken = (id) => {
     }
   );
 };
+const adminLogin = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    
+    console.log(`[ADMIN LOGIN] Attempt: ${email}, IP: ${ip}`);
+    
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required',
+        code: 'MISSING_CREDENTIALS',
+        requestId
+      });
+    }
+    
+    // Find user
+    const user = await User.findOne({ 
+      email: email.toLowerCase().trim(),
+      isActive: true
+    }).select('+password +failedLoginAttempts +lockUntil');
+    
+    if (!user) {
+      // Security: Don't reveal if user exists
+      await fakeDelay(); // Prevent timing attacks
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS',
+        requestId
+      });
+    }
+    
+    // Check if user is admin
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+      console.log(`[ADMIN LOGIN] Non-admin attempt: ${email}, role: ${user.role}`);
+      await fakeDelay(); // Prevent timing attacks
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
+    
+    // Check if account is locked
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      const remainingTime = Math.ceil((user.lockUntil - Date.now()) / 1000 / 60);
+      return res.status(423).json({
+        success: false,
+        message: `Account is locked. Try again in ${remainingTime} minutes.`,
+        code: 'ACCOUNT_LOCKED',
+        requestId
+      });
+    }
+    
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      // Increment failed attempts
+      await user.incrementLoginAttempts();
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS',
+        requestId
+      });
+    }
+    
+    // Reset login attempts on successful login
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
+    user.lastLoginAt = new Date();
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
+    
+    // Generate admin token
+    const token = generateAdminToken(user._id);
+    
+    // Set admin cookie
+    const { setAdminCookie } = require('../middleware/admin.middleware.js');
+    setAdminCookie(res, token);
+    
+    // Log admin login
+    await logAdminAction(user._id, 'ADMIN_LOGIN', 'system', {
+      ip: ip,
+      userAgent: req.headers['user-agent'],
+      timestamp: new Date().toISOString()
+    });
+    
+    // Prepare response (without token in body)
+    const responseData = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      picture: user.picture,
+      emailVerified: user.emailVerified,
+      createdAt: user.createdAt.toISOString(),
+      lastLoginAt: user.lastLoginAt.toISOString()
+    };
+    
+    console.log(`[ADMIN LOGIN] Success: ${user.email}`);
+    
+    res.json({
+      success: true,
+      message: 'Admin login successful',
+      user: responseData,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[ADMIN LOGIN ERROR]', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Admin login failed',
+      code: 'ADMIN_LOGIN_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Admin Logout
+const adminLogout = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { clearAdminCookies } = require('../middleware/admin.middleware.js');
+    
+    // Clear admin cookies
+    clearAdminCookies(res);
+    
+    // Log admin logout
+    if (req.admin) {
+      await logAdminAction(req.admin._id, 'ADMIN_LOGOUT', 'system', {
+        ip: req.ip,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log(`[ADMIN LOGOUT] Success for admin: ${req.admin?.email || 'unknown'}`);
+    
+    res.json({
+      success: true,
+      message: 'Admin logout successful',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[ADMIN LOGOUT ERROR]', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Admin logout failed',
+      code: 'ADMIN_LOGOUT_ERROR',
+      requestId
+    });
+  }
+};
+
+// Check Admin Session
+const checkAdminSession = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    if (!req.admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'No active admin session',
+        code: 'NO_ADMIN_SESSION',
+        requestId
+      });
+    }
+    
+    // Update last seen
+    req.admin.lastSeenAt = new Date();
+    await req.admin.save({ validateBeforeSave: false });
+    
+    const responseData = {
+      _id: req.admin._id,
+      name: req.admin.name,
+      email: req.admin.email,
+      role: req.admin.role,
+      picture: req.admin.picture,
+      emailVerified: req.admin.emailVerified,
+      createdAt: req.admin.createdAt.toISOString(),
+      lastLoginAt: req.admin.lastLoginAt?.toISOString(),
+      lastSeenAt: req.admin.lastSeenAt?.toISOString(),
+      permissions: getAdminPermissions(req.admin.role)
+    };
+    
+    res.json({
+      success: true,
+      message: 'Admin session is valid',
+      user: responseData,
+      session: {
+        valid: true,
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2 hours
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[CHECK ADMIN SESSION ERROR]', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check admin session',
+      code: 'SESSION_CHECK_ERROR',
+      requestId
+    });
+  }
+};
+
+// Helper function for timing attack prevention
+const fakeDelay = () => {
+  return new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 100));
+};
+
+// Helper function to get admin permissions
+const getAdminPermissions = (role) => {
+  const permissions = {
+    // Dashboard
+    'view_dashboard': ['admin', 'super_admin', 'moderator'],
+    
+    // Users
+    'view_users': ['admin', 'super_admin', 'moderator'],
+    'manage_users': ['admin', 'super_admin'],
+    'export_users': ['admin', 'super_admin'],
+    
+    // Categories (includes subcategories)
+    'view_categories': ['admin', 'super_admin', 'moderator'],
+    'manage_categories': ['admin', 'super_admin', 'moderator'],
+    'export_categories': ['admin', 'super_admin'],
+    
+    // Subcategories specific permissions
+    'view_subcategories': ['admin', 'super_admin', 'moderator'],
+    'manage_subcategories': ['admin', 'super_admin', 'moderator'],
+    
+    // Services
+    'view_services': ['admin', 'super_admin', 'moderator'],
+    'manage_services': ['admin', 'super_admin', 'moderator'],
+    'export_services': ['admin', 'super_admin'],
+    
+    // Gigs
+    'view_gigs': ['admin', 'super_admin', 'moderator'],
+    'manage_gigs': ['admin', 'super_admin', 'moderator'],
+    'export_gigs': ['admin', 'super_admin'],
+    
+    // Analytics
+    'view_analytics': ['admin', 'super_admin'],
+    'export_data': ['admin', 'super_admin'],
+    
+    // System
+    'system_settings': ['admin', 'super_admin']
+  };
+  
+  // Filter permissions for the specific role
+  const userPermissions = {};
+  Object.keys(permissions).forEach(permission => {
+    if (permissions[permission].includes(role)) {
+      userPermissions[permission] = true;
+    }
+  });
+  
+  return userPermissions;
+};
 // Security: Audit trail function
 const logAdminAction = async (adminId, action, resource, details = {}) => {
   try {
@@ -4377,6 +4653,109 @@ const getRecentActivity = async (req, res) => {
     });
   }
 };
+const refreshAdminToken = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { refreshToken: oldRefreshToken } = req.body;
+    
+    if (!oldRefreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required',
+        code: 'MISSING_REFRESH_TOKEN',
+        requestId
+      });
+    }
+    
+    // Verify refresh token
+    const decoded = await promisify(jwt.verify)(
+      oldRefreshToken, 
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+    );
+    
+    // Check if user exists and is admin
+    const user = await User.findOne({
+      _id: decoded.id,
+      isActive: true,
+      role: { $in: ['admin', 'super_admin'] }
+    });
+    
+    if (!user) {
+      // Clear invalid cookies
+      const { clearAdminCookies } = require('../middleware/admin.middleware.js');
+      clearAdminCookies(res);
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+        code: 'INVALID_REFRESH_TOKEN',
+        requestId
+      });
+    }
+    
+    // Generate new tokens
+    const newToken = generateAdminToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+    
+    // Set new cookies
+    const { setAdminCookie } = require('../middleware/admin.middleware.js');
+    setAdminCookie(res, newToken);
+    
+    // Also set refresh token cookie
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: '/api/admin/refresh',
+      domain: process.env.COOKIE_DOMAIN || undefined
+    });
+    
+    // Log token refresh
+    await logAdminAction(user._id, 'REFRESH_ADMIN_TOKEN', 'system', {
+      ip: req.ip,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json({
+      success: true,
+      message: 'Admin token refreshed successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[REFRESH ADMIN TOKEN ERROR]', error);
+    
+    // Clear invalid cookies on error
+    const { clearAdminCookies } = require('../middleware/admin.middleware.js');
+    clearAdminCookies(res);
+    
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+        code: 'INVALID_REFRESH_TOKEN',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh admin token',
+      code: 'TOKEN_REFRESH_ERROR',
+      requestId
+    });
+  }
+};
 module.exports = {
   getDashboardStats,
   getUsers,
@@ -4408,5 +4787,7 @@ module.exports = {
   exportSubcategories,
   bulkUpdateUsers,
   exportCategories,
-  getRecentActivity
+  getRecentActivity,
+  checkAdminSession,adminLogout,fakeDelay,getAdminPermissions,adminLogin,
+  refreshAdminToken
 };

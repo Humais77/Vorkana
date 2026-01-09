@@ -5,7 +5,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 // Providers / Hooks
 import { SecurityProvider } from './context/SecurityContext';
 import { useAuthSync } from './hooks/useAuthSync';
-
+import { useCheckAuth } from './hooks/useAuth';
 // Layouts
 import PublicLayout from './layouts/PublicLayout';
 
@@ -65,19 +65,31 @@ const LoadingFallback = () => (
     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
   </div>
 );
-
+const CookieChecker = () => {
+  useAuthSync();
+  const { data: authCheck, isLoading } = useCheckAuth();
+  
+  useEffect(() => {
+    if (!isLoading && authCheck) {
+      console.log('Auth check result:', authCheck);
+    }
+  }, [authCheck, isLoading]);
+  
+  return null;
+};
 const App = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
 
-  // Cleanup reset token
-  useEffect(() => {
+useEffect(() => {
+    localStorage.removeItem('userToken');
+    localStorage.removeItem('refreshToken');
+    
     const cleanup = () => localStorage.removeItem('resetToken');
     cleanup();
     window.addEventListener('beforeunload', cleanup);
     return () => window.removeEventListener('beforeunload', cleanup);
   }, []);
-
   const openSigninModal = () => {
     setActiveTab('signin');
     setShowAuthModal(true);
@@ -92,7 +104,7 @@ const App = () => {
     <BrowserRouter>
       <SecurityProvider>
         <ScrollToTop />
-        
+         <CookieChecker />
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
             <Route

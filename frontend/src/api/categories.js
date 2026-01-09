@@ -6,81 +6,71 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 15000, // Increased timeout
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // IMPORTANT: Enables cookie sending
 });
-const getSecureToken = () => {
-  // Try secure storage in order of preference
-  try {
-    // 1. HttpOnly cookie (most secure)
-    const httpOnlyToken = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('auth_token='))
-      ?.split('=')[1];
-    
-    if (httpOnlyToken) return httpOnlyToken;
-    
-    // 2. Secure localStorage with encryption in production
-    const rawToken = localStorage.getItem('userToken');
-    if (rawToken && process.env.NODE_ENV === 'development') {
-      return rawToken; // Only in dev
-    }
-    
-    // In production, decrypt or use different storage
-    if (rawToken && process.env.NODE_ENV === 'production') {
-      // Consider using crypto-js for encryption
-      // return decryptToken(rawToken);
-      return rawToken; // Temporary - implement encryption
-    }
-  } catch (error) {
-    console.error('Token retrieval error:', error);
-    return null;
-  }
-  return null;
-};
-// Request interceptor for auth token
+
+// Request interceptor - simplified for cookies
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = getSecureToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // Add request ID for tracking
+    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Add CSRF token for non-GET requests
-    if (config.method !== 'get') {
-      const csrfToken = Cookies.get('XSRF-TOKEN') || localStorage.getItem('csrfToken');
-      if (csrfToken) {
-        config.headers['X-CSRF-Token'] = csrfToken;
-      }
+    // Cache busting only for GET requests
+    if (config.method === 'get' && config.cacheBust !== false) {
+      config.params = {
+        ...config.params,
+        _t: Date.now(),
+      };
     }
-    
-    // Cache busting only for specific cases
-    // api/categories.js - Request interceptor
-if (config.method === 'get' && config.cacheBust !== false) {
-  config.params = {
-    ...config.params,
-    _t: Date.now(), // Better than _
-    cb: Math.random().toString(36).substring(7) // Alternative
-  };
-}
     
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// Response interceptor for cookie-based auth
 axiosInstance.interceptors.response.use(
-  (response) => {
-    // Log successful responses in development
-    if (import.meta.env.DEV) {
-      console.log(`API ${response.config.method?.toUpperCase()} ${response.config.url}:`, response.status);
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Handle 401 - Token expired
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      // Skip auth endpoints
+      if (originalRequest.url.includes('/api/auth')) {
+        return Promise.reject(error);
+      }
+      
+      try {
+        // Try to refresh token via cookie
+        await axiosInstance.post('/api/auth/refresh', {}, {
+          withCredentials: true
+        });
+        
+        // Retry original request
+        return axiosInstance(originalRequest);
+      } catch (refreshError) {
+        // Clear client-side state
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('userInfo');
+        }
+        
+        // Redirect to login if not on auth pages
+        if (!window.location.pathname.includes('/signin') && 
+            !window.location.pathname.includes('/signup')) {
+          window.location.href = '/signin';
+        }
+        
+        return Promise.reject(refreshError);
+      }
     }
-    return response;
-  },
-  (error) => {
+    
     // Handle common errors
     if (error.code === 'ECONNABORTED') {
       console.error('Request timeout:', error.config.url);
@@ -91,13 +81,11 @@ axiosInstance.interceptors.response.use(
       throw new Error('No internet connection');
     }
     
-    // Network error (CORS, server down, etc.)
     if (!error.response) {
       console.error('Network error:', error.message);
       throw new Error('Cannot connect to server. Please check if the server is running.');
     }
     
-    // Handle specific HTTP errors
     if (error.response) {
       console.error('API Error:', error.response.status, error.response.data);
     }
@@ -105,6 +93,8 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Validation schema
 const CategorySchema = z.object({
   name: z.string()
     .min(2, 'Category name must be at least 2 characters')

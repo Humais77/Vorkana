@@ -12,11 +12,15 @@ const protect = async (req, res, next) => {
   try {
     let token;
     
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-    else if (req.cookies?.token) {
+    // Check for token in cookies first (HTTP-only)
+    if (req.cookies?.token) {
       token = req.cookies.token;
+    }
+    // Fallback to Authorization header for API clients
+    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }else if (req.query?.token && process.env.NODE_ENV === 'development') {
+      token = req.query.token;
     }
     
     if (!token) {
@@ -27,6 +31,8 @@ const protect = async (req, res, next) => {
     }
     
     if (tokenBlacklist.has(token)) {
+      // Clear invalid token cookies
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'Token has been revoked'
@@ -37,6 +43,7 @@ const protect = async (req, res, next) => {
     
     const user = await User.findById(decoded.id);
     if (!user) {
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'User no longer exists'
@@ -44,6 +51,7 @@ const protect = async (req, res, next) => {
     }
     
     if (!user.isActive) {
+      clearAuthCookies(res);
       return res.status(403).json({
         success: false,
         message: 'Account is deactivated'
@@ -54,10 +62,14 @@ const protect = async (req, res, next) => {
     next();
     
   } catch (error) {
+    // Clear cookies on any JWT error
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      clearAuthCookies(res);
+    }
+    
     console.error('Protect middleware error:', error.name, error.message);
     
     if (error.name === 'JsonWebTokenError') {
-      // Check specific JWT errors
       if (error.message.includes('invalid signature')) {
         return res.status(401).json({
           success: false,
@@ -83,7 +95,6 @@ const protect = async (req, res, next) => {
       });
     }
     
-    // Don't expose internal error details
     res.status(500).json({
       success: false,
       message: 'Authentication error'
@@ -91,6 +102,46 @@ const protect = async (req, res, next) => {
   }
 };
 
+// Add clearAuthCookies function
+const clearAuthCookies = (res) => {
+  const clearCookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/'
+  };
+  
+  res.clearCookie('token', clearCookieOptions);
+  res.clearCookie('refreshToken', { ...clearCookieOptions, path: '/api/auth/refresh' });
+  res.clearCookie('isAuthenticated', { ...clearCookieOptions, httpOnly: false });
+};
+
+// Add this helper function to check auth status
+const checkAuth = async (req, res, next) => {
+  try {
+    const token = req.cookies?.token;
+    
+    if (!token) {
+      req.isAuthenticated = false;
+      return next();
+    }
+    
+    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select('-password -passwordHistory');
+    
+    if (user && user.isActive) {
+      req.isAuthenticated = true;
+      req.user = user;
+    } else {
+      req.isAuthenticated = false;
+    }
+    
+    next();
+  } catch (error) {
+    req.isAuthenticated = false;
+    next();
+  }
+};
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {

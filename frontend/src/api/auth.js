@@ -5,20 +5,15 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 // Create axios instance with default configuration
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 15000, // Increased timeout for better UX
+  timeout: 30000, // Increased timeout for better UX
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
-// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
     // Add request ID for tracking
     config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -29,53 +24,39 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor with enhanced error handling
+// Response interceptor for cookie-based auth
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle token expiration - ONLY for authenticated requests
+    // Handle 401 - Token expired or invalid
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      // Check if this is a login/register request - don't try to refresh token for auth endpoints
+      // Skip refresh for auth endpoints
       const isAuthEndpoint = originalRequest.url.includes('/api/auth/login') || 
                             originalRequest.url.includes('/api/auth/register');
       
       if (isAuthEndpoint) {
-        // For login/register failures, just reject with the original error
         return Promise.reject(error);
       }
       
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          // No refresh token available, reject with original error
-          return Promise.reject(error);
-        }
-        
-        const response = await axiosInstance.post('/api/auth/refresh-token', {
-          refreshToken
+        // Try to refresh token via cookie
+        await axiosInstance.post('/api/auth/refresh', {
+          withCredentials: true
         });
         
-        const { token, refreshToken: newRefreshToken } = response.data;
-        
-        // Store new tokens
-        localStorage.setItem('userToken', token);
-        localStorage.setItem('refreshToken', newRefreshToken);
-        
-        // Update original request with new token
-        originalRequest.headers.Authorization = `Bearer ${token}`;
-        
+        // Retry original request
         return axiosInstance(originalRequest);
       } catch (refreshError) {
-        // Clear all auth data and redirect to login
-        localStorage.removeItem('userToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('userInfo');
+        // Clear client-side auth state
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('userInfo');
+        }
         
-        // Only redirect if we're not already on auth pages
+        // Redirect to login
         if (!window.location.pathname.includes('/signin') && 
             !window.location.pathname.includes('/signup')) {
           window.location.href = '/signin';
@@ -85,25 +66,25 @@ axiosInstance.interceptors.response.use(
       }
     }
     
-    // For 401 errors on login, don't show "No refresh token available"
-    if (error.response?.status === 401 && 
-        originalRequest.url.includes('/api/auth/login')) {
-      // Return the original error with backend message
-      return Promise.reject(error);
-    }
-    
-    // Handle other error cases
+    // Handle specific status codes
     if (error.response) {
       const { status, data } = error.response;
       
-      // Handle rate limiting
+      // Rate limiting
       if (status === 429) {
         console.warn('Rate limited:', data.message);
       }
       
-      // Handle account lock
+      // Account lock
       if (status === 423) {
         console.warn('Account locked:', data.message);
+      }
+      
+      // CSRF token issues (for cookie-based auth)
+      if (status === 403 && data.message?.includes('CSRF')) {
+        // Handle CSRF token refresh if needed
+        console.warn('CSRF token issue, reloading page');
+        window.location.reload();
       }
     }
     
@@ -171,33 +152,30 @@ export const authAPI = {
   login: async (userData) => {
     const response = await axiosInstance.post('/api/auth/login', userData);
     
-    if (response.data.token && response.data.refreshToken) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
+    if (response.data.user) {
+      // Store only user info (no tokens)
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
     
     return response.data;
   },
-register: async (userData) => {
+  
+  register: async (userData) => {
     const response = await axiosInstance.post('/api/auth/register', userData);
     return response.data;
   },
+  
   logout: async (deviceToken = null) => {
     try {
       await axiosInstance.post('/api/auth/logout', { deviceToken });
     } finally {
-      localStorage.removeItem('userToken');
-      localStorage.removeItem('refreshToken');
+      // Clear only user info, cookies are cleared server-side
       localStorage.removeItem('userInfo');
     }
   },
   
-  refreshToken: async (refreshToken) => {
-    const response = await axiosInstance.post('/api/auth/refresh-token', { refreshToken });
+  refreshToken: async () => {
+    const response = await axiosInstance.post('/api/auth/refresh');
     return response.data;
   },
   
@@ -210,84 +188,75 @@ register: async (userData) => {
     return response.data;
   },
   
-updateProfile: async (userData) => {
-  try {
-    console.log('🚀 Updating profile with data:', {
-      fields: Object.keys(userData),
-      hasPrivacySettings: 'privacySettings' in userData
-    });
-    
-    // Clean the data - remove undefined, null, and empty strings
-    const cleanData = {};
-    Object.keys(userData).forEach(key => {
-      const value = userData[key];
+  updateProfile: async (userData) => {
+    try {
+      console.log('Updating profile with data:', {
+        fields: Object.keys(userData),
+        hasPrivacySettings: 'privacySettings' in userData
+      });
       
-      // Skip undefined and null
-      if (value === undefined || value === null) return;
-      
-      // Handle empty strings for optional fields
-      if (typeof value === 'string' && value.trim() === '') {
-        // For optional fields, you can send empty string or skip
-        // Let's skip for cleaner data
-        return;
-      }
-      
-      // Handle arrays
-      if (Array.isArray(value)) {
-        if (value.length > 0) {
-          cleanData[key] = value;
+      // Clean the data
+      const cleanData = {};
+      Object.keys(userData).forEach(key => {
+        const value = userData[key];
+        
+        if (value === undefined || value === null) return;
+        
+        if (typeof value === 'string' && value.trim() === '') {
+          return; // Skip empty strings
         }
-        return;
-      }
-      
-      // Handle objects (like privacySettings)
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        const nestedClean = {};
-        Object.keys(value).forEach(nestedKey => {
-          const nestedValue = value[nestedKey];
-          if (nestedValue !== undefined && nestedValue !== null) {
-            nestedClean[nestedKey] = nestedValue;
+        
+        if (Array.isArray(value)) {
+          if (value.length > 0) {
+            cleanData[key] = value;
           }
-        });
-        if (Object.keys(nestedClean).length > 0) {
-          cleanData[key] = nestedClean;
+          return;
         }
-        return;
-      }
+        
+        if (typeof value === 'object' && !Array.isArray(value)) {
+          const nestedClean = {};
+          Object.keys(value).forEach(nestedKey => {
+            const nestedValue = value[nestedKey];
+            if (nestedValue !== undefined && nestedValue !== null) {
+              nestedClean[nestedKey] = nestedValue;
+            }
+          });
+          if (Object.keys(nestedClean).length > 0) {
+            cleanData[key] = nestedClean;
+          }
+          return;
+        }
+        
+        cleanData[key] = value;
+      });
       
-      // For other values (numbers, booleans, non-empty strings)
-      cleanData[key] = value;
-    });
-    
-    console.log('🧹 Cleaned data for API:', cleanData);
-    
-    // SIMPLIFIED - Remove the custom header
-    const response = await axiosInstance.put('/api/auth/profile', cleanData);
-    
-    console.log('✅ Update response:', {
-      success: response.data.success,
-      message: response.data.message,
-      hasUserData: !!response.data.user
-    });
-    
-    return response.data;
-  } catch (error) {
-    console.error('❌ Update profile error:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      message: error.response?.data?.message,
-      errors: error.response?.data?.errors,
-      data: error.response?.data
-    });
-    
-    // Provide better error message
-    const errorMessage = error.response?.data?.message || 
-                       error.response?.statusText || 
-                       'Failed to update profile';
-    
-    throw new Error(errorMessage);
-  }
-},
+      console.log('Cleaned data for API:', cleanData);
+      
+      const response = await axiosInstance.put('/api/auth/profile', cleanData);
+      
+      console.log('Update response:', {
+        success: response.data.success,
+        message: response.data.message,
+        hasUserData: !!response.data.user
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Update profile error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        message: error.response?.data?.message,
+        errors: error.response?.data?.errors,
+        data: error.response?.data
+      });
+      
+      const errorMessage = error.response?.data?.message || 
+                         error.response?.statusText || 
+                         'Failed to update profile';
+      
+      throw new Error(errorMessage);
+    }
+  },
   
   changePassword: async (currentPassword, newPassword) => {
     const response = await axiosInstance.post('/api/auth/change-password', {
@@ -298,7 +267,7 @@ updateProfile: async (userData) => {
   },
   
   // Email verification
- verifyEmail: async (token) => {
+  verifyEmail: async (token) => {
     const response = await axiosInstance.get(`/api/auth/verify-email/${token}`);
     return response.data;
   },
@@ -325,13 +294,12 @@ updateProfile: async (userData) => {
       token,
       newPassword
     });
-    if (response.data.success && response.data.token) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
+    
+    // After password reset, store user info if provided
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
+    
     return response.data;
   },
   
@@ -349,13 +317,11 @@ updateProfile: async (userData) => {
       email,
       password
     });
-    if (response.data.success && response.data.token) {
-      localStorage.setItem('userToken', response.data.token);
-      localStorage.setItem('refreshToken', response.data.refreshToken);
-      if (response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
+    
     return response.data;
   },
   
@@ -371,9 +337,21 @@ updateProfile: async (userData) => {
     window.location.href = `${backendUrl}/api/auth/google`;
   },
   
+  // Check authentication status
+  checkAuth: async () => {
+    try {
+      const response = await axiosInstance.get('/api/auth/check-auth');
+      return response.data;
+    } catch (error) {
+      return { success: false, isAuthenticated: false };
+    }
+  },
+  
   // Utility functions
   isAuthenticated: () => {
-    return !!localStorage.getItem('userToken');
+    // We'll check with the server instead of localStorage
+    // This is just for client-side quick check
+    return !!localStorage.getItem('userInfo');
   },
   
   getCurrentUser: () => {
@@ -386,8 +364,6 @@ updateProfile: async (userData) => {
   },
   
   clearAuthData: () => {
-    localStorage.removeItem('userToken');
-    localStorage.removeItem('refreshToken');
     localStorage.removeItem('userInfo');
   },
   

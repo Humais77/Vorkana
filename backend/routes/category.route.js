@@ -76,54 +76,32 @@ const updateLimiter = rateLimit({
   message: 'Too many update requests'
 });
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
-
-// Get subcategories by category
-router.get('/:categoryId/subcategories', 
-  publicLimiter, 
-  optionalAuth, 
-  controller.getSubcategoriesByCategory
-);
-
-// Search categories
+// ========== PUBLIC ROUTES (cookies optional) ==========
+router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
-
-// Get category by ID or slug
 router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
+router.get('/:categoryId/subcategories', publicLimiter, optionalAuth, controller.getSubcategoriesByCategory);
 
-// ==========================================
-// ADMIN PROTECTED ROUTES
-// ==========================================
+// ========== ADMIN PROTECTED ROUTES (cookies required) ==========
+router.post('/', protect, adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
+router.put('/:id', protect, adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
+router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategory);
+router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restoreCategory);
 
-// Create category
-router.post('/', protect, adminOnly, adminLimiter,createLimiter, validateCreate, controller.createCategory);
-
-// Create subcategory
-router.post('/subcategories', 
-  protect, 
-  adminOnly, 
-  adminLimiter, 
-  validateSubcategory, // Use subcategory validator
-  controller.createSubcategory
-);
+// Subcategory routes
+router.post('/subcategories', protect, adminOnly, adminLimiter, validateSubcategory, controller.createSubcategory);
 
 // Bulk operations
 router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
-// Update category
-router.put('/:id', protect, adminOnly, adminLimiter,updateLimiter, validateUpdate, controller.updateCategory);
-
-// Delete category
-router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategory);
-
-// Restore category
-router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restoreCategory);
-
-
-
+// Stats and export
 router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
 router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
-router.get('/repair-counts/status', protect, adminOnly, adminLimiter,controller.repairCategoryCounts);
-// Add to category.route.js
+
+// Repair counts
+router.get('/repair-counts/status', protect, adminOnly, adminLimiter, controller.repairCategoryCounts);
+
+// Health check (public)
 router.get('/health', async (req, res) => {
   try {
     // Test database connection
@@ -146,4 +124,5 @@ router.get('/health', async (req, res) => {
     });
   }
 });
+
 module.exports = router;

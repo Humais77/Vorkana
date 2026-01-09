@@ -286,6 +286,52 @@ const register = asyncHandler(async (req, res) => {
     });
   }
 });
+const cookieConfig = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  path: '/',
+  domain: process.env.COOKIE_DOMAIN || undefined
+};
+
+const refreshCookieConfig = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  path: '/api/auth/refresh',
+  domain: process.env.COOKIE_DOMAIN || undefined
+};
+
+// ========== HELPER FUNCTIONS ==========
+const setAuthCookies = (res, token, refreshToken) => {
+  // Set access token cookie
+  res.cookie('token', token, cookieConfig);
+  
+  // Set refresh token cookie
+  res.cookie('refreshToken', refreshToken, refreshCookieConfig);
+  
+  // Set a non-httpOnly cookie for client-side detection (optional)
+  res.cookie('isAuthenticated', 'true', {
+    ...cookieConfig,
+    httpOnly: false,
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+};
+
+const clearAuthCookies = (res) => {
+  const clearCookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/'
+  };
+  
+  res.clearCookie('token', clearCookieOptions);
+  res.clearCookie('refreshToken', { ...clearCookieOptions, path: '/api/auth/refresh' });
+  res.clearCookie('isAuthenticated', { ...clearCookieOptions, httpOnly: false });
+};
 
 const login = asyncHandler(async (req, res) => {
   try {
@@ -387,9 +433,11 @@ const login = asyncHandler(async (req, res) => {
     
     await user.save({ validateBeforeSave: false });
 
-    // 6. Generate tokens
-    const token = generateToken(user._id);
+ const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+
+    // Set HTTP-only cookies
+    setAuthCookies(res, token, refreshToken);
 
     // 7. Prepare user response
     const userResponse = {
@@ -409,11 +457,9 @@ const login = asyncHandler(async (req, res) => {
 
     console.log('🎉 Login successful for:', user.email);
 
-    res.json({
+   res.json({
       success: true,
       message: 'Login successful',
-      token,
-      refreshToken,
       user: userResponse
     });
 
@@ -1241,32 +1287,20 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 });
 
-// Enhanced logout
 const logout = async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    const { deviceToken } = req.body;
+    const token = req.cookies?.token;
     
     if (token) {
-      // Add to blacklist with TTL (7 days in production)
+      // Add to blacklist
       blacklist.add(token);
-      
-      // In production with Redis:
-      // await redis.setex(`blacklist:${token}`, 604800, '1');
     }
 
-    // Remove device token for push notifications
-    if (deviceToken && req.user) {
-      const user = await User.findById(req.user._id);
-      if (user) {
-        await user.removeDeviceToken(deviceToken);
-        // Invalidate cache for this user
-        await invalidateUserCache(user._id);
-      }
-    }
+    // Clear all auth cookies
+    clearAuthCookies(res);
 
     // Log logout event
-    logSecurityEvent('LOGOUT', req.user?._id, req.ip, { deviceTokenRemoved: !!deviceToken });
+    logSecurityEvent('LOGOUT', req.user?._id, req.ip);
 
     res.json({
       success: true,
@@ -1281,10 +1315,11 @@ const logout = async (req, res) => {
   }
 };
 
-// Enhanced refresh token
-const refreshToken = async (req, res) => {
+// Refresh Token - Updated
+const refreshToken = asyncHandler(async (req, res) => {
   try {
-    const { refreshToken: oldRefreshToken, deviceToken } = req.body;
+    const oldRefreshToken = req.cookies?.refreshToken;
+    const { deviceToken } = req.body;
     
     if (!oldRefreshToken) {
       return res.status(400).json({
@@ -1299,6 +1334,7 @@ const refreshToken = async (req, res) => {
     // Check if user still exists and is active
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive) {
+      clearAuthCookies(res);
       return res.status(401).json({
         success: false,
         message: 'User not found or account inactive'
@@ -1318,27 +1354,19 @@ const refreshToken = async (req, res) => {
     const newToken = generateToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);
 
+    // Set new cookies
+    setAuthCookies(res, newToken, newRefreshToken);
+
     // Log token refresh
     logSecurityEvent('TOKEN_REFRESHED', user._id, req.ip, { deviceTokenUpdated: !!deviceToken });
 
     res.json({
       success: true,
-      token: newToken,
-      refreshToken: newRefreshToken,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        picture: user.picture,
-        emailVerified: user.emailVerified,
-        isOnline: user.isOnline
-      }
+      message: 'Token refreshed successfully'
     });
 
   } catch (error) {
-    console.error('Refresh token error:', error);
-    logSecurityEvent('TOKEN_REFRESH_ERROR', null, req.ip, { error: error.message });
+    clearAuthCookies(res);
     
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return res.status(401).json({
@@ -1352,7 +1380,8 @@ const refreshToken = async (req, res) => {
       message: 'Server error refreshing token'
     });
   }
-};
+});
+
 const calculateMemberDuration = (createdAt) => {
   if (!createdAt) return 'Recently';
   const created = new Date(createdAt);
@@ -1618,7 +1647,7 @@ const reactivateAccount = async (req, res) => {
     // Generate new tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
-
+  setAuthCookies(res, token, refreshToken);
     // Log reactivation
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
 
@@ -1735,7 +1764,7 @@ const verifyEmailRedirect = async (req, res) => {
     await user.save();
     const authToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
-    
+    setAuthCookies(res, authToken, refreshToken);
     // Invalidate cache for this user
     await invalidateUserCache(user._id);
     
@@ -2370,5 +2399,6 @@ module.exports = {
   verifyEmailRedirect,
   resetPasswordRedirect,
   handleJSONErrors,
-  checkVerificationStatus
+  checkVerificationStatus,
+  setAuthCookies
 };

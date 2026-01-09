@@ -52,7 +52,7 @@ export const useMyGigs = (filters = {}) => {
       return gigsAPI.getAll({
         ...filters,
         createdBy: user._id,
-        includeSubcategory: true, // Always include subcategory
+        includeSubcategory: true,
       });
     },
     enabled: !!user?._id,
@@ -60,7 +60,12 @@ export const useMyGigs = (filters = {}) => {
     gcTime: 5 * 60 * 1000,
     onError: (error) => {
       if (error.message !== 'User not authenticated') {
-        toast.error('Failed to load your gigs');
+        if (error.code === 'SESSION_EXPIRED') {
+          toast.error('Session expired. Please login again.');
+          // Auth store will handle logout via interceptor
+        } else {
+          toast.error('Failed to load your gigs');
+        }
       }
     }
   });
@@ -71,14 +76,16 @@ export const useGigs = (params = {}) => {
     queryKey: ['gigs', params],
     queryFn: () => gigsAPI.getAll({
       ...params,
-      includeSubcategory: true, // Always include subcategory
+      includeSubcategory: true,
     }),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     retry: 1,
     retryDelay: 1000,
     onError: (error) => {
-      if (error.code !== 'SERVER_ERROR') {
+      if (error.code === 'SESSION_EXPIRED') {
+        toast.error('Session expired. Please login again.');
+      } else if (error.code !== 'SERVER_ERROR') {
         toast.error('Failed to load gigs');
       }
     }
@@ -93,7 +100,11 @@ export const useGigsBySubcategory = (subcategoryId, params = {}) => {
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     onError: (error) => {
-      toast.error('Failed to load gigs for this subcategory');
+      if (error.code === 'SESSION_EXPIRED') {
+        toast.error('Session expired. Please login again.');
+      } else {
+        toast.error('Failed to load gigs for this subcategory');
+      }
     }
   });
 };
@@ -107,7 +118,7 @@ export const useInfiniteGigs = (queryParams = {}) => {
       gigsAPI.getAll({ 
         ...queryParams, 
         page: pageParam,
-        includeSubcategory: true, // Always include subcategory
+        includeSubcategory: true,
         createdBy: queryParams.createdBy === 'me' ? user?._id : queryParams.createdBy
       }),
     initialPageParam: 1,
@@ -135,7 +146,7 @@ export const usePopularGigs = () => {
       status: 'open',
       urgency: 'high',
       includeCategory: true,
-      includeSubcategory: true, // Include subcategory
+      includeSubcategory: true,
       includeClient: true
     }),
     staleTime: 5 * 60 * 1000,
@@ -144,6 +155,7 @@ export const usePopularGigs = () => {
 };
 
 export const useGig = (id) => {
+  const queryClient = useQueryClient();
   const setGigDetails = useGigStore((state) => state.setGigDetails);
   
   return useQuery({
@@ -155,6 +167,7 @@ export const useGig = (id) => {
     gcTime: 30 * 60 * 1000,
     retry: (failureCount, error) => {
       if (error.status === 404) return false;
+      if (error.code === 'SESSION_EXPIRED') return false;
       return failureCount < 3;
     },
     onSuccess: (data, variables) => {
@@ -169,6 +182,11 @@ export const useGig = (id) => {
         data: updatedGig,
         success: true
       });
+    },
+    onError: (error) => {
+      if (error.code === 'SESSION_EXPIRED') {
+        toast.error('Session expired. Please login again.');
+      }
     }
   });
 };
@@ -224,12 +242,15 @@ export const useCreateGig = () => {
         errorMessage = 'Please select a valid subcategory';
       } else if (error.code === 'AUTH_REQUIRED') {
         errorMessage = 'Please sign in to create a gig';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
       }
       
       toast.error(errorMessage);
     },
   });
 };
+
 const applyOptimisticUpdate = (queryClient, gigId, updates) => {
   // Update single gig cache
   queryClient.setQueryData(gigKeys.detail(gigId), (old) => {
@@ -238,12 +259,10 @@ const applyOptimisticUpdate = (queryClient, gigId, updates) => {
       ...old.data,
       ...old.gig,
       ...updates,
-      // Ensure subcategory is properly structured
       subcategory: updates.subcategory ? {
         _id: updates.subcategory,
         name: updates.subcategoryName || "Loading..."
       } : old.data?.subcategory,
-      // Ensure category is properly structured
       projectCategory: updates.projectCategory ? {
         _id: updates.projectCategory,
         name: updates.categoryName || "Loading..."
@@ -283,7 +302,6 @@ const applyOptimisticUpdate = (queryClient, gigId, updates) => {
   });
 };
 
-// Update the useUpdateGig hook
 export const useUpdateGig = () => {
   const queryClient = useQueryClient();
   
@@ -321,7 +339,7 @@ export const useUpdateGig = () => {
       // Invalidate other queries to ensure consistency
       queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       
-      // Show success toast (handled in component for better UX)
+      toast.success('Gig updated successfully!');
     },
     onError: (err, variables, context) => {
       // Rollback to the previous value
@@ -332,6 +350,18 @@ export const useUpdateGig = () => {
       // Revalidate queries
       queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+      
+      let errorMessage = err.message || 'Failed to update gig';
+      
+      if (err.code === 'VERSION_CONFLICT') {
+        errorMessage = 'This gig was modified by another user. Please refresh and try again.';
+      } else if (err.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to update this gig';
+      } else if (err.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
     onSettled: (data, error, variables) => {
       // Always refetch after error or success to ensure consistency
@@ -339,6 +369,7 @@ export const useUpdateGig = () => {
     },
   });
 };
+
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
   
@@ -356,11 +387,17 @@ export const useDeleteGig = () => {
       toast.success(data.message || 'Gig deleted successfully!');
     },
     onError: (error) => {
+      let errorMessage = error.data?.message || error.message || 'Failed to delete gig';
+      
       if (error.code === 'GIG_IN_PROGRESS') {
-        toast.error('Cannot delete gig that is in progress. Use force delete if necessary.');
-      } else {
-        toast.error(error.data?.message || error.message || 'Failed to delete gig');
+        errorMessage = 'Cannot delete gig that is in progress. Use force delete if necessary.';
+      } else if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to delete this gig';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
       }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -433,7 +470,15 @@ export const useUpdateGigStatus = () => {
       toast.success(`Gig marked as ${variables.status}`);
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to update gig status');
+      let errorMessage = error.message || 'Failed to update gig status';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to update gig status';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -458,7 +503,15 @@ export const useUpdateMultipleGigsStatus = () => {
       toast.success(`${variables.ids.length} gig(s) marked as ${variables.status}`);
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to update gigs status');
+      let errorMessage = error.message || 'Failed to update gigs status';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to update gig status';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -476,7 +529,15 @@ export const useRestoreGig = () => {
       toast.success(data.message || 'Gig restored successfully!');
     },
     onError: (error) => {
-      toast.error(error.data?.message || error.message || 'Failed to restore gig');
+      let errorMessage = error.data?.message || error.message || 'Failed to restore gig';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to restore gig';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -511,7 +572,12 @@ export const useGigStats = () => {
     gcTime: 10 * 60 * 1000,
     enabled: !!user?._id,
     retry: 1,
-    retryDelay: 1000
+    retryDelay: 1000,
+    onError: (error) => {
+      if (error.code === 'SESSION_EXPIRED') {
+        toast.error('Session expired. Please login again.');
+      }
+    }
   });
 };
 
@@ -522,6 +588,11 @@ export const useSearchGigs = (searchParams = {}) => {
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     enabled: Boolean(searchParams.query?.trim()),
+    onError: (error) => {
+      if (error.code === 'SESSION_EXPIRED') {
+        toast.error('Session expired. Please login again.');
+      }
+    }
   });
 };
 
@@ -536,21 +607,18 @@ export const useExportGigs = () => {
       }
     },
     onError: (error) => {
+      let errorMessage = error.data?.message || error.message || 'Failed to export gigs';
+      
       if (error.code === 'EXPORT_LIMIT_EXCEEDED') {
-        toast.error('Export limit exceeded. Please use filters to reduce the number of records.');
-      } else {
-        toast.error(error.data?.message || error.message || 'Failed to export gigs');
+        errorMessage = 'Export limit exceeded. Please use filters to reduce the number of records.';
+      } else if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to export gigs';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
       }
+      
+      toast.error(errorMessage);
     },
-  });
-};
-
-export const useSimilarGigs = (gigId) => {
-  return useQuery({
-    queryKey: ['gigs', 'similar', gigId],
-    queryFn: () => gigsAPI.getSimilar(gigId),
-    enabled: !!gigId,
-    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -610,7 +678,15 @@ export const useUploadGigImages = () => {
       }
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to upload images');
+      let errorMessage = error.message || 'Failed to upload images';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to upload images';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -629,7 +705,15 @@ export const useRemoveGigImage = () => {
       }
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to remove image');
+      let errorMessage = error.message || 'Failed to remove image';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to remove images';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -648,7 +732,15 @@ export const useSetGigThumbnail = () => {
       }
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to set thumbnail');
+      let errorMessage = error.message || 'Failed to set thumbnail';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to update thumbnail';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
@@ -667,12 +759,19 @@ export const useUploadGigThumbnail = () => {
       }
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to upload thumbnail');
+      let errorMessage = error.message || 'Failed to upload thumbnail';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to upload thumbnail';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
     },
   });
 };
 
-// New hook for gigs by subcategory with infinite scroll
 export const useInfiniteGigsBySubcategory = (subcategoryId, params = {}) => {
   return useInfiniteQuery({
     queryKey: gigKeys.bySubcategory(subcategoryId, params),

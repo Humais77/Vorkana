@@ -1,16 +1,17 @@
+// admin.middleware.js - Updated for cookie-based auth
 const jwt = require('jsonwebtoken');
 const { promisify } = require('util');
 const User = require('../models/user.model.js');
 const rateLimit = require('express-rate-limit');
-const { ipKeyGenerator } = require('express-rate-limit'); 
+const { ipKeyGenerator } = require('express-rate-limit');
+
 // Security: Rate limiting for admin dashboard
 const adminDashboardLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   keyGenerator: (req) => {
-    // Use ipKeyGenerator instead of accessing req.ip directly
     const ip = ipKeyGenerator(req);
-    return req.user ? `${ip}-${req.user._id}` : ip;
+    return req.admin ? `${ip}-${req.admin._id}` : ip;
   },
   message: {
     success: false,
@@ -20,23 +21,26 @@ const adminDashboardLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Cookie-based admin verification
 const verifyAdmin = async (req, res, next) => {
   try {
-    console.log('[ADMIN VERIFICATION] Starting verification...');
-    console.log('[ADMIN VERIFICATION] Headers:', req.headers);
+    console.log('[ADMIN VERIFICATION] Starting cookie-based verification...');
     
-    // Security: Check for admin token in multiple locations
+    // Security: Check for admin token in cookies first, then headers
     let token;
-    const authHeader = req.headers.authorization;
-    const cookieToken = req.cookies?.adminToken || req.cookies?.token;
     
-    // FIX: Accept both "Admin" and "Bearer" prefixes
-    if (authHeader && (authHeader.startsWith('Admin ') || authHeader.startsWith('Bearer ') || authHeader.startsWith('admin '))) {
+    // 1. Check for admin-specific cookies
+    const adminCookie = req.cookies?.adminToken || req.cookies?.token;
+    
+    // 2. Check Authorization header (for API clients that still use it)
+    const authHeader = req.headers.authorization;
+    
+    if (adminCookie) {
+      token = adminCookie;
+      console.log('[ADMIN VERIFICATION] Token from cookie:', token ? 'Present' : 'Missing');
+    } else if (authHeader && (authHeader.startsWith('Admin ') || authHeader.startsWith('Bearer '))) {
       token = authHeader.split(' ')[1];
       console.log('[ADMIN VERIFICATION] Token from header:', token ? 'Present' : 'Missing');
-    } else if (cookieToken) {
-      token = cookieToken;
-      console.log('[ADMIN VERIFICATION] Token from cookie:', token ? 'Present' : 'Missing');
     }
     
     if (!token) {
@@ -48,16 +52,15 @@ const verifyAdmin = async (req, res, next) => {
       });
     }
 
-    // FIX: Log token verification attempt
     console.log('[ADMIN VERIFICATION] Verifying token...');
     
-    // FIX: Use the same JWT_SECRET for now
+    // Verify token
     const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
     console.log('[ADMIN VERIFICATION] Decoded token:', decoded);
     
-    // FIX: Check user with more flexible role checking
+    // Find user with admin role check
     const user = await User.findOne({
-      _id: decoded.id || decoded._id, // Try both possibilities
+      _id: decoded.id || decoded._id,
       isActive: true
     }).select('+lastLoginAt +failedLoginAttempts');
 
@@ -70,7 +73,7 @@ const verifyAdmin = async (req, res, next) => {
       });
     }
 
-    // FIX: Check if user has admin role (support multiple role formats)
+    // Check if user has admin role
     const isAdmin = user.role === 'admin' || 
                    user.role === 'Admin' || 
                    user.role === 'administrator' ||
@@ -89,19 +92,28 @@ const verifyAdmin = async (req, res, next) => {
     res.set({
       'X-Admin-Access': 'true',
       'X-Admin-User-Id': user._id,
-      'X-Admin-Role': user.role
+      'X-Admin-Role': user.role,
+      'X-Auth-Method': adminCookie ? 'cookie' : 'header'
     });
 
     req.admin = user;
     req.adminToken = token;
     req.user = user; // Also set req.user for compatibility
     
-    console.log(`[ADMIN VERIFICATION] Access granted: ${user.email} (${user.role})`);
+    console.log(`[ADMIN VERIFICATION] Access granted: ${user.email} (${user.role}) via ${adminCookie ? 'cookie' : 'header'}`);
     
     next();
   } catch (error) {
     console.error('[ADMIN VERIFICATION ERROR]', error.message);
-    console.error('[ADMIN VERIFICATION ERROR] Stack:', error.stack);
+    
+    // Clear invalid admin cookies
+    if (req.cookies?.adminToken || req.cookies?.token) {
+      res.clearCookie('adminToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      });
+    }
     
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
@@ -127,6 +139,43 @@ const verifyAdmin = async (req, res, next) => {
     });
   }
 };
+
+// Cookie configuration for admin routes
+const adminCookieConfig = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 2 * 60 * 60 * 1000, // 2 hours for admin sessions
+  path: '/api/admin',
+  domain: process.env.COOKIE_DOMAIN || undefined
+};
+
+// Helper function to set admin cookies
+const setAdminCookie = (res, token) => {
+  res.cookie('adminToken', token, adminCookieConfig);
+  
+  // Also set a non-httpOnly cookie for client-side detection
+  res.cookie('isAdmin', 'true', {
+    ...adminCookieConfig,
+    httpOnly: false,
+    maxAge: 2 * 60 * 60 * 1000
+  });
+};
+
+// Helper function to clear admin cookies
+const clearAdminCookies = (res) => {
+  const clearOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/api/admin'
+  };
+  
+  res.clearCookie('adminToken', clearOptions);
+  res.clearCookie('isAdmin', { ...clearOptions, httpOnly: false });
+};
+
+// Permission middleware remains the same
 const requirePermission = (permission) => {
   return (req, res, next) => {
     if (!req.admin) {
@@ -142,18 +191,18 @@ const requirePermission = (permission) => {
     console.log(`[PERMISSION CHECK] User role: ${req.admin.role}`);
     console.log(`[PERMISSION CHECK] User ID: ${req.admin._id}`);
 
-    // FIX: Updated permissions matrix - admin should have all permissions
+    // Permissions matrix
     const permissions = {
       // Dashboard
       'view_dashboard': ['admin', 'super_admin', 'moderator'],
       
       // Users
-      'view_users': ['admin', 'super_admin', 'moderator'],  // ADD THIS
+      'view_users': ['admin', 'super_admin', 'moderator'],
       'manage_users': ['admin', 'super_admin'],
       'export_users': ['admin', 'super_admin'],
       
       // Categories (includes subcategories)
-      'view_categories': ['admin', 'super_admin', 'moderator'],  // ADD THIS
+      'view_categories': ['admin', 'super_admin', 'moderator'],
       'manage_categories': ['admin', 'super_admin', 'moderator'],
       'export_categories': ['admin', 'super_admin'],
       
@@ -162,12 +211,12 @@ const requirePermission = (permission) => {
       'manage_subcategories': ['admin', 'super_admin', 'moderator'],
       
       // Services
-      'view_services': ['admin', 'super_admin', 'moderator'],  // ADD THIS
+      'view_services': ['admin', 'super_admin', 'moderator'],
       'manage_services': ['admin', 'super_admin', 'moderator'],
       'export_services': ['admin', 'super_admin'],
       
       // Gigs
-      'view_gigs': ['admin', 'super_admin', 'moderator'],  // ADD THIS
+      'view_gigs': ['admin', 'super_admin', 'moderator'],
       'manage_gigs': ['admin', 'super_admin', 'moderator'],
       'export_gigs': ['admin', 'super_admin'],
       
@@ -179,7 +228,7 @@ const requirePermission = (permission) => {
       'system_settings': ['admin', 'super_admin'],
       
       // Fallback for any other permissions
-      '*': ['admin', 'super_admin', 'moderator']  // Wildcard for any permission not listed
+      '*': ['admin', 'super_admin', 'moderator']
     };
 
     const userRole = req.admin.role;
@@ -225,7 +274,8 @@ const auditLog = (action, resource) => {
         `Resource: ${resource} - ` +
         `IP: ${req.ip} - ` +
         `Status: ${res.statusCode} - ` +
-        `ResponseTime: ${responseTime}ms`);
+        `ResponseTime: ${responseTime}ms` +
+        `Auth: ${req.cookies?.adminToken ? 'cookie' : 'header'}`);
       
       // If there's an error, log details
       if (res.statusCode >= 400) {
@@ -248,5 +298,7 @@ module.exports = {
   verifyAdmin,
   requirePermission,
   adminDashboardLimiter,
-  auditLog
+  auditLog,
+  setAdminCookie,
+  clearAdminCookies
 };

@@ -300,43 +300,40 @@ const invalidateGigCache = async (gigId) => {
     const cache = require('../utils/cache.js');
     
     // Get gig details for more targeted invalidation
-    const gig = await Gig.findById(gigId).select('projectCategory subcategory status');
+    const gig = await Gig.findById(gigId).select('projectCategory subcategory status slug');
     
     if (gig) {
       // Invalidate specific gig cache
       await cache.del(`gig:${gigId}`);
-      await cache.del(`gig:slug:*`); // Any slug-based cache
+      await cache.del(`gig:slug:${gig.slug}`);
       
-      // Invalidate lists that might include this gig
-      const patterns = [
-        'gigs:list:*',
-        `gigs:category:${gig.projectCategory}:*`,
-        `gigs:status:${gig.status}:*`
+      // Invalidate common list caches (without pattern matching)
+      const cacheKeysToDelete = [
+        `gigs:list:page:1:limit:10`, // Default pagination
+        `gigs:list:page:1:limit:12`,
+        `gigs:category:${gig.projectCategory}:page:1`,
+        `gigs:status:${gig.status}:page:1`,
+        `gigs:user:${gig.createdBy}:page:1`,
       ];
       
+      // Add subcategory cache if exists
       if (gig.subcategory) {
-        patterns.push(`gigs:subcategory:${gig.subcategory}:*`);
+        cacheKeysToDelete.push(`gigs:subcategory:${gig.subcategory}:page:1`);
       }
       
-      // Also invalidate user-specific caches if applicable
-      patterns.push('gigs:user:*');
-      
-      // Delete all matching cache keys
-      for (const pattern of patterns) {
+      // Delete specific cache keys
+      for (const key of cacheKeysToDelete) {
         try {
-          const keys = await cache.keys(pattern);
-          if (keys.length > 0) {
-            await cache.del(...keys);
-          }
+          await cache.del(key);
         } catch (err) {
-          console.warn(`Failed to invalidate cache pattern ${pattern}:`, err.message);
+          // Ignore errors for non-existent keys
         }
       }
       
-      // Invalidate stats
+      // Invalidate stats cache
       await cache.del('gig_stats:*');
       
-      console.log(`Cache invalidated for gig ${gigId} and related lists`);
+      console.log(`Cache invalidated for gig ${gigId}`);
     }
   } catch (err) {
     console.error('Error in cache invalidation:', err.message);

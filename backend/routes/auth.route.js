@@ -16,7 +16,7 @@ const {
   getPublicProfile,
   deactivateAccount,
   reactivateAccount,
-  verifyEmailRedirect,checkVerificationStatus, resetPasswordRedirect, 
+  verifyEmailRedirect,checkVerificationStatus, resetPasswordRedirect, setAuthCookies
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -24,7 +24,8 @@ const {
   authLimiter,
   passwordResetLimiter,
   registerLimiter,
-  validateRequest 
+  validateRequest ,
+  optionalAuth
 } = require("../middleware/auth.middleware.js");
 
 const router = express.Router();
@@ -127,9 +128,55 @@ router.post("/login",
   loginValidation,
   login
 );
+router.get("/check-auth", 
+  optionalAuth,
+  (req, res) => {
+    if (req.user) {
+      res.json({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          _id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          role: req.user.role,
+          picture: req.user.picture,
+          emailVerified: req.user.emailVerified,
+          isOnline: req.user.isOnline
+        }
+      });
+    } else {
+      res.json({
+        success: true,
+        isAuthenticated: false
+      });
+    }
+  }
+);
 
-router.post("/refresh-token", 
-  authLimiter,
+// ========== COOKIE TEST ROUTE ==========
+router.get("/test-cookies", 
+  protect,
+  (req, res) => {
+    res.json({
+      success: true,
+      message: 'Cookies are working correctly',
+      cookiesReceived: req.cookies,
+      user: req.user.email
+    });
+  }
+);
+
+// ========== REFRESH TOKEN ROUTE (Cookie-based) ==========
+router.post("/refresh", 
+  (req, res, next) => {
+    // Only allow refresh token endpoint to access refreshToken cookie
+    const refreshToken = req.cookies?.refreshToken;
+    if (refreshToken) {
+      req.body.refreshToken = refreshToken;
+    }
+    next();
+  },
   refreshToken
 );
 
@@ -263,9 +310,9 @@ router.get("/google/callback",
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
       }
       
-      const token = require('../controllers/auth.controller.js').generateToken(user._id);
-      const refreshToken = require('../controllers/auth.controller.js').generateRefreshToken(user._id);
-      
+     const token = require('../controllers/auth.controller.js').generateToken(user._id);
+  const refreshToken = require('../controllers/auth.controller.js').generateRefreshToken(user._id);
+       setAuthCookies(res, token, refreshToken);
       const userData = encodeURIComponent(JSON.stringify({
         token,
         refreshToken,

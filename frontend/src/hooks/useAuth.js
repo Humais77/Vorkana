@@ -450,6 +450,22 @@ export const useVerifyEmail = () => {
     },
   });
 };
+export const useCheckAuth = () => {
+  const setAuth = useAuthStore((state) => state.setAuth);
+  
+  return useQuery({
+    queryKey: ['checkAuth'],
+    queryFn: async () => {
+      const response = await authAPI.checkAuth();
+      if (response.success && response.isAuthenticated && response.user) {
+        setAuth(response.user);
+      }
+      return response;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: false,
+  });
+};
 // hooks/useAuth.js - Add this hook
 export const useCheckResetToken = () => {
   return useMutation({

@@ -1,51 +1,16 @@
+// useService.js - Updated for cookie-based authentication
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { servicesAPI } from '../api/services.js';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // Import axios
+import { useAuthStore } from '../store/useAuthStore';
 
-// Create axios instance for direct use in mutations
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-
-const axiosInstance = axios.create({
-  baseURL: API_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-axiosInstance.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('userToken') || localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-axiosInstance.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('Request timeout. Please check your connection.');
-    }
-    
-    if (!navigator.onLine) {
-      throw new Error('No internet connection');
-    }
-    
-    return Promise.reject(error);
-  }
-);
+// Import the axios instance from services.js
+import { axiosInstance } from '../api/services.js';
 
 export const useMyServices = (filters = {}) => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  
   return useQuery({
     queryKey: ['myServices', filters],
     queryFn: async () => {
@@ -53,7 +18,6 @@ export const useMyServices = (filters = {}) => {
         const result = await servicesAPI.getMyServices(filters);
         return result;
       } catch (error) {
-        // Return empty structure on error
         return {
           success: false,
           data: [],
@@ -67,12 +31,11 @@ export const useMyServices = (filters = {}) => {
         };
       }
     },
-    enabled: !!localStorage.getItem('userToken') || !!localStorage.getItem('token'),
+    enabled: isAuthenticated, // Use Zustand auth state
     refetchOnWindowFocus: false,
     retry: 1,
     onError: (error) => {
       console.error('useMyServices error:', error);
-      // Don't show toast if it's a 401 (user not logged in)
       if (!error.message.includes('Please login')) {
         toast.error(error.message || 'Failed to load your services');
       }
@@ -102,7 +65,7 @@ export const useServices = (filters = {}) => {
       }
     },
     refetchOnWindowFocus: false,
-    staleTime: 2 * 60 * 1000, // 2 minutes cache
+    staleTime: 2 * 60 * 1000,
     onError: (error) => {
       console.error('useServices error:', error);
       if (process.env.NODE_ENV === 'development') {
@@ -136,7 +99,7 @@ export const usePopularServices = (params = {}) => {
       }
     },
     refetchOnWindowFocus: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    staleTime: 5 * 60 * 1000,
     retry: 1,
     onError: (error) => {
       console.error('Failed to load popular services:', error);
@@ -215,7 +178,7 @@ export const usePopularServicesByCategory = (params = {}) => {
       }
     },
     refetchOnWindowFocus: false,
-    staleTime: 10 * 60 * 1000, // 10 minutes cache
+    staleTime: 10 * 60 * 1000,
     retry: 1,
   });
 };
@@ -266,12 +229,10 @@ export const useCreateService = () => {
   
   return useMutation({
     mutationFn: async (formData) => {
-      // If formData is already FormData, use it directly
       if (formData instanceof FormData) {
         return servicesAPI.create({}, formData);
       }
       
-      // Otherwise, extract serviceData and files
       const { serviceData, files = null } = formData || {};
       return servicesAPI.create(serviceData, files);
     },
@@ -298,7 +259,7 @@ export const useUpdateService = () => {
   
   return useMutation({
     mutationFn: async ({ id, data, headers }) => {
-      const response = await axiosInstance.put(`api/services/${id}`, data, {
+      const response = await axiosInstance.put(`/api/services/${id}`, data, {
         headers: headers || {
           'Content-Type': 'multipart/form-data'
         }
@@ -306,27 +267,22 @@ export const useUpdateService = () => {
       return response.data;
     },
     onSuccess: (data, variables) => {
-      // Invalidate and refetch
       queryClient.invalidateQueries({
         queryKey: ['service', variables.id]
       });
       
-      // Also invalidate service lists
       queryClient.invalidateQueries({
         queryKey: ['services']
       });
       
-      // Update the cache immediately with new data
       if (data.service) {
         queryClient.setQueryData(['service', variables.id], data.service);
       }
     },
     onError: (error) => {
-      // Handle version conflict specifically
       if (error.response?.status === 409) {
         const errorData = error.response.data;
         
-        // You can trigger a refresh of the service data
         if (errorData.code === 'VERSION_CONFLICT') {
           queryClient.invalidateQueries({
             queryKey: ['service', variables.id]
@@ -336,6 +292,7 @@ export const useUpdateService = () => {
     }
   });
 };
+
 export const useDeleteService = () => {
   const queryClient = useQueryClient();
   
@@ -632,6 +589,8 @@ export const useServicesBySubcategorySlug = (subcategorySlug, params = {}, optio
 };
 
 export const useAdminServices = (filters = {}) => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  
   return useQuery({
     queryKey: ['adminServices', filters],
     queryFn: async () => {
@@ -662,7 +621,7 @@ export const useAdminServices = (filters = {}) => {
         };
       }
     },
-    enabled: !!localStorage.getItem('userToken') || !!localStorage.getItem('token'),
+    enabled: isAuthenticated, // Use Zustand auth state
     refetchOnWindowFocus: false,
     onError: (error) => {
       toast.error(error.message || 'Failed to load admin services');
