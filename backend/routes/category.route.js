@@ -76,6 +76,15 @@ const updateLimiter = rateLimit({
   message: 'Too many update requests'
 });
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
+// Bulk operations
+router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
+
+// Stats and export
+router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
+router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
+
+// Repair counts
+router.get('/repair-counts/status', protect, adminOnly, adminLimiter, controller.repairCategoryCounts);
 // ========== PUBLIC ROUTES (cookies optional) ==========
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
@@ -91,15 +100,7 @@ router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restor
 // Subcategory routes
 router.post('/subcategories', protect, adminOnly, adminLimiter, validateSubcategory, controller.createSubcategory);
 
-// Bulk operations
-router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
-// Stats and export
-router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
-router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
-
-// Repair counts
-router.get('/repair-counts/status', protect, adminOnly, adminLimiter, controller.repairCategoryCounts);
 
 // Health check (public)
 router.get('/health', async (req, res) => {

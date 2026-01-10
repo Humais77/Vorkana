@@ -256,7 +256,36 @@ const updateSchema = Joi.object({
       'string.max': 'Deliverable cannot exceed 200 characters',
     }),
 
-
+milestones: Joi.array().max(20).items(
+    Joi.object({
+      title: Joi.string().trim().max(100).required()
+        .messages({
+          'string.empty': 'Milestone title is required',
+          'string.max': 'Milestone title cannot exceed 100 characters',
+        }),
+      description: Joi.string().trim().max(500)
+        .messages({
+          'string.max': 'Milestone description cannot exceed 500 characters',
+        }),
+      amount: Joi.number().min(1).required()
+        .messages({
+          'number.base': 'Milestone amount must be a number',
+          'number.min': 'Minimum milestone amount is $1',
+        }),
+      dueDate: Joi.date().iso().greater('now')
+        .messages({
+          'date.base': 'Due date must be a valid date',
+          'date.greater': 'Due date must be in the future',
+        }),
+      status: Joi.string().valid('pending', 'in_progress', 'completed', 'paid')
+        .default('pending'),
+      completedAt: Joi.date().iso()
+    })
+  )
+  .messages({
+    'array.max': 'Cannot have more than 20 milestones',
+  }),
+  
   version: Joi.number().integer().min(1)
     .messages({
       'number.base': 'Version must be a number',
@@ -266,7 +295,20 @@ const updateSchema = Joi.object({
   stripUnknown: true,
   abortEarly: false 
 });
-
+const userReference = Joi.string().custom((value, helpers) => {
+  // Accept "me" or valid ObjectId
+  if (value === 'me' || value === 'Me' || value === 'ME') {
+    return value.toLowerCase();
+  }
+  
+  if (mongoose.Types.ObjectId.isValid(value)) {
+    return value;
+  }
+  
+  return helpers.error('any.invalid');
+}, 'User reference validation').messages({
+  'any.invalid': 'Must be a valid ObjectId or "me"'
+})
 // Query schema - Add subcategory support
 const querySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
@@ -284,8 +326,8 @@ const querySchema = Joi.object({
   slug: Joi.string().trim().max(100),
   projectCategory: objectId,
   subcategory: objectId,
-  createdBy: objectId,
-  assignedTo: objectId,
+  createdBy: userReference.optional(),
+  assignedTo: userReference.optional(),
   minBudget: Joi.number().min(0),
   maxBudget: Joi.number().min(0),
   currency: Joi.string(),

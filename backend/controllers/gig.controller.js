@@ -592,15 +592,25 @@ const getGigs = async (req, res, next) => {
 
     const showAllFlag = (showAll || includeInactive) && req.user?.role === 'admin';
     const userRole = req.user?.role || 'guest';
-
+ let createdByParam = createdBy;
+  if (createdBy === 'me' && req.user && req.user._id) {
+    createdByParam = req.user._id;
+  }
+  
+  // Parse assignedTo before building query
+  let assignedToParam = assignedTo;
+  if (assignedTo === 'me' && req.user && req.user._id) {
+    assignedToParam = req.user._id;
+  }
+  
     const filter = buildSecureGigQuery({
       search: search || q,
       title,
       slug,
       projectCategory,
       subcategory,
-      createdBy,
-      assignedTo,
+      createdBy: createdByParam,
+    assignedTo: assignedToParam,
       minBudget,
       maxBudget,
       currency,

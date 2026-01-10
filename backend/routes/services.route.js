@@ -69,7 +69,12 @@ const uploadWithThumbnail = upload.fields([
 
 // Get all services
 router.get('/', optionalAuth, validateQuery, controller.getServices);
-
+// Get services with stats
+router.get('/with-stats', 
+  optionalAuth, 
+  serviceLimiter, 
+  controller.getServicesWithCategoryStats
+);
 // Search services
 router.get('/search', optionalAuth, validateQuery, controller.searchServices);
 
@@ -399,11 +404,6 @@ router.get('/metrics/overview',
     });
 });
 
-// Get services with stats
-router.get('/with-stats', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesWithCategoryStats
-);
+
 
 module.exports = router;

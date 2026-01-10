@@ -5,15 +5,6 @@ import {
   FiTrash2, 
   FiAlertTriangle, 
   FiInfo, 
-  FiPackage, 
-  FiShoppingCart,
-  FiStar,
-  FiEye,
-  FiHeart,
-  FiMessageSquare,
-  FiArchive,
-  FiHardDrive,
-  FiDollarSign
 } from 'react-icons/fi';
 
 const ServiceDeleteModal = ({ 
@@ -102,69 +93,6 @@ const ServiceDeleteModal = ({
                       ? 'All service data will be permanently removed from the database.'
                       : 'The service will be marked as deleted but kept in the database.'}
                   </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Service Stats */}
-          <div className="mb-6">
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center mb-3">
-                <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center mr-3">
-                  {service.thumbnail ? (
-                    <img 
-                      src={service.thumbnail} 
-                      alt={service.title}
-                      className="h-10 w-10 rounded-lg object-cover"
-                    />
-                  ) : (
-                    <FiPackage className="h-5 w-5 text-indigo-600" />
-                  )}
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">{service.title}</p>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      service.status === 'active' ? 'bg-green-100 text-green-800' : 
-                      service.status === 'draft' ? 'bg-gray-100 text-gray-800' : 
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {new Intl.NumberFormat('en-US', {
-                        style: 'currency',
-                        currency: service.currency || 'USD'
-                      }).format(service.price)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
-                  <FiShoppingCart className="h-4 w-4 text-blue-600 mb-1" />
-                  <span className="font-medium">{dependencies.orders}</span>
-                  <span className="text-xs text-gray-500">Orders</span>
-                </div>
-                
-                <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
-                  <FiMessageSquare className="h-4 w-4 text-teal-600 mb-1" />
-                  <span className="font-medium">{dependencies.reviews}</span>
-                  <span className="text-xs text-gray-500">Reviews</span>
-                </div>
-                
-                <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
-                  <FiEye className="h-4 w-4 text-purple-600 mb-1" />
-                  <span className="font-medium">{dependencies.views}</span>
-                  <span className="text-xs text-gray-500">Views</span>
-                </div>
-                
-                <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
-                  <FiHeart className="h-4 w-4 text-red-600 mb-1" />
-                  <span className="font-medium">{dependencies.likes}</span>
-                  <span className="text-xs text-gray-500">Likes</span>
                 </div>
               </div>
             </div>

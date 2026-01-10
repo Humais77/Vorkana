@@ -167,7 +167,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
 
   const filter = {};
 
-  // Security: Visibility based on user role
   if (showAll && userRole === 'admin') {
     // Admin can see all services
     if (status !== undefined) {
@@ -188,17 +187,38 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     filter.isActive = true;
   }
 
-  // Search with sanitization
-  if (search) {
-  const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} }).trim();
-  if (sanitizedSearch.length >= 2) {
-    filter.$text = { $search: sanitizedSearch };
-  }
-}
+ const escapeRegex = (str) => {
+    if (!str) return '';
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
 
-  if (title) filter.title = { $regex: `^${sanitizeHtml(title, { allowedTags: [] })}`, $options: 'i' };
-  if (slug) filter.slug = sanitizeHtml(slug, { allowedTags: [] });
-  
+  // Search with sanitization and escape
+  if (search) {
+    const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} }).trim();
+    const escapedSearch = escapeRegex(sanitizedSearch);
+    if (escapedSearch.length >= 2) {
+      filter.$text = { $search: escapedSearch };
+    }
+  }
+if (title) {
+    const sanitizedTitle = sanitizeHtml(title, { allowedTags: [] }).trim();
+    const escapedTitle = escapeRegex(sanitizedTitle);
+    // Use exact match or case-insensitive search
+    filter.title = { 
+      $regex: `^${escapedTitle}`,
+      $options: 'i'
+    };
+  }
+  if (slug) {
+    const sanitizedSlug = sanitizeHtml(slug, { allowedTags: [] }).trim();
+    // Ensure slug format is valid (alphanumeric, hyphens)
+    if (/^[a-z0-9-]+$/.test(sanitizedSlug)) {
+      filter.slug = sanitizedSlug;
+    } else {
+      // Invalid slug format - don't filter
+      console.warn('Invalid slug format:', sanitizedSlug);
+    }
+  }
   if (category && mongoose.Types.ObjectId.isValid(category)) {
     filter.category = category;
   }
@@ -597,6 +617,7 @@ const getServices = async (req, res, next) => {
 
     // Build secure query
     const filter = buildSecureServiceQuery({
+      // Pass sanitized parameters
       search: search || q,
       title,
       slug,
@@ -628,7 +649,56 @@ const getServices = async (req, res, next) => {
       excludeIds,
       showAll: showAllFlag
     }, userRole, req.user?._id);
-
+const injectionPatterns = [
+      /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+      /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
+      /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+      /(\%3D)|(=)/i,
+      /((\%27)|(\'))\s*((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
+      /(\%7C)/i,
+      /((\%27)|(\'))union/i
+    ];
+    
+    // Validate all string parameters
+    const stringParams = { search, q, title, slug, sort, order, fields, excludeFields };
+    for (const [key, value] of Object.entries(stringParams)) {
+      if (value && typeof value === 'string') {
+        // Check for injection patterns
+        for (const pattern of injectionPatterns) {
+          if (pattern.test(value)) {
+            console.warn(`Potential injection attempt detected in ${key}:`, value);
+            return res.status(400).json({
+              success: false,
+              message: 'Invalid query parameters detected',
+              code: 'INVALID_PARAMETERS',
+              requestId,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+        
+        // Validate length
+        if (value.length > 500) {
+          return res.status(400).json({
+            success: false,
+            message: 'Query parameter too long',
+            code: 'PARAMETER_TOO_LONG',
+            requestId
+          });
+        }
+      }
+    }
+    const numericParams = { page, limit, minPrice, maxPrice, minRating, maxRating };
+    for (const [key, value] of Object.entries(numericParams)) {
+      if (value && isNaN(parseFloat(value))) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid numeric value for ${key}`,
+          code: 'INVALID_NUMERIC_VALUE',
+          requestId
+        });
+      }
+    }
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 12));
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
@@ -2061,6 +2131,8 @@ const getServiceStats = async (req, res, next) => {
 };
 
 // Bulk Operations
+// In your bulkUpdateServices function, update this section:
+
 const bulkUpdateServices = async (req, res, next) => {
   const requestId = generateRequestId();
   try {
@@ -2073,7 +2145,28 @@ const bulkUpdateServices = async (req, res, next) => {
       });
     }
 
-    const { ids, operation, data } = req.body;
+    // Fix: Get ids from request body - ensure it's an array
+    const { ids = [], operation, data } = req.body;
+
+    console.log('Bulk operation received:', { ids, operation, data }); // Add logging for debugging
+
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({
+        success: false,
+        message: 'IDs must be provided as an array',
+        code: 'INVALID_IDS_FORMAT',
+        requestId
+      });
+    }
+
+    if (ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No service IDs provided',
+        code: 'NO_IDS_PROVIDED',
+        requestId
+      });
+    }
 
     if (ids.length > 50) {
       return res.status(400).json({
@@ -2084,12 +2177,25 @@ const bulkUpdateServices = async (req, res, next) => {
       });
     }
 
-    const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    // Validate each ID
+    const validIds = ids.filter(id => {
+      const isValid = mongoose.Types.ObjectId.isValid(id);
+      if (!isValid) {
+        console.log('Invalid ID found:', id);
+      }
+      return isValid;
+    });
+    
     if (validIds.length !== ids.length) {
       return res.status(400).json({
         success: false,
         message: 'Invalid IDs found in request',
         code: 'INVALID_IDS',
+        details: {
+          totalProvided: ids.length,
+          validCount: validIds.length,
+          invalidCount: ids.length - validIds.length
+        },
         requestId
       });
     }
@@ -2116,7 +2222,8 @@ const bulkUpdateServices = async (req, res, next) => {
         success: false,
         message: 'Invalid bulk operation',
         code: 'INVALID_OPERATION',
-        requestId
+        requestId,
+        allowedOperations: Object.keys(allowedOperations)
       });
     }
 
@@ -2134,6 +2241,11 @@ const bulkUpdateServices = async (req, res, next) => {
       updateData.publishedAt = now;
     }
 
+    console.log('Executing bulk update with:', { 
+      filter: { _id: { $in: validIds } },
+      updateData 
+    });
+
     result = await Service.updateMany(
       { _id: { $in: validIds } },
       updateData,
@@ -2142,6 +2254,8 @@ const bulkUpdateServices = async (req, res, next) => {
         runValidators: operation === 'update'
       }
     );
+
+    console.log('Bulk update result:', result);
 
     // Invalidate cache for all affected services
     await invalidateAllServiceCache();
@@ -2167,6 +2281,8 @@ const bulkUpdateServices = async (req, res, next) => {
     });
 
   } catch (error) {
+    console.error('Bulk update error:', error);
+    
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
@@ -2181,7 +2297,15 @@ const bulkUpdateServices = async (req, res, next) => {
       operation: req.body?.operation,
       error: error.message
     });
-    next(error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to perform bulk operation',
+      error: error.message,
+      code: 'BULK_OPERATION_FAILED',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   }
 };
 
@@ -2497,11 +2621,12 @@ const searchServices = async (req, res, next) => {
   }
 };
 
-// Like/Unlike Service
 const toggleLike = async (req, res, next) => {
   const requestId = generateRequestId();
+  const { id } = req.params; // Define id here at the top
+  
   try {
-    const { id } = req.params;
+    // const { id } = req.params; // Remove this line from inside try block
     const { action = 'toggle' } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -2593,11 +2718,19 @@ const toggleLike = async (req, res, next) => {
 
   } catch (error) {
     logAudit('ERROR', 'SERVICE', 'TOGGLE_LIKE', req.user._id, { 
-      id, 
+      id, // Now id is defined in this scope
       action: req.body.action,
       error: error.message 
     });
-    next(error);
+    
+    // Send proper error response
+    res.status(500).json({
+      success: false,
+      message: 'Failed to toggle like',
+      error: error.message,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   }
 };
 
@@ -3477,16 +3610,19 @@ const getAllActiveServices = async (req, res, next) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
-    // Sort options
-    const sortOptions = {
-      createdAt: order === 'asc' ? 1 : -1,
-      rating: order === 'asc' ? 1 : -1,
-      views: order === 'asc' ? 1 : -1,
-      likes: order === 'asc' ? 1 : -1,
-      price: order === 'asc' ? 1 : -1
-    };
-
-    const sortObj = sortOptions[sort] || sortOptions.createdAt;
+    // FIXED: Proper sort object creation
+    const sortOrder = order === 'asc' ? 1 : -1;
+    let sortObj = {};
+    
+    // Define valid sort fields and create proper sort object
+    const validSortFields = ['createdAt', 'rating', 'price', 'views', 'likes', 'deliveryTime'];
+    
+    if (validSortFields.includes(sort)) {
+      sortObj[sort] = sortOrder;
+    } else {
+      // Default sort by createdAt descending
+      sortObj.createdAt = -1;
+    }
 
     // Generate cache key
     const cacheKey = generateCacheKey('all_active_services', {
@@ -3535,7 +3671,7 @@ const getAllActiveServices = async (req, res, next) => {
         Service.find(filter)
           .select('title slug shortDescription description price currency rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category subcategory createdBy tags status')
           .populate(populateOptions)
-          .sort(sortObj)
+          .sort(sortObj) // Now this will work correctly
           .skip(skip)
           .limit(limitNum)
           .lean(),
@@ -3602,7 +3738,8 @@ const getAllActiveServices = async (req, res, next) => {
     
     // Return empty array on error
     res.json({
-      success: true,
+      success: false, // Changed to false to indicate error
+      message: 'Error fetching services: ' + error.message,
       data: [],
       pagination: {
         page: 1,
@@ -3614,8 +3751,7 @@ const getAllActiveServices = async (req, res, next) => {
       },
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`,
-      message: 'Error fetching services'
+      responseTime: `${responseTime}ms`
     });
   }
 };

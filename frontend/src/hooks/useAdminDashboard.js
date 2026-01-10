@@ -597,6 +597,8 @@ export const useDeleteService = () => {
       }
       
       console.log('[USE DELETE SERVICE] Deleting with:', { id, options });
+      
+      // For admin delete, use the admin endpoint
       return await adminAPI.deleteService(id, options);
     },
     onMutate: async (params) => {

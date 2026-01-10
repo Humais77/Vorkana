@@ -557,6 +557,25 @@ router.delete('/services/:id',
   async (req, res, next) => {
     try {
       req.isAdmin = true;
+      
+      // Log the request details for debugging
+      console.log('[ADMIN DELETE SERVICE] Request received:', {
+        params: req.params,
+        query: req.query,
+        body: req.body,
+        admin: req.admin?.email,
+        adminRole: req.admin?.role
+      });
+      
+      // Ensure permanent parameter is passed correctly
+      if (req.query.permanent) {
+        req.query.permanent = String(req.query.permanent).toLowerCase();
+      }
+      
+      if (req.query.force) {
+        req.query.force = String(req.query.force).toLowerCase();
+      }
+      
       next();
     } catch (error) {
       console.error('[ADMIN DELETE SERVICE ERROR]', error);

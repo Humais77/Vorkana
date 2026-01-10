@@ -202,7 +202,14 @@ exportSubcategories: (format = 'csv') =>
   
   createService: (data) => adminApi.post('/api/admin/services', data), // You need to add this route
   updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
-  deleteService: (id) => adminApi.delete(`/api/admin/services/${id}`),
+deleteService: (id, options = {}) => 
+  adminApi.delete(`/api/admin/services/${id}`, { 
+    params: {
+      permanent: String(options.permanent || false).toLowerCase(),
+      force: String(options.force || false).toLowerCase(),
+      reason: options.reason || ''
+    }
+  }),
   bulkUpdateServices: ({ ids, operation, data = {} }) => 
   adminApi.post('/api/admin/services/bulk', { ids, operation, data }),
 exportServices: (format = 'csv') => 

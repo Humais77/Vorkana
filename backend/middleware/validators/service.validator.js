@@ -536,7 +536,194 @@ shortDescription: Joi.string()
   stripUnknown: true,
   abortEarly: false 
 });
+// Add this schema in your service.validator.js
+const bulkUpdateSchema = Joi.object({
+  title: Joi.string()
+    .min(5)
+    .max(200)
+    .custom((value) => sanitizeInput(value, { preventInjection: true }), 'XSS and injection prevention')
+    .optional()
+    .messages({
+      'string.min': 'Title must be at least 5 characters',
+      'string.max': 'Title cannot exceed 200 characters',
+      'any.custom': 'Title contains invalid characters',
+    }),
+  
+  description: Joi.string()
+    .min(50)
+    .max(5000)
+    .custom((value) => sanitizeInput(value, { allowHtml: true }), 'XSS prevention')
+    .optional()
+    .messages({
+      'string.min': 'Description must be at least 50 characters',
+      'string.max': 'Description cannot exceed 5000 characters',
+    }),
+  
+  shortDescription: Joi.string()
+    .min(20)
+    .max(250)
+    .custom((value) => sanitizeInput(value), 'XSS prevention')
+    .optional() // Changed from required to optional
+    .messages({
+      'string.min': 'Short description must be at least 20 characters',
+      'string.max': 'Short description cannot exceed 250 characters',
+    }),
+  
+  category: objectId
+    .optional()
+    .messages({
+      'any.invalid': 'Invalid category ID',
+    }),
+  
+  subcategory: objectId
+    .optional() // Changed from required to optional for bulk updates
+    .messages({
+      'any.invalid': 'Invalid subcategory ID',
+    }),
+  
+  price: Joi.number()
+    .min(1)
+    .max(100000)
+    .optional()
+    .messages({
+      'number.base': 'Price must be a number',
+      'number.min': 'Minimum price is $1',
+      'number.max': 'Maximum price is $100,000',
+    }),
+  
+  currency: Joi.string()
+    .valid('USD', 'EUR', 'GBP', 'CAD', 'AUD', 'INR', 'PKR')
+    .optional()
+    .messages({
+      'any.only': 'Invalid currency',
+    }),
+  
+  deliveryTime: Joi.number()
+    .min(1)
+    .max(365)
+    .optional()
+    .messages({
+      'number.base': 'Delivery time must be a number',
+      'number.min': 'Minimum delivery time is 1 day',
+      'number.max': 'Maximum delivery time is 365 days',
+    }),
+  
+  deliveryTimeUnit: Joi.string()
+    .valid('hours', 'days', 'weeks')
+    .optional()
+    .messages({
+      'any.only': 'Invalid delivery time unit',
+    }),
+  
+  revisions: Joi.number()
+    .min(0)
+    .max(99)
+    .optional()
+    .messages({
+      'number.min': 'Revisions cannot be negative',
+      'number.max': 'Maximum revisions is 99',
+    }),
+  
+  images: Joi.array()
+    .items(Joi.alternatives().try(
+      Joi.string().pattern(/^https?:\/\//),
+      imageObjectSchema
+    ))
+    .max(10)
+    .optional()
+    .messages({
+      'array.max': 'Cannot upload more than 10 images',
+    }),
 
+  thumbnail: Joi.alternatives().try(
+    Joi.string().pattern(/^https?:\/\//),
+    imageObjectSchema
+  ).optional().messages({
+    'alternatives.match': 'Thumbnail must be a valid URL or thumbnail object'
+  }),
+  
+  tags: Joi.array()
+    .items(Joi.string().max(30).custom((value) => sanitizeText(value), 'XSS prevention'))
+    .max(20)
+    .optional()
+    .messages({
+      'array.max': 'Cannot have more than 20 tags',
+      'string.max': 'Tag cannot exceed 30 characters',
+    }),
+  
+  features: Joi.array()
+    .items(featureSchema)
+    .max(20)
+    .optional()
+    .messages({
+      'array.max': 'Cannot have more than 20 features',
+    }),
+  
+  requirements: Joi.array()
+    .items(requirementSchema)
+    .max(10)
+    .optional()
+    .messages({
+      'array.max': 'Cannot have more than 10 requirements',
+    }),
+  
+  faqs: Joi.array()
+    .items(faqSchema)
+    .max(15)
+    .optional()
+    .messages({
+      'array.max': 'Cannot have more than 15 FAQs',
+    }),
+  
+  status: Joi.string()
+    .valid('draft', 'pending', 'active', 'paused', 'denied', 'suspended')
+    .optional()
+    .messages({
+      'any.only': 'Invalid status',
+    }),
+  
+  isFeatured: Joi.boolean()
+    .optional(),
+  
+  isRecommended: Joi.boolean()
+    .optional(),
+  
+  isPopular: Joi.boolean()
+    .optional(),
+  
+  searchKeywords: Joi.array()
+    .items(Joi.string().max(30).custom((value) => sanitizeText(value), 'XSS prevention'))
+    .max(30)
+    .optional()
+    .messages({
+      'array.max': 'Cannot have more than 30 search keywords',
+      'string.max': 'Keyword cannot exceed 30 characters',
+    }),
+  
+  metaTitle: Joi.string()
+    .max(60)
+    .custom((value) => sanitizeInput(value || ''), 'XSS prevention')
+    .allow('')
+    .optional()
+    .messages({
+      'string.max': 'Meta title cannot exceed 60 characters',
+    }),
+  
+  metaDescription: Joi.string()
+    .max(160)
+    .custom((value) => sanitizeInput(value || ''), 'XSS prevention')
+    .allow('')
+    .optional()
+    .messages({
+      'string.max': 'Meta description cannot exceed 160 characters',
+    }),
+  
+}).options({ 
+  stripUnknown: true,
+  abortEarly: false 
+});
+
+// Then update the bulkSchema to use bulkUpdateSchema instead of updateSchema
 const bulkSchema = Joi.object({
   ids: Joi.array()
     .items(objectId)
@@ -561,7 +748,7 @@ const bulkSchema = Joi.object({
   data: Joi.object()
     .when('operation', {
       is: 'update',
-      then: updateSchema.required(),
+      then: bulkUpdateSchema.required(), 
       otherwise: Joi.object().optional(),
     }),
 }).options({ 
@@ -639,6 +826,32 @@ const querySchema = Joi.object({
 
 const validateCreate = (req, res, next) => {
   try {
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      // Parse array fields from FormData strings
+      const arrayFields = ['tags', 'features', 'faqs', 'requirements', 'searchKeywords', 'images'];
+      
+      arrayFields.forEach(field => {
+        if (req.body[field] && typeof req.body[field] === 'string') {
+          try {
+            req.body[field] = JSON.parse(req.body[field]);
+          } catch (e) {
+            // If parsing fails, treat as comma-separated string (for tags)
+            if (field === 'tags' || field === 'searchKeywords') {
+              req.body[field] = req.body[field].split(',').map(t => t.trim());
+            }
+          }
+        }
+      });
+      
+      // Handle thumbnail as object
+      if (req.body.thumbnail && typeof req.body.thumbnail === 'string') {
+        try {
+          req.body.thumbnail = JSON.parse(req.body.thumbnail);
+        } catch (e) {
+          // Keep as string URL if parsing fails
+        }
+      }
+    }
     const { error, value } = createSchema.validate(req.body, { 
       abortEarly: false,
       allowUnknown: false 

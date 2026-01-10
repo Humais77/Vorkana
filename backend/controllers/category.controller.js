@@ -1318,11 +1318,15 @@ const updateCategory = async (req, res, next) => {
       }
     }
 
-    // Prepare update data
+    // *** CRITICAL FIX: Remove version from sanitizedData if present ***
+    // MongoDB cannot have both direct version update and $inc version update
+    delete sanitizedData.version;
+    
+    // Prepare update data - only increment version using $inc operator
     const updateData = {
       ...sanitizedData,
       lastUpdatedBy: req.user._id,
-      $inc: { version: 1 }
+      $inc: { version: 1 } // Use only $inc operator for version
     };
 
     // Update the category
@@ -1358,7 +1362,8 @@ const updateCategory = async (req, res, next) => {
     logAudit('UPDATE', 'CATEGORY', id, req.user._id, {
       oldName: existingCategory.name,
       newName: updatedCategory.name,
-      changedFields: Object.keys(sanitizedData)
+      changedFields: Object.keys(sanitizedData),
+      newVersion: updatedCategory.version
     });
 
     // Invalidate cache after update
@@ -1409,21 +1414,32 @@ const updateCategory = async (req, res, next) => {
       });
     }
     
+    // Handle MongoDB conflicting update error
+    if (error.code === 40 || error.codeName === 'ConflictingUpdateOperators') {
+      return res.status(400).json({
+        success: false,
+        message: 'Update conflict detected. Version field cannot be updated directly.',
+        code: 'UPDATE_CONFLICT',
+        requestId
+      });
+    }
+    
     console.error('[UPDATE CATEGORY ERROR]', error);
     logAudit('ERROR', 'CATEGORY', 'UPDATE', req.user._id, { 
       id: req.params.id, 
-      error: error.message 
+      error: error.message,
+      code: error.code
     });
     
     res.status(500).json({
       success: false,
       message: 'Failed to update category',
       code: 'CATEGORY_UPDATE_ERROR',
-      requestId
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
-
 
 // Delete Category with Security (Admin Only)
 const deleteCategory = async (req, res, next) => {
@@ -1941,7 +1957,6 @@ const getCategoryStats = async (req, res, next) => {
   }
 };
 
-// Bulk Operations with Security
 const bulkUpdateCategories = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -2025,17 +2040,26 @@ const bulkUpdateCategories = async (req, res, next) => {
       updatedAt: now
     };
 
-    // Add version increment for updates
+    // *** FIX: Remove version from data if it exists ***
+    if (operation === 'update' && data && data.version) {
+      delete updateData.version;
+    }
+
+    // Add version increment for updates - but only if not already in data
     if (operation === 'update') {
       updateData.$inc = { version: 1 };
     }
 
-    // Add ownership or scope filtering:
+    // *** FIX: For admins, no need to check createdBy ownership ***
     const filter = { 
       _id: { $in: validIds },
-      // Add scope limitation for non-admin users
-      ...(req.user.role !== 'admin' ? { createdBy: req.user._id } : {})
+      deletedAt: null // Only update non-deleted categories
     };
+
+    // Only apply ownership filter for non-admin users
+    // if (req.user.role !== 'admin') {
+    //   filter.createdBy = req.user._id;
+    // }
 
     result = await Category.updateMany(
       filter,
@@ -2046,18 +2070,24 @@ const bulkUpdateCategories = async (req, res, next) => {
       }
     );
 
-    // Check if all IDs were processed
+    // *** FIX: Check if categories exist, not if user created them ***
     if (result.matchedCount < validIds.length) {
-      // Some IDs were not authorized or not found
-      const processedIds = await Category.find(filter).select('_id');
-      const unauthorizedIds = validIds.filter(id => 
-        !processedIds.some(processed => processed._id.toString() === id)
-      );
+      // Find which IDs don't exist or are deleted
+      const existingCategories = await Category.find({ 
+        _id: { $in: validIds },
+        deletedAt: null 
+      }).select('_id');
       
-      return res.status(403).json({
+      const existingIds = existingCategories.map(cat => cat._id.toString());
+      const notFoundIds = validIds.filter(id => !existingIds.includes(id));
+      
+      return res.status(404).json({
         success: false,
-        message: 'Some categories could not be updated due to authorization',
-        unauthorizedIds,
+        message: 'Some categories not found or are deleted',
+        notFoundIds,
+        matched: result.matchedCount,
+        total: validIds.length,
+        code: 'CATEGORIES_NOT_FOUND',
         requestId
       });
     }
@@ -2091,11 +2121,22 @@ const bulkUpdateCategories = async (req, res, next) => {
   } catch (error) {
     // Security: Handle bulk operation errors
     if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
         success: false,
         message: 'Validation failed in bulk update',
-        errors: Object.values(error.errors).map(err => err.message),
+        errors: messages,
         code: 'BULK_VALIDATION_ERROR',
+        requestId
+      });
+    }
+
+    // Handle MongoDB conflicting update error
+    if (error.code === 40 || error.codeName === 'ConflictingUpdateOperators') {
+      return res.status(400).json({
+        success: false,
+        message: 'Update conflict detected. Remove version field from update data.',
+        code: 'UPDATE_CONFLICT',
         requestId
       });
     }
