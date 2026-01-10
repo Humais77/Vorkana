@@ -10,13 +10,12 @@ const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // IMPORTANT: Enables cookie sending
+  withCredentials: true,
 });
 
-// Request interceptor - simplified
+// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Add request ID
     config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     return config;
   },
@@ -29,30 +28,24 @@ axiosInstance.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle 401 - Token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      // Skip auth endpoints
       if (originalRequest.url.includes('/api/auth')) {
         return Promise.reject(error);
       }
       
       try {
-        // Try to refresh token via cookie
         await axiosInstance.post('/api/auth/refresh', {}, {
           withCredentials: true
         });
         
-        // Retry original request
         return axiosInstance(originalRequest);
       } catch (refreshError) {
-        // Clear client-side state
         if (typeof window !== 'undefined') {
           localStorage.removeItem('userInfo');
         }
         
-        // Redirect to login if not on auth pages
         if (!window.location.pathname.includes('/signin') && 
             !window.location.pathname.includes('/signup')) {
           window.location.href = '/signin';
@@ -63,7 +56,6 @@ axiosInstance.interceptors.response.use(
     }
     
     if (error.response?.status === 401) {
-      // Clear auth data on unauthorized
       localStorage.removeItem('userInfo');
     }
     
@@ -71,7 +63,7 @@ axiosInstance.interceptors.response.use(
   }
 );
 
-// Validation Schema (unchanged)
+// Validation Schema
 const SubcategorySchema = z.object({
   name: z.string()
     .min(2, 'Subcategory name must be at least 2 characters')
@@ -94,22 +86,20 @@ const SubcategorySchema = z.object({
     .default('📁'),
 });
 
-
 // Main API object
 export const subcategoriesAPI = {
   /**
-   * Get all subcategories
+   * Get all subcategories - REAL DATA ONLY
    */
   getAll: async (params = {}) => {
     try {
       const response = await axiosInstance.get('/api/subcategories', { 
         params: {
           ...params,
-          _t: Date.now() // Cache busting
+          _t: Date.now()
         }
       });
       
-      // Handle different response structures
       let subcategories = [];
       
       if (response.data?.success && Array.isArray(response.data.data)) {
@@ -124,6 +114,7 @@ export const subcategoriesAPI = {
       
     } catch (error) {
       console.error('Get subcategories error:', error);
+      
       throw error;
     }
   },
@@ -147,121 +138,114 @@ export const subcategoriesAPI = {
   },
   
   /**
-   * Get subcategories by category ID
+   * Get subcategories by category ID or slug
    */
-getByCategory: async (categoryIdentifier, params = {}) => {
-  try {
-    if (!categoryIdentifier || typeof categoryIdentifier !== 'string' || categoryIdentifier.trim() === '') {
-      throw new Error('Invalid category identifier');
-    }
-
-    // Check if it's an ObjectId (24 hex chars) or a slug
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(categoryIdentifier);
-    
-    let url;
-    if (isObjectId) {
-      // It's a MongoDB ObjectId
-      url = `/api/subcategories/category/${categoryIdentifier}`;
-    } else {
-      // It's a slug - use a different endpoint
-      url = `/api/subcategories/category-by-slug/${categoryIdentifier}`;
-    }
-    
-    const response = await axiosInstance.get(url, { 
-      params: {
-        activeOnly: true,
-        ...params
+  getByCategory: async (categoryIdentifier, params = {}) => {
+    try {
+      if (!categoryIdentifier || typeof categoryIdentifier !== 'string' || categoryIdentifier.trim() === '') {
+        throw new Error('Invalid category identifier');
       }
-    });
-    
-    // Handle response
-    if (response.data?.success) {
+
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(categoryIdentifier);
+      
+      let url;
+      if (isObjectId) {
+        url = `/api/subcategories/category/${categoryIdentifier}`;
+      } else {
+        url = `/api/subcategories/category-by-slug/${categoryIdentifier}`;
+      }
+      
+      const response = await axiosInstance.get(url, { 
+        params: {
+          activeOnly: true,
+          ...params
+        }
+      });
+      
+      if (response.data?.success) {
+        return {
+          subcategories: response.data.data || [],
+          category: response.data.category,
+          count: response.data.count || 0
+        };
+      }
+      
       return {
-        subcategories: response.data.data || [],
-        category: response.data.category,
-        count: response.data.count || 0
+        subcategories: response.data || [],
+        category: null,
+        count: response.data?.length || 0
+      };
+      
+    } catch (error) {
+      console.error('Get subcategories by category error:', error);
+      
+      // Return empty data instead of throwing
+      return {
+        subcategories: [],
+        category: null,
+        count: 0,
+        error: error.message
       };
     }
-    
-    return {
-      subcategories: response.data || [],
-      category: null,
-      count: response.data?.length || 0
-    };
-    
-  } catch (error) {
-    console.error('Get subcategories by category error:', error);
-    
-    // Return empty structure instead of throwing
-    return {
-      subcategories: [],
-      category: null,
-      count: 0,
-      error: error.message
-    };
-  }
-},
+  },
+  
   getByIdOrSlug: async (identifier) => {
-  try {
-    // First check if it's an ObjectId
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(identifier);
-    
-    let url;
-    if (isObjectId) {
-      url = `/api/subcategories/${identifier}`;
-    } else {
-      // It's a slug - use a different endpoint or modify backend
-      // If your backend doesn't support slug lookup, you'll need to handle it differently
-      url = `/api/subcategories/slug/${identifier}`;
-    }
-    
-    const response = await axiosInstance.get(url);
-    
-    if (response.data?.success) {
-      return response.data.data;
-    }
-    return response.data;
-    
-  } catch (error) {
-    console.error('Get subcategory by ID or slug error:', error);
-    
-    // If the slug endpoint doesn't exist, fall back to fetching all and filtering
-    if (error.response?.status === 404 && !/^[0-9a-fA-F]{24}$/.test(identifier)) {
-      try {
-        // Try to fetch all subcategories and find by slug
-        const allResponse = await axiosInstance.get('/api/subcategories', {
-          params: { activeOnly: true, limit: 100 }
-        });
-        
-        let subcategories = [];
-        if (allResponse.data?.success && Array.isArray(allResponse.data.data)) {
-          subcategories = allResponse.data.data;
-        } else if (Array.isArray(allResponse.data)) {
-          subcategories = allResponse.data;
-        }
-        
-        const foundSubcategory = subcategories.find(sub => 
-          sub.slug === identifier || 
-          sub.name.toLowerCase().replace(/\s+/g, '-') === identifier
-        );
-        
-        if (foundSubcategory) {
-          return foundSubcategory;
-        }
-      } catch (fallbackError) {
-        console.error('Fallback search error:', fallbackError);
+    try {
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(identifier);
+      
+      let url;
+      if (isObjectId) {
+        url = `/api/subcategories/${identifier}`;
+      } else {
+        url = `/api/subcategories/slug/${identifier}`;
       }
+      
+      const response = await axiosInstance.get(url);
+      
+      if (response.data?.success) {
+        return response.data.data;
+      }
+      return response.data;
+      
+    } catch (error) {
+      console.error('Get subcategory by ID or slug error:', error);
+      
+      // Try to fetch all and filter if slug endpoint doesn't exist
+      if (error.response?.status === 404 && !/^[0-9a-fA-F]{24}$/.test(identifier)) {
+        try {
+          const allResponse = await axiosInstance.get('/api/subcategories', {
+            params: { activeOnly: true, limit: 100 }
+          });
+          
+          let subcategories = [];
+          if (allResponse.data?.success && Array.isArray(allResponse.data.data)) {
+            subcategories = allResponse.data.data;
+          } else if (Array.isArray(allResponse.data)) {
+            subcategories = allResponse.data;
+          }
+          
+          const foundSubcategory = subcategories.find(sub => 
+            sub.slug === identifier || 
+            sub.name.toLowerCase().replace(/\s+/g, '-') === identifier
+          );
+          
+          if (foundSubcategory) {
+            return foundSubcategory;
+          }
+        } catch (fallbackError) {
+          console.error('Fallback search error:', fallbackError);
+        }
+      }
+      
+      throw error;
     }
-    
-    throw error;
-  }
-},
+  },
+  
   /**
    * Create subcategory (admin only)
    */
   create: async (subcategoryData) => {
     try {
-      // Validate input
       const validatedData = SubcategorySchema.parse(subcategoryData);
       
       const response = await axiosInstance.post('/api/subcategories', validatedData);
@@ -391,73 +375,5 @@ getByCategory: async (categoryIdentifier, params = {}) => {
       console.error('Bulk operation error:', error);
       throw error;
     }
-  }
-};
-
-// Mock data for development
-const getMockSubcategories = (categoryId = null) => {
-  const mockSubcategories = [
-    {
-      _id: '1a',
-      name: 'Frontend Development',
-      slug: 'frontend-development',
-      description: 'React, Vue, Angular development',
-      category: '1',
-      order: 1,
-      servicesCount: 75,
-      gigsCount: 20,
-      isActive: true,
-      createdAt: '2024-01-01T00:00:00.000Z',
-      updatedAt: '2024-01-01T00:00:00.000Z'
-    },
-    {
-      _id: '1b',
-      name: 'Backend Development',
-      slug: 'backend-development',
-      description: 'Node.js, Python, PHP backend services',
-      category: '1',
-      order: 2,
-      servicesCount: 65,
-      gigsCount: 18,
-      isActive: true,
-      createdAt: '2024-01-01T00:00:00.000Z',
-      updatedAt: '2024-01-01T00:00:00.000Z'
-    },
-    {
-      _id: '2a',
-      name: 'Logo Design',
-      slug: 'logo-design',
-      description: 'Professional logo design services',
-      category: '2',
-      order: 1,
-      servicesCount: 45,
-      gigsCount: 12,
-      isActive: true,
-      createdAt: '2024-01-01T00:00:00.000Z',
-      updatedAt: '2024-01-01T00:00:00.000Z'
-    }
-  ];
-  
-  if (categoryId) {
-    return mockSubcategories.filter(sub => sub.category === categoryId);
-  }
-  
-  return mockSubcategories;
-};
-
-// Export mock functions for testing
-export const mockSubcategoriesAPI = {
-  getAll: async (params = {}) => {
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate network delay
-    return getMockSubcategories(params.category);
-  },
-  
-  getByCategory: async (categoryId) => {
-    await new Promise(resolve => setTimeout(resolve, 200));
-    return {
-      subcategories: getMockSubcategories(categoryId),
-      category: { _id: categoryId, name: 'Mock Category' },
-      count: getMockSubcategories(categoryId).length
-    };
   }
 };

@@ -22,7 +22,6 @@ import { useServices, useSearchServices, useCategories } from "../../../hooks/us
 import { useToggleLike } from "../../../hooks/useServices";
 import { toast } from "react-hot-toast";
 import { SeoWrapper } from "../../../components/SeoWrapper";
-import heroBg from "../../../assets/bg.png";
 
 const ServiceListingPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -293,8 +292,9 @@ const ServiceListingPage = () => {
     { value: 'delivery', label: 'Fastest Delivery' }
   ], []);
 
-  // Get service thumbnail
+  // Get service thumbnail - ONLY FROM DATABASE
   const getServiceThumbnail = useCallback((service) => {
+    // Only return image if it exists in database
     if (service.thumbnail?.url) {
       return service.thumbnail.url;
     }
@@ -302,45 +302,81 @@ const ServiceListingPage = () => {
     if (service.images && service.images.length > 0 && service.images[0]?.url) {
       return service.images[0].url;
     }
-    
-    const categoryName = service.categoryDetails?.name?.toLowerCase() || '';
-    if (categoryName.includes('design') || categoryName.includes('art')) {
-      return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('development') || categoryName.includes('programming')) {
-      return 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('writing') || categoryName.includes('content')) {
-      return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else {
-      return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    }
+    return null;
   }, []);
 
-  // Get seller information
+  // Get user initials for avatar
+  const getUserInitials = useCallback((userInfo) => {
+    if (!userInfo) return '?';
+    
+    if (userInfo.name && typeof userInfo.name === 'string' && userInfo.name.trim()) {
+      const names = userInfo.name.trim().split(' ');
+      if (names.length >= 2) {
+        return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
+      }
+      return names[0].charAt(0).toUpperCase();
+    }
+    
+    if (userInfo.username && typeof userInfo.username === 'string' && userInfo.username.trim()) {
+      return userInfo.username.charAt(0).toUpperCase();
+    }
+    
+    if (userInfo.email && typeof userInfo.email === 'string' && userInfo.email.trim()) {
+      return userInfo.email.charAt(0).toUpperCase();
+    }
+    
+    return '?';
+  }, []);
+
   const getUserInfo = useCallback((service) => {
+    if (!service) return null;
+    
+    // First check for createdBy object from populated data
     if (service.createdBy && typeof service.createdBy === 'object') {
       return {
-        username: service.createdBy.name || 'Service Provider',
-        avatar: service.createdBy.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        verified: service.createdBy.emailVerified || false,
-        level: service.createdBy.accountType || 'Basic'
+        _id: service.createdBy._id,
+        username: service.createdBy.username || '',
+        name: service.createdBy.name || '',
+        email: service.createdBy.email || '',
+        picture: service.createdBy.picture || '',
+        emailVerified: service.createdBy.emailVerified || false,
+        accountType: service.createdBy.accountType || '',
+        rating: service.createdBy.rating || 0,
+        reviewCount: service.createdBy.reviewCount || service.createdBy.totalReviews || 0
       };
     }
     
+    // Then check for sellerDetails
+    if (service.sellerDetails && typeof service.sellerDetails === 'object') {
+      return {
+        _id: service.sellerDetails._id,
+        username: service.sellerDetails.username || '',
+        name: service.sellerDetails.name || '',
+        email: service.sellerDetails.email || '',
+        picture: service.sellerDetails.picture || '',
+        emailVerified: service.sellerDetails.emailVerified || false,
+        accountType: service.sellerDetails.accountType || '',
+        rating: service.sellerDetails.rating || 0,
+        reviewCount: service.sellerDetails.reviewCount || service.sellerDetails.totalReviews || 0
+      };
+    }
+    
+    // Then check for creatorDetails
     if (service.creatorDetails && typeof service.creatorDetails === 'object') {
       return {
-        username: service.creatorDetails.name || 'Service Provider',
-        avatar: service.creatorDetails.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        verified: service.creatorDetails.emailVerified || false,
-        level: service.creatorDetails.accountType || 'Basic'
+        _id: service.creatorDetails._id,
+        username: service.creatorDetails.username || '',
+        name: service.creatorDetails.name || '',
+        email: service.creatorDetails.email || '',
+        picture: service.creatorDetails.picture || '',
+        emailVerified: service.creatorDetails.emailVerified || false,
+        accountType: service.creatorDetails.accountType || service.creatorDetails.level || '',
+        rating: service.creatorDetails.rating || 0,
+        reviewCount: service.creatorDetails.reviewCount || service.creatorDetails.totalReviews || 0
       };
     }
     
-    return {
-      username: 'Service Provider',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-      verified: false,
-      level: 'Basic'
-    };
+    return null;
   }, []);
 
   // Get current category name for SEO
@@ -401,27 +437,19 @@ const ServiceListingPage = () => {
       ogImage="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
     >
-      <div className="min-h-screen bg-white">
-        {/* Hero Section with heroBg */}
-        <div 
-          className="relative text-white py-16 px-4"
-          style={{
-            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${heroBg})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
-          }}
-        >
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        {/* Hero Section with simple background */}
+        <div className="relative bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 text-white py-16 px-4">
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <h1 className="text-4xl md:text-5xl font-bold mb-4">
                 Discover Amazing Services
               </h1>
-              <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
+              <p className="text-lg md:text-xl text-gray-100 mb-8 max-w-3xl mx-auto">
                 Find the perfect service for your needs from our talented professionals
               </p>
               
-              {/* Search Bar - unchanged */}
+              {/* Search Bar */}
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
@@ -449,7 +477,7 @@ const ServiceListingPage = () => {
                   </div>
                 </form>
                 
-                {/* Quick Categories - unchanged */}
+                {/* Quick Categories */}
                 {!isLoadingCategories && categories.length > 1 && (
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
@@ -499,7 +527,7 @@ const ServiceListingPage = () => {
           )}
 
           {/* Filters and Sorting Bar */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 shadow-sm">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-3">
                 <button
@@ -627,16 +655,22 @@ const ServiceListingPage = () => {
                       onClick={() => handleViewDetails(service._id, service.slug)}
                     >
                       {/* Service Image */}
-                      <div className="relative h-40 overflow-hidden">
-                        <img
-                          src={thumbnailUrl}
-                          alt={service.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                      <div className="relative h-40 overflow-hidden bg-gray-100">
+                        {thumbnailUrl ? (
+                          <>
+                            <img
+                              src={thumbnailUrl}
+                              alt={service.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+                            <ImageIcon className="w-12 h-12 mb-2" />
+                            <span className="text-sm">No image</span>
+                          </div>
+                        )}
                         
                         {/* Favorite Button */}
                         <button
@@ -665,21 +699,76 @@ const ServiceListingPage = () => {
                       <div className="p-4">
                         {/* Seller Info */}
                         <div className="flex items-center gap-2 mb-3">
-                          <img
-                            src={userInfo.avatar}
-                            alt={userInfo.username}
-                            className="w-8 h-8 rounded-full object-cover border border-gray-300"
-                          />
-                          <div>
-                            <div className="flex items-center gap-1">
-                              <h4 className="font-medium text-gray-900 text-sm">
-                                {userInfo.username}
-                              </h4>
-                              {userInfo.verified && (
-                                <CheckCircle className="w-3 h-3 text-gray-600" />
-                              )}
-                            </div>
-                            <span className="text-xs text-gray-500 capitalize">{userInfo.level}</span>
+                          <div className="relative">
+                            {userInfo?.picture ? (
+                              <img
+                                src={userInfo.picture}
+                                alt={userInfo.name || userInfo.username || 'Seller'}
+                                className="w-8 h-8 rounded-full object-cover border border-gray-300"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center">
+                                <span className="text-xs font-medium text-gray-600">
+                                  {getUserInitials(userInfo)}
+                                </span>
+                              </div>
+                            )}
+                            {userInfo?.emailVerified && (
+                              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center border border-white">
+                                <CheckCircle className="w-3 h-3 text-white" fill="white" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            {userInfo ? (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <h4 className="font-medium text-gray-900 text-sm truncate">
+                                    {userInfo.name || userInfo.username || 'Seller'}
+                                  </h4>
+                                  {userInfo.emailVerified && (
+                                    <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
+                                  )}
+                                </div>
+                                {userInfo.email ? (
+                                  <p className="text-xs text-gray-500 truncate" title={userInfo.email}>
+                                    {userInfo.email}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-gray-400 italic">
+                                    No email available
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {userInfo.accountType && (
+                                    <span className="text-xs text-gray-400 capitalize">
+                                      {userInfo.accountType}
+                                    </span>
+                                  )}
+                                  {userInfo.rating > 0 && (
+                                    <>
+                                      <span className="text-xs text-gray-300">•</span>
+                                      <div className="flex items-center">
+                                        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                                        <span className="text-xs font-medium text-gray-600 ml-1">
+                                          {userInfo.rating.toFixed(1)}
+                                        </span>
+                                        {userInfo.reviewCount > 0 && (
+                                          <span className="text-xs text-gray-400 ml-1">
+                                            ({userInfo.reviewCount})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-xs text-gray-500 italic">
+                                Seller information not available
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -793,12 +882,13 @@ const ServiceListingPage = () => {
               )}
             </div>
           )}
+          
           {/* CTA Section */}
-          <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
+          <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-lg p-6 text-center text-white mb-6">
             <h2 className="text-2xl font-bold mb-3">
               Ready to find your perfect service?
             </h2>
-            <p className="text-gray-300 mb-4 max-w-2xl mx-auto">
+            <p className="text-gray-100 mb-4 max-w-2xl mx-auto">
               Join thousands of satisfied customers who found exactly what they needed
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -806,7 +896,7 @@ const ServiceListingPage = () => {
                 onClick={() => navigate('/dashboard')}
                 className="px-6 py-2.5 bg-white text-gray-900 font-bold rounded-md hover:bg-gray-100 transition-colors"
               >
-                Offer Your Servivce
+                Offer Your Service
               </button>
               <button 
                 onClick={() => navigate('/gigs')}

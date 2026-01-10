@@ -20,13 +20,13 @@ import {
   Calendar,
   Zap,
   Users,
-  ArrowLeft
+  ArrowLeft,
+  User
 } from 'lucide-react';
 import { useGigs } from '../../../hooks/useGigs';
 import { useCategories } from '../../../hooks/useServices';
 import { toast } from 'react-hot-toast';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-import heroBg from "../../../../assets/bg.png";
 
 const GigListingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -321,8 +321,9 @@ const GigListingsPage = () => {
     { value: 'in_progress', label: 'In Progress' }
   ], []);
 
-  // Get gig thumbnail
+  // Get gig thumbnail - ONLY FROM DATABASE
   const getGigThumbnail = useCallback((gig) => {
+    // Only return image if it exists in database
     if (gig.thumbnail?.url) {
       return gig.thumbnail.url;
     }
@@ -331,37 +332,66 @@ const GigListingsPage = () => {
       return gig.images[0].url;
     }
     
-    if (gig.attachments && gig.attachments.length > 0) {
-      return gig.attachments[0];
-    }
-    
-    const categoryName = gig.projectCategory?.name?.toLowerCase() || '';
-    if (categoryName.includes('design') || categoryName.includes('art')) {
-      return 'https://images.unsplash.com/photo-1558655146-9f40138edfeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('development') || categoryName.includes('programming')) {
-      return 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else if (categoryName.includes('writing') || categoryName.includes('content')) {
-      return 'https://images.unsplash.com/photo-1455390582262-044cdead277a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    } else {
-      return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-    }
+    // NO FALLBACK IMAGE - return null or placeholder if needed
+    return null;
   }, []);
 
-  // Get client information
+  // Get client info - PURELY FROM DATABASE
   const getClientInfo = useCallback((gig) => {
+    if (!gig) return null;
+    
+    // First check for createdBy object from populated data
     if (gig.createdBy && typeof gig.createdBy === 'object') {
       return {
-        username: gig.createdBy.name || 'Client',
-        avatar: gig.createdBy.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        verified: gig.createdBy.emailVerified || false
+        _id: gig.createdBy._id,
+        username: gig.createdBy.username || '',
+        name: gig.createdBy.name || '',
+        email: gig.createdBy.email || '',
+        picture: gig.createdBy.picture || '',
+        emailVerified: gig.createdBy.emailVerified || false,
+        accountType: gig.createdBy.accountType || '',
+        rating: gig.createdBy.rating || 0
       };
     }
     
-    return {
-      username: 'Client',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-      verified: false
-    };
+    // Then check for clientDetails
+    if (gig.clientDetails && typeof gig.clientDetails === 'object') {
+      return {
+        _id: gig.clientDetails._id,
+        username: gig.clientDetails.username || '',
+        name: gig.clientDetails.name || '',
+        email: gig.clientDetails.email || '',
+        picture: gig.clientDetails.picture || '',
+        emailVerified: gig.clientDetails.emailVerified || false,
+        accountType: gig.clientDetails.accountType || '',
+        rating: gig.clientDetails.rating || 0
+      };
+    }
+    
+    return null;
+  }, []);
+
+  // Get user initials for avatar
+  const getUserInitials = useCallback((userInfo) => {
+    if (!userInfo) return '?';
+    
+    if (userInfo.name && typeof userInfo.name === 'string' && userInfo.name.trim()) {
+      const names = userInfo.name.trim().split(' ');
+      if (names.length >= 2) {
+        return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
+      }
+      return names[0].charAt(0).toUpperCase();
+    }
+    
+    if (userInfo.username && typeof userInfo.username === 'string' && userInfo.username.trim()) {
+      return userInfo.username.charAt(0).toUpperCase();
+    }
+    
+    if (userInfo.email && typeof userInfo.email === 'string' && userInfo.email.trim()) {
+      return userInfo.email.charAt(0).toUpperCase();
+    }
+    
+    return '?';
   }, []);
 
   // Get current category name for SEO
@@ -422,17 +452,9 @@ const GigListingsPage = () => {
       ogImage="https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
       ogType="website"
     >
-      <div className="min-h-screen bg-white">
-        {/* Hero Section */}
-        <div 
-          className="relative text-white py-16 px-4"
-          style={{
-            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url(${heroBg})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
-          }}
-        >
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+        {/* Hero Section with simple background */}
+        <div className="relative bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 text-white py-16 px-4">
           <div className="relative max-w-7xl mx-auto">
             <div className="text-center">
               <div className="flex items-center justify-center mb-6">
@@ -444,7 +466,7 @@ const GigListingsPage = () => {
                 Discover freelance projects that match your skills and get paid for your expertise
               </p>
               
-              {/* Search Bar - unchanged */}
+              {/* Search Bar */}
               <div className="max-w-3xl mx-auto relative">
                 <form onSubmit={handleSearch}>
                   <div className="relative">
@@ -472,7 +494,7 @@ const GigListingsPage = () => {
                   </div>
                 </form>
                 
-                {/* Quick Categories - unchanged */}
+                {/* Quick Categories */}
                 {!isLoadingCategories && categories.length > 1 && (
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {categories.slice(1, 7).map(category => (
@@ -520,7 +542,7 @@ const GigListingsPage = () => {
           )}
 
           {/* Filters and Sorting Bar */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 shadow-sm">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-3">
                 <button
@@ -691,16 +713,22 @@ const GigListingsPage = () => {
                       onClick={() => handleViewDetails(gig._id, gig.slug)}
                     >
                       {/* Gig Image */}
-                      <div className="relative h-40 overflow-hidden">
-                        <img
-                          src={thumbnailUrl}
-                          alt={gig.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                      <div className="relative h-40 overflow-hidden bg-gray-100">
+                        {thumbnailUrl ? (
+                          <>
+                            <img
+                              src={thumbnailUrl}
+                              alt={gig.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+                            <ImageIcon className="w-12 h-12 mb-2" />
+                            <span className="text-sm">No image</span>
+                          </div>
+                        )}
                         
                         {/* Favorite Button */}
                         <button
@@ -729,21 +757,58 @@ const GigListingsPage = () => {
                       <div className="p-4">
                         {/* Client Info */}
                         <div className="flex items-center gap-2 mb-3">
-                          <img
-                            src={clientInfo.avatar}
-                            alt={clientInfo.username}
-                            className="w-8 h-8 rounded-full object-cover border border-gray-300"
-                          />
-                          <div>
-                            <div className="flex items-center gap-1">
-                              <h4 className="font-medium text-gray-900 text-sm">
-                                {clientInfo.username}
-                              </h4>
-                              {clientInfo.verified && (
-                                <CheckCircle className="w-3 h-3 text-gray-600" />
-                              )}
-                            </div>
-                            <span className="text-xs text-gray-500">Client</span>
+                          <div className="relative">
+                            {clientInfo?.picture ? (
+                              <img
+                                src={clientInfo.picture}
+                                alt={clientInfo.name || clientInfo.username || 'Client'}
+                                className="w-8 h-8 rounded-full object-cover border border-gray-300"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center">
+                                <span className="text-xs font-medium text-gray-600">
+                                  {getUserInitials(clientInfo)}
+                                </span>
+                              </div>
+                            )}
+                            {clientInfo?.emailVerified && (
+                              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center border border-white">
+                                <CheckCircle className="w-3 h-3 text-white" fill="white" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            {clientInfo ? (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <h4 className="font-medium text-gray-900 text-sm truncate">
+                                    {clientInfo.name || clientInfo.username || 'Client'}
+                                  </h4>
+                                  {clientInfo.emailVerified && (
+                                    <CheckCircle className="w-3 h-3 text-green-500" />
+                                  )}
+                                </div>
+                                {clientInfo.email ? (
+                                  <p className="text-xs text-gray-500 truncate" title={clientInfo.email}>
+                                    {clientInfo.email}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-gray-400 italic">
+                                    No email available
+                                  </p>
+                                )}
+                                {clientInfo.accountType && (
+                                  <span className="text-xs text-gray-400 capitalize">
+                                    {clientInfo.accountType}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-xs text-gray-500 italic">
+                                Client information not available
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -875,7 +940,7 @@ const GigListingsPage = () => {
           )}
 
           {/* CTA Section */}
-          <div className="bg-gray-900 rounded-lg p-6 text-center text-white mb-6">
+          <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-lg p-6 text-center text-white mb-6">
             <h2 className="text-2xl font-bold mb-3">
               Ready to find your perfect gig?
             </h2>
