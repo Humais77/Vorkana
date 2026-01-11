@@ -44,7 +44,7 @@ import {
   Images as  ImageIcon
 } from 'lucide-react';
 import { useCreateService } from '../../../hooks/useServices.js';
-import { useCategories } from '../../../hooks/useCategories.js';
+import { useCategories ,useParentCategories} from '../../../hooks/useCategories.js';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories.js'; // NEW: Import subcategory hook
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore.js';
@@ -185,7 +185,7 @@ const CreateService = () => {
     isLoading: categoryLoading, 
     error: categoryError,
     refetch: refetchCategories 
-  } = useCategories();
+  } = useParentCategories();
   
   const { user: currentUser, isAuthenticated } = useAuthStore();
   

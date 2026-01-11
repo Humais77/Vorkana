@@ -2,13 +2,14 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/services.controller.js');
-const { protect, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
+const { adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
 const { 
   validateCreate, 
   validateUpdate, 
   validateBulk, 
   validateQuery 
 } = require('../middleware/validators/service.validator.js');
+const SessionMiddleware = require("../middleware/session.middleware");
 
 const rateLimit = require('express-rate-limit');
 const { 
@@ -83,7 +84,7 @@ router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
 
 // Get my services
 router.get('/my-services', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   validateQuery, 
   controller.getMyServices
@@ -108,7 +109,7 @@ router.get('/popular/category',
 
 // Get all active services
 router.get('/all/active', 
-  protect, 
+   SessionMiddleware.authenticate, 
   controller.getAllActiveServices
 );
 
@@ -134,11 +135,11 @@ router.get('/subcategory/slug/:slug',
 );
 
 // ============================================
-// PROTECTED ROUTES
+//  SESSIONMIDDLEWARE.AUTHENTICATEED ROUTES
 // ============================================
 
 // Like/Unlike service
-router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
+router.post('/:id/like',  SessionMiddleware.authenticate, serviceLimiter, controller.toggleLike);
 
 // ============================================
 // USER ROUTES (Service creators)
@@ -146,7 +147,7 @@ router.post('/:id/like', protect, serviceLimiter, controller.toggleLike);
 
 // Create service with Cloudinary uploads
 router.post('/', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   uploadWithThumbnail, 
   handleMulterError, 
@@ -156,7 +157,7 @@ router.post('/',
 
 // Update my service
 router.put('/:id', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   uploadWithThumbnail,
   handleMulterError, 
@@ -166,21 +167,21 @@ router.put('/:id',
 
 // Delete my service
 router.delete('/:id', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   controller.deleteService
 );
 
 // Restore my service
 router.patch('/:id/restore', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   controller.restoreService
 );
 
 // Upload additional images to my service (Cloudinary)
 router.post('/:id/images', 
-  protect, 
+   SessionMiddleware.authenticate, 
   imageUploadLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
@@ -189,21 +190,21 @@ router.post('/:id/images',
 
 // Remove specific image from my service (Cloudinary)
 router.delete('/:id/images/:publicId', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   controller.removeImage
 );
 
 // Set existing image as thumbnail for my service
 router.put('/:id/thumbnail/:publicId', 
-  protect, 
+   SessionMiddleware.authenticate, 
   serviceLimiter, 
   controller.setThumbnail
 );
 
 // Upload new thumbnail for my service (Cloudinary)
 router.post('/:id/thumbnail', 
-  protect, 
+   SessionMiddleware.authenticate, 
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
@@ -216,7 +217,7 @@ router.post('/:id/thumbnail',
 
 // Admin create service
 router.post('/admin/create', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   uploadWithThumbnail,
@@ -227,7 +228,7 @@ router.post('/admin/create',
 
 // Get admin services
 router.get('/admin/services', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   validateQuery, 
@@ -236,7 +237,7 @@ router.get('/admin/services',
 
 // Update any service (admin)
 router.put('/admin/:id', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   upload.array('images', 10), 
@@ -247,7 +248,7 @@ router.put('/admin/:id',
 
 // Delete any service (admin)
 router.delete('/admin/:id', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   controller.deleteService
@@ -255,7 +256,7 @@ router.delete('/admin/:id',
 
 // Get admin stats
 router.get('/admin/stats', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   controller.getServiceStats
@@ -263,7 +264,7 @@ router.get('/admin/stats',
 
 // Bulk operations (admin)
 router.post('/admin/bulk', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   bulkOperationLimiter, 
   validateBulk, 
@@ -272,7 +273,7 @@ router.post('/admin/bulk',
 
 // Export services (admin)
 router.get('/admin/export', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   validateQuery, 
@@ -281,7 +282,7 @@ router.get('/admin/export',
 
 // Upload additional images (admin)
 router.post('/admin/:id/images', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   imageUploadLimiter, 
   upload.array('images', 10), 
@@ -291,7 +292,7 @@ router.post('/admin/:id/images',
 
 // Remove specific image (admin)
 router.delete('/admin/:id/images/:publicId', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   controller.removeImage
@@ -299,7 +300,7 @@ router.delete('/admin/:id/images/:publicId',
 
 // Set existing image as thumbnail (admin)
 router.put('/admin/:id/thumbnail/:publicId', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   controller.setThumbnail
@@ -307,7 +308,7 @@ router.put('/admin/:id/thumbnail/:publicId',
 
 // Upload new thumbnail (admin)
 router.post('/admin/:id/thumbnail', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
@@ -317,7 +318,7 @@ router.post('/admin/:id/thumbnail',
 
 // Toggle popular status (admin)
 router.patch('/:id/popular', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   serviceLimiter, 
   controller.togglePopularStatus
@@ -329,7 +330,7 @@ router.patch('/:id/popular',
 
 // Batch update services status
 router.patch('/batch/status', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   bulkOperationLimiter, 
   controller.bulkUpdateServices
@@ -337,7 +338,7 @@ router.patch('/batch/status',
 
 // Batch feature/unfeature services
 router.patch('/batch/feature', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   bulkOperationLimiter, 
   controller.bulkUpdateServices
@@ -345,7 +346,7 @@ router.patch('/batch/feature',
 
 // Batch recommend/unrecommend services
 router.patch('/batch/recommend', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   bulkOperationLimiter, 
   controller.bulkUpdateServices
@@ -353,7 +354,7 @@ router.patch('/batch/recommend',
 
 // Batch popular/unpopular services
 router.patch('/batch/popular', 
-  protect, 
+   SessionMiddleware.authenticate, 
   adminOnly, 
   bulkOperationLimiter, 
   controller.bulkUpdateServices
@@ -374,35 +375,35 @@ router.get('/health/check', (req, res) => {
   });
 });
 
-// Service metrics
-router.get('/metrics/overview', 
-  protect, 
-  adminOnly, 
-  serviceLimiter, 
-  (req, res) => {
-    res.json({
-      success: true,
-      metrics: {
-        routes: {
-          public: 4,
-          protected: 1,
-          user: 8,
-          admin: 11,
-          total: 24
-        },
-        features: {
-          fileUploads: true,
-          imageManagement: true,
-          bulkOperations: true,
-          search: true,
-          stats: true,
-          export: true,
-          rateLimiting: true,
-          cloudinaryUpload: true
-        }
-      }
-    });
-});
+// // Service metrics
+// router.get('/metrics/overview', 
+//    SessionMiddleware.authenticate, 
+//   adminOnly, 
+//   serviceLimiter, 
+//   (req, res) => {
+//     res.json({
+//       success: true,
+//       metrics: {
+//         routes: {
+//           public: 4,
+//            SessionMiddleware.authenticateed: 1,
+//           user: 8,
+//           admin: 11,
+//           total: 24
+//         },
+//         features: {
+//           fileUploads: true,
+//           imageManagement: true,
+//           bulkOperations: true,
+//           search: true,
+//           stats: true,
+//           export: true,
+//           rateLimiting: true,
+//           cloudinaryUpload: true
+//         }
+//       }
+//     });
+// });
 
 
 

@@ -35,7 +35,7 @@ import {
   Briefcase
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from "../../../store/useAuthStore";
 import { useGigStore } from "../../../store/useGigStore";
 import { useCategoryStore } from "../../../store/useCategoryStore";
@@ -121,7 +121,7 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp
 const GigEdit = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-
+const queryClient = useQueryClient();
   // Zustand stores
   const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
   const { setGigDetails, clearGigDetails } = useGigStore();
@@ -212,84 +212,7 @@ const GigEdit = () => {
     form: errors.form || gigError?.message || authError || categoryError?.message || updateError?.message
   }), [errors, gigError, authError, categoryError, updateError]);
 
- // Loading state
-  if (gigLoading || categoryLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
-                <div className="space-y-4">
-                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full"></div>
-                </div>
-              </div>
-              <div className="lg:col-span-1">
-                <div className="bg-gray-200 rounded-2xl h-96"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (gigError) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error Loading Gig</h2>
-          <p className="text-gray-600 mb-8">{gigError.message}</p>
-          <div className="flex gap-4 justify-center">
-            <button
-              onClick={handleRefreshGig}
-              className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/gigs')}
-              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Browse Gigs
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <div className="bg-white rounded-2xl p-12 shadow-xl">
-            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Gig Updated Successfully!</h2>
-            <p className="text-gray-600 text-lg mb-8">
-              Your gig has been updated. Redirecting to gig page...
-            </p>
-            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
-            <div className="mt-8">
-              <button
-                onClick={() => navigate(`/gig/${id}`)}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
-              >
-                View Updated Gig
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+ 
 
 useEffect(() => {
     if (gigData?.gig || gigData) {
@@ -666,112 +589,80 @@ useEffect(() => {
   }, [formData, subcategories]);
 
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setVersionConflict(false);
+  e.preventDefault();
+  setIsSubmitting(true);
+  setVersionConflict(false);
 
-    if (!isAuthenticated) {
-      toast.error("Please sign in to update gigs");
-      setIsSubmitting(false);
-      return;
-    }
+  if (!isAuthenticated) {
+    toast.error("Please sign in to update gigs");
+    setIsSubmitting(false);
+    return;
+  }
 
-    if (!validateForm()) {
-      setIsSubmitting(false);
-      return;
-    }
+  if (!validateForm()) {
+    setIsSubmitting(false);
+    return;
+  }
 
-    try {
-      // Verify gig exists
-      if (!gigData?.gig && !gigData) {
-        toast.error('Gig data not loaded. Please refresh the page.');
-        setIsSubmitting(false);
-        return;
-      }
+  try {
+    const formDataObj = new FormData();
 
-      const gig = gigData.gig || gigData;
-      
-      // Check ownership
-      const isOwner = currentUser?._id === gig.createdBy?._id;
-      const isAdmin = currentUser?.role === 'admin';
-      
-      if (!isOwner && !isAdmin) {
-        toast.error('You can only edit your own gigs');
-        setIsSubmitting(false);
-        return;
-      }
+    // Append fields with better structure for optimistic updates
+    const updateData = {
+      title: formData.title.trim(),
+      fullName: formData.fullName.trim(),
+      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
+      country: formData.country.trim(),
+      phone: formData.phone.trim(),
+      projectCategory: formData.projectCategory,
+      subcategory: formData.subcategory || '',
+      description: formData.description.trim(),
+      budget: parseFloat(formData.budget),
+      currency: formData.currency,
+      timeline: formData.timeline.trim(),
+      timelineUnit: formData.timelineUnit,
+      communication: formData.communication,
+      urgency: formData.urgency,
+      visibility: formData.visibility,
+      skillsRequired: formData.skillsRequired || [],
+      deliverables: formData.deliverables || [],
+    };
 
-      // Validate ID
-      if (!id || id === 'undefined' || id === 'null') {
-        toast.error('Invalid gig ID');
-        setIsSubmitting(false);
-        return;
-      }
-
-      const formDataObj = new FormData();
-
-      // Append fields with proper formatting
-      const appendField = (key, value) => {
-        if (value !== undefined && value !== null && value !== '') {
-          formDataObj.append(key, String(value));
+    // Append all data for optimistic update
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach((item, index) => {
+            formDataObj.append(`${key}[${index}]`, item);
+          });
+        } else {
+          formDataObj.append(key, value);
         }
-      };
-
-      appendField('title', formData.title.trim());
-      appendField('fullName', formData.fullName.trim());
-      appendField('oauthEmail', formData.oauthEmail.trim().toLowerCase());
-      appendField('country', formData.country.trim());
-      appendField('phone', formData.phone.trim());
-      appendField('projectCategory', formData.projectCategory);
-      
-      // Handle subcategory - can be empty string
-      formDataObj.append('subcategory', formData.subcategory || '');
-      
-      appendField('description', formData.description.trim());
-      appendField('budget', parseFloat(formData.budget));
-      appendField('currency', formData.currency);
-      appendField('timeline', formData.timeline.trim());
-      appendField('timelineUnit', formData.timelineUnit);
-      appendField('communication', formData.communication);
-      appendField('urgency', formData.urgency);
-      appendField('visibility', formData.visibility);
-      
-      // Append skills as array format
-      if (formData.skillsRequired && formData.skillsRequired.length > 0) {
-        formData.skillsRequired.forEach((skill, index) => {
-          formDataObj.append(`skillsRequired[${index}]`, skill);
-        });
       }
+    });
 
-      // Append deliverables as array format
-      if (formData.deliverables && formData.deliverables.length > 0) {
-        formData.deliverables.forEach((deliverable, index) => {
-          formDataObj.append(`deliverables[${index}]`, deliverable);
-        });
-      }
-
-      // Append thumbnail
-      if (thumbnailFile) {
-        formDataObj.append('thumbnail', thumbnailFile.file);
-      }
-
-      // Append new images
-      uploadedImages.forEach((image) => {
-        formDataObj.append('images', image.file);
-      });
-      
-      // Call update mutation
-      updateGig({
-        id: id,
-        data: formDataObj,
-      });
-
-    } catch (error) {
-      console.error("Error in handleSubmit:", error);
-      toast.error(error.message || "Failed to update gig");
-      setIsSubmitting(false);
+    // Append thumbnail
+    if (thumbnailFile) {
+      formDataObj.append('thumbnail', thumbnailFile.file);
     }
-  }, [formData, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig, gigData, currentUser]);
+
+    // Append new images
+    uploadedImages.forEach((image) => {
+      formDataObj.append('images', image.file);
+    });
+
+    // Call update mutation
+    updateGig({
+      id: id,
+      data: formDataObj,
+    });
+
+  } catch (error) {
+    console.error("Error in handleSubmit:", error);
+    toast.error(error.message || "Failed to update gig");
+    setIsSubmitting(false);
+  }
+}, [formData, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig]);
 
   const handleRefreshGig = useCallback(async () => {
     setIsRefreshing(true);
@@ -805,16 +696,7 @@ useEffect(() => {
       maximumFractionDigits: 2
     });
   }, []);
- if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 text-emerald-600 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
+
  
   // Memoized render functions
   const renderTopInfo = useMemo(() => (
@@ -973,7 +855,93 @@ useEffect(() => {
       </div>
     </div>
   ), [formData, getCategoryName, getSubcategoryName, formatBudget, existingImages, uploadedImages, thumbnailFile, currentVersion]);
+// Loading state
+  if (gigLoading || categoryLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
+                <div className="space-y-4">
+                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-full"></div>
+                </div>
+              </div>
+              <div className="lg:col-span-1">
+                <div className="bg-gray-200 rounded-2xl h-96"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // Error state
+  if (gigError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error Loading Gig</h2>
+          <p className="text-gray-600 mb-8">{gigError.message}</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleRefreshGig}
+              className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/gigs')}
+              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            >
+              Browse Gigs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Success state
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <div className="bg-white rounded-2xl p-12 shadow-xl">
+            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Gig Updated Successfully!</h2>
+            <p className="text-gray-600 text-lg mb-8">
+              Your gig has been updated. Redirecting to gig page...
+            </p>
+            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
+            <div className="mt-8">
+              <button
+                onClick={() => navigate(`/gig/${id}`)}
+                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
+              >
+                View Updated Gig
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+ if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-emerald-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <SeoWrapper
       title={`Edit ${formData.title} | Vorkana`}

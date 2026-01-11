@@ -259,36 +259,67 @@ export const useUpdateService = () => {
   
   return useMutation({
     mutationFn: async ({ id, data, headers }) => {
-      const response = await axiosInstance.put(`/api/services/${id}`, data, {
-        headers: headers || {
-          'Content-Type': 'multipart/form-data'
+      try {
+        const response = await axiosInstance.put(`/api/services/${id}`, data, {
+          headers: headers || {
+            'Content-Type': 'multipart/form-data'
+          },
+          timeout: 30000
+        });
+        
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Update failed');
         }
-      });
-      return response.data;
+        
+        return response.data;
+      } catch (error) {
+        // Handle specific error cases
+        if (error.response?.status === 400) {
+          const errorData = error.response.data;
+          const errorMessage = errorData.errors?.join(', ') || errorData.message;
+          throw new Error(errorMessage || 'Validation failed');
+        }
+        
+        if (error.response?.status === 401) {
+          throw new Error('Please login to update services');
+        }
+        
+        if (error.response?.status === 403) {
+          throw new Error('You can only update your own services');
+        }
+        
+        if (error.response?.status === 404) {
+          throw new Error('Service not found');
+        }
+        
+        if (error.code === 'ECONNABORTED') {
+          throw new Error('Request timeout. Please try again.');
+        }
+        
+        throw error;
+      }
     },
     onSuccess: (data, variables) => {
+      // Invalidate all relevant queries
       queryClient.invalidateQueries({
         queryKey: ['service', variables.id]
+      });
+      
+      queryClient.invalidateQueries({
+        queryKey: ['myServices']
       });
       
       queryClient.invalidateQueries({
         queryKey: ['services']
       });
       
+      // Optionally update the service cache immediately
       if (data.service) {
         queryClient.setQueryData(['service', variables.id], data.service);
       }
     },
     onError: (error) => {
-      if (error.response?.status === 409) {
-        const errorData = error.response.data;
-        
-        if (errorData.code === 'VERSION_CONFLICT') {
-          queryClient.invalidateQueries({
-            queryKey: ['service', variables.id]
-          });
-        }
-      }
+      console.error('Update service mutation error:', error);
     }
   });
 };

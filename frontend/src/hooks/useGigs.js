@@ -156,38 +156,19 @@ export const usePopularGigs = () => {
 
 export const useGig = (id) => {
   const queryClient = useQueryClient();
-  const setGigDetails = useGigStore((state) => state.setGigDetails);
   
   return useQuery({
     queryKey: gigKeys.detail(id),
     queryFn: () => gigsAPI.getById(id),
     enabled: !!id && id !== 'undefined',
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
     gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error.status === 404) return false;
-      if (error.code === 'SESSION_EXPIRED') return false;
-      return failureCount < 3;
+    
+    // Accept initialData for optimistic updates
+    initialData: () => {
+      // Try to get from cache first
+      return queryClient.getQueryData(gigKeys.detail(id));
     },
-    onSuccess: (data, variables) => {
-      const updatedGig = data.data || data.gig || data;
-      
-      // Update Zustand store
-      setGigDetails(updatedGig);
-      
-      // Update cache
-      queryClient.setQueryData(gigKeys.detail(variables.id), {
-        gig: updatedGig,
-        data: updatedGig,
-        success: true
-      });
-    },
-    onError: (error) => {
-      if (error.code === 'SESSION_EXPIRED') {
-        toast.error('Session expired. Please login again.');
-      }
-    }
   });
 };
 
@@ -316,56 +297,105 @@ export const useUpdateGig = () => {
       // Snapshot the previous value
       const previousGig = queryClient.getQueryData(gigKeys.detail(id));
       
-      // Optimistically update to the new value
-      const optimisticUpdates = {
-        ...(data instanceof FormData ? {} : data),
-        updatedAt: new Date().toISOString(),
-        isUpdating: true
-      };
+      // Extract updates from data
+      let updates = {};
       
-      applyOptimisticUpdate(queryClient, id, optimisticUpdates);
+      if (data instanceof FormData) {
+        // Try to extract data from FormData for optimistic update
+        try {
+          // Extract title if available
+          const title = data.get('title');
+          if (title) updates.title = title;
+          
+          // Extract description if available
+          const description = data.get('description');
+          if (description) updates.description = description;
+          
+          // Extract budget if available
+          const budget = data.get('budget');
+          if (budget) updates.budget = parseFloat(budget);
+          
+          // Extract currency if available
+          const currency = data.get('currency');
+          if (currency) updates.currency = currency;
+          
+          // Add timestamp
+          updates.updatedAt = new Date().toISOString();
+        } catch (e) {
+          // Fallback basic update
+          updates.updatedAt = new Date().toISOString();
+        }
+      } else {
+        updates = {
+          ...data,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      
+      // Optimistically update the gig
+      queryClient.setQueryData(gigKeys.detail(id), (old) => {
+        if (!old) return old;
+        
+        const oldGig = old.data || old.gig || old;
+        
+        return {
+          ...old,
+          gig: { ...oldGig, ...updates },
+          data: { ...oldGig, ...updates },
+        };
+      });
       
       return { previousGig };
     },
-    onSuccess: (data, variables) => {
-      // Remove the updating flag and apply server data
-      const finalData = {
-        ...data.data,
-        isUpdating: undefined
-      };
+    onSuccess: (response, variables) => {
+      // Get the updated gig from response
+      const updatedGig = response.data || response.gig || response;
       
-      applyOptimisticUpdate(queryClient, variables.id, finalData);
+      // Update cache with server response
+      queryClient.setQueryData(gigKeys.detail(variables.id), {
+        gig: updatedGig,
+        data: updatedGig,
+        success: true,
+        message: response.message,
+      });
       
-      // Invalidate other queries to ensure consistency
-      queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
+      // Also update in the list queries
+      queryClient.setQueriesData(
+        { queryKey: gigKeys.lists() },
+        (old) => {
+          if (!old) return old;
+          
+          if (old.data && Array.isArray(old.data)) {
+            return {
+              ...old,
+              data: old.data.map(gig => 
+                gig._id === variables.id ? { ...gig, ...updatedGig } : gig
+              ),
+            };
+          }
+          
+          if (old.gigs && Array.isArray(old.gigs)) {
+            return {
+              ...old,
+              gigs: old.gigs.map(gig => 
+                gig._id === variables.id ? { ...gig, ...updatedGig } : gig
+              ),
+            };
+          }
+          
+          return old;
+        }
+      );
       
-      toast.success('Gig updated successfully!');
+      toast.success(response.message || 'Gig updated successfully!');
     },
     onError: (err, variables, context) => {
-      // Rollback to the previous value
+      // Rollback on error
       if (context?.previousGig) {
         queryClient.setQueryData(gigKeys.detail(variables.id), context.previousGig);
       }
       
-      // Revalidate queries
-      queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
-      
-      let errorMessage = err.message || 'Failed to update gig';
-      
-      if (err.code === 'VERSION_CONFLICT') {
-        errorMessage = 'This gig was modified by another user. Please refresh and try again.';
-      } else if (err.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to update this gig';
-      } else if (err.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
-      }
-      
-      toast.error(errorMessage);
-    },
-    onSettled: (data, error, variables) => {
-      // Always refetch after error or success to ensure consistency
-      queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
+      toast.error(err.message || 'Failed to update gig');
     },
   });
 };

@@ -44,7 +44,7 @@ import { toast } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService, useUpdateService } from '../../../hooks/useServices';
-import { useCategories } from '../../../hooks/useCategories';
+import { useCategories ,useParentCategories} from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { isProfileCompleteEnough } from '../../../utils/profileUtils';
@@ -142,7 +142,7 @@ const queryClient = useQueryClient();
     data: categoriesData,
     isLoading: categoryLoading,
     error: categoryError
-  } = useCategories();
+  } = useParentCategories();
 
   const {
     mutate: updateService,
@@ -656,7 +656,6 @@ const handleImageUpload = useCallback(async (files) => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories, thumbnailFile, existingThumbnail]);
-// In EditService.jsx - Update the handleSubmit function
 const handleSubmit = useCallback(async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
@@ -674,13 +673,8 @@ const handleSubmit = useCallback(async (e) => {
   }
 
   try {
-    // Create FormData with proper timeout handling
-    const formDataToSend = new FormData();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-    // Prepare JSON data WITHOUT circular references
-    const jsonData = {
+    // Prepare update data
+    const updateData = {
       title: (formData.title || '').trim(),
       description: (formData.description || '').trim(),
       shortDescription: formData.shortDescription?.trim() || 
@@ -692,93 +686,71 @@ const handleSubmit = useCallback(async (e) => {
       deliveryTime: parseInt(formData.deliveryTime || 1),
       deliveryTimeUnit: formData.deliveryTimeUnit || "days",
       revisions: parseInt(formData.revisions || 1),
-      status: formData.status || "active"
+      status: formData.status || "active",
+      tags: formData.tags || [],
+      searchKeywords: formData.searchKeywords || [],
+      features: formData.features || [],
+      requirements: formData.requirements || [],
+      faqs: formData.faqs || [],
+      metaTitle: formData.metaTitle?.trim() || '',
+      metaDescription: formData.metaDescription?.trim() || ''
     };
 
-    // Only include if they have values
-    if (formData.tags?.length > 0) jsonData.tags = formData.tags;
-    if (formData.searchKeywords?.length > 0) jsonData.searchKeywords = formData.searchKeywords;
-    if (formData.features?.length > 0) jsonData.features = formData.features;
-    if (formData.requirements?.length > 0) jsonData.requirements = formData.requirements;
-    if (formData.faqs?.length > 0) jsonData.faqs = formData.faqs;
-    if (formData.metaTitle?.trim()) jsonData.metaTitle = formData.metaTitle.trim();
-    if (formData.metaDescription?.trim()) jsonData.metaDescription = formData.metaDescription.trim();
-
-    // Add thumbnail if not being replaced
-    if (!thumbnailFile && existingThumbnail) {
-      jsonData.thumbnail = {
-        url: existingThumbnail.url,
-        public_id: existingThumbnail.public_id
-      };
-    }
-
-    // Add existing images if not being replaced
-    if (existingImages.length > 0 && uploadedImages.length === 0) {
-      jsonData.images = existingImages.map(img => ({
-        url: img.url,
-        public_id: img.public_id
-      }));
-    }
-
-    console.log('Submitting update with data:', {
-      title: jsonData.title,
-      category: jsonData.category,
-      subcategory: jsonData.subcategory,
-      imagesCount: jsonData.images?.length || 0,
-      hasThumbnail: !!jsonData.thumbnail
+    console.log('Updating service with data:', {
+      title: updateData.title,
+      category: updateData.category,
+      subcategory: updateData.subcategory,
+      price: updateData.price,
+      deliveryTime: updateData.deliveryTime
     });
 
-    // Append JSON data
-    formDataToSend.append('data', JSON.stringify(jsonData));
-
-    // Append thumbnail file if exists
+    // Create FormData
+    const formDataToSend = new FormData();
+    
+    // Add JSON data
+    formDataToSend.append('data', JSON.stringify(updateData));
+    
+    // Add thumbnail if new one is uploaded
     if (thumbnailFile && thumbnailFile.file) {
       formDataToSend.append('thumbnail', thumbnailFile.file);
-      console.log('Adding new thumbnail file');
     }
-
-    // Append new image files
+    
+    // Add new images
     if (uploadedImages.length > 0) {
       uploadedImages.forEach((img, index) => {
         if (img.file) {
           formDataToSend.append('images', img.file);
         }
       });
-      console.log(`Adding ${uploadedImages.length} new images`);
     }
 
-    // Add timeout signal
-    const signal = controller.signal;
-
-    // Call updateService with timeout handling
+    // Call updateService
     await updateService({
       id: id,
       data: formDataToSend,
       headers: {
         'Content-Type': 'multipart/form-data'
-      },
-      signal: signal
+      }
     });
-
-    clearTimeout(timeoutId);
 
   } catch (error) {
     console.error("Error in handleSubmit:", error);
     
-    if (error.name === 'AbortError') {
-      toast.error('Request timeout. Please try a smaller update or check your connection.');
-    } else if (error.message?.includes('SUBCATEGORY')) {
+    // Handle specific errors
+    if (error.message?.includes('SUBCATEGORY')) {
       setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
       toast.error('Please select a valid subcategory');
     } else if (error.message?.includes('Category not found')) {
       toast.error('Selected category no longer exists. Please refresh and select again.');
+    } else if (error.message?.includes('Validation failed')) {
+      toast.error('Please check your input and try again.');
     } else {
       toast.error(error.message || 'Failed to update service. Please try again.');
     }
     
     setIsSubmitting(false);
   }
-}, [formData, id, thumbnailFile, uploadedImages, existingThumbnail, existingImages, validateForm, updateService, isAuthenticated]);
+}, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated]);
   const handleRefreshService = useCallback(async () => {
     setIsRefreshing(true);
     try {

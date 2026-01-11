@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
-
+import { Dialog } from '@headlessui/react';
 // Import Zustand stores and TanStack Query hooks
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService ,useDeleteService } from '../../../hooks/useServices';
@@ -191,6 +191,7 @@ const ServiceDetails = () => {
     error, 
     refetch 
   } = useService(id);
+  const deleteServiceMutation = useDeleteService();
 useEffect(() => {
     // Check if we're coming from edit with refresh flag
     if (location.state?.refresh) {
@@ -208,14 +209,15 @@ useEffect(() => {
   }, [location.state, id, queryClient, refetch, navigate, location.pathname]);
   // Local state
   const [isLiked, setIsLiked] = useState(false);
-  const [activeImage, setActiveImage] = useState(0);
-  const [viewCount, setViewCount] = useState(0);
-  const [imageViewMode, setImageViewMode] = useState('thumbnail');
-const [showDeleteModal, setShowDeleteModal] = useState(false);
+const [activeImage, setActiveImage] = useState(0);
+const [viewCount, setViewCount] = useState(0);
+const [imageViewMode, setImageViewMode] = useState('thumbnail');
+const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 const [isDeleting, setIsDeleting] = useState(false);
-const [deleteStatus, setDeleteStatus] = useState(null);
-const deleteServiceMutation = useDeleteService();
-  
+const [deleteOptions, setDeleteOptions] = useState({
+  permanent: false,
+  force: false
+});
 
   // Helper functions
   const handleShare = async () => {
@@ -274,27 +276,42 @@ const deleteServiceMutation = useDeleteService();
     }).format(price);
   };
 const handleDeleteClick = () => {
-  setShowDeleteModal(true);
+  // If admin, show options dialog
+  if (user?.role === 'admin') {
+    setDeleteOptions({
+      permanent: false,
+      force: false
+    });
+    setShowDeleteDialog(true);
+  } else {
+    // Regular user - direct delete
+    setDeleteOptions({
+      permanent: false,
+      force: false
+    });
+    handleConfirmDelete();
+  }
 };
 const isOwner = () => {
   if (!service || !user) return false;
   
-  // If createdBy is populated as an object
-  if (service.createdBy?._id) {
-    return service.createdBy._id.toString() === user._id.toString();
-  }
+  // Check all possible user ID fields
+  const possibleUserIds = [
+    service.createdBy?._id,
+    service.createdBy, // If it's just a string ID
+    service.creatorDetails?._id,
+    service.userId,
+    service.user?._id
+  ];
   
-  // If createdBy is just a string ID
-  if (typeof service.createdBy === 'string') {
-    return service.createdBy === user._id;
-  }
+  const userId = user._id.toString();
   
-  // Check other possible fields
-  if (service.creatorDetails?._id) {
-    return service.creatorDetails._id.toString() === user._id.toString();
-  }
-  
-  return false;
+  return possibleUserIds.some(id => {
+    if (!id) return false;
+    if (typeof id === 'string') return id === userId;
+    if (typeof id === 'object' && id.toString) return id.toString() === userId;
+    return false;
+  });
 };
 const handleConfirmDelete = async () => {
   if (!service || !user) {
@@ -302,11 +319,10 @@ const handleConfirmDelete = async () => {
     return;
   }
 
-  // Check if user is owner or admin
-   const isOwnerCheck = isOwner();
+  const isOwnerCheck = isOwner();
   const isAdmin = user.role === 'admin';
 
-  if (!isOwner && !isAdmin) {
+  if (!isOwnerCheck && !isAdmin) {
     toast.error('You can only delete your own services');
     return;
   }
@@ -317,51 +333,31 @@ const handleConfirmDelete = async () => {
     await deleteServiceMutation.mutateAsync({
       id: service._id,
       options: {
-        permanent: false // Soft delete by default
+        permanent: deleteOptions.permanent || false,
+        force: deleteOptions.force || false
       }
     });
 
-    setDeleteStatus('success');
     toast.success('Service deleted successfully');
     
     // Redirect after delay
     setTimeout(() => {
       navigate('/profile?tab=services');
-    }, 2000);
+    }, 1500);
   } catch (error) {
-    setDeleteStatus('error');
     toast.error(error.message || 'Failed to delete service');
+  } finally {
     setIsDeleting(false);
+    setShowDeleteDialog(false);
   }
 };
 
-const handlePermanentDelete = async () => {
-  if (!user || user.role !== 'admin') {
-    toast.error('Only admins can permanently delete services');
-    return;
-  }
-
-  if (!confirm('Warning: This will permanently delete the service. This action cannot be undone. Are you sure?')) {
-    return;
-  }
-
-  setIsDeleting(true);
-  
-  try {
-    await deleteServiceMutation.mutateAsync({
-      id: service._id,
-      options: {
-        permanent: true,
-        force: true
-      }
-    });
-
-    toast.success('Service permanently deleted');
-    navigate('/admin/services');
-  } catch (error) {
-    toast.error(error.message || 'Failed to permanently delete service');
-    setIsDeleting(false);
-  }
+const handlePermanentDelete = () => {
+  setDeleteOptions({
+    permanent: true,
+    force: true
+  });
+  setShowDeleteDialog(true);
 };
 
 const handleRestoreService = async () => {
@@ -398,6 +394,82 @@ const handleRestoreService = async () => {
       </div>
     );
   };
+const renderDeleteDialog = () => (
+  <Dialog
+    open={showDeleteDialog}
+    onClose={() => setShowDeleteDialog(false)}
+    className="relative z-50"
+  >
+    <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+    
+    <div className="fixed inset-0 flex items-center justify-center p-4">
+      <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-xl">
+        <Dialog.Title className="text-2xl font-bold text-gray-900 mb-4">
+          {deleteOptions.permanent ? 'Permanently Delete Service?' : 'Delete Service?'}
+        </Dialog.Title>
+        
+        <Dialog.Description className="text-gray-600 mb-6">
+          {deleteOptions.permanent ? (
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="font-semibold text-red-800">Warning: This action cannot be undone!</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    All service data including images, reviews, and orders will be permanently deleted.
+                  </p>
+                </div>
+              </div>
+              <p>Are you sure you want to permanently delete this service?</p>
+            </div>
+          ) : (
+            <p>This service will be deactivated but can be restored later from your dashboard.</p>
+          )}
+        </Dialog.Description>
+
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={() => setShowDeleteDialog(false)}
+            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+            disabled={isDeleting}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirmDelete}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <>
+                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                {deleteOptions.permanent ? 'Permanently Delete' : 'Delete Service'}
+              </>
+            )}
+          </button>
+        </div>
+        
+        {/* Admin-only permanent delete option */}
+        {user?.role === 'admin' && !deleteOptions.permanent && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <button
+              onClick={handlePermanentDelete}
+              className="w-full px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-900 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Permanent Delete (Admin Only)
+            </button>
+          </div>
+        )}
+      </Dialog.Panel>
+    </div>
+  </Dialog>
+);
 const formatRevisions = (revisions) => {
   if (revisions === 0) return 'No revisions';
   if (revisions === 1) return '1 revision';
@@ -495,10 +567,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
       };
     }
     
-    return {
-      url: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-      type: 'default'
-    };
+    return { url: null, type: 'default' }
   };
 
   const getGalleryImages = (service) => {
@@ -677,7 +746,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
           {JSON.stringify(structuredData[1])}
         </script>
       )}
-
+  {renderDeleteDialog()}
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
         {/* Breadcrumb */}
         <div className="bg-white border-b border-gray-200">
@@ -726,66 +795,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
               </button>
             </div>
           </div>
-          {showDeleteModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl max-w-md w-full p-6">
-      <div className="text-center">
-        <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Service</h3>
-        <p className="text-gray-600 mb-6">
-          Are you sure you want to delete "{service.title}"? 
-          {user?.role === 'admin' ? (
-            <span className="block mt-2 text-sm text-red-600">
-              Admin: You can choose between soft delete (reversible) or permanent delete.
-            </span>
-          ) : (
-            <span className="block mt-2 text-sm text-gray-500">
-              This will deactivate your service but you can restore it later.
-            </span>
-          )}
-        </p>
-        
-        <div className="flex flex-col gap-3">
-          {deleteStatus === 'success' ? (
-            <div className="text-center">
-              <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
-              <p className="text-green-600 font-medium">Service deleted successfully!</p>
-              <p className="text-gray-500 text-sm mt-2">Redirecting to your services...</p>
-            </div>
-          ) : (
-            <>
-              <button
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
-              >
-                {isDeleting ? 'Deleting...' : 'Delete Service'}
-              </button>
-              
-              {user?.role === 'admin' && (
-                <button
-                  onClick={handlePermanentDelete}
-                  disabled={isDeleting}
-                  className="w-full px-4 py-3 bg-red-800 text-white rounded-lg hover:bg-red-900 disabled:opacity-50 font-medium text-sm"
-                >
-                  {isDeleting ? 'Deleting...' : 'Permanent Delete (Admin Only)'}
-                </button>
-              )}
-              
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                disabled={isDeleting}
-                className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+          
 
         </div>
 
@@ -817,55 +827,57 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => setIsLiked(!isLiked)}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label={isLiked ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      <Heart
-                        className={`h-6 w-6 ${
-                          isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
-                        }`}
-                        aria-hidden="true"
-                      />
-                    </button>
-                    <button
-                      onClick={handleShare}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label="Share this service"
-                    >
-                      <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
-                    </button>
-                    <button
-                      onClick={handleReport}
-                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-                      aria-label="Report this service"
-                    >
-                      <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
-                    </button>
-                    {(user?.role === 'admin' || isOwner()) &&(
+  <button
+    onClick={() => setIsLiked(!isLiked)}
+    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+    aria-label={isLiked ? 'Remove from favorites' : 'Add to favorites'}
+  >
+    <Heart
+      className={`h-6 w-6 ${
+        isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
+      }`}
+      aria-hidden="true"
+    />
+  </button>
+  <button
+    onClick={handleShare}
+    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+    aria-label="Share this service"
+  >
+    <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
+  </button>
+  <button
+    onClick={handleReport}
+    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+    aria-label="Report this service"
+  >
+    <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
+  </button>
+  
+  {/* Edit and Delete buttons for owner/admin */}
+  {(user?.role === 'admin' || isOwner()) && (
     <>
       <Link
         to={`/edit-service/${service._id}`}
-                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
+        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
         aria-label="Edit service"
       >
-        <Edit className="h-6 w-6" />
+        <Edit className="h-4 w-4" />
         Edit
       </Link>
       <button
         onClick={handleDeleteClick}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
+        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
         aria-label="Delete service"
+        disabled={isDeleting}
       >
-        <Trash2 className="h-6 w-6" />
-        Delete
+        <Trash2 className="h-4 w-4" />
+        {isDeleting ? 'Deleting...' : 'Delete'}
       </button>
     </>
   )}
-                  </div>
+</div>
                 </div>
-
                 {/* Enhanced User Info - Now Clickable */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                   <Link 
@@ -878,12 +890,17 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   >
                     <meta itemProp="url" content={`${window.location.origin}/profile/${serviceUser?._id}`} />
                     <div className="relative">
+                      {serviceUser?.picture ? (
                       <img
                         src={serviceUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
                         alt={serviceUser?.name || 'Provider'}
-                        className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
-                        itemProp="image"
+                        
                       />
+                      ) : (
+  <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
+    <User className="h-8 w-8 text-gray-400" />
+  </div>
+)}
                       {isOnline && (
                         <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" aria-label="User is online"></div>
                       )}
@@ -1084,14 +1101,18 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   {imageViewMode === 'thumbnail' && (
                     <div className="mb-8">
                       <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
+                        {thumbnailImage?.url ? (
                         <img
                           src={thumbnailImage?.url}
                           alt={`${service.title} - Featured thumbnail`}
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                          }}
                         />
+                        ) : (
+  <div className="w-full h-96 bg-gray-100 flex items-center justify-center rounded-2xl">
+    <ImageIcon className="h-16 w-16 text-gray-400" />
+    <span className="text-gray-500 mt-2">No image available</span>
+  </div>
+)}
                         <div className="absolute top-4 left-4">
                           <span className="px-3 py-1 bg-emerald-600 text-white text-xs rounded-full">
                             <CheckCircle className="inline h-3 w-3 mr-1" aria-hidden="true" />
@@ -1589,121 +1610,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   </div>
                 </div>
 
-                {/* Enhanced User Information Card */}
-                <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-                  <h3 className="text-xl font-bold text-gray-900 mb-6">Provider Profile</h3>
-                  <div className="space-y-4">
-                    <Link 
-                      to={`/profile/${serviceUser?._id}`}
-                      className="flex items-center space-x-3 group cursor-pointer p-3 hover:bg-gray-50 rounded-lg transition-colors"
-                      aria-label={`View ${serviceUser?.name || 'Provider'}'s profile`}
-                    >
-                      <div className="relative">
-                        <img
-                          src={serviceUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
-                          alt={serviceUser?.name || 'Provider'}
-                          className="w-12 h-12 rounded-full border-2 border-white group-hover:border-emerald-100 transition-colors"
-                        />
-                        {isOnline && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border border-white" aria-label="User is online"></div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                          {serviceUser?.name}
-                        </h4>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
-                          View Profile
-                          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                        </p>
-                      </div>
-                    </Link>
-
-                    {/* User Details Grid */}
-                    <div className="grid grid-cols-2 gap-3">
-                      {serviceUser?.country && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <MapPin className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div className="truncate">
-                            <h4 className="text-xs text-gray-500">Location</h4>
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {serviceUser.country}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {serviceUser?.occupation && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Briefcase className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div className="truncate">
-                            <h4 className="text-xs text-gray-500">Occupation</h4>
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {serviceUser.occupation}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {serviceUser?.rating && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <TrendingUp className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Rating</h4>
-                            <div className="flex items-center">
-                              <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" aria-hidden="true" />
-                              <span className="text-sm font-medium text-gray-900 ml-1">
-                                {serviceUser.rating.toFixed(1)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {serviceUser?.completedOrders !== undefined && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Activity className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Completed</h4>
-                            <p className="text-sm font-medium text-gray-900">
-                              {serviceUser.completedOrders}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {serviceUser?.accountType && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Award className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Account Type</h4>
-                            <p className="text-sm font-medium text-gray-900 capitalize">
-                              {serviceUser.accountType}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {serviceUser?.languages && serviceUser.languages.length > 0 && (
-                        <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-                          <Languages className="h-4 w-4 text-gray-600 mr-2" aria-hidden="true" />
-                          <div>
-                            <h4 className="text-xs text-gray-500">Languages</h4>
-                            <p className="text-sm font-medium text-gray-900">
-                              {serviceUser.languages.length}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Contact Provider Button */}
-                    <button className="w-full px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-colors font-medium flex items-center justify-center gap-2">
-                      <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                      Contact Provider
-                    </button>
-                  </div>
-                </div>
 
                 {/* Safety Tips */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">

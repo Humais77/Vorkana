@@ -1510,7 +1510,6 @@ const incrementViewCountAsync = async (serviceId) => {
     console.error('Failed to increment view count:', error.message);
   }
 };
-// In service.controller.js - Update the updateService function
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1527,11 +1526,17 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Set timeout for response
-    req.setTimeout(25000); // 25 second timeout
-    res.setTimeout(25000);
+    // Check permissions
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+        requestId
+      });
+    }
 
-    const service = await Service.findById(id).lean();
+    const service = await Service.findById(id);
     
     if (!service) {
       return res.status(404).json({
@@ -1546,7 +1551,6 @@ const updateService = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     
     if (!isOwner && !isAdmin) {
-      logAudit('UNAUTHORIZED_UPDATE', 'SERVICE', id, req.user._id);
       return res.status(403).json({
         success: false,
         message: 'You can only update your own services',
@@ -1555,14 +1559,16 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Parse FormData
-    let bodyData = {};
+    let updateData = {};
+    
+    // Handle FormData
     if (req.headers['content-type']?.includes('multipart/form-data')) {
+      // Parse JSON data from FormData
       if (req.body.data) {
         try {
-          bodyData = JSON.parse(req.body.data);
-        } catch (parseError) {
-          console.error('Error parsing JSON from FormData:', parseError);
+          updateData = JSON.parse(req.body.data);
+        } catch (error) {
+          console.error('Error parsing JSON data:', error);
           return res.status(400).json({
             success: false,
             message: 'Invalid JSON data in FormData',
@@ -1570,49 +1576,90 @@ const updateService = async (req, res, next) => {
             requestId
           });
         }
+      } else {
+        // Handle direct form fields
+        updateData = req.body;
       }
       
-      // Handle file uploads - only process if files exist
+      // Handle thumbnail upload
       if (req.files?.thumbnail?.[0]) {
         const thumbnailFile = req.files.thumbnail[0];
-        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails', {
-          timeout: 10000 // 10 second timeout for upload
-        });
-        
-        if (thumbnailUpload[0]) {
-          bodyData.thumbnail = {
-            url: thumbnailUpload[0].url,
-            public_id: thumbnailUpload[0].public_id,
-            width: thumbnailUpload[0].width,
-            height: thumbnailUpload[0].height,
-            size: thumbnailUpload[0].size,
-            format: thumbnailUpload[0].format,
-            uploadedAt: new Date()
-          };
+        try {
+          const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
+          
+          if (thumbnailUpload[0]) {
+            updateData.thumbnail = {
+              url: thumbnailUpload[0].url,
+              public_id: thumbnailUpload[0].public_id,
+              width: thumbnailUpload[0].width,
+              height: thumbnailUpload[0].height,
+              size: thumbnailUpload[0].size,
+              format: thumbnailUpload[0].format,
+              uploadedAt: new Date()
+            };
+            
+            // Delete old thumbnail if exists
+            if (service.thumbnail && service.thumbnail.public_id) {
+              await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+            }
+          }
+        } catch (error) {
+          console.error('Thumbnail upload error:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to upload thumbnail',
+            code: 'THUMBNAIL_UPLOAD_ERROR',
+            requestId
+          });
         }
       }
       
+      // Handle image uploads
       if (req.files?.images && Array.isArray(req.files.images)) {
-        const imageUploads = await processUploadToCloudinary(req.files.images, 'services', {
-          timeout: 15000 // 15 second timeout for uploads
-        });
-        
-        bodyData.newImages = imageUploads.map(img => ({
-          url: img.url,
-          public_id: img.public_id,
-          width: img.width,
-          height: img.height,
-          size: img.size,
-          format: img.format,
-          uploadedAt: new Date()
-        }));
+        try {
+          const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+          
+          const newImages = imageUploads.map(img => ({
+            url: img.url,
+            public_id: img.public_id,
+            width: img.width,
+            height: img.height,
+            size: img.size,
+            format: img.format,
+            uploadedAt: new Date()
+          }));
+          
+          // Merge new images with existing ones
+          updateData.images = [...(service.images || []), ...newImages];
+          
+          // Limit to 10 images
+          if (updateData.images.length > 10) {
+            // Delete uploaded images
+            await deleteCloudinaryImages(newImages.map(img => ({ public_id: img.public_id })));
+            return res.status(400).json({
+              success: false,
+              message: 'Cannot have more than 10 images',
+              code: 'MAX_IMAGES_EXCEEDED',
+              requestId
+            });
+          }
+        } catch (error) {
+          console.error('Image upload error:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to upload images',
+            code: 'IMAGE_UPLOAD_ERROR',
+            requestId
+          });
+        }
       }
     } else {
-      bodyData = req.body;
+      // Handle JSON request
+      updateData = req.body;
     }
 
     // Sanitize input
-    const sanitizedData = sanitizeServiceInput(bodyData);
+    const sanitizedData = sanitizeServiceInput(updateData);
     
     // Remove admin-only fields if not admin
     if (!isAdmin) {
@@ -1626,49 +1673,25 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    // Handle images efficiently
-    if (sanitizedData.newImages) {
-      const existingImages = service.images || [];
-      const updatedImages = [...existingImages, ...sanitizedData.newImages];
-      
-      if (updatedImages.length > 10) {
-        // Clean up uploaded images
-        if (sanitizedData.newImages.length > 0) {
-          await deleteCloudinaryImages(sanitizedData.newImages.map(img => ({ public_id: img.public_id })));
-        }
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot have more than 10 images',
-          code: 'MAX_IMAGES_EXCEEDED',
-          requestId
-        });
-      }
-      
-      sanitizedData.images = updatedImages;
-      delete sanitizedData.newImages;
-    }
-
-    // Handle thumbnail
-    if (sanitizedData.thumbnail) {
-      // If new thumbnail uploaded, delete old one
-      if (service.thumbnail && service.thumbnail.public_id) {
-        try {
-          await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }], {
-            timeout: 5000
-          });
-        } catch (error) {
-          console.warn('Failed to delete old thumbnail:', error);
-        }
-      }
-    } else if (service.thumbnail) {
-      // Keep existing thumbnail if no new one
-      sanitizedData.thumbnail = service.thumbnail;
-    }
-
     // Handle subcategory validation
     if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null || sanitizedData.subcategory === undefined) {
-      if (service.subcategory) {
-        sanitizedData.subcategory = service.subcategory;
+      // Keep existing subcategory if not provided
+      sanitizedData.subcategory = service.subcategory;
+    } else if (sanitizedData.subcategory) {
+      // Validate subcategory exists and belongs to category
+      const subcategoryExists = await Subcategory.findOne({
+        _id: sanitizedData.subcategory,
+        category: sanitizedData.category || service.category,
+        isActive: true
+      });
+      
+      if (!subcategoryExists) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid subcategory or subcategory does not belong to the selected category',
+          code: 'INVALID_SUBCATEGORY',
+          requestId
+        });
       }
     }
 
@@ -1681,23 +1704,30 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    // Prepare update data
-    const updateData = {
+    // Prepare update
+    const updateFields = {
       ...sanitizedData,
       lastUpdatedBy: req.user._id,
+      updatedAt: new Date(),
       $inc: { version: 1 }
     };
 
     // Perform update
-    const updatedService = await Service.findOneAndUpdate(
-      { _id: id },
-      updateData,
-      { 
+    const updatedService = await Service.findByIdAndUpdate(
+      id,
+      updateFields,
+      {
         new: true,
         runValidators: true,
-        maxTimeMS: 10000 // 10 second query timeout
+        context: 'query',
+        maxTimeMS: 10000
       }
-    ).select('-__v -lastUpdatedBy -deletedAt -deletedBy -version').lean();
+    )
+    .select('-__v -lastUpdatedBy -version -deletedAt -deletedBy')
+    .populate('category', 'name slug icon')
+    .populate('subcategory', 'name slug icon')
+    .populate('createdBy', 'name picture')
+    .lean();
 
     if (!updatedService) {
       return res.status(404).json({
@@ -1708,18 +1738,15 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Invalidate cache (async, don't wait)
+    // Invalidate cache (async)
     invalidateServiceCache(id).catch(console.warn);
 
     const responseTime = Date.now() - startTime;
     
-    // Return minimal response for speed
     res.json({
       success: true,
       message: 'Service updated successfully',
       service: updatedService,
-      thumbnailUpdated: !!bodyData.thumbnail,
-      imagesUpdated: !!bodyData.newImages,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
@@ -1728,16 +1755,6 @@ const updateService = async (req, res, next) => {
   } catch (error) {
     const responseTime = Date.now() - startTime;
     console.error('Update service error after', responseTime, 'ms:', error);
-    
-    if (error.name === 'MongooseError' && error.message.includes('buffering timed out')) {
-      return res.status(408).json({
-        success: false,
-        message: 'Database operation timeout',
-        code: 'DATABASE_TIMEOUT',
-        requestId,
-        responseTime: `${responseTime}ms`
-      });
-    }
     
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
@@ -1750,13 +1767,22 @@ const updateService = async (req, res, next) => {
       });
     }
     
-    // Clean up uploaded files on error
-    if (bodyData?.newImages?.length > 0) {
-      try {
-        await deleteCloudinaryImages(bodyData.newImages.map(img => ({ public_id: img.public_id })));
-      } catch (cleanupError) {
-        console.warn('Error cleaning up uploaded images:', cleanupError);
-      }
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data format',
+        code: 'INVALID_DATA_FORMAT',
+        requestId
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Service with similar title already exists',
+        code: 'DUPLICATE_SERVICE',
+        requestId
+      });
     }
     
     logAudit('ERROR', 'SERVICE', 'UPDATE', req.user?._id, { 
