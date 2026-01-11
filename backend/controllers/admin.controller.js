@@ -902,7 +902,7 @@ const getUsers = async (req, res) => {
     }
     
     // Role filter
-    if (role && ['user', 'admin'].includes(role)) {
+    if (role && ['user', 'admin', 'seller', 'buyer'].includes(role)) { // Added seller and buyer
       filter.role = role;
     }
     
@@ -927,7 +927,7 @@ const getUsers = async (req, res) => {
 
     // Validate and sanitize pagination parameters
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Cap at 100 for performance
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
     // Validate sort fields for security
@@ -946,8 +946,10 @@ const getUsers = async (req, res) => {
       sort.email = 1;
     }
 
-    // Projection to exclude sensitive fields
+    // Projection to exclude sensitive fields - ADMIN VERSION (no privacy filtering)
     const projection = {
+      // Include all fields for admin
+      // Exclude only sensitive security fields
       password: 0,
       resetPasswordToken: 0,
       resetPasswordExpires: 0,
@@ -967,7 +969,7 @@ const getUsers = async (req, res) => {
 
     // Execute queries in parallel for better performance
     const [users, total, activeCount, adminCount, pendingCount] = await Promise.all([
-      // Get paginated users
+      // Get paginated users - ADMIN SHOULD SEE ALL DATA
       User.find(filter, projection)
         .sort(sort)
         .skip(skip)
@@ -987,29 +989,10 @@ const getUsers = async (req, res) => {
       User.countDocuments({ ...filter, registrationStatus: 'pending' })
     ]);
 
-    // Sanitize user data before sending
+    // IMPORTANT: DO NOT APPLY PRIVACY SETTINGS FOR ADMIN
+    // Admin should see all data regardless of user privacy settings
     const sanitizedUsers = users.map(user => {
       const sanitized = { ...user };
-      
-      // Apply privacy settings before sending
-      if (sanitized.privacySettings) {
-        if (!sanitized.privacySettings.showEmail) {
-          delete sanitized.email;
-        }
-        
-        if (!sanitized.privacySettings.showPhone && sanitized.phoneNumber) {
-          delete sanitized.phoneNumber;
-        }
-        
-        if (!sanitized.privacySettings.showLocation) {
-          delete sanitized.country;
-          delete sanitized.city;
-        }
-        
-        if (!sanitized.privacySettings.showLastSeen) {
-          delete sanitized.lastSeenAt;
-        }
-      }
       
       // Format dates for consistency
       if (sanitized.dateOfBirth) {
@@ -1038,6 +1021,10 @@ const getUsers = async (req, res) => {
       
       sanitized.accountAge = sanitized.createdAt ? 
         Date.now() - new Date(sanitized.createdAt).getTime() : null;
+      
+      // Add admin-specific flags
+      sanitized._isAdminView = true; // Flag to indicate this is admin view
+      sanitized._privacyOverridden = true; // Flag that admin bypassed privacy
       
       return sanitized;
     });
@@ -1077,7 +1064,8 @@ const getUsers = async (req, res) => {
           role: role || null,
           isActive: isActive !== '' ? isActive === 'true' : null,
           registrationStatus: registrationStatus || null
-        }
+        },
+        adminView: true // Indicate this is admin view
       }
     };
 
@@ -1105,7 +1093,97 @@ const getUsers = async (req, res) => {
     });
   }
 };
+const getUserById = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { id } = req.params;
 
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+        code: 'INVALID_USER_ID',
+        requestId
+      });
+    }
+
+    // Find user - ADMIN VERSION (no privacy filtering)
+    const user = await User.findById(id, {
+      password: 0,
+      resetPasswordToken: 0,
+      resetPasswordExpires: 0,
+      twoFactorSecret: 0,
+      verificationToken: 0,
+      verificationTokenExpires: 0,
+      registrationData: 0,
+      registrationExpiresAt: 0,
+      passwordHistory: 0,
+      deviceTokens: 0,
+      loginHistory: 0,
+      failedLoginAttempts: 0,
+      lockUntil: 0,
+      suspiciousActivityDetected: 0,
+      __v: 0
+    }).lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Format dates
+    const formattedUser = { ...user };
+    
+    if (formattedUser.dateOfBirth) {
+      formattedUser.dateOfBirth = formattedUser.dateOfBirth.toISOString().split('T')[0];
+    }
+    
+    if (formattedUser.createdAt) {
+      formattedUser.createdAt = formattedUser.createdAt.toISOString();
+    }
+    
+    if (formattedUser.updatedAt) {
+      formattedUser.updatedAt = formattedUser.updatedAt.toISOString();
+    }
+    
+    if (formattedUser.lastLoginAt) {
+      formattedUser.lastLoginAt = formattedUser.lastLoginAt.toISOString();
+    }
+    
+    if (formattedUser.lastSeenAt) {
+      formattedUser.lastSeenAt = formattedUser.lastSeenAt.toISOString();
+    }
+
+    // Add admin flags
+    formattedUser._isAdminView = true;
+    formattedUser._privacyOverridden = true;
+
+    res.json({
+      success: true,
+      data: formattedUser,
+      requestId,
+      timestamp: new Date().toISOString(),
+      adminView: true
+    });
+
+  } catch (error) {
+    console.error(`[ADMIN GET USER BY ID ERROR] Request ID: ${requestId}`, error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user',
+      code: 'USER_FETCH_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
+    });
+  }
+};
 /**
  * @desc    Create a new user (Admin)
  * @route   POST /api/admin/users
@@ -1691,23 +1769,73 @@ const deleteUser = async (req, res) => {
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
     console.log(`[ADMIN DELETE USER] Request started - ID: ${requestId}`);
-    console.log('[ADMIN DELETE USER] Params:', { id, permanent, reason });
+    console.log('[ADMIN DELETE USER] Params:', { 
+      id, 
+      originalId: req.params.id,
+      permanent, 
+      reason 
+    });
 
+    // ===== FIX: Handle [object Object] case =====
+    let userId = id;
+    
+    // Handle [object Object] case
+    if (id === '[object Object]' || id === 'undefined' || id === 'null') {
+      console.log('[ADMIN DELETE USER] Fixing ID...');
+      
+      // Try to get ID from body
+      if (req.body && req.body.id) {
+        userId = req.body.id;
+        console.log('[ADMIN DELETE USER] Using ID from body:', userId);
+      } 
+      // Try to get ID from query
+      else if (req.query && req.query.id) {
+        userId = req.query.id;
+        console.log('[ADMIN DELETE USER] Using ID from query:', userId);
+      }
+      // Try to parse from the string itself
+      else {
+        try {
+          const decoded = decodeURIComponent(userId);
+          if (decoded.startsWith('{')) {
+            const parsed = JSON.parse(decoded);
+            userId = parsed._id || parsed.id;
+            console.log('[ADMIN DELETE USER] Parsed ID from JSON:', userId);
+          }
+        } catch (e) {
+          console.error('[ADMIN DELETE USER] Failed to parse ID:', e);
+        }
+      }
+    }
+    
     // ===== VALIDATION =====
     
+    // Validate the ID
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      console.error('[ADMIN DELETE USER] No valid ID found');
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+        code: 'MISSING_USER_ID',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Validate MongoDB ObjectId
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.error('[ADMIN DELETE USER] Invalid MongoDB ID:', userId);
       return res.status(400).json({
         success: false,
         message: 'Invalid user ID format',
-        code: 'INVALID_USER_ID',
+        code: 'INVALID_USER_ID_FORMAT',
         requestId,
         timestamp: new Date().toISOString()
       });
     }
 
     // Prevent self-deletion
-    if (id === adminId.toString()) {
+    if (userId === adminId.toString()) {
       return res.status(400).json({
         success: false,
         message: 'Cannot delete your own account',
@@ -1718,7 +1846,7 @@ const deleteUser = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findById(id);
+    const user = await User.findById(userId);
     
     if (!user) {
       return res.status(404).json({
@@ -1747,16 +1875,13 @@ const deleteUser = async (req, res) => {
     const now = new Date();
     
     if (permanent === 'true') {
-      // Permanent delete - check for active dependencies
-      const Order = require('../models/order.model.js'); // Assuming you have Order model
       const Service = require('../models/services.model.js');
       const Gig = require('../models/gig.model.js');
       
       // Check for active dependencies
       const [activeServices, activeGigs, activeOrders] = await Promise.all([
-        Service.countDocuments({ createdBy: id, deletedAt: null, status: 'active' }),
-        Gig.countDocuments({ createdBy: id, deletedAt: null, status: 'open' }),
-        Order ? Order.countDocuments({ user: id, status: { $nin: ['completed', 'cancelled'] } }) : 0
+        Service.countDocuments({ createdBy: userId, deletedAt: null, status: 'active' }),
+        Gig.countDocuments({ createdBy: userId, deletedAt: null, status: 'open' }),
       ]);
       
       if (activeServices > 0 || activeGigs > 0 || activeOrders > 0) {
@@ -1775,14 +1900,14 @@ const deleteUser = async (req, res) => {
       }
       
       // Perform permanent deletion
-      result = await User.findByIdAndDelete(id);
+      result = await User.findByIdAndDelete(userId);
       
-      console.log(`[ADMIN DELETE USER] User permanently deleted: ${id}`);
+      console.log(`[ADMIN DELETE USER] User permanently deleted: ${userId}`);
       
     } else {
       // Soft delete
       result = await User.findByIdAndUpdate(
-        id,
+        userId,
         {
           isActive: false,
           deletedAt: now,
@@ -1795,12 +1920,12 @@ const deleteUser = async (req, res) => {
         { new: true }
       );
       
-      console.log(`[ADMIN DELETE USER] User soft deleted: ${id}`);
+      console.log(`[ADMIN DELETE USER] User soft deleted: ${userId}`);
     }
 
     // ===== LOG ADMIN ACTION =====
     
-    await logAdminAction(adminId, 'DELETE_USER', `user:${id}`, {
+    await logAdminAction(adminId, 'DELETE_USER', `user:${userId}`, {
       permanent: permanent === 'true',
       reason: reason || undefined,
       userEmail: user.email,
@@ -1816,7 +1941,7 @@ const deleteUser = async (req, res) => {
       success: true,
       message: permanent === 'true' ? 'User permanently deleted' : 'User deactivated successfully',
       data: {
-        _id: id,
+        _id: userId,
         email: user.email,
         name: user.name,
         isActive: false,
@@ -1861,11 +1986,6 @@ const deleteUser = async (req, res) => {
     });
   }
 };
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
 /**
  * Validate password strength
  */
@@ -4789,5 +4909,6 @@ module.exports = {
   exportCategories,
   getRecentActivity,
   checkAdminSession,adminLogout,fakeDelay,getAdminPermissions,adminLogin,
-  refreshAdminToken
+  refreshAdminToken,
+  getUserById 
 };

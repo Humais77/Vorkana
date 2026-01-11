@@ -146,7 +146,26 @@ export const adminAPI = {
   getUserById: (id) => adminApi.get(`/api/admin/users/${id}`),
   createUser: (data) => adminApi.post('/api/admin/users', data),
   updateUser: (id, data) => adminApi.put(`/api/admin/users/${id}`, data),
-  deleteUser: (id) => adminApi.delete(`/api/admin/users/${id}`),
+  deleteUser: (id, options = {}) => {
+  console.log('[ADMIN API] Deleting user:', { id, options });
+  
+  // Ensure ID is properly formatted
+  let userId = id;
+  if (typeof id === 'object') {
+    userId = id._id || id.id || id;
+  }
+  
+  // Clean up the ID
+  userId = String(userId).trim();
+  
+  return adminApi.delete(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    params: {
+      permanent: String(options.permanent || false).toLowerCase(),
+      force: String(options.force || false).toLowerCase(),
+      reason: options.reason || ''
+    }
+  });
+},
   bulkUpdateUsers: ({ ids, operation, data = {} }) => 
   adminApi.post('/api/admin/users/bulk-action', { ids, operation, data }),
   exportUsers: (format = 'csv') => 

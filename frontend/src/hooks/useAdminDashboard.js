@@ -168,14 +168,63 @@ export const useDeleteUser = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => adminAPI.deleteUser(id),
-    onMutate: async (id) => {
+    mutationFn: async (params) => {
+      console.log('[USE DELETE USER] Mutation called with:', params);
+      
+      // Handle both string ID and object with options
+      let id;
+      let options = {};
+      
+      if (typeof params === 'string') {
+        id = params;
+      } else if (params && typeof params === 'object') {
+        id = params.id || params._id;
+        options = {
+          permanent: params.permanent || false,
+          force: params.force || false,
+          reason: params.reason || ''
+        };
+      } else {
+        throw new Error('Invalid parameters for delete user');
+      }
+      
+      // Validate ID
+      if (!id || id === 'undefined' || id === 'null') {
+        throw new Error('Invalid user ID');
+      }
+      
+      // Clean up ID if it contains [object Object]
+      if (typeof id === 'object') {
+        id = id._id || id.id || JSON.stringify(id);
+      }
+      
+      console.log('[USE DELETE USER] Calling API with:', { id, options });
+      
+      // For admin delete, use the admin endpoint
+      return await adminAPI.deleteUser(id, options);
+    },
+    onMutate: async (params) => {
+      // Extract ID from params (could be string or object)
+      let id;
+      if (typeof params === 'string') {
+        id = params;
+      } else if (params && typeof params === 'object') {
+        id = params.id || params._id;
+      }
+      
+      if (!id) return;
+      
+      // Clean up ID
+      if (typeof id === 'object') {
+        id = id._id || id.id;
+      }
+      
       await queryClient.cancelQueries(['admin', 'users']);
       
       const previousUsers = queryClient.getQueryData(['admin', 'users']);
       
       queryClient.setQueryData(['admin', 'users'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
         return {
           ...old,
           data: old.data.filter(user => user._id !== id)
@@ -194,6 +243,8 @@ export const useDeleteUser = () => {
       }
     },
     onError: (error, variables, context) => {
+      console.error('[USE DELETE USER ERROR]', error);
+      
       if (context?.previousUsers) {
         queryClient.setQueryData(['admin', 'users'], context.previousUsers);
       }

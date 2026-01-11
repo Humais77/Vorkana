@@ -4,7 +4,7 @@ const { promisify } = require('util');
 const User = require('../models/user.model.js');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
-
+const { generateToken, generateRefreshToken } = require('../controllers/auth.controller.js');
 // Security: Rate limiting for admin dashboard
 const adminDashboardLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -139,8 +139,6 @@ const verifyAdmin = async (req, res, next) => {
     });
   }
 };
-
-// Cookie configuration for admin routes
 const adminCookieConfig = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
@@ -149,10 +147,15 @@ const adminCookieConfig = {
   path: '/api/admin',
   domain: process.env.COOKIE_DOMAIN || undefined
 };
-
-// Helper function to set admin cookies
-const setAdminCookie = (res, token) => {
+const setAdminCookie = (res, userId) => {
+  const token = generateToken(userId);
+  const refreshToken = generateRefreshToken(userId);
+  
   res.cookie('adminToken', token, adminCookieConfig);
+  res.cookie('adminRefreshToken', refreshToken, {
+    ...adminCookieConfig,
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
   
   // Also set a non-httpOnly cookie for client-side detection
   res.cookie('isAdmin', 'true', {
@@ -160,6 +163,8 @@ const setAdminCookie = (res, token) => {
     httpOnly: false,
     maxAge: 2 * 60 * 60 * 1000
   });
+  
+  return { token, refreshToken };
 };
 
 // Helper function to clear admin cookies
@@ -172,6 +177,7 @@ const clearAdminCookies = (res) => {
   };
   
   res.clearCookie('adminToken', clearOptions);
+  res.clearCookie('adminRefreshToken', clearOptions);
   res.clearCookie('isAdmin', { ...clearOptions, httpOnly: false });
 };
 

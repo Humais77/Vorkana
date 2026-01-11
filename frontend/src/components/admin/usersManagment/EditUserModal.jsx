@@ -1,7 +1,249 @@
-// EditUserModal.jsx - Enhanced with instant updates
-import { useState, useEffect, useCallback } from 'react';
-import { FiX, FiCheck, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
+import { useState, useEffect } from 'react';
+import { FiX, FiCheck, FiAlertCircle, FiEye, FiEyeOff, FiPlus, FiTrash2 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
+
+// Reusable Form Field Components
+const FormInput = ({ label, name, type = 'text', placeholder = '', value, onChange, onBlur, error, touched, required = false, options = [], disabled = false }) => {
+  const [showPassword, setShowPassword] = useState(false);
+  const hasError = error && touched;
+
+  const renderInput = () => {
+    switch (type) {
+      case 'select':
+        return (
+          <select
+            name={name}
+            value={value}
+            onChange={onChange}
+            onBlur={onBlur}
+            disabled={disabled}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+            } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+          >
+            {options.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        );
+
+      case 'textarea':
+        return (
+          <textarea
+            name={name}
+            value={value}
+            onChange={onChange}
+            onBlur={onBlur}
+            rows={3}
+            placeholder={placeholder}
+            disabled={disabled}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+            } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+          />
+        );
+
+      case 'checkbox':
+        return (
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              name={name}
+              checked={value}
+              onChange={onChange}
+              disabled={disabled}
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded transition-colors disabled:opacity-50"
+            />
+            <span className="ml-2 text-sm text-gray-700">Yes</span>
+          </div>
+        );
+
+      case 'password':
+        return (
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name={name}
+              value={value}
+              onChange={onChange}
+              onBlur={onBlur}
+              placeholder={placeholder}
+              disabled={disabled}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors pr-10 ${
+                hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+              } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              disabled={disabled}
+            >
+              {showPassword ? <FiEyeOff /> : <FiEye />}
+            </button>
+          </div>
+        );
+
+      case 'range':
+        return (
+          <div className="space-y-2">
+            <input
+              type="range"
+              name={name}
+              value={value}
+              onChange={onChange}
+              onBlur={onBlur}
+              disabled={disabled}
+              className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer ${
+                disabled ? 'cursor-not-allowed opacity-50' : ''
+              }`}
+            />
+            <div className="text-center text-sm font-medium text-gray-600">
+              {value}
+            </div>
+          </div>
+        );
+
+      default:
+        return (
+          <input
+            type={type}
+            name={name}
+            value={value}
+            onChange={onChange}
+            onBlur={onBlur}
+            placeholder={placeholder}
+            disabled={disabled}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+            } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label} {required && type !== 'checkbox' && <span className="text-red-500">*</span>}
+      </label>
+      
+      {renderInput()}
+      
+      {hasError && (
+        <p className="mt-1 text-sm text-red-600 flex items-center animate-pulse">
+          <FiAlertCircle className="h-4 w-4 mr-1" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// Section Component
+const FormSection = ({ title, description, children, className = '' }) => (
+  <div className={`mb-6 ${className}`}>
+    <h4 className="text-sm font-medium text-gray-900 mb-4">
+      {title}
+      {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+    </h4>
+    {children}
+  </div>
+);
+
+// Language Input Component
+const LanguageInput = ({ languages, onAddLanguage, onRemoveLanguage, newLanguage, setNewLanguage }) => (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      Languages
+    </label>
+    
+    {languages.length > 0 && (
+      <div className="flex flex-wrap gap-2 mb-3">
+        {languages.map((lang, index) => (
+          <div
+            key={index}
+            className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-indigo-100 text-indigo-800 border border-indigo-200 hover:bg-indigo-50 transition-colors"
+          >
+            <span>{lang}</span>
+            <button
+              type="button"
+              onClick={() => onRemoveLanguage(index)}
+              className="ml-2 text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              <FiX className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+    
+    <div className="flex gap-2">
+      <input
+        type="text"
+        value={newLanguage}
+        onChange={(e) => setNewLanguage(e.target.value)}
+        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), onAddLanguage())}
+        placeholder="Add a language (press Enter)"
+        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+      />
+      <button
+        type="button"
+        onClick={onAddLanguage}
+        disabled={!newLanguage.trim()}
+        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+      >
+        <FiPlus className="h-4 w-4 mr-1" />
+        Add
+      </button>
+    </div>
+  </div>
+);
+
+// Privacy Settings Component
+const PrivacySettings = ({ settings, onChange }) => (
+  <div className="space-y-3">
+    <div>
+      <label className="block text-xs text-gray-700 mb-1">Profile Visibility</label>
+      <select
+        name="privacySettings.profileVisibility"
+        value={settings.profileVisibility || 'public'}
+        onChange={onChange}
+        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:border-gray-400 transition-colors"
+      >
+        <option value="public">Public</option>
+        <option value="registered">Registered Users Only</option>
+        <option value="private">Private</option>
+      </select>
+    </div>
+    
+    <div className="space-y-2">
+      <label className="flex items-center cursor-pointer">
+        <input
+          type="checkbox"
+          name="privacySettings.showEmail"
+          checked={settings.showEmail || false}
+          onChange={onChange}
+          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+        />
+        <span className="ml-2 text-sm text-gray-700">Show Email</span>
+      </label>
+      
+      <label className="flex items-center cursor-pointer">
+        <input
+          type="checkbox"
+          name="privacySettings.showPhone"
+          checked={settings.showPhone || false}
+          onChange={onChange}
+          className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+        />
+        <span className="ml-2 text-sm text-gray-700">Show Phone</span>
+      </label>
+    </div>
+  </div>
+);
 
 const EditUserModal = ({ user, onClose, onSave }) => {
   const [formData, setFormData] = useState({
@@ -38,67 +280,121 @@ const EditUserModal = ({ user, onClose, onSave }) => {
   const [newLanguage, setNewLanguage] = useState('');
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPreviewUrl, setPreviewUrl] = useState('');
+  const [initialData, setInitialData] = useState(null);
 
-  // Initialize form data
   useEffect(() => {
     if (user) {
       console.log('[EDIT USER MODAL] Initializing with user:', user);
       
       const userData = {
+        // Basic info
         name: user.name || '',
         email: user.email || '',
         role: user.role || 'user',
+        
+        // Account status
         isActive: user.isActive ?? true,
         emailVerified: user.emailVerified ?? false,
+        
+        // Contact info - ALWAYS SHOW FOR ADMIN
         phoneNumber: user.phoneNumber || '',
-        bio: user.bio || '',
-        gender: user.gender || '',
         country: user.country || '',
         city: user.city || '',
+        
+        // Personal info
+        bio: user.bio || '',
+        gender: user.gender || '',
+        dateOfBirth: user.dateOfBirth ? 
+          (typeof user.dateOfBirth === 'string' ? 
+            user.dateOfBirth.split('T')[0] : 
+            new Date(user.dateOfBirth).toISOString().split('T')[0]) : '',
+        
+        // Professional info
         occupation: user.occupation || '',
         education: user.education || '',
         languages: Array.isArray(user.languages) ? user.languages : 
                   (user.languages ? [user.languages] : []),
+        
+        // Account settings
         accountType: user.accountType || 'basic',
-        privacySettings: user.privacySettings || {
-          profileVisibility: 'public',
-          showEmail: false,
-          showPhone: false,
-          showLocation: true,
-          showLastSeen: true
-        },
         picture: user.picture || '',
-        dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().split('T')[0] : '',
+        
+        // Stats
         rating: user.rating || 0,
         responseRate: user.responseRate || 0,
         responseTime: user.responseTime || 0,
-        completedOrders: user.completedOrders || 0
+        completedOrders: user.completedOrders || 0,
+        
+        // Privacy settings
+        privacySettings: user.privacySettings || {
+          profileVisibility: 'public',
+          showEmail: true,
+          showPhone: true,
+          showLocation: true,
+          showLastSeen: true
+        }
       };
 
+      console.log('[EDIT USER MODAL] Prepared user data:', userData);
       setFormData(userData);
-      setPreviewUrl(user.picture || '');
+      setInitialData(userData);
+      
+      // Set preview URL
+      if (user.picture && /^https?:\/\/.+/.test(user.picture)) {
+        setPreviewUrl(user.picture);
+      } else {
+        setPreviewUrl('');
+      }
     }
   }, [user]);
 
-  // Update preview when picture changes
-  useEffect(() => {
-    if (formData.picture && /^https?:\/\/.+/.test(formData.picture)) {
-      setPreviewUrl(formData.picture);
-    } else {
-      setPreviewUrl('');
-    }
-  }, [formData.picture]);
+  // Check if form has changes
+  const hasChanges = () => {
+    if (!initialData) return false;
+    
+    // Deep comparison (simplified version)
+    return JSON.stringify(formData) !== JSON.stringify(initialData);
+  };
 
-  // Handle input changes with instant feedback
+  // SIMPLIFIED VALIDATION - only validate required fields
+  const validateEmail = (email) => {
+    if (!email || email.trim() === '') {
+      return 'Email is required';
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return 'Invalid email format';
+    }
+    return '';
+  };
+
+  // SIMPLIFIED PHONE VALIDATION - accept more formats
+  const validatePhone = (phone) => {
+    if (!phone || phone.trim() === '') {
+      return ''; // Phone is optional
+    }
+    
+    // More permissive phone validation
+    const phoneStr = phone.trim();
+    const phoneRegex = /^[\+]?[0-9\s\-\(\)\.]{8,16}$/;
+    
+    if (!phoneRegex.test(phoneStr)) {
+      return 'Phone number should be 8-16 digits and may include +, spaces, dashes, parentheses';
+    }
+    
+    return '';
+  };
+
+  // SIMPLIFIED HANDLERS
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     
-    console.log('[EDIT USER MODAL] Field change:', { name, value, type, checked });
-    
-    // Clear error for this field
-    setErrors(prev => ({ ...prev, [name]: undefined }));
+    // Clear error for this field when user starts typing
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[name];
+      return newErrors;
+    });
     
     if (name.startsWith('privacySettings.')) {
       const settingName = name.split('.')[1];
@@ -113,7 +409,7 @@ const EditUserModal = ({ user, onClose, onSave }) => {
       setFormData(prev => ({
         ...prev,
         [name]: type === 'checkbox' ? checked : 
-                type === 'number' ? parseFloat(value) || 0 :
+                type === 'number' ? (value === '' ? '' : parseFloat(value) || 0) :
                 type === 'date' ? value :
                 value
       }));
@@ -123,64 +419,47 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     setTouched(prev => ({ ...prev, [name]: true }));
   };
 
-  // Handle blur with validation
-  const handleBlur = useCallback((field) => {
+  const handleBlur = (field, value) => {
     setTouched(prev => ({ ...prev, [field]: true }));
-    validateField(field, formData[field]);
-  }, [formData]);
-
-  // Validate a specific field
-  const validateField = useCallback((field, value) => {
+    
+    // Only validate if field is touched and has value
     let error = '';
     
     switch (field) {
-      case 'name':
-        if (!value.trim()) {
-          error = 'Name is required';
-        } else if (value.trim().length < 2) {
-          error = 'Name must be at least 2 characters';
-        }
-        break;
-        
       case 'email':
-        if (!value.trim()) {
-          error = 'Email is required';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          error = 'Invalid email format';
-        }
+        error = validateEmail(value || formData.email);
         break;
-        
       case 'phoneNumber':
-        if (value && value.trim() !== '') {
-          const phoneRegex = /^\+[\d\s\-\(\)\.]+$/;
-          const cleanPhone = value.replace(/[\s\-\(\)\.]/g, '');
-          if (!phoneRegex.test(value) || cleanPhone.length < 8 || cleanPhone.length > 16) {
-            error = 'Invalid phone number format';
+        error = validatePhone(value || formData.phoneNumber);
+        break;
+      case 'dateOfBirth':
+        if (value || formData.dateOfBirth) {
+          const dob = new Date(value || formData.dateOfBirth);
+          if (isNaN(dob.getTime())) {
+            error = 'Invalid date';
+          } else {
+            const today = new Date();
+            const age = today.getFullYear() - dob.getFullYear();
+            if (age < 13 || age > 120) {
+              error = 'Age must be between 13 and 120 years';
+            }
           }
-        }
-        break;
-        
-      case 'rating':
-        if (value < 0 || value > 5) {
-          error = 'Rating must be between 0 and 5';
-        }
-        break;
-        
-      case 'responseRate':
-        if (value < 0 || value > 100) {
-          error = 'Response rate must be between 0 and 100';
         }
         break;
     }
     
     if (error) {
       setErrors(prev => ({ ...prev, [field]: error }));
+    } else {
+      // Clear error if validation passes
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
-    
-    return !error;
-  }, []);
+  };
 
-  // Add language with instant feedback
   const handleAddLanguage = () => {
     if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
       setFormData(prev => ({
@@ -188,11 +467,9 @@ const EditUserModal = ({ user, onClose, onSave }) => {
         languages: [...prev.languages, newLanguage.trim()]
       }));
       setNewLanguage('');
-      setErrors(prev => ({ ...prev, languages: undefined }));
     }
   };
 
-  // Remove language with instant feedback
   const handleRemoveLanguage = (index) => {
     const newLanguages = [...formData.languages];
     newLanguages.splice(index, 1);
@@ -202,123 +479,100 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     }));
   };
 
-  // Submit form
+  // SIMPLIFIED FORM VALIDATION
+  const validateForm = () => {
+    const validationErrors = {};
+    
+    // Email validation (required)
+    const emailError = validateEmail(formData.email);
+    if (emailError) validationErrors.email = emailError;
+    
+    // Phone validation (optional)
+    if (formData.phoneNumber && formData.phoneNumber.trim() !== '') {
+      const phoneError = validatePhone(formData.phoneNumber);
+      if (phoneError) validationErrors.phoneNumber = phoneError;
+    }
+    
+    // Date of birth validation (optional)
+    if (formData.dateOfBirth && formData.dateOfBirth.trim() !== '') {
+      const dob = new Date(formData.dateOfBirth);
+      if (isNaN(dob.getTime())) {
+        validationErrors.dateOfBirth = 'Invalid date';
+      } else {
+        const today = new Date();
+        const age = today.getFullYear() - dob.getFullYear();
+        if (age < 13 || age > 120) {
+          validationErrors.dateOfBirth = 'Age must be between 13 and 120 years';
+        }
+      }
+    }
+    
+    setErrors(validationErrors);
+    return Object.keys(validationErrors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate all fields
-    const validationErrors = {};
-    Object.keys(formData).forEach(key => {
-      const error = validateField(key, formData[key]);
-      if (error) validationErrors[key] = error;
-    });
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
+    if (!validateForm()) {
       toast.error('Please fix validation errors');
+      return;
+    }
+    
+    // Check if there are any changes
+    if (!hasChanges()) {
+      toast.info('No changes detected');
+      onClose();
       return;
     }
     
     setLoading(true);
     try {
-      await onSave(formData);
+      // Clean up data before sending
+      const cleanData = { ...formData };
+      
+      // Remove empty strings for optional fields
+      const optionalFields = ['phoneNumber', 'bio', 'country', 'city', 'occupation', 'education', 'picture', 'gender'];
+      optionalFields.forEach(field => {
+        if (cleanData[field] === '') {
+          cleanData[field] = undefined;
+        }
+      });
+      
+      // Remove empty date
+      if (cleanData.dateOfBirth === '') {
+        cleanData.dateOfBirth = null;
+      }
+      
+      await onSave(cleanData);
       toast.success('User updated successfully!');
       onClose();
     } catch (error) {
       console.error('[EDIT USER MODAL] Error:', error);
-      toast.error(error.message || 'Failed to update user');
+      
+      // Show backend validation errors
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        const errorMessage = error.response?.data?.message || 
+                            error.response?.data?.error || 
+                            error.message || 
+                            'Failed to update user';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Render form field with instant validation
-  const renderField = (label, name, type = 'text', placeholder = '', options = []) => {
-    const hasError = errors[name] && touched[name];
-    const value = formData[name];
-    
-    return (
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          {label} {type !== 'checkbox' && <span className="text-red-500">*</span>}
-        </label>
-        
-        {type === 'select' ? (
-          <select
-            name={name}
-            value={value}
-            onChange={handleChange}
-            onBlur={() => handleBlur(name)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
-          >
-            {options.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : type === 'textarea' ? (
-          <textarea
-            name={name}
-            value={value}
-            onChange={handleChange}
-            onBlur={() => handleBlur(name)}
-            rows={3}
-            placeholder={placeholder}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
-          />
-        ) : type === 'checkbox' ? (
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              name={name}
-              checked={value}
-              onChange={handleChange}
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded transition-colors"
-            />
-            <span className="ml-2 text-sm text-gray-700">Yes</span>
-          </div>
-        ) : type === 'date' ? (
-          <input
-            type={type}
-            name={name}
-            value={value}
-            onChange={handleChange}
-            onBlur={() => handleBlur(name)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
-          />
-        ) : (
-          <input
-            type={type}
-            name={name}
-            value={value}
-            onChange={handleChange}
-            onBlur={() => handleBlur(name)}
-            placeholder={placeholder}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
-          />
-        )}
-        
-        {hasError && (
-          <p className="mt-1 text-sm text-red-600 flex items-center animate-pulse">
-            <FiAlertCircle className="h-4 w-4 mr-1" />
-            {errors[name]}
-          </p>
-        )}
-      </div>
-    );
-  };
-
-  // Character counter for bio
-  const bioCount = formData.bio.length;
+  // Check if save button should be enabled
+  const canSave = !loading && 
+                  Object.keys(errors).length === 0 && 
+                  hasChanges() && 
+                  formData.name.trim() !== '' && 
+                  formData.email.trim() !== '';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -327,6 +581,9 @@ const EditUserModal = ({ user, onClose, onSave }) => {
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Edit User</h3>
             <p className="text-sm text-gray-500">Editing: {user?.name || user?.email}</p>
+            {!hasChanges() && (
+              <p className="text-xs text-yellow-600 mt-1">No changes made yet</p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -338,343 +595,264 @@ const EditUserModal = ({ user, onClose, onSave }) => {
         </div>
         
         <form onSubmit={handleSubmit} className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {renderField('Full Name *', 'name', 'text', 'Enter full name')}
-            {renderField('Email *', 'email', 'email', 'user@example.com')}
-            
-            {renderField('Role *', 'role', 'select', '', [
-              { value: 'user', label: 'User' },
-              { value: 'seller', label: 'Seller' },
-              { value: 'buyer', label: 'Buyer' },
-              { value: 'admin', label: 'Admin' }
-            ])}
-            
-            {renderField('Account Type', 'accountType', 'select', '', [
-              { value: 'basic', label: 'Basic' },
-              { value: 'premium', label: 'Premium' },
-              { value: 'business', label: 'Business' }
-            ])}
-            
-            {renderField('Phone Number', 'phoneNumber', 'tel', '+1234567890')}
-            {renderField('Date of Birth', 'dateOfBirth', 'date')}
-            {renderField('Country', 'country', 'text', 'Country')}
-            {renderField('City', 'city', 'text', 'City')}
-            {renderField('Gender', 'gender', 'select', '', [
-              { value: '', label: 'Select Gender' },
-              { value: 'male', label: 'Male' },
-              { value: 'female', label: 'Female' },
-              { value: 'other', label: 'Other' },
-              { value: 'prefer-not-to-say', label: 'Prefer not to say' }
-            ])}
-            {renderField('Occupation', 'occupation', 'text', 'Occupation')}
-            {renderField('Education', 'education', 'text', 'Education')}
-            
-            {/* Profile Picture with Preview */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Profile Picture URL
-              </label>
-              <div className="flex space-x-3">
-                <div className="flex-1">
-                  <input
-                    type="url"
-                    name="picture"
-                    value={formData.picture}
-                    onChange={handleChange}
-                    onBlur={() => handleBlur('picture')}
-                    placeholder="https://example.com/profile.jpg"
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                      errors.picture ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                </div>
-                {previewUrl && (
-                  <div className="h-10 w-10 rounded-full overflow-hidden border border-gray-300">
-                    <img 
-                      src={previewUrl} 
-                      alt="Preview" 
-                      className="h-full w-full object-cover"
-                      onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/40';
-                        setErrors(prev => ({ ...prev, picture: 'Invalid image URL' }));
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-              {errors.picture && (
-                <p className="mt-1 text-sm text-red-600 flex items-center">
-                  <FiAlertCircle className="h-4 w-4 mr-1" />
-                  {errors.picture}
-                </p>
-              )}
+          {/* Basic Information Section */}
+          <FormSection title="Basic Information">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormInput
+                label="Full Name *"
+                name="name"
+                type="text"
+                placeholder="Enter full name"
+                value={formData.name}
+                onChange={handleChange}
+                onBlur={() => handleBlur('name')}
+                error={errors.name}
+                touched={touched.name}
+                required={true}
+              />
+              
+              <FormInput
+                label="Email *"
+                name="email"
+                type="email"
+                placeholder="user@example.com"
+                value={formData.email}
+                onChange={handleChange}
+                onBlur={(e) => handleBlur('email', e.target.value)}
+                error={errors.email}
+                touched={touched.email}
+                required={true}
+              />
+              
+              <FormInput
+                label="Role"
+                name="role"
+                type="select"
+                value={formData.role}
+                onChange={handleChange}
+                options={[
+                  { value: 'user', label: 'User' },
+                  { value: 'seller', label: 'Seller' },
+                  { value: 'buyer', label: 'Buyer' },
+                  { value: 'admin', label: 'Admin' }
+                ]}
+              />
+              
+              <FormInput
+                label="Account Type"
+                name="accountType"
+                type="select"
+                value={formData.accountType}
+                onChange={handleChange}
+                options={[
+                  { value: 'basic', label: 'Basic' },
+                  { value: 'premium', label: 'Premium' },
+                  { value: 'business', label: 'Business' }
+                ]}
+              />
+              
+              <FormInput
+                label="Phone Number"
+                name="phoneNumber"
+                type="tel"
+                placeholder="+1 234 567 8900"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                onBlur={(e) => handleBlur('phoneNumber', e.target.value)}
+                error={errors.phoneNumber}
+                touched={touched.phoneNumber}
+              />
+              
+              <FormInput
+                label="Date of Birth"
+                name="dateOfBirth"
+                type="date"
+                value={formData.dateOfBirth}
+                onChange={handleChange}
+                onBlur={(e) => handleBlur('dateOfBirth', e.target.value)}
+                error={errors.dateOfBirth}
+                touched={touched.dateOfBirth}
+              />
+              
+              <FormInput
+                label="Country"
+                name="country"
+                type="text"
+                placeholder="Country"
+                value={formData.country}
+                onChange={handleChange}
+              />
+              
+              <FormInput
+                label="City"
+                name="city"
+                type="text"
+                placeholder="City"
+                value={formData.city}
+                onChange={handleChange}
+              />
+              
+              <FormInput
+                label="Gender"
+                name="gender"
+                type="select"
+                value={formData.gender}
+                onChange={handleChange}
+                options={[
+                  { value: '', label: 'Select Gender' },
+                  { value: 'male', label: 'Male' },
+                  { value: 'female', label: 'Female' },
+                  { value: 'other', label: 'Other' },
+                  { value: 'prefer-not-to-say', label: 'Prefer not to say' }
+                ]}
+              />
+              
+              <FormInput
+                label="Occupation"
+                name="occupation"
+                type="text"
+                placeholder="Occupation"
+                value={formData.occupation}
+                onChange={handleChange}
+              />
+              
+              <FormInput
+                label="Education"
+                name="education"
+                type="text"
+                placeholder="Education"
+                value={formData.education}
+                onChange={handleChange}
+              />
             </div>
-          </div>
+          </FormSection>
 
-          {/* Bio with character counter */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Bio {formData.bio && (
-                <span className={`text-xs font-medium ml-2 ${
-                  bioCount > 500 ? 'text-red-600' : 'text-gray-500'
-                }`}>
-                  {bioCount}/500 characters
-                </span>
-              )}
-            </label>
-            <textarea
+          {/* Bio Section */}
+          <FormSection title="Bio" description="Tell us about yourself...">
+            <FormInput
+              label=""
               name="bio"
+              type="textarea"
+              placeholder="Tell us about yourself..."
               value={formData.bio}
               onChange={handleChange}
-              onBlur={() => handleBlur('bio')}
-              rows={3}
-              placeholder="Tell us about yourself..."
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                errors.bio || bioCount > 500 ? 'border-red-500' : 'border-gray-300'
-              }`}
+              error={errors.bio}
+              touched={touched.bio}
             />
-            {(errors.bio || bioCount > 500) && (
-              <p className="mt-1 text-sm text-red-600 flex items-center">
-                <FiAlertCircle className="h-4 w-4 mr-1" />
-                {errors.bio || 'Bio cannot exceed 500 characters'}
-              </p>
-            )}
-          </div>
+          </FormSection>
 
-          {/* Languages */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Languages {formData.languages.length > 0 && (
-                <span className="text-xs text-gray-500 ml-2">
-                  ({formData.languages.length} added)
-                </span>
-              )}
-            </label>
-            
-            {/* Current Languages */}
-            {formData.languages.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {formData.languages.map((lang, index) => (
-                  <div
-                    key={index}
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-indigo-100 text-indigo-800 border border-indigo-200"
-                  >
-                    <span>{lang}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLanguage(index)}
-                      className="ml-2 text-indigo-600 hover:text-indigo-800 transition-colors"
-                    >
-                      <FiX className="h-3 w-3" />
-                    </button>
+          {/* Languages Section */}
+          <FormSection title="Languages">
+            <LanguageInput
+              languages={formData.languages}
+              onAddLanguage={handleAddLanguage}
+              onRemoveLanguage={handleRemoveLanguage}
+              newLanguage={newLanguage}
+              setNewLanguage={setNewLanguage}
+            />
+          </FormSection>
+
+          {/* Status & Privacy Section */}
+          <FormSection title="Account Settings">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h5 className="text-sm font-medium text-gray-900 mb-4">Account Status</h5>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Active Account</span>
+                      <p className="text-xs text-gray-500">User can login if active</p>
+                    </div>
+                    <FormInput
+                      label=""
+                      name="isActive"
+                      type="checkbox"
+                      value={formData.isActive}
+                      onChange={handleChange}
+                    />
                   </div>
-                ))}
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Email Verified</span>
+                      <p className="text-xs text-gray-500">Mark email as verified</p>
+                    </div>
+                    <FormInput
+                      label=""
+                      name="emailVerified"
+                      type="checkbox"
+                      value={formData.emailVerified}
+                      onChange={handleChange}
+                    />
+                  </div>
+                </div>
               </div>
-            )}
-            
-            {/* Add Language Input */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newLanguage}
-                onChange={(e) => setNewLanguage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLanguage())}
-                placeholder="Add a language (press Enter)"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              <button
-                type="button"
-                onClick={handleAddLanguage}
-                disabled={!newLanguage.trim()}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Add
-              </button>
+
+              <div>
+                <h5 className="text-sm font-medium text-gray-900 mb-4">Privacy Settings</h5>
+                <PrivacySettings
+                  settings={formData.privacySettings}
+                  onChange={handleChange}
+                />
+              </div>
             </div>
-          </div>
+          </FormSection>
 
           {/* Stats Section */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rating ({formData.rating}/5)
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="range"
+          <FormSection title="User Statistics">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rating ({formData.rating}/5)
+                </label>
+                <FormInput
+                  label=""
                   name="rating"
+                  type="range"
                   min="0"
                   max="5"
                   step="0.5"
                   value={formData.rating}
                   onChange={handleChange}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
-                <span className="text-sm font-medium w-8">{formData.rating}</span>
               </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Response Rate ({formData.responseRate}%)
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="range"
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Response Rate ({formData.responseRate}%)
+                </label>
+                <FormInput
+                  label=""
                   name="responseRate"
+                  type="range"
                   min="0"
                   max="100"
                   step="1"
                   value={formData.responseRate}
                   onChange={handleChange}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
-                <span className="text-sm font-medium w-12">{formData.responseRate}%</span>
               </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Response Time
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="number"
-                  name="responseTime"
-                  value={formData.responseTime}
-                  onChange={handleChange}
-                  min="0"
-                  step="0.5"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-                <span className="text-sm text-gray-500">hrs</span>
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Completed Orders
-              </label>
-              <input
+              
+              <FormInput
+                label="Response Time (hours)"
+                name="responseTime"
                 type="number"
+                value={formData.responseTime}
+                onChange={handleChange}
+                min="0"
+                step="0.5"
+              />
+              
+              <FormInput
+                label="Completed Orders"
                 name="completedOrders"
+                type="number"
                 value={formData.completedOrders}
                 onChange={handleChange}
                 min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
-          </div>
-
-          {/* Status Toggles */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <span className="text-sm font-medium text-gray-900">Account Status</span>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formData.isActive ? 'Active - User can log in' : 'Inactive - User cannot log in'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, isActive: !prev.isActive }))}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    formData.isActive ? 'bg-green-600' : 'bg-gray-200'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formData.isActive ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <span className="text-sm font-medium text-gray-900">Email Verified</span>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formData.emailVerified ? 'Email is verified' : 'Email needs verification'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, emailVerified: !prev.emailVerified }))}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    formData.emailVerified ? 'bg-green-600' : 'bg-gray-200'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formData.emailVerified ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Privacy Settings */}
-            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-900">Privacy Settings</h4>
-              
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Profile Visibility</label>
-                <select
-                  name="privacySettings.profileVisibility"
-                  value={formData.privacySettings?.profileVisibility || 'public'}
-                  onChange={handleChange}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                >
-                  <option value="public">Public</option>
-                  <option value="registered">Registered Users Only</option>
-                  <option value="private">Private</option>
-                </select>
-              </div>
-              
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="privacySettings.showEmail"
-                    checked={formData.privacySettings?.showEmail || false}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">Show Email</span>
-                </label>
-                
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="privacySettings.showPhone"
-                    checked={formData.privacySettings?.showPhone || false}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">Show Phone</span>
-                </label>
-                
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="privacySettings.showLocation"
-                    checked={formData.privacySettings?.showLocation ?? true}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">Show Location</span>
-                </label>
-                
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="privacySettings.showLastSeen"
-                    checked={formData.privacySettings?.showLastSeen ?? true}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">Show Last Seen</span>
-                </label>
-              </div>
-            </div>
-          </div>
+          </FormSection>
 
           {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
@@ -688,8 +866,12 @@ const EditUserModal = ({ user, onClose, onSave }) => {
             </button>
             <button
               type="submit"
-              disabled={loading || Object.keys(errors).length > 0}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center space-x-2 transition-colors"
+              disabled={!canSave}
+              className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+                canSave 
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             >
               {loading ? (
                 <>
@@ -704,10 +886,18 @@ const EditUserModal = ({ user, onClose, onSave }) => {
               )}
             </button>
           </div>
+          
+          {/* Debug info (remove in production) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
+              <div>Errors: {JSON.stringify(errors)}</div>
+              <div>Has Changes: {hasChanges() ? 'Yes' : 'No'}</div>
+              <div>Can Save: {canSave ? 'Yes' : 'No'}</div>
+            </div>
+          )}
         </form>
       </div>
     </div>
   );
 };
-
 export default EditUserModal;

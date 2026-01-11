@@ -12,7 +12,7 @@ const {
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
 const mongoose = require('mongoose');
-
+const authController = require('../controllers/auth.controller.js'); 
 // IMPORT MODELS
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
@@ -21,35 +21,19 @@ const User = require('../models/user.model.js');
 // Security: Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
 router.post('/login', 
-  adminApiLimiter,
-  // Validation middleware
+  adminDashboardLimiter,
   (req, res, next) => {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
-      });
-    }
-    
-    if (!validator.isEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid email format'
-      });
-    }
-    
+    // Add admin-specific validation if needed
+    req.body.isAdmin = true;
     next();
   },
-  adminController.adminLogin
+  authController.login // Use auth controller's login
 );
 
 router.post('/logout',
   verifyAdmin,
-  adminController.adminLogout
+  authController.logout // Use auth controller's logout
 );
-
 router.get('/session',
   verifyAdmin,
   adminController.checkAdminSession
@@ -296,21 +280,10 @@ router.delete('/subcategories/:id',
   },
   adminController.deleteSubcategory
 );
-
-// Bulk operations on subcategories
-
-
-// Get subcategory statistics
-
-
-// Export subcategories
-
-// Subcategory dropdown for specific category
-
 router.post('/refresh',
-  // Custom middleware to get refresh token from cookie
+  verifyAdmin,
   (req, res, next) => {
-    const refreshToken = req.cookies?.refreshToken;
+    const refreshToken = req.cookies?.adminRefreshToken;
     
     if (refreshToken) {
       req.body.refreshToken = refreshToken;
@@ -318,12 +291,8 @@ router.post('/refresh',
     
     next();
   },
-  adminController.refreshAdminToken
+  authController.refreshToken // Use auth controller's refreshToken
 );
-// ============================================
-// EXISTING ROUTES (keep these as they are)
-// ============================================
-
 // Dashboard Routes
 router.get('/dashboard', 
   verifyAdmin, 

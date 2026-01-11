@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAdminDashboard ,useSystemHealth, useChartData, useRecentActivities } from '../../../hooks/useAdminDashboard';
+import { useAdminDashboard ,useSystemHealth,useRecentActivities } from '../../../hooks/useAdminDashboard';
 import { useAdminStore } from '../../../store/useAdminStore';
 import { Link } from 'react-router-dom';
 import {
@@ -34,7 +34,6 @@ const AdminDashboard = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState('');
 const { data: systemHealthData } = useSystemHealth();
-const { data: chartData } = useChartData('monthlyGrowth', '30d');
 const { data: recentActivitiesData } = useRecentActivities(5);
   useEffect(() => {
     if (dashboardStats.lastUpdated) {

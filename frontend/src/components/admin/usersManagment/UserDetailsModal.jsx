@@ -1,302 +1,345 @@
-import { FiX, FiMail, FiPhone, FiMapPin, FiCalendar, FiGlobe, FiBriefcase, FiFileText, FiUser, FiShield, FiClock, FiHash, FiCheckCircle, FiXCircle, FiMap } from 'react-icons/fi';
+// UserDetailsModal.jsx
+import { useEffect, useState } from 'react';
+import { FiX, FiMail, FiPhone, FiMapPin, FiUser, FiCalendar, FiBriefcase, FiGlobe, FiEye, FiEyeOff } from 'react-icons/fi';
 import { format } from 'date-fns';
 
 const UserDetailsModal = ({ user, onClose }) => {
-  console.log('[USER DETAILS MODAL] User data:', user); // Debug log
+  const [userData, setUserData] = useState(null);
 
-  if (!user) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-          <div className="text-center">
-            <p className="text-gray-500">No user data available</p>
-            <button
-              onClick={onClose}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const getRoleColor = (role) => {
-    const colors = {
-      admin: 'bg-purple-100 text-purple-800',
-      user: 'bg-gray-100 text-gray-800'
-    };
-    return colors[role] || colors.user;
-  };
+  useEffect(() => {
+    if (user) {
+      console.log('[USER DETAILS MODAL] User data:', user);
+      
+      // Always show all data for admin, ignore privacy settings
+      const enhancedUser = {
+        ...user,
+        // Force show all contact info
+        _showEmail: true,
+        _showPhone: true,
+        _showLocation: true,
+        _showLastSeen: true,
+        _isAdminView: true
+      };
+      
+      setUserData(enhancedUser);
+    }
+  }, [user]);
 
   const formatDate = (date) => {
-    if (!date) return 'Never';
+    if (!date) return 'Not available';
     try {
-      return format(new Date(date), 'MMM d, yyyy HH:mm');
-    } catch (error) {
+      return format(new Date(date), 'PPPpp');
+    } catch {
       return 'Invalid date';
     }
   };
 
+  if (!userData) return null;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">User Details</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">User Details</h3>
+            <p className="text-sm text-gray-500">Admin View - All information visible</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-500"
+            className="text-gray-400 hover:text-gray-500 transition-colors"
           >
             <FiX className="h-6 w-6" />
           </button>
         </div>
-        
+
         <div className="p-6">
-          {/* Header Section */}
-          <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-6 pb-6 border-b border-gray-200">
-            <img
-              className="h-24 w-24 rounded-full object-cover"
-              src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
-              alt={user.name}
-            />
-            <div className="flex-1">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{user.name}</h2>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(user.role)}`}>
-                      {user.role}
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                    {user.accountType && user.accountType !== 'basic' && (
-                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">
-                        {user.accountType}
-                      </span>
-                    )}
-                  </div>
+          {/* Admin Warning Banner */}
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <FiEye className="h-5 w-5 text-blue-600 mr-2" />
+              <div>
+                <h4 className="text-sm font-medium text-blue-800">Admin Privacy Override</h4>
+                <p className="text-xs text-blue-600 mt-1">
+                  You are viewing all user information regardless of their privacy settings.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* User Profile */}
+          <div className="mb-6">
+            <div className="flex items-center space-x-4">
+              <div className="h-20 w-20">
+                <img
+                  className="h-20 w-20 rounded-full object-cover"
+                  src={userData.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name || 'User')}&background=random`}
+                  alt={userData.name || 'User'}
+                />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{userData.name || 'No name'}</h2>
+                <p className="text-gray-600">{userData.email || 'No email'}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    userData.role === 'admin' 
+                      ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                      : 'bg-gray-100 text-gray-800 border border-gray-200'
+                  }`}>
+                    {userData.role || 'user'}
+                  </span>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    userData.isActive
+                      ? 'bg-green-100 text-green-800 border border-green-200'
+                      : 'bg-red-100 text-red-800 border border-red-200'
+                  }`}>
+                    {userData.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    userData.emailVerified
+                      ? 'bg-green-100 text-green-800 border border-green-200'
+                      : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                  }`}>
+                    {userData.emailVerified ? 'Email Verified' : 'Email Not Verified'}
+                  </span>
                 </div>
-                <div className="mt-2 md:mt-0 text-sm text-gray-500">
-                  <div className="flex items-center">
-                    <FiHash className="h-3 w-3 mr-1" />
-                    {user._id}
-                  </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Information - ALWAYS VISIBLE FOR ADMIN */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-900 mb-4">Contact Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <FiMail className="h-5 w-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Email Address</p>
+                  <p className="text-sm font-medium text-gray-900">{userData.email || 'Not provided'}</p>
+                  {userData.privacySettings?.showEmail === false && (
+                    <p className="text-xs text-yellow-600 mt-1">User has hidden this from public view</p>
+                  )}
                 </div>
               </div>
               
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center space-x-2">
-                  <FiMail className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-600">Email</p>
-                    <p className="font-medium">{user.email}</p>
-                  </div>
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <FiPhone className="h-5 w-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Phone Number</p>
+                  <p className="text-sm font-medium text-gray-900">{userData.phoneNumber || 'Not provided'}</p>
+                  {userData.privacySettings?.showPhone === false && (
+                    <p className="text-xs text-yellow-600 mt-1">User has hidden this from public view</p>
+                  )}
                 </div>
-                {user.phoneNumber && (
-                  <div className="flex items-center space-x-2">
-                    <FiPhone className="h-4 w-4 text-gray-400" />
+              </div>
+              
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <FiMapPin className="h-5 w-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Location</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {userData.city && userData.country 
+                      ? `${userData.city}, ${userData.country}`
+                      : 'Not provided'
+                    }
+                  </p>
+                  {userData.privacySettings?.showLocation === false && (
+                    <p className="text-xs text-yellow-600 mt-1">User has hidden this from public view</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <FiCalendar className="h-5 w-5 text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Date of Birth</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {userData.dateOfBirth 
+                      ? format(new Date(userData.dateOfBirth), 'PPP')
+                      : 'Not provided'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Additional Information */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-900 mb-4">Additional Information</h4>
+            <div className="space-y-4">
+              {userData.bio && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Bio</p>
+                  <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">{userData.bio}</p>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4">
+                {userData.occupation && (
+                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <FiBriefcase className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="text-sm text-gray-600">Phone</p>
-                      <p className="font-medium">{user.phoneNumber}</p>
+                      <p className="text-xs text-gray-500">Occupation</p>
+                      <p className="text-sm font-medium text-gray-900">{userData.occupation}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {userData.education && (
+                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <FiGlobe className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Education</p>
+                      <p className="text-sm font-medium text-gray-900">{userData.education}</p>
                     </div>
                   </div>
                 )}
               </div>
+              
+              {userData.languages && userData.languages.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Languages</p>
+                  <div className="flex flex-wrap gap-2">
+                    {userData.languages.map((lang, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-indigo-100 text-indigo-800 text-sm rounded-full"
+                      >
+                        {lang}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Stats Section */}
-          <div className="py-6 border-b border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-4">Account Statistics</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Member Since</p>
-                <p className="font-medium">{formatDate(user.createdAt)}</p>
+          {/* Activity Information */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-900 mb-4">Activity Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Last Login</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(userData.lastLoginAt)}</p>
+                {userData.privacySettings?.showLastSeen === false && (
+                  <p className="text-xs text-yellow-600 mt-1">User has hidden this from public view</p>
+                )}
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Last Login</p>
-                <p className="font-medium">{formatDate(user.lastLoginAt)}</p>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Account Created</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(userData.createdAt)}</p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Email Status</p>
-                <p className={`font-medium flex items-center ${user.emailVerified ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {user.emailVerified ? (
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Last Updated</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(userData.updatedAt)}</p>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Account Status</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {userData.registrationStatus || 'verified'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Privacy Settings Display */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-900 mb-4">Privacy Settings</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-2">Profile Visibility</p>
+                <p className="text-sm font-medium text-gray-900 capitalize">
+                  {userData.privacySettings?.profileVisibility || 'public'}
+                </p>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-2">Show Email to Public</p>
+                <div className="flex items-center space-x-2">
+                  {userData.privacySettings?.showEmail ? (
                     <>
-                      <FiCheckCircle className="h-4 w-4 mr-1" />
-                      Verified
+                      <FiEye className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-700">Visible</span>
                     </>
                   ) : (
                     <>
-                      <FiXCircle className="h-4 w-4 mr-1" />
-                      Not Verified
+                      <FiEyeOff className="h-4 w-4 text-yellow-500" />
+                      <span className="text-sm text-yellow-700">Hidden</span>
                     </>
                   )}
-                </p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Account Type</p>
-                <p className="font-medium capitalize">{user.accountType || 'basic'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Profile Information */}
-          <div className="py-6 border-b border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-4">Profile Information</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {user.bio && (
-                <div className="md:col-span-2">
-                  <p className="text-sm text-gray-600 mb-1">Bio</p>
-                  <p className="text-gray-800 bg-gray-50 p-3 rounded-lg">{user.bio}</p>
                 </div>
-              )}
+              </div>
               
-              {(user.country || user.city) && (
-                <div className="flex items-start space-x-2">
-                  <FiMapPin className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Location</p>
-                    <p className="font-medium">
-                      {[user.city, user.country].filter(Boolean).join(', ') || 'Not specified'}
-                    </p>
-                  </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-2">Show Phone to Public</p>
+                <div className="flex items-center space-x-2">
+                  {userData.privacySettings?.showPhone ? (
+                    <>
+                      <FiEye className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-700">Visible</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiEyeOff className="h-4 w-4 text-yellow-500" />
+                      <span className="text-sm text-yellow-500">Hidden</span>
+                    </>
+                  )}
                 </div>
-              )}
-
-              {user.occupation && (
-                <div className="flex items-start space-x-2">
-                  <FiBriefcase className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Occupation</p>
-                    <p className="font-medium">{user.occupation}</p>
-                  </div>
-                </div>
-              )}
-
-              {user.education && (
-                <div className="flex items-start space-x-2">
-                  <FiFileText className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Education</p>
-                    <p className="font-medium">{user.education}</p>
-                  </div>
-                </div>
-              )}
-
-              {user.dateOfBirth && (
-                <div className="flex items-start space-x-2">
-                  <FiCalendar className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Date of Birth</p>
-                    <p className="font-medium">{format(new Date(user.dateOfBirth), 'MMM d, yyyy')}</p>
-                  </div>
-                </div>
-              )}
-
-              {user.languages && user.languages.length > 0 && (
-                <div className="flex items-start space-x-2 md:col-span-2">
-                  <FiGlobe className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Languages</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {Array.isArray(user.languages) 
-                        ? user.languages.map((lang, index) => (
-                            <span
-                              key={index}
-                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
-                            >
-                              {lang}
-                            </span>
-                          ))
-                        : <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                            {user.languages}
-                          </span>
-                      }
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {user.gender && (
-                <div className="flex items-start space-x-2">
-                  <FiUser className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Gender</p>
-                    <p className="font-medium capitalize">{user.gender}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Additional fields that might exist in your user model */}
-              {user.rating !== undefined && (
-                <div className="flex items-start space-x-2">
-                  <FiShield className="h-4 w-4 text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-600">Rating</p>
-                    <p className="font-medium">{user.rating || 0}/5</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Privacy Settings */}
-          {user.privacySettings && (
-            <div className="py-6">
-              <h4 className="text-sm font-medium text-gray-900 mb-4">Privacy Settings</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Profile Visibility</p>
-                  <p className="font-medium capitalize">{user.privacySettings.profileVisibility || 'public'}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">Show Email</p>
-                    <p className={`font-medium ${user.privacySettings.showEmail ? 'text-green-600' : 'text-gray-600'}`}>
-                      {user.privacySettings.showEmail ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Show Phone</p>
-                    <p className={`font-medium ${user.privacySettings.showPhone ? 'text-green-600' : 'text-gray-600'}`}>
-                      {user.privacySettings.showPhone ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Show Location</p>
-                    <p className={`font-medium ${user.privacySettings.showLocation ? 'text-green-600' : 'text-gray-600'}`}>
-                      {user.privacySettings.showLocation ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Show Last Seen</p>
-                    <p className={`font-medium ${user.privacySettings.showLastSeen ? 'text-green-600' : 'text-gray-600'}`}>
-                      {user.privacySettings.showLastSeen ? 'Yes' : 'No'}
-                    </p>
-                  </div>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500 mb-2">Show Location to Public</p>
+                <div className="flex items-center space-x-2">
+                  {userData.privacySettings?.showLocation ? (
+                    <>
+                      <FiEye className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-700">Visible</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiEyeOff className="h-4 w-4 text-yellow-500" />
+                      <span className="text-sm text-yellow-700">Hidden</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Footer */}
-          <div className="pt-6 border-t border-gray-200 flex justify-end space-x-3">
-            <button
-              onClick={() => {
-                // This would trigger edit modal
-                onClose();
-              }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-            >
-              Edit User
-            </button>
+          {/* Stats */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-gray-900 mb-4">Statistics</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Rating</p>
+                <p className="text-lg font-bold text-gray-900">{userData.rating || 0}/5</p>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Response Rate</p>
+                <p className="text-lg font-bold text-gray-900">{userData.responseRate || 0}%</p>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Response Time</p>
+                <p className="text-lg font-bold text-gray-900">{userData.responseTime || 0} hours</p>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Completed Orders</p>
+                <p className="text-lg font-bold text-gray-900">{userData.completedOrders || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end pt-6 border-t border-gray-200">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
             >
               Close
             </button>

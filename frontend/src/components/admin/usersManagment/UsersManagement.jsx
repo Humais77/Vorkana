@@ -381,6 +381,13 @@ const UserTableRow = memo(({
       </td>
     </tr>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance
+  return (
+    prevProps.user._id === nextProps.user._id &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.actionMenuId === nextProps.actionMenuId
+  );
 });
 
 UserTableRow.displayName = 'UserTableRow';
@@ -431,170 +438,146 @@ const UsersManagement = () => {
   const bulkUserMutation = useBulkUserOperations();
   const exportUsersMutation = useExportUsers();
 
-  // Debug: Log the data structure
-  useEffect(() => {
-    if (data) {
-      console.log('Raw data from API:', data);
-      console.log('Data type:', typeof data);
-      console.log('Is array:', Array.isArray(data));
-      console.log('Data keys:', Object.keys(data || {}));
-      setDebugInfo(JSON.stringify(data, null, 2).substring(0, 500) + '...');
+
+// Optimize the users extraction logic
+const users = useMemo(() => {
+  if (!data) return [];
+  
+  // Try multiple access patterns
+  const possiblePaths = [
+    data.data?.users,        // data.data.users
+    data.users,              // data.users
+    data.data,               // data.data (array)
+    data                     // data itself (array)
+  ];
+  
+  for (const path of possiblePaths) {
+    if (Array.isArray(path) && path.length > 0) {
+      // Validate that first item has user-like properties
+      const firstItem = path[0];
+      if (firstItem && (firstItem.email || firstItem.name || firstItem._id)) {
+        return path;
+      }
     }
-  }, [data]);
-
-  // Safely extract users data with multiple fallback strategies
-  const users = useMemo(() => {
-    try {
-      console.log('Extracting users from data:', data);
-      
-      if (!data) {
-        console.log('No data available');
-        return [];
-      }
-
-      // Strategy 1: Check if data is already an array
-      if (Array.isArray(data)) {
-        console.log('Data is already an array, length:', data.length);
-        return data;
-      }
-
-      // Strategy 2: Check for data.data array (common API pattern)
-      if (data.data && Array.isArray(data.data)) {
-        console.log('Found data.data array, length:', data.data.length);
-        return data.data;
-      }
-
-      // Strategy 3: Check for data.users array
-      if (data.users && Array.isArray(data.users)) {
-        console.log('Found data.users array, length:', data.users.length);
-        return data.users;
-      }
-
-      // Strategy 4: Check if data has a property that contains users
-      if (typeof data === 'object') {
-        const keys = Object.keys(data);
-        for (const key of keys) {
-          if (Array.isArray(data[key]) && data[key].length > 0) {
-            // Check if first item looks like a user object
-            const firstItem = data[key][0];
-            if (firstItem && typeof firstItem === 'object') {
-              if (firstItem.email !== undefined || firstItem.name !== undefined) {
-                console.log(`Found array in key "${key}", length:`, data[key].length);
-                return data[key];
-              }
-            }
-          }
-        }
-      }
-
-      // Strategy 5: Check if data itself is a user object (single user)
-      if (data._id && (data.email || data.name)) {
-        console.log('Data is a single user object');
-        return [data];
-      }
-
-      // Strategy 6: Check for nested data structure
-      if (data.data && typeof data.data === 'object') {
-        const nestedKeys = Object.keys(data.data);
-        for (const key of nestedKeys) {
-          if (Array.isArray(data.data[key])) {
-            console.log(`Found nested array in data.data.${key}`);
-            return data.data[key];
-          }
-        }
-      }
-
-      console.warn('Unexpected data format, returning empty array');
-      console.log('Full data structure:', data);
-      return [];
-    } catch (err) {
-      console.error('Error parsing users data:', err);
-      setError('Failed to parse user data: ' + err.message);
-      return [];
-    }
-  }, [data]);
-
-  // Safely extract pagination data
-  const pagination = useMemo(() => {
-    try {
-      if (!data) {
-        console.log('No data for pagination');
-        return { total: 0, totalPages: 1 };
-      }
-
-      // Check for pagination object
-      if (data.pagination && typeof data.pagination === 'object') {
-        console.log('Found pagination object:', data.pagination);
-        return {
-          total: data.pagination.total || 0,
-          totalPages: data.pagination.totalPages || 
-                     Math.ceil((data.pagination.total || 0) / limit) || 1
-        };
-      }
-
-      // Check for direct total property
-      if (data.total !== undefined) {
-        console.log('Found total property:', data.total);
-        return {
-          total: data.total,
-          totalPages: Math.ceil(data.total / limit)
-        };
-      }
-
-      // Fallback to users length
-      console.log('Using users length for pagination:', users.length);
-      return { 
-        total: users.length, 
-        totalPages: Math.ceil(users.length / limit) || 1 
-      };
-    } catch (err) {
-      console.error('Error parsing pagination data:', err);
+  }
+  
+  // If data is a single user object
+  if (data._id && (data.email || data.name)) {
+    return [data];
+  }
+  
+  return [];
+}, [data]);
+ // Safely extract pagination data
+const pagination = useMemo(() => {
+  try {
+    if (!data) {
+      console.log('No data for pagination');
       return { total: 0, totalPages: 1 };
     }
-  }, [data, users.length, limit]);
 
-  // Memoized stats calculation with safe array handling
-  const userStats = useMemo(() => {
-    try {
-      if (!Array.isArray(users)) {
-        console.error('Users is not an array:', users);
-        return { total: 0, active: 0, admins: 0 };
-      }
-      
-      console.log('Calculating stats for users array, length:', users.length);
-      
-      if (users.length === 0) {
-        return { 
-          total: pagination.total || 0, 
-          active: 0, 
-          admins: 0 
-        };
-      }
-      
-      const safeUsers = users.filter(user => 
-        user && typeof user === 'object' && user._id
-      );
-      
-      const activeCount = safeUsers.filter(u => u.isActive === true).length;
-      const adminCount = safeUsers.filter(u => u.role === 'admin').length;
-      
-      console.log('Stats calculated:', {
-        total: pagination.total || safeUsers.length,
-        active: activeCount,
-        admins: adminCount
-      });
-      
+    // Check for pagination in data.pagination
+    if (data.data && data.data.pagination && typeof data.data.pagination === 'object') {
+      console.log('Found data.data.pagination:', data.data.pagination);
       return {
-        total: pagination.total || safeUsers.length,
-        active: activeCount,
-        admins: adminCount
+        total: data.data.pagination.total || 0,
+        totalPages: data.data.pagination.totalPages || 
+                   Math.ceil((data.data.pagination.total || 0) / limit) || 1
       };
-    } catch (err) {
-      console.error('Error calculating user stats:', err);
-      return { total: 0, active: 0, admins: 0 };
     }
-  }, [users, pagination.total]);
 
+    // Check for direct pagination
+    if (data.pagination && typeof data.pagination === 'object') {
+      console.log('Found pagination object:', data.pagination);
+      return {
+        total: data.pagination.total || 0,
+        totalPages: data.pagination.totalPages || 
+                   Math.ceil((data.pagination.total || 0) / limit) || 1
+      };
+    }
+
+    // Check for direct total property in data
+    if (data.data && data.data.total !== undefined) {
+      console.log('Found data.data.total:', data.data.total);
+      return {
+        total: data.data.total,
+        totalPages: Math.ceil(data.data.total / limit)
+      };
+    }
+
+    // Check for direct total property
+    if (data.total !== undefined) {
+      console.log('Found total property:', data.total);
+      return {
+        total: data.total,
+        totalPages: Math.ceil(data.total / limit)
+      };
+    }
+
+    // Fallback to users length
+    console.log('Using users length for pagination:', users.length);
+    return { 
+      total: users.length, 
+      totalPages: Math.ceil(users.length / limit) || 1 
+    };
+  } catch (err) {
+    console.error('Error parsing pagination data:', err);
+    return { total: 0, totalPages: 1 };
+  }
+}, [data, users.length, limit]);
+  // Memoized stats calculation with safe array handling
+const userStats = useMemo(() => {
+  try {
+    if (!Array.isArray(users)) return { total: 0, active: 0, admins: 0 };
+    
+    const safeUsers = users.filter(user => user && user._id);
+    
+    const stats = {
+      total: pagination.total || safeUsers.length,
+      active: safeUsers.filter(u => u.isActive === true).length,
+      inactive: safeUsers.filter(u => u.isActive === false).length,
+      admins: safeUsers.filter(u => u.role === 'admin').length,
+      sellers: safeUsers.filter(u => u.role === 'seller').length,
+      buyers: safeUsers.filter(u => u.role === 'buyer').length,
+      verified: safeUsers.filter(u => u.emailVerified === true).length,
+      unverified: safeUsers.filter(u => !u.emailVerified).length,
+      newToday: safeUsers.filter(u => {
+        const createdDate = new Date(u.createdAt);
+        const today = new Date();
+        return createdDate.toDateString() === today.toDateString();
+      }).length,
+      online: safeUsers.filter(u => {
+        if (!u.lastSeenAt) return false;
+        const lastSeen = new Date(u.lastSeenAt);
+        const now = new Date();
+        return (now - lastSeen) < 5 * 60 * 1000; // Last 5 minutes
+      }).length
+    };
+    
+    stats.verifiedPercentage = stats.total > 0 
+      ? Math.round((stats.verified / stats.total) * 100) 
+      : 0;
+    stats.activePercentage = stats.total > 0 
+      ? Math.round((stats.active / stats.total) * 100) 
+      : 0;
+    
+    return stats;
+  } catch (err) {
+    return { 
+      total: 0, 
+      active: 0, 
+      admins: 0,
+      sellers: 0,
+      buyers: 0,
+      verified: 0,
+      unverified: 0,
+      newToday: 0,
+      online: 0,
+      verifiedPercentage: 0,
+      activePercentage: 0
+    };
+  }
+}, [users, pagination.total]);
   // Handle query errors
   useEffect(() => {
     if (queryError) {
@@ -671,31 +654,95 @@ const UsersManagement = () => {
     }
   }, [selectedUsers, bulkUserMutation, queryClient]);
 
-  const handleDeleteUser = useCallback(async () => {
-    try {
-      if (userToDelete?.type === 'single' && userToDelete?.id) {
-        await deleteUserMutation.mutateAsync(userToDelete.id);
-        toast.success('User deleted successfully');
-      } else if (userToDelete?.type === 'bulk' && userToDelete?.ids) {
-        await Promise.all(
-          userToDelete.ids.map(id => deleteUserMutation.mutateAsync(id))
-        );
-        toast.success(`${userToDelete.ids.length} users deleted`);
+const handleDeleteUser = useCallback(async (deleteOptions) => {
+  try {
+    const { permanent = false } = deleteOptions;
+    
+    console.log('[DELETE HANDLER] Starting delete:', { 
+      userToDelete, 
+      permanent,
+      type: userToDelete?.type 
+    });
+    
+    if (userToDelete?.type === 'single' && userToDelete?.id) {
+      const userId = userToDelete.id;
+      
+      // Validate ID format
+      if (!userId || userId === 'undefined' || userId === 'null' || userId.includes('[object')) {
+        toast.error('Invalid user ID format');
+        return;
       }
       
-      setSelectedUsers([]);
-      setShowDeleteModal(false);
-      setUserToDelete(null);
+      console.log('[DELETE HANDLER] Deleting single user:', userId);
       
-      // Invalidate cache
-      queryClient.invalidateQueries(['admin', 'users']);
+      if (permanent) {
+        // Permanent delete
+        await deleteUserMutation.mutateAsync({
+          id: userId,
+          permanent: true
+        });
+        toast.success('User permanently deleted');
+      } else {
+        // Soft delete (deactivate)
+        await updateUserMutation.mutateAsync({
+          id: userId,
+          data: { 
+            isActive: false, 
+            deletedAt: new Date().toISOString() 
+          }
+        });
+        toast.success('User deactivated successfully');
+      }
+    } else if (userToDelete?.type === 'bulk' && userToDelete?.ids) {
+      console.log('[DELETE HANDLER] Deleting bulk users:', userToDelete.ids.length);
       
-    } catch (error) {
-      console.error('Delete error:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete users');
+      // Validate all IDs
+      const validIds = userToDelete.ids.filter(id => 
+        id && id !== 'undefined' && id !== 'null' && !id.includes('[object')
+      );
+      
+      if (validIds.length === 0) {
+        toast.error('No valid user IDs found');
+        return;
+      }
+      
+      if (permanent) {
+        // Permanent bulk delete - use bulk mutation if available
+        await bulkUserMutation.mutateAsync({
+          ids: validIds,
+          operation: 'delete',
+          data: { permanent: true }
+        });
+        toast.success(`${validIds.length} users permanently deleted`);
+      } else {
+        // Soft bulk delete
+        await bulkUserMutation.mutateAsync({
+          ids: validIds,
+          operation: 'deactivate'
+        });
+        toast.success(`${validIds.length} users deactivated`);
+      }
     }
-  }, [userToDelete, deleteUserMutation, queryClient]);
-
+    
+    setSelectedUsers([]);
+    setShowDeleteModal(false);
+    setUserToDelete(null);
+    
+    // Invalidate cache
+    queryClient.invalidateQueries(['admin', 'users']);
+    
+  } catch (error) {
+    console.error('[DELETE HANDLER ERROR]', error);
+    
+    // Provide more detailed error message
+    const errorMessage = error.response?.data?.message || 
+                        error.response?.data?.error || 
+                        error.message || 
+                        'Failed to delete users';
+    
+    toast.error(`Delete failed: ${errorMessage}`);
+  }
+}, [userToDelete, deleteUserMutation, updateUserMutation, bulkUserMutation, queryClient]);
   const handleViewUser = useCallback((user) => {
     if (!user || typeof user !== 'object') {
       toast.error('Invalid user data');
@@ -770,15 +817,47 @@ const UsersManagement = () => {
   const toggleActionMenu = useCallback((userId) => {
     setActionMenu(actionMenu === userId ? null : userId);
   }, [actionMenu]);
+// Update the handleDelete function to extract ID properly
+const handleDelete = useCallback((user) => {
+  if (!user || !user._id) {
+    toast.error('Invalid user data');
+    return;
+  }
+  
+  // Ensure we're passing only the ID string, not the whole object
+  const userId = typeof user === 'string' ? user : (user._id || user.id);
+  
+  if (!userId || userId === 'undefined' || userId === 'null') {
+    toast.error('Invalid user ID');
+    return;
+  }
+  
+  console.log('[DELETE USER] Setting user to delete:', { 
+    type: 'single', 
+    id: userId,
+    userEmail: user.email 
+  });
+  
+  setUserToDelete({ type: 'single', id: userId });
+  setShowDeleteModal(true);
+}, []);
 
-  const handleDelete = useCallback((user) => {
-    if (!user || !user._id) {
-      toast.error('Invalid user data');
-      return;
-    }
-    setUserToDelete({ type: 'single', id: user._id });
-    setShowDeleteModal(true);
-  }, []);
+// Also update bulk delete handler
+const handleBulkDelete = useCallback(() => {
+  if (selectedUsers.length === 0) {
+    toast.error('Please select users first');
+    return;
+  }
+  
+  console.log('[BULK DELETE] Setting users to delete:', { 
+    type: 'bulk', 
+    ids: selectedUsers,
+    count: selectedUsers.length 
+  });
+  
+  setUserToDelete({ type: 'bulk', ids: selectedUsers });
+  setShowDeleteModal(true);
+}, [selectedUsers]);
 
   const refreshData = useCallback(() => {
     try {
@@ -898,31 +977,7 @@ const UsersManagement = () => {
 
   return (
     <div className="space-y-6">
-      {/* Debug Panel - Remove in production */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center">
-              <FiAlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
-              <h4 className="text-sm font-medium text-yellow-800">Debug Info</h4>
-            </div>
-            <button
-              onClick={() => console.log('Full data:', data)}
-              className="text-xs text-yellow-700 hover:text-yellow-900"
-            >
-              Log Full Data
-            </button>
-          </div>
-          <div className="text-xs text-yellow-700 space-y-1">
-            <div>Users array length: {users.length}</div>
-            <div>Data type: {typeof data}</div>
-            <div>Is array: {Array.isArray(data) ? 'Yes' : 'No'}</div>
-            {data && (
-              <div>Data keys: {Object.keys(data).join(', ')}</div>
-            )}
-          </div>
-        </div>
-      )}
+     
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -958,35 +1013,96 @@ const UsersManagement = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold mt-1">{userStats.total.toLocaleString()}</p>
-            </div>
-            <FiUsers className="h-8 w-8 text-blue-500" />
-          </div>
+      // Replace the current Quick Stats section with this enhanced version
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-600">Total Users</p>
+        <p className="text-2xl font-bold mt-1">{userStats.total.toLocaleString()}</p>
+        <div className="flex items-center mt-1">
+          <span className="text-xs text-green-600 font-medium">
+            +{userStats.newToday} today
+          </span>
+          <span className="mx-2 text-gray-300">|</span>
+          <span className="text-xs text-blue-600">
+            {userStats.online} online
+          </span>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Active Users</p>
-              <p className="text-2xl font-bold mt-1">{userStats.active.toLocaleString()}</p>
-            </div>
-            <FiUserCheck className="h-8 w-8 text-green-500" />
+      </div>
+      <FiUsers className="h-8 w-8 text-blue-500" />
+    </div>
+  </div>
+  
+  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-600">Active Users</p>
+        <p className="text-2xl font-bold mt-1">{userStats.active.toLocaleString()}</p>
+        <div className="mt-1">
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-green-600 h-2 rounded-full" 
+              style={{ width: `${userStats.activePercentage}%` }}
+            ></div>
           </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {userStats.activePercentage}% of total
+          </p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Admins</p>
-              <p className="text-2xl font-bold mt-1">{userStats.admins.toLocaleString()}</p>
-            </div>
-            <FiShield className="h-8 w-8 text-red-500" />
+      </div>
+      <FiUserCheck className="h-8 w-8 text-green-500" />
+    </div>
+  </div>
+  
+  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-600">Verified Users</p>
+        <p className="text-2xl font-bold mt-1">{userStats.verified.toLocaleString()}</p>
+        <div className="mt-1">
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full" 
+              style={{ width: `${userStats.verifiedPercentage}%` }}
+            ></div>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {userStats.verifiedPercentage}% verified
+          </p>
+        </div>
+      </div>
+      <FiShield className="h-8 w-8 text-blue-500" />
+    </div>
+  </div>
+  
+  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-600">User Roles</p>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="text-center">
+            <p className="text-lg font-bold text-purple-600">{userStats.admins}</p>
+            <p className="text-xs text-gray-500">Admins</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-blue-600">{userStats.sellers}</p>
+            <p className="text-xs text-gray-500">Sellers</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-green-600">{userStats.buyers}</p>
+            <p className="text-xs text-gray-500">Buyers</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-gray-600">{userStats.total - (userStats.admins + userStats.sellers + userStats.buyers)}</p>
+            <p className="text-xs text-gray-500">Regular</p>
           </div>
         </div>
       </div>
+      <FiUserCheck className="h-8 w-8 text-indigo-500" />
+    </div>
+  </div>
+</div>
 
       {/* Bulk Actions */}
       {selectedUsers.length > 0 && (

@@ -1,4 +1,3 @@
-// CreateUserModal.jsx
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminAPI } from '../../../api/admin';
@@ -15,12 +14,13 @@ import {
   FiFileText,
   FiX,
   FiCheck,
-  FiHash
+  FiAlertCircle
 } from 'react-icons/fi';
 
 const CreateUserModal = ({ onClose, onSuccess }) => {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -49,6 +49,9 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    
+    // Clear error for this field
+    setErrors(prev => ({ ...prev, [name]: undefined }));
     
     if (name.startsWith('privacySettings.')) {
       const settingName = name.split('.')[1];
@@ -85,92 +88,163 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
   };
 
   const validateForm = () => {
-    const errors = [];
+    const validationErrors = {};
 
-    if (!formData.name.trim()) errors.push('Name is required');
-    if (!formData.email.trim()) errors.push('Email is required');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.push('Invalid email format');
-    if (!formData.password) errors.push('Password is required');
-    if (formData.password.length < 8) errors.push('Password must be at least 8 characters');
-    if (formData.phoneNumber && !/^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/im.test(formData.phoneNumber)) {
-      errors.push('Invalid phone number format');
+    if (!formData.name.trim()) validationErrors.name = 'Name is required';
+    if (!formData.email.trim()) validationErrors.email = 'Email is required';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) validationErrors.email = 'Invalid email format';
+    if (!formData.password) validationErrors.password = 'Password is required';
+    
+    // Password strength validation
+    if (formData.password) {
+      if (formData.password.length < 8) {
+        validationErrors.password = 'Password must be at least 8 characters';
+      } else if (!/[A-Z]/.test(formData.password)) {
+        validationErrors.password = 'Must contain at least one uppercase letter';
+      } else if (!/[a-z]/.test(formData.password)) {
+        validationErrors.password = 'Must contain at least one lowercase letter';
+      } else if (!/\d/.test(formData.password)) {
+        validationErrors.password = 'Must contain at least one number';
+      } else if (!/[@$!%*?&]/.test(formData.password)) {
+        validationErrors.password = 'Must contain at least one special character (@$!%*?&)';
+      }
     }
+
+    // Phone validation
+    if (formData.phoneNumber && formData.phoneNumber.trim() !== '') {
+      if (!/^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/im.test(formData.phoneNumber)) {
+        validationErrors.phoneNumber = 'Invalid phone number format';
+      }
+    }
+
+    // Date of birth validation
     if (formData.dateOfBirth) {
       const dob = new Date(formData.dateOfBirth);
       const today = new Date();
       const age = today.getFullYear() - dob.getFullYear();
-      if (age < 13 || age > 120) errors.push('Age must be between 13 and 120 years');
+      if (age < 13 || age > 120) {
+        validationErrors.dateOfBirth = 'Age must be between 13 and 120 years';
+      }
     }
 
-    return errors;
+    setErrors(validationErrors);
+    return Object.keys(validationErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  
-  const errors = validateForm();
-  if (errors.length > 0) {
-    errors.forEach(error => toast.error(error));
-    return;
-  }
-
-  setLoading(true);
-  try {
-    // Prepare data for API
-    const userData = {
-      ...formData,
-      // Ensure empty strings are converted to appropriate values
-      phoneNumber: formData.phoneNumber || '',
-      bio: formData.bio || '',
-      gender: formData.gender || '',
-      country: formData.country || '',
-      city: formData.city || '',
-      occupation: formData.occupation || '',
-      education: formData.education || '',
-      picture: formData.picture || null,
-      languages: formData.languages.length > 0 ? formData.languages : [],
-      // Set emailVerified to true for admin-created users
-      emailVerified: true,
-      isActive: true,
-      // Add createdByAdmin field if needed by backend
-      createdByAdmin: true
-    };
-
-    console.log('Submitting user data:', JSON.stringify(userData, null, 2));
-
-    const response = await adminAPI.createUser(userData);
+    e.preventDefault();
     
-    if (response.data.success) {
-      toast.success('User created successfully!');
-      queryClient.invalidateQueries(['admin', 'users']);
-      queryClient.invalidateQueries(['admin', 'dashboard']);
-      onSuccess?.();
-      onClose();
-    } else {
-      toast.error(response.data.message || 'Failed to create user');
+    if (!validateForm()) {
+      Object.values(errors).forEach(error => toast.error(error));
+      return;
     }
-  } catch (error) {
-    console.error('Create user error:', error);
-    console.error('Create user error details:', error.response?.data);
-    
-    // Show more detailed error message
-    const errorMessage = error.response?.data?.message || 
-                        error.response?.data?.error || 
-                        error.message || 
-                        'Failed to create user';
-    
-    // If there are validation errors, show them
-    if (error.response?.data?.errors) {
-      error.response.data.errors.forEach(err => {
-        toast.error(err);
-      });
-    } else {
-      toast.error(errorMessage);
+
+    setLoading(true);
+    try {
+      const userData = {
+        ...formData,
+        phoneNumber: formData.phoneNumber || '',
+        bio: formData.bio || '',
+        gender: formData.gender || '',
+        country: formData.country || '',
+        city: formData.city || '',
+        occupation: formData.occupation || '',
+        education: formData.education || '',
+        picture: formData.picture || null,
+        languages: formData.languages.length > 0 ? formData.languages : [],
+        emailVerified: true,
+        isActive: true,
+        createdByAdmin: true
+      };
+
+      const response = await adminAPI.createUser(userData);
+      
+      if (response.data.success) {
+        toast.success('User created successfully!');
+        queryClient.invalidateQueries(['admin', 'users']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+        onSuccess?.();
+        onClose();
+      } else {
+        toast.error(response.data.message || 'Failed to create user');
+      }
+    } catch (error) {
+      console.error('Create user error:', error);
+      
+      // Show backend validation errors
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        const errorMessage = error.response?.data?.message || 
+                            error.response?.data?.error || 
+                            error.message || 
+                            'Failed to create user';
+        toast.error(errorMessage);
+      }
+    } finally {
+      setLoading(false);
     }
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
+  const renderField = (label, name, type = 'text', placeholder = '', options = []) => {
+    const hasError = errors[name];
+    
+    return (
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {label} {type !== 'checkbox' && <span className="text-red-500">*</span>}
+        </label>
+        
+        {type === 'select' ? (
+          <select
+            name={name}
+            value={formData[name]}
+            onChange={handleChange}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+            }`}
+          >
+            {options.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : type === 'textarea' ? (
+          <textarea
+            name={name}
+            value={formData[name]}
+            onChange={handleChange}
+            rows={3}
+            placeholder={placeholder}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+            }`}
+          />
+        ) : (
+          <input
+            type={type}
+            name={name}
+            value={formData[name]}
+            onChange={handleChange}
+            placeholder={placeholder}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+              hasError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+            }`}
+          />
+        )}
+        
+        {hasError && (
+          <p className="mt-1 text-sm text-red-600 flex items-center">
+            <FiAlertCircle className="h-4 w-4 mr-1" />
+            {errors[name]}
+          </p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -194,108 +268,18 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Basic Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Enter full name"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Address *
-                </label>
-                <div className="relative">
-                  <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="user@example.com"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Password *
-                </label>
-                <div className="relative">
-                  <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <input
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Minimum 8 characters"
-                    minLength={8}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone Number
-                </label>
-                <div className="relative">
-                  <FiPhone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <input
-                    type="tel"
-                    name="phoneNumber"
-                    value={formData.phoneNumber}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="+1234567890"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date of Birth
-                </label>
-                <div className="relative">
-                  <FiCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <input
-                    type="date"
-                    name="dateOfBirth"
-                    value={formData.dateOfBirth}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Gender
-                </label>
-                <select
-                  name="gender"
-                  value={formData.gender}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="">Select Gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                  <option value="prefer-not-to-say">Prefer not to say</option>
-                </select>
-              </div>
+              {renderField('Full Name *', 'name', 'text', 'Enter full name')}
+              {renderField('Email *', 'email', 'email', 'user@example.com')}
+              {renderField('Password *', 'password', 'password', 'Minimum 8 characters')}
+              {renderField('Phone Number', 'phoneNumber', 'tel', '+1234567890')}
+              {renderField('Date of Birth', 'dateOfBirth', 'date')}
+              {renderField('Gender', 'gender', 'select', '', [
+                { value: '', label: 'Select Gender' },
+                { value: 'male', label: 'Male' },
+                { value: 'female', label: 'Female' },
+                { value: 'other', label: 'Other' },
+                { value: 'prefer-not-to-say', label: 'Prefer not to say' }
+              ])}
             </div>
           </div>
 
@@ -306,33 +290,8 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Location Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Country
-                </label>
-                <input
-                  type="text"
-                  name="country"
-                  value={formData.country}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Enter country"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  City
-                </label>
-                <input
-                  type="text"
-                  name="city"
-                  value={formData.city}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Enter city"
-                />
-              </div>
+              {renderField('Country', 'country', 'text', 'Enter country')}
+              {renderField('City', 'city', 'text', 'Enter city')}
             </div>
           </div>
 
@@ -343,117 +302,55 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Professional Information
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Occupation
-                </label>
-                <input
-                  type="text"
-                  name="occupation"
-                  value={formData.occupation}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="e.g., Software Engineer"
-                />
-              </div>
+              {renderField('Occupation', 'occupation', 'text', 'e.g., Software Engineer')}
+              {renderField('Education', 'education', 'text', 'e.g., Bachelor\'s in Computer Science')}
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Education
-                </label>
-                <input
-                  type="text"
-                  name="education"
-                  value={formData.education}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="e.g., Bachelor's in Computer Science"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Languages
-                </label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {formData.languages.map((lang, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
-                    >
-                      {lang}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveLanguage(index)}
-                        className="ml-1.5 text-indigo-600 hover:text-indigo-800"
-                      >
-                        <FiX className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newLanguage}
-                    onChange={(e) => setNewLanguage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLanguage())}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Add a language"
-                  />
+          {/* Languages */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Languages
+            </label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {formData.languages.map((lang, index) => (
+                <span
+                  key={index}
+                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                >
+                  {lang}
                   <button
                     type="button"
-                    onClick={handleAddLanguage}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                    onClick={() => handleRemoveLanguage(index)}
+                    className="ml-1.5 text-indigo-600 hover:text-indigo-800"
                   >
-                    Add
+                    <FiX className="h-3 w-3" />
                   </button>
-                </div>
-              </div>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newLanguage}
+                onChange={(e) => setNewLanguage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLanguage())}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="Add a language"
+              />
+              <button
+                type="button"
+                onClick={handleAddLanguage}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+              >
+                Add
+              </button>
             </div>
           </div>
 
           {/* Profile Information */}
           <div>
-            <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center">
-              <FiFileText className="h-4 w-4 mr-2" />
-              Profile Information
-            </h4>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bio
-                </label>
-                <textarea
-                  name="bio"
-                  value={formData.bio}
-                  onChange={handleChange}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Tell us about yourself..."
-                  maxLength={500}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {formData.bio.length}/500 characters
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Profile Picture URL
-                  </label>
-                  <input
-                    type="url"
-                    name="picture"
-                    value={formData.picture}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="https://example.com/profile.jpg"
-                  />
-                </div>
-              </div>
-            </div>
+            {renderField('Bio', 'bio', 'textarea', 'Tell us about yourself...')}
           </div>
 
           {/* Account Settings */}
@@ -463,107 +360,15 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
               Account Settings
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role *
-                </label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  required
-                >
-                  <option value="user">User</option>
-                  <option value="seller">Seller</option>
-                  <option value="buyer">Buyer</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Account Type
-                </label>
-                <select
-                  name="accountType"
-                  value={formData.accountType}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="basic">Basic</option>
-                  <option value="premium">Premium</option>
-                  <option value="business">Business</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Privacy Settings */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <h5 className="text-sm font-medium text-gray-900 mb-3">Privacy Settings</h5>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Profile Visibility
-                  </label>
-                  <select
-                    name="privacySettings.profileVisibility"
-                    value={formData.privacySettings.profileVisibility}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="public">Public</option>
-                    <option value="registered">Registered Users Only</option>
-                    <option value="private">Private</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="privacySettings.showEmail"
-                      checked={formData.privacySettings.showEmail}
-                      onChange={handleChange}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Show Email</span>
-                  </label>
-
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="privacySettings.showPhone"
-                      checked={formData.privacySettings.showPhone}
-                      onChange={handleChange}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Show Phone</span>
-                  </label>
-
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="privacySettings.showLocation"
-                      checked={formData.privacySettings.showLocation}
-                      onChange={handleChange}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Show Location</span>
-                  </label>
-
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="privacySettings.showLastSeen"
-                      checked={formData.privacySettings.showLastSeen}
-                      onChange={handleChange}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Show Last Seen</span>
-                  </label>
-                </div>
-              </div>
+              {renderField('Role *', 'role', 'select', '', [
+                { value: 'user', label: 'User' },
+                { value: 'admin', label: 'Admin' }
+              ])}
+              {renderField('Account Type', 'accountType', 'select', '', [
+                { value: 'basic', label: 'Basic' },
+                { value: 'premium', label: 'Premium' },
+                { value: 'business', label: 'Business' }
+              ])}
             </div>
           </div>
 
