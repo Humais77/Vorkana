@@ -1,111 +1,142 @@
 // layouts/pages/Signin.jsx
-import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { 
-  Mail, Lock, LogIn, Eye, EyeOff, 
-  ArrowLeft, AlertCircle 
-} from "lucide-react";
-import { toast } from "react-hot-toast";
-import { useLogin, validateEmail } from "../../../hooks/useAuth";
-import { useAuthStore } from "../../../store/useAuthStore";
-import { motion } from "framer-motion";
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { Mail, Lock, LogIn, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useLogin, validateEmail } from '../../../hooks/useAuth';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { motion } from 'framer-motion';
 import auth_modal_bg from '../../../assets/auth_modal_bg.png';
-import { FaCheck } from 'react-icons/fa';
-import { SeoWrapper } from "../../../components/SeoWrapper";
+import { FaCheck, FaExclamationTriangle } from 'react-icons/fa';
+import { SeoWrapper } from '../../../components/SeoWrapper';
 
 // Structured Data
 const signinStructuredData = {
-  "@context": "https://schema.org",
-  "@type": "WebPage",
-  "name": "Sign In to Vorkanna | Access Your Account",
-  "description": "Sign in to your Vorkanna account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide.",
-  "url": typeof window !== 'undefined' ? `${window.location.origin}/signin` : '/signin',
-  "breadcrumb": {
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      {
-        "@type": "ListItem",
-        "position": 1,
-        "name": "Home",
-        "item": typeof window !== 'undefined' ? `${window.location.origin}` : '/'
-      },
-      {
-        "@type": "ListItem",
-        "position": 2,
-        "name": "Sign In",
-        "item": typeof window !== 'undefined' ? `${window.location.origin}/signin` : '/signin'
-      }
-    ]
-  }
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: 'Sign In to Vorkanna | Access Your Account',
+  description: 'Sign in to your Vorkanna account to access over 100 categories of services, find quality work done faster, and connect with talent worldwide.',
+  url: typeof window !== 'undefined' ? `${window.location.origin}/signin` : '/signin',
 };
 
 const Signin = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const loading = useAuthStore((state) => state.loading);
   const error = useAuthStore((state) => state.error);
   const clearError = useAuthStore((state) => state.clearError);
   const loginMutation = useLogin();
 
   const [signinData, setSigninData] = useState({
-    email: "",
-    password: "",
-    deviceToken: "",
-    deviceType: "web"
+    email: '',
+    password: '',
   });
 
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showBackendError, setShowBackendError] = useState('');
 
-  // Handle signin change
+  // Handle URL parameters for errors/notifications
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const message = searchParams.get('message');
+    const verified = searchParams.get('verified');
+    const email = searchParams.get('email');
+
+    if (error === 'email_exists') {
+      toast.error(`Email ${email || ''} is already registered with Google. Please login with Google.`);
+      setShowEmailForm(true);
+      if (email) {
+        setSigninData(prev => ({ ...prev, email }));
+      }
+    } else if (error === 'auth_failed') {
+      toast.error('Authentication failed. Please try again.');
+    } else if (verified === 'true') {
+      toast.success('Email verified successfully! You can now login.');
+      if (email) {
+        setSigninData(prev => ({ ...prev, email }));
+        setShowEmailForm(true);
+      }
+    } else if (message) {
+      toast(message);
+    }
+
+    // Clear URL parameters
+    if (error || message || verified) {
+      navigate('/signin', { replace: true });
+    }
+  }, [searchParams, navigate]);
+
+  // Clear errors when component unmounts
+  useEffect(() => {
+    return () => {
+      clearError();
+    };
+  }, [clearError]);
+
   const handleSigninChange = (e) => {
     const { name, value } = e.target;
     setSigninData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear field error when user types
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: "" }));
+      setErrors(prev => ({ ...prev, [name]: '' }));
     }
+    
+    // Clear backend error when user types
+    if (showBackendError) {
+      setShowBackendError('');
+    }
+    
     clearError();
   };
 
-  // Validate signin
   const validateSignin = () => {
     const newErrors = {};
     
     if (!signinData.email.trim()) {
-      newErrors.email = "Email is required";
+      newErrors.email = 'Email is required';
     } else if (!validateEmail(signinData.email)) {
-      newErrors.email = "Please enter a valid email address";
+      newErrors.email = 'Please enter a valid email address';
     }
 
     if (!signinData.password) {
-      newErrors.password = "Password is required";
+      newErrors.password = 'Password is required';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle signin submit
   const handleSigninSubmit = async (e) => {
     e.preventDefault();
     if (!validateSignin()) return;
 
     setIsSubmitting(true);
+    clearError();
+    setShowBackendError('');
+
     try {
-      await loginMutation.mutateAsync(signinData);
-      toast.success("Successfully logged in!");
-      navigate("/dashboard");
+      const result = await loginMutation.mutateAsync(signinData);
+      
+      if (result.success) {
+        // Success handled by mutation
+      } else {
+        // Show backend error if mutation succeeded but returned error
+        setShowBackendError(result.message || 'Login failed');
+      }
     } catch (error) {
-      console.error("Login failed:", error);
+      // Error handled by mutation's onError
+      console.error('Login submission error:', error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Google auth
   const handleGoogleAuth = () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
     window.location.href = `${backendUrl}/api/auth/google`;
   };
 
@@ -113,11 +144,10 @@ const Signin = () => {
     setShowPassword(!showPassword);
   };
 
-  // Benefits content
   const benefits = [
-    { title: "Over 100 categories" },
-    { title: "Quality work done faster" },
-    { title: "Access to talent and businesses across the globe" }
+    { title: 'Over 100 categories' },
+    { title: 'Quality work done faster' },
+    { title: 'Access to talent and businesses across the globe' },
   ];
 
   // Render social buttons
@@ -149,41 +179,6 @@ const Signin = () => {
         <Mail className="w-5 h-5 mr-3" aria-hidden="true" />
         Continue with email
       </button>
-
-      <div className="relative my-4">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
-        </div>
-        <div className="relative flex justify-center text-base">
-          <span className="px-4 bg-white text-gray-500 text-sm">Or</span>
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={() => { }}
-          disabled={loading || isSubmitting}
-          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Continue with Apple"
-        >
-          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M14.94 5.19A4.38 4.38 0 0 0 16 2a4.44 4.44 0 0 0-3 1.52 4.17 4.17 0 0 0-1 3.09 3.69 3.69 0 0 0 2.94-1.42zm2.52 7.44a4.51 4.51 0 0 1 2.16-3.81 4.66 4.66 0 0 0-3.66-2c-1.56-.16-3 .91-3.83.91s-2-.89-3.3-.87a4.92 4.92 0 0 0-4.14 2.53C2.93 12.45 4.24 17 6 19.47c.8 1.21 1.8 2.58 3.12 2.53s1.75-.76 3.28-.76 2 .76 3.3.73 2.22-1.24 3.06-2.45a11 11 0 0 0 1.38-2.85 4.41 4.41 0 0 1-2.68-4.04z" />
-          </svg>
-          Apple
-        </button>
-
-        <button
-          onClick={() => { }}
-          disabled={loading || isSubmitting}
-          className="flex-1 py-3.5 bg-white border border-gray-300 text-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow text-base disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Continue with Facebook"
-        >
-          <svg className="w-5 h-5 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-          </svg>
-          Facebook
-        </button>
-      </div>
     </div>
   );
 
@@ -201,17 +196,29 @@ const Signin = () => {
       </button>
 
       <div className="text-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">
-          Continue with your email
-        </h2>
-        <p className="text-gray-600 text-sm">
-          Enter your credentials to access your account
-        </p>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Continue with your email</h2>
+        <p className="text-gray-600 text-sm">Enter your credentials to access your account</p>
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
-          <p className="text-red-600 font-medium text-sm">{error}</p>
+      {/* Error Display */}
+      {(error || showBackendError) && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fadeIn" role="alert">
+          <div className="flex items-start">
+            <FaExclamationTriangle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-red-700 font-medium text-sm">{error || showBackendError}</p>
+              {(error || showBackendError)?.includes('locked') && (
+                <p className="text-red-600 text-xs mt-1">
+                  Please wait or contact support if you believe this is an error.
+                </p>
+              )}
+              {(error || showBackendError)?.includes('verify') && (
+                <p className="text-red-600 text-xs mt-1">
+                  Check your email for the verification link.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -226,16 +233,20 @@ const Signin = () => {
             name="email"
             value={signinData.email}
             onChange={handleSigninChange}
-            className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base"
+            className={`w-full p-3.5 border rounded-lg focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base ${
+              errors.email ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-emerald-500'
+            }`}
             placeholder="you@example.com"
             disabled={loading || loginMutation.isPending || isSubmitting}
             autoFocus
             required
             aria-required="true"
-            aria-describedby={errors.email ? "email-error" : undefined}
+            aria-describedby={errors.email ? 'email-error' : undefined}
           />
           {errors.email && (
-            <p id="email-error" className="mt-2 text-sm text-red-600" role="alert">{errors.email}</p>
+            <p id="email-error" className="mt-2 text-sm text-red-600 animate-fadeIn" role="alert">
+              {errors.email}
+            </p>
           )}
         </div>
 
@@ -254,31 +265,35 @@ const Signin = () => {
           </div>
           <div className="relative">
             <input
-              type={showPassword ? "text" : "password"}
+              type={showPassword ? 'text' : 'password'}
               id="password"
               name="password"
               value={signinData.password}
               onChange={handleSigninChange}
-              className="w-full p-3.5 border border-gray-300 rounded-lg focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12"
+              className={`w-full p-3.5 border rounded-lg focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-base pr-12 ${
+                errors.password ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-emerald-500'
+              }`}
               placeholder="••••••••"
               disabled={loading || loginMutation.isPending || isSubmitting}
               required
               aria-required="true"
-              aria-describedby={errors.password ? "password-error" : undefined}
+              aria-describedby={errors.password ? 'password-error' : undefined}
             />
             <button
               type="button"
               onClick={togglePasswordVisibility}
               className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
               disabled={isSubmitting}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >
               {showPassword ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
             </button>
           </div>
           {errors.password && (
-            <p id="password-error" className="mt-2 text-sm text-red-600" role="alert">{errors.password}</p>
+            <p id="password-error" className="mt-2 text-sm text-red-600 animate-fadeIn" role="alert">
+              {errors.password}
+            </p>
           )}
         </div>
 
@@ -298,7 +313,7 @@ const Signin = () => {
           type="submit"
           disabled={loading || loginMutation.isPending || isSubmitting}
           className="w-full py-3.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium flex items-center justify-center shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-base"
-          aria-label={isSubmitting ? "Signing in..." : "Sign in to your account"}
+          aria-label={isSubmitting ? 'Signing in...' : 'Sign in to your account'}
         >
           {loginMutation.isPending || isSubmitting ? (
             <>
@@ -312,6 +327,19 @@ const Signin = () => {
             </>
           )}
         </button>
+
+        <div className="text-center pt-4 border-t border-gray-100">
+          <p className="text-gray-600 text-sm">
+            Don't have an account?{' '}
+            <Link
+              to="/signup"
+              className="text-emerald-600 hover:text-emerald-700 font-medium"
+              aria-label="Create a new account"
+            >
+              Sign up here
+            </Link>
+          </p>
+        </div>
       </form>
     </div>
   );
@@ -328,29 +356,26 @@ const Signin = () => {
         <motion.main
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2 }}
           className="w-full max-w-5xl bg-white rounded-xl shadow-2xl overflow-hidden"
           role="main"
         >
           <div className="flex h-[600px]">
             {/* Left Side - Benefits */}
-            <aside 
+            <aside
               className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
               style={{ backgroundImage: `url(${auth_modal_bg})` }}
               role="complementary"
               aria-label="Benefits of joining Vorkanna"
             >
               <div className="flex-1">
-                <h1 className="text-3xl font-bold mt-2 mb-4">
-                  Success starts here
-                </h1>
+                <h1 className="text-3xl font-bold mt-2 mb-4">Success starts here</h1>
 
                 <ul className="space-y-3">
                   {benefits.map((benefit, index) => (
                     <li key={index} className="flex items-start gap-2">
                       <FaCheck className="mt-0.5 text-white text-sm" aria-hidden="true" />
-                      <h3 className="font-semibold text-base leading-tight">
-                        {benefit.title}
-                      </h3>
+                      <h3 className="font-semibold text-base leading-tight">{benefit.title}</h3>
                     </li>
                   ))}
                 </ul>
@@ -363,11 +388,9 @@ const Signin = () => {
                 {/* Header with tab switch - Only show in social view */}
                 {!showEmailForm && (
                   <header className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-3">
-                      Sign in to your account
-                    </h1>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-3">Sign in to your account</h1>
                     <p className="text-gray-600 text-base">
-                      Don't have an account?{" "}
+                      Don't have an account?{' '}
                       <Link
                         to="/signup"
                         className="text-emerald-600 hover:text-emerald-700 font-medium"
@@ -388,14 +411,15 @@ const Signin = () => {
                 {/* Footer Terms */}
                 <footer className="pt-6 border-t border-gray-200 mt-6">
                   <p className="text-center text-gray-600 text-sm">
-                    By signing in, you agree to the{" "}
+                    By signing in, you agree to the{' '}
                     <Link to="/terms" className="text-emerald-600 hover:text-emerald-700">
                       Vorkanna Terms of Service
-                    </Link>{" "}
-                    and{" "}
+                    </Link>{' '}
+                    and{' '}
                     <Link to="/privacy" className="text-emerald-600 hover:text-emerald-700">
                       Privacy Policy
-                    </Link>.
+                    </Link>
+                    .
                   </p>
                   <p className="text-center text-gray-500 text-sm mt-2">
                     © {new Date().getFullYear()} Vorkanna. All rights reserved.

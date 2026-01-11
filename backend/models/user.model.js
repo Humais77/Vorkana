@@ -26,15 +26,15 @@ const userSchema = new mongoose.Schema(
         return !this.googleId && this.registrationStatus === 'verified';
       },
       validate: {
-        validator: function (v) {
-          if (!v) return true; // Allow empty for pending registrations
-          if (v.startsWith('$2a$') || v.startsWith('$2b$')) {
-            return true;
-          }
-          return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(v);
-        },
-        message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character (@$!%*?&)'
-      }
+  validator: function (v) {
+    if (!v) return true;
+    if (v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$')) {
+      return true; 
+    }
+    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(v);
+  },
+  message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character (@$!%*?&)'
+}
     },
     email: {
       type: String,
@@ -693,7 +693,68 @@ userSchema.statics.findPublicProfiles = function (filter = {}) {
     registrationStatus: 'verified'
   }).select('-email -phoneNumber -privacySettings -loginHistory -deviceTokens -passwordHistory');
 };
+// ========== MIDDLEWARE ==========
+userSchema.pre('save', async function() {
+  // Skip middleware if validateBeforeSave is false
+  if (this.$__.skipValidation || this.$__.saveOptions?.validateBeforeSave === false) {
+    return;
+  }
 
+  // For Google users or pending registrations, skip password hashing
+  if (this.googleId || this.registrationStatus === 'pending') {
+    return;
+  }
+
+  if (!this.isModified('password') || !this.password) {
+    return;
+  }
+
+  // If password already hashed, skip
+  if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$')) {
+    return;
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+  } catch (error) {
+    throw error;
+  }
+});
+
+// Duplicate prevention middleware
+userSchema.pre('save', async function() {
+  // Skip middleware if validateBeforeSave is false
+  if (this.$__.skipValidation || this.$__.saveOptions?.validateBeforeSave === false) {
+    return;
+  }
+
+  try {
+    if (this.isNew && !this.googleId) {
+      const existingGoogleUser = await this.constructor.findOne({
+        email: this.email,
+        googleId: { $exists: true }
+      });
+      
+      if (existingGoogleUser) {
+        throw new Error('Account already exists with Google. Please login with Google.');
+      }
+    }
+    
+    if (this.isModified('email') && !this.googleId) {
+      const existingUser = await this.constructor.findOne({
+        email: this.email,
+        googleId: { $exists: false }
+      });
+      
+      if (existingUser && existingUser._id.toString() !== this._id.toString()) {
+        throw new Error('Email already registered. Please login.');
+      }
+    }
+  } catch (error) {
+    throw error;
+  }
+});
 // ========== HOOKS ==========
 userSchema.post('save', function (doc) {
   if (doc.isNew) {

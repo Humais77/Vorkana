@@ -4,15 +4,13 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const validator = require('validator');
 const { promisify } = require('util');
-const rateLimit = require('express-rate-limit');
-const blacklist = new Set(); // In production, use Redis
 const mongoose = require('mongoose');
 const EmailService = require('../services/email.service');
 const { parsePhoneNumberFromString } = require('libphonenumber-js');
 const asyncHandler = require('express-async-handler');
 const { performance } = require('perf_hooks');
-
-// Cache utility import (make sure this file exists)
+const SessionService = require('../services/session.service');
+const SessionMiddleware = require("../middleware/session.middleware.js")
 const cache = require('../utils/cache.js');
 const perfMiddleware = (req, res, next) => {
   req.startTime = performance.now();
@@ -150,29 +148,7 @@ const logSecurityEvent = (event, userId, ip, details = {}) => {
     // Implement logging to database or external service
   }
 };
-const optimizeDatabase = async () => {
-  try {
-    const mongoose = require('mongoose');
-    
-    // Set connection options for better performance
-    mongoose.connection.on('connected', () => {
-      console.log('✅ Database connected with optimized settings');
-      
-      // Set query timeouts
-      mongoose.set('maxTimeMS', 10000);
-      
-      // Disable full docs in update operations
-      mongoose.set('returnOriginal', false);
-      
-      // Enable lean queries by default for find operations
-      mongoose.set('toObject', { virtuals: true });
-      mongoose.set('toJSON', { virtuals: true });
-    });
-    
-  } catch (error) {
-    console.error('Database optimization error:', error.message);
-  }
-};
+
 // ========== CONTROLLER FUNCTIONS ==========
 
 // Register new user
@@ -286,52 +262,8 @@ const register = asyncHandler(async (req, res) => {
     });
   }
 });
-const cookieConfig = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  path: '/',
-  domain: process.env.COOKIE_DOMAIN || undefined
-};
 
-const refreshCookieConfig = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-  path: '/api/auth/refresh',
-  domain: process.env.COOKIE_DOMAIN || undefined
-};
 
-// ========== HELPER FUNCTIONS ==========
-const setAuthCookies = (res, token, refreshToken) => {
-  // Set access token cookie
-  res.cookie('token', token, cookieConfig);
-  
-  // Set refresh token cookie
-  res.cookie('refreshToken', refreshToken, refreshCookieConfig);
-  
-  // Set a non-httpOnly cookie for client-side detection (optional)
-  res.cookie('isAuthenticated', 'true', {
-    ...cookieConfig,
-    httpOnly: false,
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
-};
-
-const clearAuthCookies = (res) => {
-  const clearCookieOptions = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/'
-  };
-  
-  res.clearCookie('token', clearCookieOptions);
-  res.clearCookie('refreshToken', { ...clearCookieOptions, path: '/api/auth/refresh' });
-  res.clearCookie('isAuthenticated', { ...clearCookieOptions, httpOnly: false });
-};
 
 const login = asyncHandler(async (req, res) => {
   try {
@@ -432,13 +364,23 @@ const login = asyncHandler(async (req, res) => {
     user.suspiciousActivityDetected = false;
     
     await user.save({ validateBeforeSave: false });
+    
+ SessionMiddleware.clearAuthCookies(res);
 
- const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+const session = await SessionService.createSession(user._id, req, {
+      loginType: 'email_password',
+      source: 'web'
+    });
+ console.log('🎯 Session created:', {
+      hasToken: !!session.token,
+      hasRefreshToken: !!session.refreshToken,
+      tokenLength: session.token?.length,
+      refreshTokenLength: session.refreshToken?.length,
+      sessionId: session.sessionId
+    });
 
-    // Set HTTP-only cookies
-    setAuthCookies(res, token, refreshToken);
-
+    // Set cookies - FIXED: Use the session's refreshToken
+    SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken);
     // 7. Prepare user response
     const userResponse = {
       _id: user._id,
@@ -460,7 +402,12 @@ const login = asyncHandler(async (req, res) => {
    res.json({
       success: true,
       message: 'Login successful',
-      user: userResponse
+      user: userResponse,
+      session: {
+        id: session.sessionId,
+        expiresAt: session.expiresAt,
+        idleTimeout: 3 * 60 * 60 * 1000 // 3 hours
+      }
     });
 
   } catch (error) {
@@ -474,10 +421,6 @@ const login = asyncHandler(async (req, res) => {
     });
   }
 });
-optimizeDatabase();
-// Add database connection optimization
-
-
 
 // Get user profile with caching
 const getProfile = async (req, res) => {
@@ -832,9 +775,7 @@ const changePassword = async (req, res) => {
 
     // Invalidate current token
     const authToken = req.headers.authorization?.split(' ')[1];
-    if (authToken) {
-      blacklist.add(authToken);
-    }
+   
 
     // Log password change
     logSecurityEvent('PASSWORD_CHANGED', user._id, ip, {
@@ -1287,33 +1228,236 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 });
 
-const logout = async (req, res) => {
+const logout = asyncHandler(async (req, res) => {
   try {
-    const token = req.cookies?.token;
-    
-    if (token) {
-      // Add to blacklist
-      blacklist.add(token);
+    if (req.sessionId && req.user) {
+      await SessionService.logoutSession(req.sessionId, req.user._id, 'manual');
     }
-
-    // Clear all auth cookies
-    clearAuthCookies(res);
-
-    // Log logout event
-    logSecurityEvent('LOGOUT', req.user?._id, req.ip);
-
+    
+    SessionMiddleware.clearAuthCookies(res);
+    
     res.json({
       success: true,
       message: 'Logged out successfully'
     });
   } catch (error) {
     console.error('Logout error:', error);
+    SessionMiddleware.clearAuthCookies(res); // Always clear cookies on error
     res.status(500).json({
       success: false,
       message: 'Server error during logout'
     });
   }
-};
+});
+
+// New: Get active sessions
+const getActiveSessions = asyncHandler(async (req, res) => {
+  try {
+    const sessions = await SessionService.getUserSessions(req.user._id);
+    
+    // Mark current session
+    const sessionsWithCurrent = sessions.map(session => ({
+      ...session,
+      isCurrent: session.id === req.sessionId
+    }));
+
+    res.json({
+      success: true,
+      sessions: sessionsWithCurrent
+    });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get sessions'
+    });
+  }
+});
+
+// New: Terminate specific session
+const terminateSession = asyncHandler(async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    if (sessionId === req.sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot terminate current session'
+      });
+    }
+
+    const terminated = await SessionService.logoutSession(
+      sessionId,
+      req.user._id,
+      'manual'
+    );
+
+    if (terminated) {
+      res.json({
+        success: true,
+        message: 'Session terminated'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+  } catch (error) {
+    console.error('Terminate session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to terminate session'
+    });
+  }
+});
+
+// New: Terminate all other sessions
+const terminateAllOtherSessions = asyncHandler(async (req, res) => {
+  try {
+    await SessionService.logoutAllUserSessions(req.user._id, req.sessionId);
+    
+    res.json({
+      success: true,
+      message: 'All other sessions terminated'
+    });
+  } catch (error) {
+    console.error('Terminate all sessions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to terminate sessions'
+    });
+  }
+});
+
+const refreshSession = asyncHandler(async (req, res) => {
+  try {
+    const refreshToken = req.cookies?.refreshToken;
+    
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token required'
+      });
+    }
+
+    const refreshed = await SessionService.refreshSession(refreshToken);
+    
+    if (!refreshed) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token'
+      });
+    }
+
+    // Set new cookies
+    SessionMiddleware.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Session refreshed',
+      expiresAt: refreshed.expiresAt
+    });
+  } catch (error) {
+    console.error('Refresh session error:', error);
+    
+    // Clear cookies on error
+    SessionMiddleware.clearAuthCookies(res);
+    
+    if (error.message.includes('idle') || error.message.includes('timeout')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session idle timeout. Please login again.',
+        code: 'SESSION_IDLE_TIMEOUT'
+      });
+    }
+
+    if (error.message.includes('Invalid')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token',
+        code: 'INVALID_REFRESH_TOKEN'
+      });
+    }
+
+    res.status(401).json({
+      success: false,
+      message: 'Session refresh failed',
+      code: 'REFRESH_FAILED'
+    });
+  }
+});
+
+const checkSessionStatus = asyncHandler(async (req, res) => {
+  try {
+    const token = req.cookies?.token;
+    const refreshToken = req.cookies?.refreshToken;
+    
+    if (!token) {
+      return res.json({
+        authenticated: false,
+        message: 'No active session'
+      });
+    }
+
+    const sessionResult = await SessionService.validateSession(token, refreshToken);
+    
+    if (sessionResult.valid) {
+      const user = await User.findById(sessionResult.userId).select('-password');
+      
+      return res.json({
+        authenticated: true,
+        user: user,
+        session: {
+          id: sessionResult.sessionId,
+          lastActivity: sessionResult.lastActivity,
+          idleTimeout: 3 * 60 * 60 * 1000,
+          timeRemaining: 3 * 60 * 60 * 1000 - (Date.now() - sessionResult.lastActivity.getTime())
+        }
+      });
+    } else {
+      // Try to refresh if we have a refresh token
+      if (refreshToken) {
+        try {
+          const refreshed = await SessionService.refreshSession(refreshToken);
+          
+          if (refreshed) {
+            SessionMiddleware.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
+            
+            const user = await User.findById(sessionResult.userId || refreshed.userId).select('-password');
+            
+            return res.json({
+              authenticated: true,
+              user: user,
+              session: {
+                id: refreshed.sessionId,
+                refreshed: true,
+                expiresAt: refreshed.expiresAt
+              }
+            });
+          }
+        } catch (refreshError) {
+          console.error('Session refresh failed:', refreshError.message);
+        }
+      }
+      
+      SessionMiddleware.clearAuthCookies(res);
+      return res.json({
+        authenticated: false,
+        message: 'Session expired or invalid',
+        requiresLogin: true
+      });
+    }
+  } catch (error) {
+    console.error('Check session status error:', error);
+    SessionMiddleware.clearAuthCookies(res);
+    res.json({
+      authenticated: false,
+      message: 'Error checking session status'
+    });
+  }
+});
+
 
 // Refresh Token - Updated
 const refreshToken = asyncHandler(async (req, res) => {
@@ -1561,9 +1705,7 @@ const deactivateAccount = async (req, res) => {
 
     // Invalidate all tokens
     const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      blacklist.add(token);
-    }
+ 
 
     // Log deactivation
     logSecurityEvent('ACCOUNT_DEACTIVATED', user._id, req.ip, { reason });
@@ -1647,7 +1789,7 @@ const reactivateAccount = async (req, res) => {
     // Generate new tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
-  setAuthCookies(res, token, refreshToken);
+  SessionMiddleware.setAuthCookies(res, token, refreshToken);
     // Log reactivation
     logSecurityEvent('ACCOUNT_REACTIVATED', user._id, ip, { email: user.email });
 
@@ -1764,7 +1906,7 @@ const verifyEmailRedirect = async (req, res) => {
     await user.save();
     const authToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
-    setAuthCookies(res, authToken, refreshToken);
+    SessionMiddleware.setAuthCookies(res, authToken, refreshToken);
     // Invalidate cache for this user
     await invalidateUserCache(user._id);
     
@@ -2400,5 +2542,9 @@ module.exports = {
   resetPasswordRedirect,
   handleJSONErrors,
   checkVerificationStatus,
-  setAuthCookies
+  getActiveSessions,
+  terminateSession,
+  terminateAllOtherSessions,
+  refreshSession,
+  checkSessionStatus
 };

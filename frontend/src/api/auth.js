@@ -1,100 +1,277 @@
+// api/auth.js
 import axios from 'axios';
+import { toast } from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const DEBUG = import.meta.env.VITE_DEBUG === 'true';
 
-// Create axios instance with default configuration
+// Request ID generator
+const generateRequestId = () => {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+// Create axios instance with optimized configuration
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 30000, // Increased timeout for better UX
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
-  withCredentials: true,
+  withCredentials: true, // Critical for cookie-based auth
 });
 
+// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Add request ID for tracking
-    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const requestId = generateRequestId();
+    config.headers['X-Request-ID'] = requestId;
+    
+    if (DEBUG) {
+      console.group(`📤 Request: ${config.method?.toUpperCase()} ${config.url}`);
+      console.log('Headers:', config.headers);
+      console.log('Data:', config.data);
+      console.groupEnd();
+    }
     
     return config;
   },
   (error) => {
+    if (DEBUG) console.error('❌ Request Error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for cookie-based auth
+// Response interceptor for production
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (DEBUG) {
+      console.group(`📥 Response: ${response.config.method?.toUpperCase()} ${response.config.url}`);
+      console.log('Status:', response.status);
+      console.log('Data:', response.data);
+      console.groupEnd();
+    }
+    
+    // Handle specific success cases
+    if (response.config.url?.includes('/login') && response.data.success) {
+      // Store minimal user info
+      if (response.data.user) {
+        const userInfo = {
+          _id: response.data.user._id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          role: response.data.user.role,
+          picture: response.data.user.picture,
+          emailVerified: response.data.user.emailVerified,
+          isOnline: response.data.user.isOnline,
+          lastSeenAt: response.data.user.lastSeenAt,
+        };
+        localStorage.setItem('userInfo', JSON.stringify(userInfo));
+      }
+    }
+    
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle 401 - Token expired or invalid
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      
-      // Skip refresh for auth endpoints
-      const isAuthEndpoint = originalRequest.url.includes('/api/auth/login') || 
-                            originalRequest.url.includes('/api/auth/register');
-      
-      if (isAuthEndpoint) {
-        return Promise.reject(error);
-      }
-      
-      try {
-        // Try to refresh token via cookie
-        await axiosInstance.post('/api/auth/refresh', {
-          withCredentials: true
-        });
-        
-        // Retry original request
-        return axiosInstance(originalRequest);
-      } catch (refreshError) {
-        // Clear client-side auth state
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('userInfo');
-        }
-        
-        // Redirect to login
-        if (!window.location.pathname.includes('/signin') && 
-            !window.location.pathname.includes('/signup')) {
-          window.location.href = '/signin';
-        }
-        
-        return Promise.reject(refreshError);
-      }
+    if (DEBUG) {
+      console.group(`❌ Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+      console.log('Status:', error.response?.status);
+      console.log('Data:', error.response?.data);
+      console.log('Message:', error.message);
+      console.groupEnd();
     }
     
-    // Handle specific status codes
-    if (error.response) {
-      const { status, data } = error.response;
-      
-      // Rate limiting
-      if (status === 429) {
-        console.warn('Rate limited:', data.message);
-      }
-      
-      // Account lock
-      if (status === 423) {
-        console.warn('Account locked:', data.message);
-      }
-      
-      // CSRF token issues (for cookie-based auth)
-      if (status === 403 && data.message?.includes('CSRF')) {
-        // Handle CSRF token refresh if needed
-        console.warn('CSRF token issue, reloading page');
-        window.location.reload();
-      }
+    // Handle network errors
+    if (!error.response) {
+      toast.error('Network error. Please check your connection.');
+      return Promise.reject({
+        success: false,
+        message: 'Network error. Please check your connection.',
+        code: 'NETWORK_ERROR'
+      });
+    }
+    
+    const { status, data } = error.response;
+    
+    // Handle specific status codes with user-friendly messages
+    switch (status) {
+      case 400:
+        handle400Error(data, originalRequest);
+        break;
+      case 401:
+        await handle401Error(originalRequest, error);
+        break;
+      case 403:
+        handle403Error(data);
+        break;
+      case 404:
+        handle404Error(originalRequest);
+        break;
+      case 409:
+        handle409Error(data);
+        break;
+      case 423:
+        handle423Error(data);
+        break;
+      case 429:
+        handle429Error(data);
+        break;
+      case 500:
+        handle500Error();
+        break;
+      default:
+        handleGenericError(error);
     }
     
     return Promise.reject(error);
   }
 );
 
-// Validation utilities
+// Error handlers
+const handle400Error = (data, request) => {
+  const isAuthEndpoint = request.url?.includes('/auth/');
+  let message = 'Invalid request. Please check your input.';
+  
+  if (data.message) {
+    message = isAuthEndpoint 
+      ? formatAuthErrorMessage(data.message)
+      : data.message;
+  }
+  
+  if (data.errors && Array.isArray(data.errors)) {
+    message = data.errors.join(', ');
+  }
+  
+  toast.error(message);
+};
+
+const handle401Error = async (originalRequest, error) => {
+  // Skip refresh for auth endpoints
+  if (originalRequest.url?.includes('/auth/login') || 
+      originalRequest.url?.includes('/auth/register') ||
+      originalRequest.url?.includes('/auth/refresh')) {
+    const message = formatAuthErrorMessage(error.response?.data?.message);
+    toast.error(message || 'Invalid credentials');
+    return;
+  }
+  
+  // Try to refresh token
+  if (!originalRequest._retry) {
+    originalRequest._retry = true;
+    
+    try {
+      await axiosInstance.post('/api/auth/refresh', {}, {
+        withCredentials: true,
+        headers: { 'X-Silent-Refresh': 'true' }
+      });
+      
+      // Retry original request
+      return axiosInstance(originalRequest);
+    } catch (refreshError) {
+      // Clear auth data and redirect
+      localStorage.removeItem('userInfo');
+      
+      // Only redirect if not already on auth pages
+      if (!window.location.pathname.includes('/signin') && 
+          !window.location.pathname.includes('/signup')) {
+        toast.error('Session expired. Please login again.');
+        setTimeout(() => {
+          window.location.href = '/signin';
+        }, 1000);
+      }
+    }
+  }
+};
+
+const handle403Error = (data) => {
+  const message = data.message || 'Access denied. You do not have permission.';
+  
+  if (message.includes('CSRF')) {
+    toast.error('Security token expired. Please reload the page.');
+    setTimeout(() => window.location.reload(), 2000);
+  } else {
+    toast.error(message);
+  }
+};
+
+const handle404Error = (request) => {
+  const message = request.url?.includes('/auth/') 
+    ? 'This feature is not available'
+    : 'Resource not found';
+  toast.error(message);
+};
+
+const handle409Error = (data) => {
+  const message = data.message || 'Conflict occurred.';
+  
+  if (message.includes('already exists') || message.includes('already registered')) {
+    toast.error('An account with this email already exists.');
+  } else {
+    toast.error(message);
+  }
+};
+
+const handle423Error = (data) => {
+  let message = 'Your account has been temporarily locked.';
+  
+  if (data.message) {
+    if (data.message.includes('locked')) {
+      const match = data.message.match(/(\d+)/);
+      const minutes = match ? match[1] : 'a few';
+      message = `Account locked. Try again in ${minutes} minutes.`;
+    }
+  }
+  
+  toast.error(message);
+};
+
+const handle429Error = (data) => {
+  const retryAfter = data.retryAfter || 60;
+  const minutes = Math.ceil(retryAfter / 60);
+  toast.error(`Too many attempts. Please try again in ${minutes} minute${minutes > 1 ? 's' : ''}.`);
+};
+
+const handle500Error = () => {
+  toast.error('Server error. Please try again later.');
+};
+
+const handleGenericError = (error) => {
+  const message = error.response?.data?.message || 'Something went wrong.';
+  toast.error(message);
+};
+
+// Format auth error messages for users
+const formatAuthErrorMessage = (message) => {
+  if (!message) return 'Invalid credentials';
+  
+  const lowerMessage = message.toLowerCase();
+  
+  if (lowerMessage.includes('invalid') || lowerMessage.includes('incorrect')) {
+    return 'Invalid email or password';
+  }
+  
+  if (lowerMessage.includes('not verified')) {
+    return 'Please verify your email first';
+  }
+  
+  if (lowerMessage.includes('suspended') || lowerMessage.includes('banned')) {
+    return 'Account suspended. Please contact support.';
+  }
+  
+  if (lowerMessage.includes('inactive')) {
+    return 'Account is not active';
+  }
+  
+  return message.charAt(0).toUpperCase() + message.slice(1);
+};
+
+// Validation utilities (enhanced)
 export const validatePassword = (password) => {
-  if (typeof password !== 'string') return { valid: false, message: 'Password must be a string' };
+  if (typeof password !== 'string') {
+    return { valid: false, message: 'Password must be a string' };
+  }
   
   const minLength = 8;
   const hasUpperCase = /[A-Z]/.test(password);
@@ -103,47 +280,48 @@ export const validatePassword = (password) => {
   const hasSpecialChar = /[@$!%*?&]/.test(password);
   
   if (password.length < minLength) {
-    return { valid: false, message: 'Password must be at least 8 characters long' };
+    return { valid: false, message: 'Password must be at least 8 characters' };
   }
   
   if (!hasUpperCase) {
-    return { valid: false, message: 'Password must contain at least one uppercase letter' };
+    return { valid: false, message: 'Password must contain an uppercase letter' };
   }
   
   if (!hasLowerCase) {
-    return { valid: false, message: 'Password must contain at least one lowercase letter' };
+    return { valid: false, message: 'Password must contain a lowercase letter' };
   }
   
   if (!hasNumbers) {
-    return { valid: false, message: 'Password must contain at least one number' };
+    return { valid: false, message: 'Password must contain a number' };
   }
   
   if (!hasSpecialChar) {
-    return { valid: false, message: 'Password must contain at least one special character (@$!%*?&)' };
+    return { valid: false, message: 'Password must contain a special character (@$!%*?&)' };
   }
   
   return { valid: true, message: 'Password is strong' };
 };
 
 export const validateEmail = (email) => {
+  if (!email) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  return emailRegex.test(email.trim());
 };
 
 export const validatePhoneNumber = (phone) => {
   if (!phone) return true;
-  const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/im;
-  return phoneRegex.test(phone);
+  const phoneRegex = /^[\+]?[1-9]{1,4}[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/;
+  return phoneRegex.test(phone.trim());
 };
 
-export const sanitizeInput = (input) => {
-  if (typeof input === 'string') {
-    // Basic sanitization - in production use a proper sanitization library
-    return input
-      .replace(/[<>]/g, '') // Remove angle brackets
-      .trim();
+export const validateName = (name) => {
+  if (!name || name.trim().length < 2) {
+    return { valid: false, message: 'Name must be at least 2 characters' };
   }
-  return input;
+  if (name.trim().length > 50) {
+    return { valid: false, message: 'Name cannot exceed 50 characters' };
+  }
+  return { valid: true, message: 'Name is valid' };
 };
 
 // Main auth API functions
@@ -151,12 +329,6 @@ export const authAPI = {
   // Authentication
   login: async (userData) => {
     const response = await axiosInstance.post('/api/auth/login', userData);
-    
-    if (response.data.user) {
-      // Store only user info (no tokens)
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-    }
-    
     return response.data;
   },
   
@@ -165,17 +337,22 @@ export const authAPI = {
     return response.data;
   },
   
-  logout: async (deviceToken = null) => {
+  logout: async () => {
     try {
-      await axiosInstance.post('/api/auth/logout', { deviceToken });
+      await axiosInstance.post('/api/auth/logout');
     } finally {
-      // Clear only user info, cookies are cleared server-side
       localStorage.removeItem('userInfo');
     }
   },
   
-  refreshToken: async () => {
+  // Session management
+  refreshSession: async () => {
     const response = await axiosInstance.post('/api/auth/refresh');
+    return response.data;
+  },
+  
+  checkSessionStatus: async () => {
+    const response = await axiosInstance.get('/api/auth/session/status');
     return response.data;
   },
   
@@ -189,73 +366,20 @@ export const authAPI = {
   },
   
   updateProfile: async (userData) => {
-    try {
-      console.log('Updating profile with data:', {
-        fields: Object.keys(userData),
-        hasPrivacySettings: 'privacySettings' in userData
-      });
-      
-      // Clean the data
-      const cleanData = {};
-      Object.keys(userData).forEach(key => {
-        const value = userData[key];
-        
-        if (value === undefined || value === null) return;
-        
-        if (typeof value === 'string' && value.trim() === '') {
-          return; // Skip empty strings
-        }
-        
-        if (Array.isArray(value)) {
-          if (value.length > 0) {
-            cleanData[key] = value;
-          }
-          return;
-        }
-        
-        if (typeof value === 'object' && !Array.isArray(value)) {
-          const nestedClean = {};
-          Object.keys(value).forEach(nestedKey => {
-            const nestedValue = value[nestedKey];
-            if (nestedValue !== undefined && nestedValue !== null) {
-              nestedClean[nestedKey] = nestedValue;
-            }
-          });
-          if (Object.keys(nestedClean).length > 0) {
-            cleanData[key] = nestedClean;
-          }
-          return;
-        }
-        
-        cleanData[key] = value;
-      });
-      
-      console.log('Cleaned data for API:', cleanData);
-      
-      const response = await axiosInstance.put('/api/auth/profile', cleanData);
-      
-      console.log('Update response:', {
-        success: response.data.success,
-        message: response.data.message,
-        hasUserData: !!response.data.user
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error('Update profile error:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        message: error.response?.data?.message,
-        errors: error.response?.data?.errors,
-        data: error.response?.data
-      });
-      
-      const errorMessage = error.response?.data?.message || 
-                         error.response?.statusText || 
-                         'Failed to update profile';
-      
-      throw new Error(errorMessage);
+    // Clean empty fields
+    const cleanData = Object.fromEntries(
+      Object.entries(userData).filter(([_, v]) => 
+        v !== undefined && v !== null && v !== ''
+      )
+    );
+    
+    const response = await axiosInstance.put('/api/auth/profile', cleanData);
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
+    
+    return response.data;
   },
   
   changePassword: async (currentPassword, newPassword) => {
@@ -272,14 +396,13 @@ export const authAPI = {
     return response.data;
   },
   
-  // Check verification status
-  checkVerificationStatus: async (email) => {
-    const response = await axiosInstance.get(`/api/auth/check-verification?email=${email}`);
+  resendVerification: async (email) => {
+    const response = await axiosInstance.post('/api/auth/resend-verification', { email });
     return response.data;
   },
   
-  resendVerification: async (email) => {
-    const response = await axiosInstance.post('/api/auth/resend-verification', { email });
+  checkVerificationStatus: async (email) => {
+    const response = await axiosInstance.get(`/api/auth/check-verification?email=${email}`);
     return response.data;
   },
   
@@ -294,12 +417,6 @@ export const authAPI = {
       token,
       newPassword
     });
-    
-    // After password reset, store user info if provided
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-    }
-    
     return response.data;
   },
   
@@ -325,6 +442,22 @@ export const authAPI = {
     return response.data;
   },
   
+  // Sessions management
+  getActiveSessions: async () => {
+    const response = await axiosInstance.get('/api/auth/sessions');
+    return response.data;
+  },
+  
+  terminateSession: async (sessionId) => {
+    const response = await axiosInstance.delete(`/api/auth/sessions/${sessionId}`);
+    return response.data;
+  },
+  
+  terminateAllOtherSessions: async () => {
+    const response = await axiosInstance.delete('/api/auth/sessions/others');
+    return response.data;
+  },
+  
   // Public profiles
   getPublicProfile: async (userId) => {
     const response = await axiosInstance.get(`/api/auth/profile/${userId}/public`);
@@ -333,25 +466,32 @@ export const authAPI = {
   
   // OAuth
   googleAuth: () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+    const backendUrl = API_URL;
     window.location.href = `${backendUrl}/api/auth/google`;
   },
   
-  // Check authentication status
+  // Check authentication
   checkAuth: async () => {
     try {
       const response = await axiosInstance.get('/api/auth/check-auth');
       return response.data;
     } catch (error) {
-      return { success: false, isAuthenticated: false };
+      return { 
+        success: false, 
+        isAuthenticated: false,
+        message: 'Not authenticated'
+      };
     }
   },
   
   // Utility functions
   isAuthenticated: () => {
-    // We'll check with the server instead of localStorage
-    // This is just for client-side quick check
-    return !!localStorage.getItem('userInfo');
+    try {
+      const userInfo = localStorage.getItem('userInfo');
+      return !!userInfo;
+    } catch (error) {
+      return false;
+    }
   },
   
   getCurrentUser: () => {
@@ -367,7 +507,6 @@ export const authAPI = {
     localStorage.removeItem('userInfo');
   },
   
-  // Check if email is verified
   isEmailVerified: () => {
     try {
       const userInfo = localStorage.getItem('userInfo');
@@ -379,7 +518,6 @@ export const authAPI = {
     }
   },
   
-  // Check if user is admin
   isAdmin: () => {
     try {
       const userInfo = localStorage.getItem('userInfo');
@@ -389,27 +527,41 @@ export const authAPI = {
     } catch (error) {
       return false;
     }
+  },
+  
+  // Security functions
+  checkPasswordStrength: (password) => {
+    const validation = validatePassword(password);
+    if (!validation.valid) return { strength: 'weak', message: validation.message };
+    
+    // Calculate additional strength metrics
+    const lengthScore = Math.min(password.length / 20, 1);
+    const complexityScore = (/[A-Z]/.test(password) ? 0.25 : 0) +
+                          (/[a-z]/.test(password) ? 0.25 : 0) +
+                          (/\d/.test(password) ? 0.25 : 0) +
+                          (/[@$!%*?&]/.test(password) ? 0.25 : 0);
+    
+    const totalScore = (lengthScore * 0.4) + (complexityScore * 0.6);
+    
+    if (totalScore > 0.7) return { strength: 'strong', message: 'Strong password' };
+    if (totalScore > 0.4) return { strength: 'medium', message: 'Medium strength password' };
+    return { strength: 'weak', message: 'Weak password' };
+  },
+  
+  // Session helpers
+  getSessionInfo: () => {
+    const user = authAPI.getCurrentUser();
+    return {
+      userId: user?._id,
+      email: user?.email,
+      lastActivity: Date.now(),
+      userAgent: navigator.userAgent
+    };
   }
 };
 
-// User management API functions
+// User management API (for admin/advanced features)
 export const userAPI = {
-  switchRole: async (role) => {
-    const response = await axiosInstance.patch('/api/users/switch-role', { role });
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-    }
-    return response.data;
-  },
-  
-  updateUser: async (userData) => {
-    const response = await axiosInstance.put('/api/users/profile', userData);
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-    }
-    return response.data;
-  },
-  
   uploadProfilePicture: async (file) => {
     const formData = new FormData();
     formData.append('picture', file);
@@ -419,34 +571,57 @@ export const userAPI = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    
     if (response.data.success && response.data.user) {
       localStorage.setItem('userInfo', JSON.stringify(response.data.user));
     }
+    
     return response.data;
   },
   
-  // Get user by ID (admin only)
+  updateUserSettings: async (settings) => {
+    const response = await axiosInstance.put('/api/users/settings', settings);
+    
+    if (response.data.success && response.data.user) {
+      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    }
+    
+    return response.data;
+  },
+  
+  // Admin endpoints
+  getAllUsers: async (params = {}) => {
+    const response = await axiosInstance.get('/api/admin/users', { params });
+    return response.data;
+  },
+  
   getUserById: async (userId) => {
-    const response = await axiosInstance.get(`/api/users/${userId}`);
+    const response = await axiosInstance.get(`/api/admin/users/${userId}`);
     return response.data;
   },
   
-  // Search users (admin only)
-  searchUsers: async (filters = {}) => {
-    const response = await axiosInstance.get('/api/users', { params: filters });
+  updateUserStatus: async (userId, status) => {
+    const response = await axiosInstance.patch(`/api/admin/users/${userId}/status`, { status });
     return response.data;
   }
 };
 
-// Public API functions (no authentication required)
+// Public API functions
 export const publicAPI = {
-  getPublicUserProfile: async (userId) => {
-    const response = await axiosInstance.get(`/api/auth/profile/${userId}/public`);
+  healthCheck: async () => {
+    const response = await axiosInstance.get('/health');
     return response.data;
   },
   
-  healthCheck: async () => {
-    const response = await axiosInstance.get('/health');
+  getStats: async () => {
+    const response = await axiosInstance.get('/api/public/stats');
+    return response.data;
+  },
+  
+  searchServices: async (query = '', filters = {}) => {
+    const response = await axiosInstance.get('/api/public/services/search', {
+      params: { q: query, ...filters }
+    });
     return response.data;
   }
 };

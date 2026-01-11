@@ -2,21 +2,32 @@ const express = require("express");
 const passport = require("passport");
 const crypto = require("crypto");
 const { 
-  register, 
-  login, 
-  getProfile, 
-  updateProfile, 
-  changePassword,
-  forgotPassword, 
-  resetPassword,
-  verifyEmail,
-  resendVerificationEmail,
-  logout,
-  refreshToken,
-  getPublicProfile,
-  deactivateAccount,
-  reactivateAccount,
-  verifyEmailRedirect,checkVerificationStatus, resetPasswordRedirect, setAuthCookies
+  register,
+   login,
+   logout,
+   refreshToken,
+   getProfile,
+   updateProfile,
+   changePassword,
+   verifyEmail,
+   resendVerificationEmail,
+   forgotPassword,
+   resetPassword,
+   getPublicProfile,
+   deactivateAccount,
+   reactivateAccount,
+   generateToken,
+   generateRefreshToken,
+   verifyEmailRedirect,
+   resetPasswordRedirect,
+   handleJSONErrors,
+   checkVerificationStatus,
+   setAuthCookies,
+   getActiveSessions,
+   terminateSession,
+   terminateAllOtherSessions,
+   refreshSession,
+   checkSessionStatus
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -27,10 +38,10 @@ const {
   validateRequest ,
   optionalAuth
 } = require("../middleware/auth.middleware.js");
-
+const SessionMiddleware = require("../middleware/session.middleware");
+const SessionService = require("../services/session.service")
 const router = express.Router();
 
-// ========== VALIDATION SCHEMAS ==========
 const registerValidation = validateRequest({
   body: {
     name: { type: 'string', minLength: 2, maxLength: 50, required: true },
@@ -116,7 +127,7 @@ const reactivateValidation = validateRequest({
   }
 });
 
-// ========== AUTHENTICATION ROUTES ==========
+
 router.post("/register", 
   registerLimiter,
   registerValidation,
@@ -129,7 +140,7 @@ router.post("/login",
   login
 );
 router.get("/check-auth", 
-  optionalAuth,
+  SessionMiddleware.optionalAuth, 
   (req, res) => {
     if (req.user) {
       res.json({
@@ -154,38 +165,21 @@ router.get("/check-auth",
   }
 );
 
-// ========== COOKIE TEST ROUTE ==========
-router.get("/test-cookies", 
-  protect,
-  (req, res) => {
-    res.json({
-      success: true,
-      message: 'Cookies are working correctly',
-      cookiesReceived: req.cookies,
-      user: req.user.email
-    });
-  }
-);
-
-// ========== REFRESH TOKEN ROUTE (Cookie-based) ==========
 router.post("/refresh", 
   (req, res, next) => {
-    // Only allow refresh token endpoint to access refreshToken cookie
     const refreshToken = req.cookies?.refreshToken;
     if (refreshToken) {
       req.body.refreshToken = refreshToken;
     }
     next();
   },
-  refreshToken
+  refreshSession 
 );
 
 router.post("/logout", 
-  protect,
+  SessionMiddleware.authenticate, 
   logout
 );
-
-// ========== EMAIL VERIFICATION ROUTES ==========
 router.get("/verify-email/:token", 
   verifyEmail
 );
@@ -202,11 +196,9 @@ router.post("/resend-verification",
 router.get("/verified-status", (req, res) => {
   const { token, status } = req.query;
   
-  // Simply redirect to frontend with query params
   res.redirect(`${process.env.FRONTEND_URL}/verification/status?token=${token}&status=${status}`);
 });
 router.get("/check-verification", checkVerificationStatus);
-// ========== PASSWORD MANAGEMENT ROUTES ==========
 router.post("/forgot-password", 
   passwordResetLimiter,
   forgotPasswordValidation,
@@ -216,40 +208,55 @@ router.post("/forgot-password",
 router.get("/reset/redirect/:token", (req, res) => {
   const { token } = req.params;
   
-  // Validate token format
   if (!token || token.length !== 64) {
     return res.redirect(`${process.env.FRONTEND_URL}/reset/invalid`);
   }
   
   res.redirect(`${process.env.FRONTEND_URL}/reset/redirect?token=${token}`);
-}); // Add this line
+}); 
 router.post("/reset-password", 
   passwordResetLimiter,
   resetPasswordValidation,
   resetPassword
 );
 
-// ========== PROFILE ROUTES ==========
 router.get("/profile", 
-  protect, 
+  SessionMiddleware.authenticate,
   getProfile
 );
-
 router.put("/profile", 
-  protect,
+  SessionMiddleware.authenticate,
   updateProfileValidation,
   updateProfile
 );
 
 router.post("/change-password", 
-  protect,
+  SessionMiddleware.authenticate, 
   changePasswordValidation,
   changePassword
 );
+router.get("/sessions", 
+  SessionMiddleware.authenticate, 
+  getActiveSessions
+);
 
-// ========== ACCOUNT MANAGEMENT ROUTES ==========
+router.delete("/sessions/:sessionId", 
+  SessionMiddleware.authenticate, 
+  terminateSession
+);
+
+router.delete("/sessions/others", 
+  SessionMiddleware.authenticate, 
+  terminateAllOtherSessions
+);
+
+router.get("/session/status", 
+  SessionMiddleware.optionalAuth,
+  checkSessionStatus
+);
+
 router.post("/deactivate", 
-  protect,
+  SessionMiddleware.authenticate, 
   deactivateValidation,
   deactivateAccount
 );
@@ -259,12 +266,9 @@ router.post("/reactivate",
   reactivateAccount
 );
 
-// ========== PUBLIC PROFILES ROUTES ==========
 router.get("/profile/:userId/public", 
   getPublicProfile
 );
-
-// ========== GOOGLE OAUTH ROUTES ==========
 router.get("/google",
   (req, res, next) => {
     const state = crypto.randomBytes(32).toString('hex');
@@ -285,6 +289,7 @@ router.get("/google",
   }
 );
 
+// In the Google callback route
 router.get("/google/callback",
   (req, res, next) => {
     const state = req.query.state;
@@ -304,38 +309,49 @@ router.get("/google/callback",
     passport.authenticate("google", {
       failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
       session: false 
-    }, (err, user, info) => {
+    }, async (err, user, info) => {
       if (err || !user) {
         console.error('Google OAuth error:', err || info);
+        
+        // Check if error is duplicate email (email/password user trying Google)
+        if (err?.message?.includes('duplicate') || err?.message?.includes('already exists')) {
+          return res.redirect(`${process.env.FRONTEND_URL}/login?error=email_exists&email=${encodeURIComponent(err.email || '')}`);
+        }
+        
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
       }
       
-     const token = require('../controllers/auth.controller.js').generateToken(user._id);
-  const refreshToken = require('../controllers/auth.controller.js').generateRefreshToken(user._id);
-       setAuthCookies(res, token, refreshToken);
-      const userData = encodeURIComponent(JSON.stringify({
-        token,
-        refreshToken,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          picture: user.picture,
-          role: user.role,
-          emailVerified: user.emailVerified,
-          phoneNumber: user.phoneNumber,
-          country: user.country,
-          city: user.city,
-          bio: user.bio,
-          rating: user.rating,
-          completedOrders: user.completedOrders,
-          isOnline: user.isOnline
-        }
-      }));
-      
-      res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
+      try {
+        // Create session for Google user
+        const session = await SessionService.createSession(user._id, req, {
+          loginType: 'google',
+          source: 'web'
+        });
+        
+        // Set auth cookies
+        SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken);
+        
+        // Redirect to success page with user data
+        const userData = encodeURIComponent(JSON.stringify({
+          sessionId: session.sessionId,
+          expiresAt: session.expiresAt,
+          user: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            picture: user.picture,
+            role: user.role,
+            emailVerified: true, // Google users are always verified
+            registrationStatus: 'verified'
+          }
+        }));
+        
+        res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
+      } catch (error) {
+        console.error('Google session creation error:', error);
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`);
+      }
     })(req, res, next);
   }
 );
-
 module.exports = router;
