@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/category.controller.js');
-const { protect, adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
+const { adminOnly, optionalAuth } = require('../middleware/auth.middleware.js');
 const { 
   validateCreate, 
   validateUpdate, 
@@ -9,6 +9,7 @@ const {
   validateQuery ,
   validateSubcategory 
 } = require('../middleware/validators/category.validator.js');
+const SessionMiddleware = require("../middleware/session.middleware");
 const timeout = (ms) => {
   return (req, res, next) => {
     res.setTimeout(ms, () => {
@@ -77,28 +78,28 @@ const updateLimiter = rateLimit({
 });
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 // Bulk operations
-router.post('/bulk', protect, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
+router.post('/bulk',  SessionMiddleware.authenticate, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
 // Stats and export
-router.get('/stats', protect, adminOnly, timeout(10000), controller.getCategoryStats);
-router.get('/export', protect, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
+router.get('/stats',  SessionMiddleware.authenticate, adminOnly, timeout(10000), controller.getCategoryStats);
+router.get('/export',  SessionMiddleware.authenticate, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
 
 // Repair counts
-router.get('/repair-counts/status', protect, adminOnly, adminLimiter, controller.repairCategoryCounts);
+router.get('/repair-counts/status',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.repairCategoryCounts);
 // ========== PUBLIC ROUTES (cookies optional) ==========
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
 router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
 router.get('/:categoryId/subcategories', publicLimiter, optionalAuth, controller.getSubcategoriesByCategory);
 
-// ========== ADMIN PROTECTED ROUTES (cookies required) ==========
-router.post('/', protect, adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
-router.put('/:id', protect, adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
-router.delete('/:id', protect, adminOnly, adminLimiter, controller.deleteCategory);
-router.patch('/:id/restore', protect, adminOnly, adminLimiter, controller.restoreCategory);
+// ========== ADMIN  SESSIONMIDDLEWARE.AUTHENTICATEED ROUTES (cookies required) ==========
+router.post('/',  SessionMiddleware.authenticate, adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
+router.put('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
+router.delete('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.deleteCategory);
+router.patch('/:id/restore',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.restoreCategory);
 
 // Subcategory routes
-router.post('/subcategories', protect, adminOnly, adminLimiter, validateSubcategory, controller.createSubcategory);
+router.post('/subcategories',  SessionMiddleware.authenticate, adminOnly, adminLimiter, validateSubcategory, controller.createSubcategory);
 
 
 

@@ -27,8 +27,9 @@ const {
   validateUpdate, 
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const { protect, optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const {  optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
+const SessionMiddleware = require("../middleware/session.middleware");
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -179,25 +180,25 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Protected stats and export routes
-router.get('/stats', protect, gigLimiter, getGigStats);
-router.get('/export', protect, adminOnly, gigLimiter, validateQuery, exportGigs);
+//  SessionMiddleware.authenticateed stats and export routes
+router.get('/stats',  SessionMiddleware.authenticate, gigLimiter, getGigStats);
+router.get('/export',  SessionMiddleware.authenticate, adminOnly, gigLimiter, validateQuery, exportGigs);
 router.get('/', optionalAuth, validateQuery, getGigs);
 router.get('/search', optionalAuth, validateQuery, searchGigs);
 router.get('/subcategory/:subcategoryId', optionalAuth, validateQuery, getGigsBySubcategory);
 router.get('/:id', optionalAuth, getGigById);
 
-// Protected routes - authentication via cookies
-router.post('/', protect, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
-router.put('/:id', protect, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
-router.delete('/:id', protect, gigLimiter, deleteGig);
-router.patch('/:id/restore', protect, adminOnly, gigLimiter, restoreGig);
+//  SessionMiddleware.authenticateed routes - authentication via cookies
+router.post('/',  SessionMiddleware.authenticate, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
+router.put('/:id',  SessionMiddleware.authenticate, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+router.delete('/:id',  SessionMiddleware.authenticate, gigLimiter, deleteGig);
+router.patch('/:id/restore',  SessionMiddleware.authenticate, adminOnly, gigLimiter, restoreGig);
 
-// Protected image management routes
-router.post('/:id/images/upload', protect, gigLimiter, handleImageUpload, uploadImages);
-router.delete('/:id/images/:publicId', protect, gigLimiter, removeImage);
-router.put('/:id/thumbnail/:publicId', protect, gigLimiter, setThumbnail);
-router.post('/:id/thumbnail/upload', protect, gigLimiter, handleThumbnailUpload, uploadThumbnail);
+//  SessionMiddleware.authenticateed image management routes
+router.post('/:id/images/upload',  SessionMiddleware.authenticate, gigLimiter, handleImageUpload, uploadImages);
+router.delete('/:id/images/:publicId',  SessionMiddleware.authenticate, gigLimiter, removeImage);
+router.put('/:id/thumbnail/:publicId',  SessionMiddleware.authenticate, gigLimiter, setThumbnail);
+router.post('/:id/thumbnail/upload',  SessionMiddleware.authenticate, gigLimiter, handleThumbnailUpload, uploadThumbnail);
 
 
 router.use(errorHandler)
