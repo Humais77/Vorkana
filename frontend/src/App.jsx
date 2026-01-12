@@ -21,6 +21,7 @@ import VerificationRedirect from './layouts/pages/profile/VerificationRedirect';
 import ResetPasswordRedirect from './layouts/pages/profile/ResetPasswordRedirect';
 import EmailVerificationHandler from './layouts/pages/profile/EmailVerificationHandler';
 import VerificationStatus from './layouts/pages/profile/VerificationStatus';
+import SessionMonitor from './components/SessionMonitor';
 
 // =======================
 // LAZY LOADED PAGES
@@ -163,6 +164,7 @@ useEffect(() => {
               <Route path="/verification/handler" element={<EmailVerificationHandler />} />
               <Route path="/oauth-success" element={<OAuthSuccess />} />
               <Route path="/search" element={<SearchResults />} />
+              <Route path='/session-monitor' element={<SessionMonitor/>}/>
               <Route path="*" element={<NotFound />} />
             </Route>
 

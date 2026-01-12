@@ -20,114 +20,121 @@ class SessionMiddleware {
   }
   
   }
-  // Main authentication middleware with session management
+ getCookieConfig = () => {
+    const isProd = process.env.NODE_ENV === 'production';
+    
+    const baseConfig = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      path: '/',
+      partitioned: true
+    };
+
+    // Add domain for production
+    if (isProd && process.env.COOKIE_DOMAIN) {
+      baseConfig.domain = process.env.COOKIE_DOMAIN;
+    }
+
+    return baseConfig;
+  };
+
   authenticate = async (req, res, next) => {
-    try {
-      // Get tokens
-      let token = req.cookies?.token;
-      let refreshToken = req.cookies?.refreshToken;
-      
-      // DEBUG: Log what we're receiving
-      console.log('🔍 Auth check - Cookies:', {
-        hasToken: !!token,
-        hasRefreshToken: !!refreshToken,
-        tokenLength: token?.length,
-        refreshTokenLength: refreshToken?.length
-      });
+  try {
+    // Get tokens from cookies
+    let token = req.cookies?.token;
+    const refreshToken = req.cookies?.refreshToken;
 
-      if (!token) {
-        console.log('❌ No token found in cookies');
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required',
-          code: 'NO_TOKEN'
-        });
-      }
-
-      // FIX: If refreshToken is missing but token exists, try to find session by token only
-      if (!refreshToken) {
-        console.log('⚠️ Refresh token missing, searching session by token only');
-        
-        // Try to find session by token
-        const session = await Session.findOne({ token, isActive: true });
-        if (session) {
-          refreshToken = session.refreshToken;
-          console.log('✅ Found refresh token from session');
+    // If no token but have refreshToken, try to refresh
+    if (!token && refreshToken) {
+      console.log('🔄 No access token, attempting refresh...');
+      try {
+        const refreshed = await this.sessionService.refreshSession(refreshToken);
+        if (refreshed) {
+          token = refreshed.token;
+          // Set new cookies
+          this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
         }
-      }
-
-      // Validate session
-      const sessionResult = await this.sessionService.validateSession(token, refreshToken);
-      
-      console.log('🔍 Session validation result:', {
-        valid: sessionResult.valid,
-        error: sessionResult.error,
-        refreshed: sessionResult.refreshed,
-        hasSessionId: !!sessionResult.sessionId
-      });
-
-      if (!sessionResult.valid) {
-        console.log('❌ Invalid session, clearing cookies');
+      } catch (refreshError) {
+        console.log('❌ Refresh failed:', refreshError.message);
         this.clearAuthCookies(res);
-        return res.status(401).json({
-          success: false,
-          message: 'Session expired or invalid. Please login again.',
-          code: 'SESSION_INVALID'
-        });
+        return this.handleUnauthorized(res, 'Session expired. Please login again.');
       }
+    }
 
-      const user = await User.findById(sessionResult.userId)
-  .select('+isActive +emailVerified') // force important fields
-  .lean(false); // prevent lean documents issues
-      
-      if (!user || !user.isActive) {
-        console.log('❌ User not found or inactive');
-        if (sessionResult.sessionId) {
+    if (!token) {
+      return this.handleUnauthorized(res, 'Authentication required');
+    }
+
+    // Validate session
+    const sessionResult = await this.sessionService.validateSession(token, refreshToken);
+    
+    if (!sessionResult.valid) {
+      this.clearAuthCookies(res);
+      return this.handleUnauthorized(res, 'Session expired or invalid. Please login again.');
+    }
+
+    // Get user
+    const user = await User.findById(sessionResult.userId)
+      .select('+isActive +emailVerified')
+      .lean(false);
+    
+    if (!user || !user.isActive) {
+      console.log('❌ User not found or inactive');
+      if (sessionResult.sessionId) {
+        try {
           await this.sessionService.logoutSession(
             sessionResult.sessionId,
             sessionResult.userId,
             'system'
           );
+        } catch (logoutError) {
+          console.error('Error logging out inactive user:', logoutError);
         }
-        this.clearAuthCookies(res);
-        return res.status(401).json({
-          success: false,
-          message: 'Account not found or deactivated'
-        });
       }
+      this.clearAuthCookies(res);
+      return this.handleUnauthorized(res, 'Account not found or deactivated');
+    }
 
-      // Update user's last seen
-      user.lastSeenAt = new Date();
-      await user.save({ validateBeforeSave: false });
+    // Update user's last seen
+    await User.findByIdAndUpdate(
+      user._id, 
+      { lastSeenAt: new Date() },
+      { new: true }
+    );
 
-      // Set request data
-      req.user = user;
-      req.token = sessionResult.token;
-      req.sessionId = sessionResult.sessionId;
-      req.refreshToken = sessionResult.refreshToken;
+    // Set request data
+    req.user = user;
+    req.token = sessionResult.token;
+    req.sessionId = sessionResult.sessionId;
+    req.refreshToken = sessionResult.refreshToken;
 
-      // Update cookies if token was refreshed
-      if (sessionResult.refreshed) {
-        console.log('🔄 Token was auto-refreshed, updating cookies');
-        this.setAuthCookies(res, sessionResult.token, sessionResult.refreshToken);
-      }
+    // Update cookies if token was refreshed
+    if (sessionResult.refreshed) {
+      console.log('🔄 Token was auto-refreshed, updating cookies');
+      this.setAuthCookies(res, sessionResult.token, sessionResult.refreshToken);
+    }
 
-      console.log('✅ Authentication successful for user:', user.email);
-      next();
+    console.log('✅ Authentication successful for user:', user.email);
+    next();
 
-    } catch (error) {
-    console.error(' Authentication error:', error);
-    
+  } catch (error) {
+    console.error('🔥 Authentication error:', error);
     this.clearAuthCookies(res);
-    
+    return this.handleUnauthorized(res, 'Authentication failed');
+  }
+};
+
+  handleUnauthorized = (res, message = 'Unauthorized') => {
     return res.status(401).json({
       success: false,
-      message: 'Authentication failed',
-      code: 'AUTH_FAILED',
-      requiresLogin: true
+      message,
+      code: 'UNAUTHORIZED',
+      requiresLogin: true,
+      redirectUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
     });
-    }
   };
+
 
   // Optional authentication (for public routes)
   optionalAuth = async (req, res, next) => {
@@ -242,49 +249,87 @@ cleanupLegacyCookies = (req, res) => {
       }
     });
   };
+handleRefresh = async (req, res) => {
+    try {
+      const refreshToken = req.cookies?.refreshToken;
+      
+      if (!refreshToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'Refresh token required'
+        });
+      }
 
- setAuthCookies = (res, token, refreshToken, userData = null) => {
-  const isProd = process.env.NODE_ENV === 'production';
-  const baseOptions = {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
-    path: '/',
-    partitioned: true
+      const refreshed = await this.sessionService.refreshSession(refreshToken);
+      
+      if (!refreshed) {
+        throw new Error('Invalid refresh token');
+      }
+
+      // Set new cookies
+      this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
+
+      return res.json({
+        success: true,
+        message: 'Session refreshed successfully',
+        expiresAt: refreshed.expiresAt
+      });
+    } catch (error) {
+      console.error('Refresh error:', error.message);
+      
+      // Clear cookies on refresh failure
+      this.clearAuthCookies(res);
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Session expired. Please login again.',
+        code: 'SESSION_EXPIRED',
+        requiresLogin: true
+      });
+    }
+  };
+ setAuthCookies = (res, token, refreshToken) => {
+    const cookieConfig = this.getCookieConfig();
+
+    // Access token (1 hour)
+    res.cookie('token', token, {
+      ...cookieConfig,
+      maxAge: 60 * 60 * 1000
+    });
+
+    // Refresh token (30 days)
+    res.cookie('refreshToken', refreshToken, {
+      ...cookieConfig,
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    // Non-httpOnly cookie for client-side checking
+    res.cookie('isAuthenticated', 'true', {
+      ...cookieConfig,
+      httpOnly: false,
+      maxAge: 60 * 60 * 1000
+    });
   };
 
-  // Access token
-  res.cookie('token', token, {
-    ...baseOptions,
-    maxAge: 60 * 60 * 1000 // 1 hour
-  });
+  clearAuthCookies = (res) => {
+    const clearOpts = {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    };
 
-  // Refresh token
-  res.cookie('refreshToken', refreshToken, {
-    ...baseOptions,
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  });
-
-  // Client-side readable flag (optional)
-  res.cookie('auth_status', 'true', {
-    ...baseOptions,
-    httpOnly: false,
-    maxAge: 60 * 60 * 1000
-  });
-};
-
-clearAuthCookies = (res) => {
-  const clearOpts = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/'
+    // Clear all auth cookies
+    res.clearCookie('token', clearOpts);
+    res.clearCookie('refreshToken', clearOpts);
+    res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
+    
+    // Clear any legacy cookies
+    const legacyCookies = ['auth_status', 'access_token', 'refresh_token'];
+    legacyCookies.forEach(cookie => {
+      res.clearCookie(cookie, clearOpts);
+    });
   };
-  
-  res.clearCookie('token', clearOpts);
-  res.clearCookie('refreshToken', clearOpts);
-  res.clearCookie('auth_status', { ...clearOpts, httpOnly: false }); // Fixed name
-};
 
   // Handle session errors
   handleSessionError = (res, error) => {

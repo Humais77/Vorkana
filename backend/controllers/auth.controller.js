@@ -12,6 +12,7 @@ const { performance } = require('perf_hooks');
 const SessionService = require('../services/session.service');
 const SessionMiddleware = require("../middleware/session.middleware.js")
 const cache = require('../utils/cache.js');
+const Session = require('../models/session.model');
 const perfMiddleware = (req, res, next) => {
   req.startTime = performance.now();
   next();
@@ -1230,22 +1231,56 @@ const resetPassword = asyncHandler(async (req, res) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
+    console.log('🚪 Logout request:', {
+      hasSessionId: !!req.sessionId,
+      hasUser: !!req.user,
+      userId: req.user?._id
+    });
+
+    // Logout session if we have session info
     if (req.sessionId && req.user) {
-      await SessionService.logoutSession(req.sessionId, req.user._id, 'manual');
+      try {
+        await SessionService.logoutSession(req.sessionId, req.user._id, 'manual');
+        console.log(`✅ Session logged out: ${req.sessionId}`);
+      } catch (sessionError) {
+        console.error('Session logout error:', sessionError);
+        // Continue with cookie clearing even if session logout fails
+      }
+    } else if (req.cookies?.refreshToken) {
+      // Try to find and logout session by refreshToken
+      try {
+        const session = await Session.findOne({ 
+          refreshToken: req.cookies.refreshToken,
+          isActive: true 
+        });
+        
+        if (session) {
+          await SessionService.logoutSession(session._id, session.userId, 'manual');
+          console.log(`✅ Session logged out by refresh token: ${session._id}`);
+        }
+      } catch (findError) {
+        console.error('Find session by refresh token error:', findError);
+      }
     }
     
+    // Always clear cookies
     SessionMiddleware.clearAuthCookies(res);
     
+    console.log('✅ Logout completed successfully');
+
     res.json({
       success: true,
       message: 'Logged out successfully'
     });
   } catch (error) {
-    console.error('Logout error:', error);
-    SessionMiddleware.clearAuthCookies(res); // Always clear cookies on error
+    console.error('🔥 Logout error:', error);
+    
+    // Still try to clear cookies on error
+    SessionMiddleware.clearAuthCookies(res);
+    
     res.status(500).json({
       success: false,
-      message: 'Server error during logout'
+      message: 'Error during logout, but cookies cleared'
     });
   }
 });
@@ -1334,56 +1369,64 @@ const refreshSession = asyncHandler(async (req, res) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
     
+    console.log('🔄 Refresh session request:', {
+      hasRefreshToken: !!refreshToken,
+      refreshTokenLength: refreshToken?.length
+    });
+
     if (!refreshToken) {
+      console.log('❌ No refresh token provided');
       return res.status(400).json({
         success: false,
-        message: 'Refresh token required'
+        message: 'Refresh token required',
+        code: 'NO_REFRESH_TOKEN'
       });
     }
 
     const refreshed = await SessionService.refreshSession(refreshToken);
     
     if (!refreshed) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid refresh token'
-      });
+      throw new Error('Invalid refresh token');
     }
 
     // Set new cookies
     SessionMiddleware.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
 
+    console.log('✅ Session refreshed successfully');
+
     res.json({
       success: true,
-      message: 'Session refreshed',
-      expiresAt: refreshed.expiresAt
+      message: 'Session refreshed successfully',
+      expiresAt: refreshed.expiresAt,
+      idleTimeout: 15 * 60 * 1000 // 15 minutes
     });
   } catch (error) {
-    console.error('Refresh session error:', error);
+    console.error('❌ Refresh session error:', error.message);
     
     // Clear cookies on error
     SessionMiddleware.clearAuthCookies(res);
     
+    let errorCode = 'REFRESH_FAILED';
+    let errorMessage = 'Session refresh failed';
+    let statusCode = 401;
+
     if (error.message.includes('idle') || error.message.includes('timeout')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Session idle timeout. Please login again.',
-        code: 'SESSION_IDLE_TIMEOUT'
-      });
+      errorCode = 'SESSION_IDLE_TIMEOUT';
+      errorMessage = 'Session idle timeout. Please login again.';
+    } else if (error.message.includes('Invalid')) {
+      errorCode = 'INVALID_REFRESH_TOKEN';
+      errorMessage = 'Invalid refresh token';
+    } else if (error.message.includes('expired')) {
+      errorCode = 'SESSION_EXPIRED';
+      errorMessage = 'Session expired. Please login again.';
     }
 
-    if (error.message.includes('Invalid')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid refresh token',
-        code: 'INVALID_REFRESH_TOKEN'
-      });
-    }
-
-    res.status(401).json({
+    res.status(statusCode).json({
       success: false,
-      message: 'Session refresh failed',
-      code: 'REFRESH_FAILED'
+      message: errorMessage,
+      code: errorCode,
+      requiresLogin: true,
+      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin`
     });
   }
 });

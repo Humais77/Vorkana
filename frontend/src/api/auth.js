@@ -42,87 +42,47 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor for production
 axiosInstance.interceptors.response.use(
-  (response) => {
-    if (DEBUG) {
-      console.group(`📥 Response: ${response.config.method?.toUpperCase()} ${response.config.url}`);
-      console.log('Status:', response.status);
-      console.log('Data:', response.data);
-      console.groupEnd();
-    }
-    
-    // Handle specific success cases
-    if (response.config.url?.includes('/login') && response.data.success) {
-      // Store minimal user info
-      if (response.data.user) {
-        const userInfo = {
-          _id: response.data.user._id,
-          name: response.data.user.name,
-          email: response.data.user.email,
-          role: response.data.user.role,
-          picture: response.data.user.picture,
-          emailVerified: response.data.user.emailVerified,
-          isOnline: response.data.user.isOnline,
-          lastSeenAt: response.data.user.lastSeenAt,
-        };
-        localStorage.setItem('userInfo', JSON.stringify(userInfo));
-      }
-    }
-    
-    return response;
-  },
+  (response) => response,
   async (error) => {
     const originalRequest = error.config;
     
-    if (DEBUG) {
-      console.group(`❌ Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
-      console.log('Status:', error.response?.status);
-      console.log('Data:', error.response?.data);
-      console.log('Message:', error.message);
-      console.groupEnd();
-    }
-    
-    // Handle network errors
-    if (!error.response) {
-      toast.error('Network error. Please check your connection.');
-      return Promise.reject({
-        success: false,
-        message: 'Network error. Please check your connection.',
-        code: 'NETWORK_ERROR'
-      });
-    }
-    
-    const { status, data } = error.response;
-    
-    // Handle specific status codes with user-friendly messages
-    switch (status) {
-      case 400:
-        handle400Error(data, originalRequest);
-        break;
-      case 401:
-        await handle401Error(originalRequest, error);
-        break;
-      case 403:
-        handle403Error(data);
-        break;
-      case 404:
-        handle404Error(originalRequest);
-        break;
-      case 409:
-        handle409Error(data);
-        break;
-      case 423:
-        handle423Error(data);
-        break;
-      case 429:
-        handle429Error(data);
-        break;
-      case 500:
-        handle500Error();
-        break;
-      default:
-        handleGenericError(error);
+    // Handle 401 errors
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // Don't retry auth endpoints
+      if (originalRequest.url?.includes('/auth/login') || 
+          originalRequest.url?.includes('/auth/register') ||
+          originalRequest.url?.includes('/auth/refresh')) {
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+      
+      try {
+        // Try to refresh the token
+        await axiosInstance.post('/api/auth/refresh', {}, {
+          withCredentials: true,
+          headers: { 'X-Silent-Refresh': 'true' }
+        });
+        
+        // Retry the original request
+        return axiosInstance(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed, clear auth and redirect
+        console.log('❌ Token refresh failed, redirecting to login');
+        
+        // Clear local storage
+        localStorage.removeItem('userInfo');
+        
+        // Redirect to login page if not already there
+        if (!window.location.pathname.includes('/signin') && 
+            !window.location.pathname.includes('/signup')) {
+          toast.error('Session expired. Please login again.');
+          setTimeout(() => {
+            window.location.href = '/signin?session=expired';
+          }, 1000);
+        }
+      }
     }
     
     return Promise.reject(error);

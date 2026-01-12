@@ -1,16 +1,16 @@
+// services/session.service.js
 const Session = require('../models/session.model');
-const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const UAParser = require('ua-parser-js');
 const geoip = require('geoip-lite');
-const mongoose = require('mongoose');
 
 class SessionService {
   constructor() {
-    this.idleTimeout = 3 * 60 * 60 * 1000; // 3 hours
-    this.sessionDuration = 7 * 24 * 60 * 60 * 1000; // 7 days
-    this.maxSessionsPerUser = 5; // Maximum active sessions per user
+    this.idleTimeout = 15 * 60 * 1000; // 15 minutes
+    this.sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days
+    this.tokenDuration = 60 * 60 * 1000; // 1 hour for access token
+    this.maxSessionsPerUser = 10;
   }
 
   // Generate tokens
@@ -30,191 +30,159 @@ class SessionService {
     return { token, refreshToken };
   }
 
- async createSession(userId, req, metadata = {}) {
-  try {
-    if (mongoose.connection.readyState !== 1) {
-      console.error('MongoDB not connected during session creation!');
-      throw new Error('DB not ready');
-    }
-    const { token, refreshToken } = this.generateTokens(userId);
-    
-    // Parse user agent
-    const parser = new UAParser(req.headers['user-agent']);
-    const uaResult = parser.getResult();
-    
-    // Get location from IP
-    const ip = this.getClientIp(req);
-    const geo = geoip.lookup(ip) || {};
-    
-    // Check active sessions count
-    const activeSessions = await Session.countDocuments({
-      userId,
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    });
-
-    // Enforce maximum sessions
-    if (activeSessions >= this.maxSessionsPerUser) {
-      const oldestSession = await Session.findOne({
+  async createSession(userId, req, metadata = {}) {
+    try {
+      const { token, refreshToken } = this.generateTokens(userId);
+      
+      // Clean up old sessions
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await Session.deleteMany({
         userId,
-        isActive: true
-      }).sort({ lastActivity: 1 });
+        isActive: false,
+        logoutAt: { $lt: oneDayAgo }
+      });
 
-      if (oldestSession) {
-        await oldestSession.logout('multiple_login');
-      }
-    }
+      // Check active sessions count
+      const activeSessions = await Session.countDocuments({
+        userId,
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      });
 
-    // Clean up old sessions
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    await Session.deleteMany({
-      userId,
-      isActive: false,
-      logoutAt: { $lt: thirtyDaysAgo }
-    });
+      // Enforce maximum sessions
+      if (activeSessions >= this.maxSessionsPerUser) {
+        const oldestSession = await Session.findOne({
+          userId,
+          isActive: true
+        }).sort({ lastActivity: 1 });
 
-    // Create session object
-    const sessionData = {
-      userId,
-      token,
-      refreshToken,
-      deviceInfo: {
-        userAgent: req.headers['user-agent'],
-        ip,
-        browser: uaResult.browser.name || 'Unknown',
-        os: uaResult.os.name || 'Unknown',
-        device: uaResult.device.type || 'Desktop',
-        location: {
-          country: geo.country || 'Unknown',
-          region: geo.region || 'Unknown',
-          city: geo.city || 'Unknown'
+        if (oldestSession) {
+          await oldestSession.logout('multiple_login');
         }
-      },
-      expiresAt: new Date(Date.now() + this.sessionDuration),
-      metadata
-    };
+      }
 
-    // Save session with error handling
-    const session = new Session(sessionData);
-    try {
-      await session.save({ w: 1 }); // wait for write confirmation
-      console.log('Session saved with _id:', session._id);
-    } catch (saveErr) {
-      console.error('CRITICAL: Session save failed!', saveErr);
-      throw saveErr;
-    }
-    
-    // DEBUG: Log session creation
-    console.log('🎯 Session created successfully:', {
-      sessionId: session._id,
-      userId: session.userId,
-      tokenLength: session.token?.length,
-      refreshTokenLength: session.refreshToken?.length,
-      refreshTokenStart: session.refreshToken?.substring(0, 20) + '...'
-    });
+      // Get device info
+      const parser = new UAParser(req.headers['user-agent']);
+      const uaResult = parser.getResult();
+      const ip = this.getClientIp(req);
+      const geo = geoip.lookup(ip) || {};
 
- const justSaved = await Session.findById(session._id);
-    if (!justSaved) {
-      throw new Error('Session disappeared right after save!');
-    }
-
-    return {
-      sessionId: session._id,
-      token,
-      refreshToken,
-      expiresAt: session.expiresAt,
-      idleTimeout: this.idleTimeout
-    };
-
-  } catch (error) {
-    console.error('❌ Session creation error:', error);
-    throw new Error(`Failed to create session: ${error.message}`);
-  }
-}
-async refreshSession(refreshToken) {
-  try {
-    console.log('🔄 Refresh session attempt:', {
-      refreshTokenLength: refreshToken?.length,
-      refreshTokenStart: refreshToken?.substring(0, 20) + '...'
-    });
-const session = await Session.findOne({
-    refreshToken: refreshToken, // exact string match
-    isActive: true,
-    expiresAt: { $gt: new Date() }
-  })
-  
-
-    console.log('🔍 Session search result:', {
-      found: !!session,
-      sessionId: session?._id,
-      isActive: session?.isActive,
-      expiresAt: session?.expiresAt,
-      now: new Date()
-    });
-if (!session) {
-    // Debug: search any similar token
-    const similar = await Session.findOne({
-      refreshToken: { $regex: refreshToken.substring(0, 20) }
-    });
-    console.log('No exact match, but similar found?', !!similar);
-    throw new Error('Invalid refresh token - not found in DB');
-  }
-
-    // Check if session is expired
-    if (session.expiresAt < new Date()) {
-      console.log('⏰ Session expired, logging out');
-      await Session.logoutSession(session._id, 'expired');
-      throw new Error('Session expired');
-    }
-
-    // Check idle timeout
-    if (session.isIdle) {
-      console.log('💤 Session idle, logging out');
-      await Session.logoutSession(session._id, 'expired');
-      throw new Error('Session idle timeout');
-    }
-
-    // Generate new tokens
-    const { token: newToken, refreshToken: newRefreshToken } = this.generateTokens(session.userId);
-
-     session.token = newToken;
-    session.refreshToken = newRefreshToken;
-    session.lastActivity = new Date();
-    session.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    
-    await session.save(); 
-    console.log('✅ Session refreshed successfully:', {
-      sessionId: session._id,
-      newTokenLength: newToken?.length,
-      newRefreshTokenLength: newRefreshToken?.length
-    });
-
-    return {
-      token: newToken,
-      refreshToken: newRefreshToken,
-      expiresAt: session.expiresAt,
-      sessionId: session._id
-    };
-  } catch (error) {
-    console.error('❌ Session refresh error:', error.message, error.stack);
-    throw error;
-  }
-}
-  async validateSession(token, refreshToken) {
-    try {
-      // Find active session
-      const session = await Session.findOne({
+      // Create session object
+      const sessionData = {
+        userId,
         token,
+        refreshToken,
+        deviceInfo: {
+          userAgent: req.headers['user-agent'],
+          ip,
+          browser: uaResult.browser.name || 'Unknown',
+          os: uaResult.os.name || 'Unknown',
+          device: uaResult.device.type || 'Desktop',
+          location: {
+            country: geo.country || 'Unknown',
+            region: geo.region || 'Unknown',
+            city: geo.city || 'Unknown'
+          }
+        },
+        expiresAt: new Date(Date.now() + this.sessionDuration),
+        metadata
+      };
+
+      const session = new Session(sessionData);
+      await session.save();
+
+      console.log('✅ Session created:', {
+        sessionId: session._id,
+        userId: session.userId,
+        expiresAt: session.expiresAt
+      });
+
+      return {
+        sessionId: session._id,
+        token,
+        refreshToken,
+        expiresAt: session.expiresAt,
+        idleTimeout: this.idleTimeout
+      };
+
+    } catch (error) {
+      console.error('❌ Session creation error:', error);
+      throw new Error(`Failed to create session: ${error.message}`);
+    }
+  }
+
+  async refreshSession(refreshToken) {
+    try {
+      console.log('🔄 Attempting to refresh session...');
+      
+      // Find active session by refreshToken
+      const session = await Session.findOne({
         refreshToken,
         isActive: true,
         expiresAt: { $gt: new Date() }
       });
 
       if (!session) {
+        console.log('❌ No active session found with this refresh token');
+        throw new Error('Invalid refresh token');
+      }
+
+      // Check if session is idle
+      const idleTime = Date.now() - session.lastActivity.getTime();
+      if (idleTime > this.idleTimeout) {
+        console.log('⏰ Session idle, logging out');
+        await session.logout('inactive');
+        throw new Error('Session idle timeout');
+      }
+
+      // Generate new tokens
+      const { token: newToken, refreshToken: newRefreshToken } = this.generateTokens(session.userId);
+
+      // Update session with new tokens
+      session.token = newToken;
+      session.refreshToken = newRefreshToken;
+      session.lastActivity = new Date();
+      session.expiresAt = new Date(Date.now() + this.sessionDuration);
+      await session.save();
+      
+      console.log('✅ Session refreshed successfully');
+
+      return {
+        token: newToken,
+        refreshToken: newRefreshToken,
+        expiresAt: session.expiresAt,
+        sessionId: session._id,
+        userId: session.userId
+      };
+    } catch (error) {
+      console.error('❌ Session refresh error:', error.message);
+      throw error;
+    }
+  }
+
+  async validateSession(token, refreshToken) {
+    try {
+      // First, try to find session by access token
+      let session = await Session.findOne({
+        token,
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      });
+
+      // If not found by token but we have refreshToken, try that
+      if (!session && refreshToken) {
+        session = await Session.findOne({
+          refreshToken,
+          isActive: true,
+          expiresAt: { $gt: new Date() }
+        });
+      }
+
+      if (!session) {
         return { valid: false, error: 'Session not found' };
       }
 
-      // Check idle timeout
+      // Check if session is idle
       const idleTime = Date.now() - session.lastActivity.getTime();
       if (idleTime > this.idleTimeout) {
         await session.logout('inactive');
@@ -227,8 +195,14 @@ if (!session) {
       } catch (jwtError) {
         // Token expired, try to refresh
         if (jwtError.name === 'TokenExpiredError') {
+          console.log('🔄 Access token expired, attempting refresh...');
           const newTokens = this.generateTokens(session.userId);
-          await session.refreshTokens(newTokens.token, newTokens.refreshToken);
+          
+          session.token = newTokens.token;
+          session.refreshToken = newTokens.refreshToken;
+          session.lastActivity = new Date();
+          session.expiresAt = new Date(Date.now() + this.sessionDuration);
+          await session.save();
           
           return {
             valid: true,
@@ -244,7 +218,8 @@ if (!session) {
       }
 
       // Update last activity
-      await session.updateActivity();
+      session.lastActivity = new Date();
+      await session.save({ validateBeforeSave: false });
 
       return {
         valid: true,
@@ -256,7 +231,7 @@ if (!session) {
         refreshed: false
       };
     } catch (error) {
-      console.error('Session validation error:', error.message);
+      console.error('❌ Session validation error:', error.message);
       return { valid: false, error: error.message };
     }
   }
@@ -268,14 +243,9 @@ if (!session) {
         return null;
       }
       
-      // Check if session is idle
-      if (session.isIdle) {
-        await session.logout('inactive');
-        return null;
-      }
-      
-      // Use the instance method
-      await session.updateActivity();
+      // Update last activity
+      session.lastActivity = new Date();
+      await session.save({ validateBeforeSave: false });
       return session;
     } catch (error) {
       console.error('Update activity error:', error);
@@ -283,48 +253,97 @@ if (!session) {
     }
   }
 
+  // FIXED: Proper logoutSession method
+  async logoutSession(sessionId, userId, reason = 'manual') {
+    try {
+      const session = await Session.findOne({
+        _id: sessionId,
+        userId,
+        isActive: true
+      });
 
- async logoutSession(sessionId, userId, reason = 'manual') {
-  const session = await Session.findOne({
-    _id: sessionId,
-    userId,
-    isActive: true
-  });
+      if (session) {
+        session.isActive = false;
+        session.logoutReason = reason;
+        session.logoutAt = new Date();
+        await session.save({ validateBeforeSave: false });
+        console.log(`✅ Session logged out: ${sessionId} - ${reason}`);
+        return true;
+      }
 
-  if (session) {
-    // FIX: Call the instance method
-    await session.logout(reason);
-    return true;
+      console.log(`❌ Session not found or already inactive: ${sessionId}`);
+      return false;
+    } catch (error) {
+      console.error('Logout session error:', error);
+      return false;
+    }
   }
-
-  return false;
-}
 
   // Logout all user sessions
   async logoutAllUserSessions(userId, excludeSessionId = null) {
-    await Session.deactivateUserSessions(userId, excludeSessionId);
-    return true;
+    try {
+      const query = {
+        userId,
+        isActive: true
+      };
+      
+      if (excludeSessionId) {
+        query._id = { $ne: excludeSessionId };
+      }
+
+      await Session.updateMany(query, {
+        isActive: false,
+        logoutReason: 'multiple_login',
+        logoutAt: new Date()
+      });
+
+      console.log(`✅ All other sessions logged out for user: ${userId}`);
+      return true;
+    } catch (error) {
+      console.error('Logout all sessions error:', error);
+      return false;
+    }
   }
 
   // Get user's active sessions
   async getUserSessions(userId) {
-    const sessions = await Session.getActiveSessions(userId);
-    
-    return sessions.map(session => ({
-      id: session._id,
-      deviceInfo: session.deviceInfo,
-      loginAt: session.loginAt,
-      lastActivity: session.lastActivity,
-      expiresAt: session.expiresAt,
-      isCurrent: false // This will be set by the middleware
-    }));
+    try {
+      const sessions = await Session.find({
+        userId,
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      }).sort({ lastActivity: -1 });
+      
+      return sessions.map(session => ({
+        id: session._id,
+        deviceInfo: session.deviceInfo,
+        loginAt: session.loginAt,
+        lastActivity: session.lastActivity,
+        expiresAt: session.expiresAt
+      }));
+    } catch (error) {
+      console.error('Get user sessions error:', error);
+      return [];
+    }
   }
 
-  // Cleanup expired sessions (cron job)
-  async cleanup() {
+  // Cleanup expired sessions
+  async cleanupExpired() {
     try {
-      const result = await Session.cleanupExpired();
-      console.log(`Cleaned up ${result.deletedCount} expired sessions`);
+      const result = await Session.deleteMany({
+        $or: [
+          { expiresAt: { $lt: new Date() } },
+          { 
+            isActive: false,
+            logoutAt: { $lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+          }
+        ]
+      });
+      
+      if (result.deletedCount > 0) {
+        console.log(`🧹 Cleaned up ${result.deletedCount} expired sessions`);
+      }
+      
       return result.deletedCount;
     } catch (error) {
       console.error('Session cleanup error:', error);
@@ -334,41 +353,51 @@ if (!session) {
 
   // Check session status
   async getSessionStatus(sessionId) {
-    const session = await Session.findById(sessionId);
-    
-    if (!session) {
+    try {
+      const session = await Session.findById(sessionId);
+      
+      if (!session) {
+        return { exists: false };
+      }
+
+      const idleTime = Date.now() - session.lastActivity.getTime();
+      
+      return {
+        exists: true,
+        isActive: session.isActive,
+        isExpired: session.expiresAt < new Date(),
+        isIdle: idleTime > this.idleTimeout,
+        lastActivity: session.lastActivity,
+        expiresAt: session.expiresAt,
+        logoutReason: session.logoutReason
+      };
+    } catch (error) {
+      console.error('Get session status error:', error);
       return { exists: false };
     }
-
-    return {
-      exists: true,
-      isActive: session.isActive,
-      isExpired: session.isExpired,
-      isIdle: session.isIdle,
-      lastActivity: session.lastActivity,
-      expiresAt: session.expiresAt,
-      logoutReason: session.logoutReason
-    };
-  }
-
-  // Get session by ID
-  async getSessionById(sessionId) {
-    return Session.findById(sessionId);
   }
 
   // Utility: Get client IP
   getClientIp(req) {
     return req.ip || 
-           req.headers['x-forwarded-for'] || 
+           req.headers['x-forwarded-for']?.split(',')[0] || 
            req.connection.remoteAddress || 
            req.socket.remoteAddress || 
            '0.0.0.0';
   }
 
-  // Utility: Parse user agent
-  parseUserAgent(userAgent) {
-    const parser = new UAParser(userAgent);
-    return parser.getResult();
+  // Start cleanup cron job
+  startCleanupJob() {
+    // Clean up expired sessions every hour
+    setInterval(async () => {
+      try {
+        await this.cleanupExpired();
+      } catch (error) {
+        console.error('Cleanup job error:', error);
+      }
+    }, 60 * 60 * 1000); // Every hour
+    
+    console.log('✅ Session cleanup job started');
   }
 }
 
