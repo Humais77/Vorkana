@@ -489,7 +489,59 @@ router.get('/categories/analytics',
   auditLog('VIEW_CATEGORY_ANALYTICS', 'categories'),
   categoryController.getCategoryStats
 );
-
+router.post('/services/bulk/restore', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_services'),
+  auditLog('BULK_RESTORE_SERVICES', 'services'),
+  async (req, res, next) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Service IDs are required',
+          code: 'IDS_REQUIRED'
+        });
+      }
+      
+      // Process bulk restore
+      const results = [];
+      for (const id of ids) {
+        try {
+          const service = await Service.findById(id);
+          if (service && !service.isActive) {
+            service.isActive = true;
+            service.status = 'active';
+            service.lastUpdatedBy = req.user._id;
+            service.updatedAt = new Date();
+            await service.save();
+            results.push({ id, success: true });
+            
+            // Invalidate cache for each service
+            await invalidateServiceCache(id);
+          } else {
+            results.push({ id, success: false, message: 'Service not found or already active' });
+          }
+        } catch (error) {
+          results.push({ id, success: false, message: error.message });
+        }
+      }
+      
+      // Invalidate all services cache
+      await invalidateAllServiceCache();
+      
+      res.json({
+        success: true,
+        message: `Successfully restored ${results.filter(r => r.success).length} services`,
+        results
+      });
+    } catch (error) {
+      console.error('Bulk restore error:', error);
+      next(error);
+    }
+  }
+);
 // Service Management
 router.get('/services', 
   verifyAdmin,  
@@ -562,6 +614,10 @@ router.get('/services/:id',
   async (req, res, next) => {
     try {
       req.isAdmin = true;
+      // Add query parameters for full details
+      req.query.includeFullDetails = 'true';
+      req.query.includeSubcategory = 'true';
+      req.query.populate = 'true';
       next();
     } catch (error) {
       console.error('[ADMIN GET SERVICE ERROR]', error);

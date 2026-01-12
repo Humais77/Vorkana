@@ -542,28 +542,39 @@ export const useDeleteCategory = () => {
     }
   });
 };
-// Add these hooks to your existing useAdminDashboard.js
-
 export const useAdminServices = (params = {}) => {
   return useQuery({
     queryKey: ['admin', 'services', params],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getServices(params);
+        // Always include full details for admin
+        const response = await adminAPI.getServices({
+          ...params,
+          includeFullDetails: true,
+          populateSubcategories: true
+        });
+        
         if (response.data.success) {
-          // Safely call setServices if it exists
-          try {
-            const { setServices } = useAdminStore.getState();
-            if (typeof setServices === 'function') {
-              setServices(response.data);
-            } else {
-              console.warn('setServices function not available in store');
-            }
-          } catch (storeError) {
-            console.warn('Could not set services in store:', storeError);
-          }
+          // Process the data to ensure all fields exist
+          const processedData = {
+            ...response.data,
+            data: response.data.data?.map(service => ({
+              ...service,
+              // Ensure arrays exist
+              tags: service.tags || [],
+              features: service.features || [],
+              faqs: service.faqs || [],
+              requirements: service.requirements || [],
+              searchKeywords: service.searchKeywords || [],
+              images: service.images || [],
+              // Ensure nested objects exist
+              category: service.category || { name: 'Unknown Category' },
+              subcategory: service.subcategory || { name: 'No Subcategory' },
+              createdBy: service.createdBy || { name: 'Unknown User' }
+            })) || []
+          };
           
-          return response.data;
+          return processedData;
         }
         throw new Error(response.data.message || 'Failed to fetch services');
       } catch (error) {
@@ -571,7 +582,7 @@ export const useAdminServices = (params = {}) => {
         throw error;
       }
     },
-    staleTime: 60000,
+    staleTime: 30000, // 30 seconds
     retry: 2,
     keepPreviousData: true,
     onError: (error) => {
@@ -582,22 +593,44 @@ export const useAdminServices = (params = {}) => {
   });
 };
 
-export const useUpdateService = () => {
+export const useRestoreService = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateService(id, data),
+    mutationFn: async ({ id, data = {} }) => {
+      console.log('[USE RESTORE SERVICE] Restoring service:', id);
+      
+      try {
+        const response = await adminAPI.restoreService(id, data);
+        console.log('[USE RESTORE SERVICE] Restore response:', response.data);
+        return response;
+      } catch (error) {
+        console.error('[USE RESTORE SERVICE] Error:', error);
+        throw error;
+      }
+    },
     onMutate: async ({ id, data }) => {
+      console.log('[USE RESTORE SERVICE] Optimistic update for service:', id);
+      
       await queryClient.cancelQueries(['admin', 'services']);
       
       const previousServices = queryClient.getQueryData(['admin', 'services']);
       
+      // Optimistically update the service in cache
       queryClient.setQueryData(['admin', 'services'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
         return {
           ...old,
           data: old.data.map(service => 
-            service._id === id ? { ...service, ...data } : service
+            service._id === id 
+              ? { 
+                  ...service, 
+                  status: 'active',
+                  isActive: true,
+                  updatedAt: new Date().toISOString()
+                } 
+              : service
           )
         };
       });
@@ -606,20 +639,194 @@ export const useUpdateService = () => {
     },
     onSuccess: (response) => {
       if (response.data.success) {
-        toast.success('Service updated successfully');
+        toast.success('Service restored successfully');
+        
+        // Invalidate and refetch
         queryClient.invalidateQueries(['admin', 'services']);
         queryClient.invalidateQueries(['admin', 'dashboard']);
       } else {
-        toast.error(response.data.message || 'Update failed');
+        toast.error(response.data.message || 'Restore failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      // Revert optimistic update
+      if (context?.previousServices) {
+        queryClient.setQueryData(['admin', 'services'], context.previousServices);
+      }
+      
+      toast.error(error.response?.data?.message || 'Failed to restore service');
+    }
+  });
+};
+
+// Add bulk restore hook
+export const useBulkRestoreServices = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids) => adminAPI.bulkRestoreServices(ids),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries(['admin', 'services']);
+      
+      const previousServices = queryClient.getQueryData(['admin', 'services']);
+      
+      queryClient.setQueryData(['admin', 'services'], (old) => {
+        if (!old || !old.data) return old;
+        
+        return {
+          ...old,
+          data: old.data.map(service => 
+            ids.includes(service._id) 
+              ? { 
+                  ...service, 
+                  status: 'active',
+                  isActive: true,
+                  updatedAt: new Date().toISOString()
+                } 
+              : service
+          )
+        };
+      });
+      
+      return { previousServices };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(`Successfully restored ${response.data.results?.filter(r => r.success).length || 0} services`);
+        
+        // Invalidate and refetch
+        queryClient.invalidateQueries(['admin', 'services']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+      } else {
+        toast.error(response.data.message || 'Bulk restore failed');
       }
     },
     onError: (error, variables, context) => {
       if (context?.previousServices) {
         queryClient.setQueryData(['admin', 'services'], context.previousServices);
       }
-      toast.error(error.response?.data?.message || 'Update failed');
+      
+      toast.error(error.response?.data?.message || 'Bulk restore failed');
     }
   });
+};
+
+// Update useUpdateService for faster cache updates
+export const useUpdateService = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }) => {
+      console.log('[USE UPDATE SERVICE] Updating service:', { id, data });
+      
+      try {
+        const response = await adminAPI.updateService(id, data);
+        console.log('[USE UPDATE SERVICE] Update response:', response.data);
+        return response;
+      } catch (error) {
+        console.error('[USE UPDATE SERVICE] Error:', error);
+        
+        throw error;
+      }
+    },
+    onMutate: async ({ id, data }) => {
+      console.log('[USE UPDATE SERVICE] Optimistic update for service:', id);
+      
+      // Cancel ongoing queries
+      await queryClient.cancelQueries(['admin', 'services']);
+      
+      const previousServices = queryClient.getQueryData(['admin', 'services']);
+      
+      // Fast optimistic update
+      queryClient.setQueryData(['admin', 'services'], (old) => {
+        if (!old || !old.data) return old;
+        
+        return {
+          ...old,
+          data: old.data.map(service => 
+            service._id === id 
+              ? { 
+                  ...service, 
+                  ...data,
+                  updatedAt: new Date().toISOString()
+                } 
+              : service
+          )
+        };
+      });
+      
+      return { previousServices };
+    },
+    onSuccess: (response, variables, context) => {
+      console.log('[USE UPDATE SERVICE] Success:', response.data);
+      
+      if (response.data.success) {
+        toast.success('Service updated successfully');
+        
+        // Fast cache update with received data
+        if (response.data.service) {
+          queryClient.setQueryData(['admin', 'services'], (old) => {
+            if (!old || !old.data) return old;
+            
+            return {
+              ...old,
+              data: old.data.map(service => 
+                service._id === response.data.service._id 
+                  ? { ...service, ...response.data.service }
+                  : service
+              )
+            };
+          });
+        }
+        
+        // Only invalidate for fresh data
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'services']);
+          queryClient.invalidateQueries(['admin', 'dashboard']);
+        }, 100);
+      } else {
+        toast.error(response.data.message || 'Update failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      console.error('[USE UPDATE SERVICE] Mutation error:', error);
+      
+      // Fast revert
+      if (context?.previousServices) {
+        queryClient.setQueryData(['admin', 'services'], context.previousServices);
+      }
+      
+      // Show validation errors
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to update service');
+      }
+    },
+    retry: 1,
+    retryDelay: 500
+  });
+};
+
+// Add poll mechanism for real-time updates
+export const useServicePolling = (params = {}) => {
+  const queryClient = useQueryClient();
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  
+  const { data, refetch, ...rest } = useAdminServices(params);
+  
+  // Poll for updates every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [refetch]);
+  
+  return { data, refetch, lastUpdate, ...rest };
 };
 export const useDeleteService = () => {
   const queryClient = useQueryClient();

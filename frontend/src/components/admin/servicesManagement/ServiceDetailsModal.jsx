@@ -1,29 +1,11 @@
 import React from 'react';
 import { 
-  FiX, 
-  FiPackage, 
-  FiInfo, 
-  FiCalendar, 
-  FiBarChart2, 
-  FiEye,
-  FiEdit2,
-  FiTrash2,
-  FiCopy,
-  FiExternalLink,
-  FiUsers,
-  FiDollarSign,
-  FiClock,
-  FiStar,
-  FiHeart,
-  FiTag,
-  FiCheck,
-  FiAlertTriangle,
-  FiTrendingUp,
-  FiShoppingCart,
-  FiMessageSquare,
-  FiLayers,
-  FiFileText,
-  FiDownload
+  FiX, FiPackage, FiInfo, FiCalendar, FiBarChart2, FiEye,
+  FiEdit2, FiTrash2, FiCopy, FiExternalLink, FiUsers,
+  FiDollarSign, FiClock, FiStar, FiHeart, FiTag, FiCheck,
+  FiAlertTriangle, FiTrendingUp, FiShoppingCart, FiMessageSquare,
+  FiLayers, FiFileText, FiDownload, FiCode, FiSettings,
+  FiCheckCircle, FiXCircle, FiZap, FiAward, FiGrid, FiList
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 
@@ -81,9 +63,18 @@ const ServiceDetailsModal = ({
     // You could add a toast notification here
   };
 
-  const category = categoriesMap[service.category] || {};
-  const subcategory = category.subcategories?.find(sub => sub._id === service.subcategory);
-  const createdBy = usersMap[service.createdBy] || service.createdBy || {};
+  // Get category and subcategory with fallbacks
+  const category = categoriesMap[service.category] || 
+                   service.category || 
+                   { name: 'Unknown Category', slug: '', icon: '' };
+  
+  const subcategory = categoriesMap[service.subcategory] || 
+                      service.subcategory || 
+                      { name: 'No Subcategory', slug: '', icon: '' };
+  
+  const createdBy = usersMap[service.createdBy] || 
+                    service.createdBy || 
+                    { name: 'Unknown User', email: '', picture: null };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -91,9 +82,9 @@ const ServiceDetailsModal = ({
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-gray-50 to-gray-100">
           <div className="flex items-center space-x-3">
-            {service.thumbnail ? (
+            {service.thumbnail?.url ? (
               <img 
-                src={service.thumbnail} 
+                src={service.thumbnail.url} 
                 alt={service.title}
                 className="h-12 w-12 rounded-lg object-cover border border-gray-200"
               />
@@ -154,16 +145,25 @@ const ServiceDetailsModal = ({
                         Recommended
                       </span>
                     )}
+                    {service.isActive && (
+                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold border border-green-200">
+                        <FiCheckCircle className="inline h-3 w-3 mr-1" />
+                        Active
+                      </span>
+                    )}
                   </div>
                   <div className="text-gray-600">
                     <p className="text-lg">{formatPrice(service.price, service.currency)}</p>
-                    <p className="text-sm">Delivery: {service.deliveryTime} {service.deliveryTimeUnit || 'days'}</p>
+                    <p className="text-sm">
+                      Delivery: {service.deliveryTime} {service.deliveryTimeUnit || 'days'} • 
+                      Revisions: {service.revisions}
+                    </p>
                   </div>
                 </div>
-                {service.thumbnail && (
+                {service.thumbnail?.url && (
                   <div className="flex-shrink-0">
                     <img 
-                      src={service.thumbnail} 
+                      src={service.thumbnail.url} 
                       alt={service.title}
                       className="h-32 w-32 rounded-lg object-cover border border-gray-200 shadow-sm"
                     />
@@ -260,28 +260,38 @@ const ServiceDetailsModal = ({
                   </div>
                 </div>
 
-                {/* Category & Subcategory */}
+                {/* Category & Subcategory - FIXED */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h4 className="font-semibold text-gray-900 mb-4">Category Information</h4>
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                    <FiGrid className="h-5 w-5 mr-2 text-gray-500" />
+                    Category Information
+                  </h4>
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
+                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <p className="text-sm text-gray-600">Category</p>
-                        <p className="font-medium">{category.name || 'Unknown Category'}</p>
+                        <p className="font-medium text-lg mt-1">
+                          {typeof category === 'object' ? category.name : 'Unknown Category'}
+                        </p>
+                        {typeof category === 'object' && category.description && (
+                          <p className="text-xs text-gray-500 mt-2">{category.description}</p>
+                        )}
                       </div>
-                      <div>
+                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <p className="text-sm text-gray-600">Subcategory</p>
-                        <p className="font-medium">{subcategory?.name || 'N/A'}</p>
-                        {subcategory?.description && (
-                          <p className="text-xs text-gray-500 mt-1">{subcategory.description}</p>
+                        <p className="font-medium text-lg mt-1">
+                          {typeof subcategory === 'object' ? subcategory.name : 'No Subcategory'}
+                        </p>
+                        {typeof subcategory === 'object' && subcategory.description && (
+                          <p className="text-xs text-gray-500 mt-2">{subcategory.description}</p>
                         )}
                       </div>
                     </div>
                     
-                    {category.slug && (
+                    {typeof category === 'object' && category.slug && (
                       <button
                         onClick={() => window.open(`/categories/${category.slug}`, '_blank')}
-                        className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 flex items-center space-x-2 w-full justify-center"
+                        className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 flex items-center space-x-2 w-full justify-center border border-indigo-200"
                       >
                         <FiExternalLink className="h-4 w-4" />
                         <span>View Category</span>
@@ -293,10 +303,13 @@ const ServiceDetailsModal = ({
 
               {/* Right Column */}
               <div className="space-y-6">
-                {/* Service Creator */}
+                {/* Service Creator - FIXED */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h4 className="font-semibold text-gray-900 mb-4">Service Creator</h4>
-                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                    <FiUsers className="h-5 w-5 mr-2 text-gray-500" />
+                    Service Creator
+                  </h4>
+                  <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                     {createdBy.picture ? (
                       <img
                         src={createdBy.picture}
@@ -311,6 +324,9 @@ const ServiceDetailsModal = ({
                     <div className="flex-1">
                       <p className="font-medium">{createdBy.name || 'Unknown User'}</p>
                       <p className="text-sm text-gray-500">{createdBy.email || ''}</p>
+                      {createdBy.role && (
+                        <p className="text-xs text-gray-400 mt-1">Role: {createdBy.role}</p>
+                      )}
                     </div>
                     {createdBy._id && (
                       <button
@@ -332,14 +348,14 @@ const ServiceDetailsModal = ({
                     Delivery Information
                   </h4>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-sm text-gray-600">Delivery Time</p>
                       <p className="text-lg font-bold text-gray-900">
                         {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
                       </p>
                     </div>
                     
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-sm text-gray-600">Revisions</p>
                       <p className="text-lg font-bold text-gray-900">
                         {service.revisions || 0}
@@ -403,18 +419,86 @@ const ServiceDetailsModal = ({
             {/* Features Section */}
             {service.features && service.features.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h4 className="font-semibold text-gray-900 mb-4">Features</h4>
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                  <FiZap className="h-5 w-5 mr-2 text-gray-500" />
+                  Features
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {service.features.map((feature, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center mb-2">
-                        <FiCheck className="h-4 w-4 text-green-500 mr-2" />
-                        <h5 className="font-medium text-gray-900">{feature.title}</h5>
+                        {feature.included !== false ? (
+                          <FiCheck className="h-4 w-4 text-green-500 mr-2" />
+                        ) : (
+                          <FiXCircle className="h-4 w-4 text-red-500 mr-2" />
+                        )}
+                        <h5 className="font-medium text-gray-900">{feature.title || `Feature ${index + 1}`}</h5>
                       </div>
                       {feature.description && (
                         <p className="text-sm text-gray-600 mt-1">{feature.description}</p>
                       )}
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Requirements */}
+            {service.requirements && service.requirements.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                  <FiSettings className="h-5 w-5 mr-2 text-gray-500" />
+                  Requirements
+                </h4>
+                <div className="space-y-3">
+                  {service.requirements.map((requirement, index) => (
+                    <div key={index} className="flex items-start space-x-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                      <FiCheckCircle className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-gray-700">{requirement}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FAQs */}
+            {service.faqs && service.faqs.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                  <FiMessageSquare className="h-5 w-5 mr-2 text-gray-500" />
+                  Frequently Asked Questions
+                </h4>
+                <div className="space-y-4">
+                  {service.faqs.map((faq, index) => (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                        <FiAward className="h-4 w-4 mr-2 text-indigo-500" />
+                        {faq.question || `Question ${index + 1}`}
+                      </h5>
+                      <p className="text-gray-600">{faq.answer}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search Keywords */}
+            {service.searchKeywords && service.searchKeywords.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                  <FiCode className="h-5 w-5 mr-2 text-gray-500" />
+                  Search Keywords
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {service.searchKeywords.map((keyword, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200"
+                    >
+                      {keyword}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -453,13 +537,31 @@ const ServiceDetailsModal = ({
                 </div>
               </div>
             )}
+
+            {/* Meta Information */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                <FiList className="h-5 w-5 mr-2 text-gray-500" />
+                Meta Information
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Meta Title</p>
+                  <p className="font-medium">{service.metaTitle || service.title}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Meta Description</p>
+                  <p className="text-gray-700">{service.metaDescription || service.shortDescription}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="text-sm text-gray-500">
-            Service ID: {service._id}
+            Service ID: {service._id} • Slug: {service.slug} • Version: {service.version || 1}
           </div>
           <div className="flex space-x-3">
             <button

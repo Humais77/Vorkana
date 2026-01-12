@@ -9,7 +9,8 @@ const {
   deleteCloudinaryImages
 } = require('../middleware/upload.middleware.js');
 const cache = require('../utils/cache.js');
-
+const EventEmitter = require('events');
+const serviceEmitter = new EventEmitter();
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
@@ -22,14 +23,36 @@ const generateCacheKey = (prefix, params) => {
 
 const invalidateServiceCache = async (serviceId) => {
   try {
-    await cache.del(`service:*${serviceId}*`);
-    await cache.del('services:*');
-    await cache.del('service_stats:*');
-    await cache.del('service_popular:*');
-    await cache.del('service_similar:*');
+    // Clear all related cache patterns
+    const patterns = [
+      `service:*${serviceId}*`,
+      'services:*',
+      'service_stats:*',
+      'service_popular:*',
+      'service_similar:*',
+      'my_services:*',
+      'admin_services:*',
+      'all_active_services:*'
+    ];
+    
+    for (const pattern of patterns) {
+      await cache.delPattern(pattern);
+    }
+    
+    // Emit update event for real-time updates
+    serviceEmitter.emit('service_updated', serviceId);
+    
     console.log(`Cache invalidated for service: ${serviceId}`);
   } catch (err) {
     console.warn('Error invalidating service cache:', err.message);
+  }
+};
+
+// Add a function to clear cache patterns
+cache.delPattern = async (pattern) => {
+  const keys = await cache.keys(pattern);
+  if (keys.length > 0) {
+    await cache.del(keys);
   }
 };
 
@@ -1120,7 +1143,6 @@ const injectionPatterns = [
   }
 };
 
-// Fix the getServiceById function
 const getServiceById = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1132,7 +1154,8 @@ const getServiceById = async (req, res, next) => {
       populate = 'true', 
       incrementView = 'true',
       cache: useCacheParam = 'true',
-      includeSubcategory = true
+      includeSubcategory = true,
+      includeFullDetails = 'true'  // Add this parameter
     } = req.query;
 
     console.log(`[PERF] getServiceById called with id: ${id}`);
@@ -1148,14 +1171,16 @@ const getServiceById = async (req, res, next) => {
 
     const isObjectId = mongoose.Types.ObjectId.isValid(id);
     const useCache = useCacheParam === 'true';
+    const includeFull = includeFullDetails === 'true';
 
-    // OPTIMIZATION: Generate cache key early
+    // OPTIMIZATION: Generate cache key
     const cacheKey = generateCacheKey('service_single', {
       id,
       isObjectId,
       fields,
-      populate: populate === 'true',
+      populate,
       includeSubcategory,
+      includeFullDetails: includeFull,
       userRole: req.user?.role
     });
 
@@ -1188,7 +1213,7 @@ const getServiceById = async (req, res, next) => {
     // Build permission query
     const permissionQuery = buildPermissionQuery(query, req.user);
 
-    // Select fields
+    // Select fields - Include ALL fields for admin or when includeFullDetails=true
     let select = {};
     if (fields) {
       try {
@@ -1201,20 +1226,33 @@ const getServiceById = async (req, res, next) => {
       } catch (err) {
         console.warn('Error parsing fields:', err);
       }
+    } else if (req.user?.role === 'admin' || includeFull) {
+      // Admin gets all fields except internal ones
+      select = {
+        __v: 0,
+        lastUpdatedBy: 0,
+        version: 0,
+        deletedAt: 0,
+        deletedBy: 0
+      };
     }
 
-    // Build populate options
+    // Build populate options with ALL data for admin
     let populateOptions = [];
     if (populate === 'true' || populate === true) {
       populateOptions = [
         {
           path: 'category',
-          select: 'name slug icon',
+          select: 'name slug icon description parentCategory isActive featured popular',
           match: { isActive: true }
         },
         {
           path: 'createdBy',
-          select: 'name email picture role createdAt'
+          select: 'name email picture role createdAt isActive bio skills rating'
+        },
+        {
+          path: 'lastUpdatedBy',
+          select: 'name email picture role'
         }
       ];
       
@@ -1222,13 +1260,13 @@ const getServiceById = async (req, res, next) => {
       if (includeSubcategory === 'true' || includeSubcategory === true) {
         populateOptions.push({
           path: 'subcategory',
-          select: 'name slug icon',
+          select: 'name slug icon description category order isActive',
           match: { isActive: true }
         });
       }
     }
 
-    // Execute query
+    // Execute query with ALL data
     const queryStart = Date.now();
     service = await Service.findOne(permissionQuery)
       .select(Object.keys(select).length > 0 ? select : null)
@@ -1271,8 +1309,8 @@ const getServiceById = async (req, res, next) => {
       incrementViewCountAsync(service._id).catch(console.error);
     }
 
-    // Process service data
-    const processedService = processServiceData(service);
+    // Process service data - Ensure ALL fields are included
+    const processedService = processServiceDataForResponse(service, req.user?.role === 'admin');
     
     // Cache for future requests (if not admin)
     if (useCache && req.user?.role !== 'admin') {
@@ -1321,6 +1359,294 @@ const getServiceById = async (req, res, next) => {
     
     next(error);
   }
+};
+
+// NEW: Process service data for response with all fields
+const processServiceDataForResponse = (service, isAdmin = false) => {
+  const processed = { ...service };
+  
+  // Ensure all fields exist even if empty
+  const requiredFields = [
+    'title', 'description', 'shortDescription', 'price', 'currency',
+    'deliveryTime', 'deliveryTimeUnit', 'revisions', 'rating', 'reviewsCount',
+    'views', 'likes', 'status', 'isFeatured', 'isRecommended', 'isPopular',
+    'tags', 'features', 'faqs', 'requirements', 'searchKeywords',
+    'metaTitle', 'metaDescription', 'isActive', 'createdAt', 'updatedAt',
+    'publishedAt', 'slug', 'category', 'subcategory', 'createdBy', 'thumbnail', 'images'
+  ];
+  
+  // Initialize missing fields
+  requiredFields.forEach(field => {
+    if (processed[field] === undefined) {
+      if (field === 'tags' || field === 'features' || field === 'faqs' || 
+          field === 'requirements' || field === 'searchKeywords') {
+        processed[field] = [];
+      } else if (field === 'images') {
+        processed[field] = [];
+      } else if (field === 'thumbnail') {
+        processed[field] = null;
+      } else if (field === 'rating' || field === 'reviewsCount' || 
+                 field === 'views' || field === 'likes') {
+        processed[field] = 0;
+      } else if (field === 'price') {
+        processed[field] = 0;
+      } else if (field === 'deliveryTime') {
+        processed[field] = 1;
+      } else if (field === 'revisions') {
+        processed[field] = 1;
+      } else if (field === 'currency') {
+        processed[field] = 'USD';
+      } else if (field === 'deliveryTimeUnit') {
+        processed[field] = 'days';
+      } else if (field === 'status') {
+        processed[field] = 'draft';
+      } else if (field === 'isActive') {
+        processed[field] = true;
+      } else if (field === 'isFeatured' || field === 'isRecommended' || 
+                 field === 'isPopular') {
+        processed[field] = false;
+      } else if (field === 'createdAt' || field === 'updatedAt') {
+        processed[field] = new Date().toISOString();
+      } else if (field === 'slug') {
+        processed[field] = processed.title ? 
+          processed.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '';
+      } else {
+        processed[field] = null;
+      }
+    }
+  });
+  
+  // Format category data
+  if (processed.category) {
+    if (typeof processed.category === 'string') {
+      processed.category = {
+        _id: processed.category,
+        name: 'Unknown Category',
+        slug: '',
+        icon: '',
+        description: ''
+      };
+    } else {
+      processed.category = {
+        _id: processed.category._id || processed.category,
+        name: processed.category.name || 'Unknown Category',
+        slug: processed.category.slug || '',
+        icon: processed.category.icon || '',
+        description: processed.category.description || '',
+        isActive: processed.category.isActive !== undefined ? processed.category.isActive : true
+      };
+    }
+  } else {
+    processed.category = {
+      _id: null,
+      name: 'Unknown Category',
+      slug: '',
+      icon: '',
+      description: '',
+      isActive: false
+    };
+  }
+  
+  // Format subcategory data
+  if (processed.subcategory) {
+    if (typeof processed.subcategory === 'string') {
+      processed.subcategory = {
+        _id: processed.subcategory,
+        name: 'Unknown Subcategory',
+        slug: '',
+        icon: '',
+        description: '',
+        category: processed.category._id
+      };
+    } else {
+      processed.subcategory = {
+        _id: processed.subcategory._id || processed.subcategory,
+        name: processed.subcategory.name || 'Unknown Subcategory',
+        slug: processed.subcategory.slug || '',
+        icon: processed.subcategory.icon || '',
+        description: processed.subcategory.description || '',
+        category: processed.subcategory.category || processed.category._id,
+        isActive: processed.subcategory.isActive !== undefined ? processed.subcategory.isActive : true
+      };
+    }
+  } else {
+    processed.subcategory = {
+      _id: null,
+      name: 'No Subcategory',
+      slug: '',
+      icon: '',
+      description: '',
+      category: processed.category._id,
+      isActive: false
+    };
+  }
+  
+  // Format createdBy data
+  if (processed.createdBy) {
+    if (typeof processed.createdBy === 'string') {
+      processed.createdBy = {
+        _id: processed.createdBy,
+        name: 'Unknown User',
+        email: '',
+        picture: null,
+        role: 'user'
+      };
+    } else {
+      processed.createdBy = {
+        _id: processed.createdBy._id || processed.createdBy,
+        name: processed.createdBy.name || 'Unknown User',
+        email: processed.createdBy.email || '',
+        picture: processed.createdBy.picture || null,
+        role: processed.createdBy.role || 'user',
+        isActive: processed.createdBy.isActive !== undefined ? processed.createdBy.isActive : true
+      };
+      
+      // Only include sensitive fields for admin
+      if (!isAdmin) {
+        delete processed.createdBy.email;
+      }
+    }
+  } else {
+    processed.createdBy = {
+      _id: null,
+      name: 'Unknown User',
+      email: '',
+      picture: null,
+      role: 'user',
+      isActive: false
+    };
+  }
+  
+  // Format lastUpdatedBy if exists
+  if (processed.lastUpdatedBy) {
+    if (typeof processed.lastUpdatedBy === 'string') {
+      processed.lastUpdatedBy = {
+        _id: processed.lastUpdatedBy,
+        name: 'System',
+        picture: null
+      };
+    } else {
+      processed.lastUpdatedBy = {
+        _id: processed.lastUpdatedBy._id || processed.lastUpdatedBy,
+        name: processed.lastUpdatedBy.name || 'System',
+        email: processed.lastUpdatedBy.email || '',
+        picture: processed.lastUpdatedBy.picture || null,
+        role: processed.lastUpdatedBy.role || 'user'
+      };
+    }
+  }
+  
+  // Ensure arrays are properly formatted
+  ['tags', 'features', 'faqs', 'requirements', 'searchKeywords'].forEach(field => {
+    if (!Array.isArray(processed[field])) {
+      if (typeof processed[field] === 'string') {
+        try {
+          processed[field] = JSON.parse(processed[field]);
+        } catch {
+          processed[field] = [];
+        }
+      } else {
+        processed[field] = [];
+      }
+    }
+  });
+  
+  // Format features array
+  if (Array.isArray(processed.features)) {
+    processed.features = processed.features.map((feature, index) => {
+      if (typeof feature === 'string') {
+        return {
+          title: `Feature ${index + 1}`,
+          description: feature,
+          included: true
+        };
+      }
+      return {
+        title: feature.title || `Feature ${index + 1}`,
+        description: feature.description || '',
+        included: feature.included !== undefined ? feature.included : true
+      };
+    });
+  }
+  
+  // Format faqs array
+  if (Array.isArray(processed.faqs)) {
+    processed.faqs = processed.faqs.map((faq, index) => {
+      if (typeof faq === 'string') {
+        return {
+          question: `Question ${index + 1}`,
+          answer: faq
+        };
+      }
+      return {
+        question: faq.question || `Question ${index + 1}`,
+        answer: faq.answer || ''
+      };
+    });
+  }
+  
+  // Format thumbnail
+  if (processed.thumbnail) {
+    if (typeof processed.thumbnail === 'string') {
+      processed.thumbnail = {
+        url: processed.thumbnail,
+        public_id: `thumbnail-${Date.now()}`,
+        uploadedAt: new Date().toISOString()
+      };
+    } else if (!processed.thumbnail.url) {
+      processed.thumbnail = null;
+    }
+  }
+  
+  // Format images array
+  if (Array.isArray(processed.images)) {
+    processed.images = processed.images.map((img, index) => {
+      if (typeof img === 'string') {
+        return {
+          url: img,
+          public_id: `image-${Date.now()}-${index}`,
+          uploadedAt: new Date().toISOString()
+        };
+      }
+      return {
+        url: img.url || '',
+        public_id: img.public_id || `image-${Date.now()}-${index}`,
+        width: img.width || 0,
+        height: img.height || 0,
+        size: img.size || 0,
+        format: img.format || 'jpg',
+        uploadedAt: img.uploadedAt || new Date().toISOString()
+      };
+    });
+  }
+  
+  // Add computed fields
+  processed.hasImages = Array.isArray(processed.images) && processed.images.length > 0;
+  processed.hasThumbnail = !!processed.thumbnail;
+  processed.priceFormatted = `${processed.currency || 'USD'} ${(processed.price || 0).toFixed(2)}`;
+  processed.deliveryFormatted = `${processed.deliveryTime || 0} ${processed.deliveryTimeUnit || 'days'}`;
+  
+  // Add status badge
+  const statusColors = {
+    active: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
+    draft: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' },
+    pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-200' },
+    paused: { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200' },
+    suspended: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' },
+    denied: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' }
+  };
+  
+  const status = processed.status || 'draft';
+  const statusConfig = statusColors[status] || statusColors.draft;
+  
+  processed.statusBadge = {
+    text: status.charAt(0).toUpperCase() + status.slice(1),
+    color: statusConfig.bg,
+    textColor: statusConfig.text,
+    border: statusConfig.border
+  };
+  
+  return processed;
 };
 const buildPermissionQuery = (query, user) => {
   if (user?.role === 'admin') {
@@ -1581,76 +1907,66 @@ const updateService = async (req, res, next) => {
         updateData = req.body;
       }
       
-      // Handle thumbnail upload
-      if (req.files?.thumbnail?.[0]) {
-        const thumbnailFile = req.files.thumbnail[0];
-        try {
-          const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
-          
-          if (thumbnailUpload[0]) {
-            updateData.thumbnail = {
-              url: thumbnailUpload[0].url,
-              public_id: thumbnailUpload[0].public_id,
-              width: thumbnailUpload[0].width,
-              height: thumbnailUpload[0].height,
-              size: thumbnailUpload[0].size,
-              format: thumbnailUpload[0].format,
-              uploadedAt: new Date()
-            };
+      // Handle file uploads
+      if (req.files) {
+        // Thumbnail upload
+        if (req.files.thumbnail?.[0]) {
+          const thumbnailFile = req.files.thumbnail[0];
+          try {
+            const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
             
-            // Delete old thumbnail if exists
-            if (service.thumbnail && service.thumbnail.public_id) {
-              await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+            if (thumbnailUpload[0]) {
+              updateData.thumbnail = {
+                url: thumbnailUpload[0].url,
+                public_id: thumbnailUpload[0].public_id,
+                width: thumbnailUpload[0].width,
+                height: thumbnailUpload[0].height,
+                size: thumbnailUpload[0].size,
+                format: thumbnailUpload[0].format,
+                uploadedAt: new Date()
+              };
+              
+              // Delete old thumbnail
+              if (service.thumbnail && service.thumbnail.public_id) {
+                await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+              }
             }
+          } catch (error) {
+            console.error('Thumbnail upload error:', error);
           }
-        } catch (error) {
-          console.error('Thumbnail upload error:', error);
-          return res.status(500).json({
-            success: false,
-            message: 'Failed to upload thumbnail',
-            code: 'THUMBNAIL_UPLOAD_ERROR',
-            requestId
-          });
         }
-      }
-      
-      // Handle image uploads
-      if (req.files?.images && Array.isArray(req.files.images)) {
-        try {
-          const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
-          
-          const newImages = imageUploads.map(img => ({
-            url: img.url,
-            public_id: img.public_id,
-            width: img.width,
-            height: img.height,
-            size: img.size,
-            format: img.format,
-            uploadedAt: new Date()
-          }));
-          
-          // Merge new images with existing ones
-          updateData.images = [...(service.images || []), ...newImages];
-          
-          // Limit to 10 images
-          if (updateData.images.length > 10) {
-            // Delete uploaded images
-            await deleteCloudinaryImages(newImages.map(img => ({ public_id: img.public_id })));
-            return res.status(400).json({
-              success: false,
-              message: 'Cannot have more than 10 images',
-              code: 'MAX_IMAGES_EXCEEDED',
-              requestId
-            });
+        
+        // Images upload
+        if (req.files.images && Array.isArray(req.files.images)) {
+          try {
+            const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+            const newImages = imageUploads.map(img => ({
+              url: img.url,
+              public_id: img.public_id,
+              width: img.width,
+              height: img.height,
+              size: img.size,
+              format: img.format,
+              uploadedAt: new Date()
+            }));
+            
+            // Merge with existing images
+            updateData.images = [...(service.images || []), ...newImages];
+            
+            // Limit to 10 images
+            if (updateData.images.length > 10) {
+              // Delete uploaded images
+              await deleteCloudinaryImages(newImages.map(img => ({ public_id: img.public_id })));
+              return res.status(400).json({
+                success: false,
+                message: 'Cannot have more than 10 images',
+                code: 'MAX_IMAGES_EXCEEDED',
+                requestId
+              });
+            }
+          } catch (error) {
+            console.error('Image upload error:', error);
           }
-        } catch (error) {
-          console.error('Image upload error:', error);
-          return res.status(500).json({
-            success: false,
-            message: 'Failed to upload images',
-            code: 'IMAGE_UPLOAD_ERROR',
-            requestId
-          });
         }
       }
     } else {
@@ -1673,12 +1989,8 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.reviewsCount;
     }
 
-    // Handle subcategory validation
-    if (sanitizedData.subcategory === '' || sanitizedData.subcategory === null || sanitizedData.subcategory === undefined) {
-      // Keep existing subcategory if not provided
-      sanitizedData.subcategory = service.subcategory;
-    } else if (sanitizedData.subcategory) {
-      // Validate subcategory exists and belongs to category
+    // Validate subcategory if changed
+    if (sanitizedData.subcategory && sanitizedData.subcategory !== service.subcategory?.toString()) {
       const subcategoryExists = await Subcategory.findOne({
         _id: sanitizedData.subcategory,
         category: sanitizedData.category || service.category,
@@ -1695,7 +2007,7 @@ const updateService = async (req, res, next) => {
       }
     }
 
-    // Generate short description if missing
+    // Generate short description if needed
     if (!sanitizedData.shortDescription || sanitizedData.shortDescription.trim() === '') {
       if (sanitizedData.description) {
         sanitizedData.shortDescription = sanitizedData.description.substring(0, 150) + '...';
@@ -1712,7 +2024,7 @@ const updateService = async (req, res, next) => {
       $inc: { version: 1 }
     };
 
-    // Perform update
+    // Perform update - Optimized for speed
     const updatedService = await Service.findByIdAndUpdate(
       id,
       updateFields,
@@ -1720,7 +2032,7 @@ const updateService = async (req, res, next) => {
         new: true,
         runValidators: true,
         context: 'query',
-        maxTimeMS: 10000
+        maxTimeMS: 3000 // Faster timeout
       }
     )
     .select('-__v -lastUpdatedBy -version -deletedAt -deletedBy')
@@ -1738,11 +2050,12 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // Invalidate cache (async)
-    invalidateServiceCache(id).catch(console.warn);
+    // FAST: Invalidate cache immediately and trigger update
+    await invalidateServiceCache(id);
 
     const responseTime = Date.now() - startTime;
     
+    // Return minimal response for speed
     res.json({
       success: true,
       message: 'Service updated successfully',
@@ -1756,6 +2069,7 @@ const updateService = async (req, res, next) => {
     const responseTime = Date.now() - startTime;
     console.error('Update service error after', responseTime, 'ms:', error);
     
+    // Detailed error handling
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -1794,6 +2108,7 @@ const updateService = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Update deleteService function
 const deleteService = async (req, res, next) => {

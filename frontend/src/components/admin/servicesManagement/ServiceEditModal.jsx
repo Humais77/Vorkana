@@ -1,15 +1,16 @@
-// components/admin/modals/ServiceEditModal.jsx
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { 
   FiX, FiPackage, FiInfo, FiAlertCircle, FiSave, FiChevronDown, 
   FiDollarSign, FiClock, FiTag, FiImage, FiCheck, FiUpload, FiEye, 
-  FiStar, FiPlus, FiTrash2, FiHash, FiLoader
+  FiStar, FiPlus, FiTrash2, FiHash, FiLoader, FiCopy, FiRefreshCw,
+  FiChevronUp, FiChevronRight, FiGrid, FiLayers
 } from 'react-icons/fi';
 import { 
   useUpdateService,
-  useSubcategoriesByCategory // Import the hook
+  useSubcategoriesByCategory
 } from '../../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
+import { adminAPI } from '../../../api/admin';
 
 // Validation rules
 const validationRules = {
@@ -36,6 +37,7 @@ const validationRules = {
   description: (value) => {
     if (!value?.trim()) return 'Description is required';
     if (value.length < 50) return 'Description must be at least 50 characters';
+    if (value.length > 10000) return 'Description cannot exceed 10000 characters';
     return null;
   },
   price: (value) => {
@@ -57,6 +59,14 @@ const validationRules = {
     if (isNaN(revisions)) return 'Revisions must be a valid number';
     if (revisions < 0) return 'Revisions cannot be negative';
     if (revisions > 10) return 'Revisions cannot exceed 10';
+    return null;
+  },
+  tags: (value) => {
+    if (value && value.length > 20) return 'Maximum 20 tags allowed';
+    return null;
+  },
+  features: (value) => {
+    if (value && value.length > 15) return 'Maximum 15 features allowed';
     return null;
   }
 };
@@ -80,12 +90,41 @@ const parseServiceData = (service) => {
     return defaultValue;
   };
   
+  // Get category and subcategory IDs
+  const categoryId = service.category?._id || service.category;
+  const subcategoryId = service.subcategory?._id || service.subcategory;
+  
+  // Parse features to ensure proper structure
+  const rawFeatures = parseArrayField(service.features);
+  const parsedFeatures = rawFeatures.map(feature => {
+    if (typeof feature === 'string') {
+      return { title: feature, description: '', included: true };
+    }
+    return {
+      title: feature.title || '',
+      description: feature.description || '',
+      included: feature.included !== undefined ? feature.included : true
+    };
+  });
+  
+  // Parse FAQs to ensure proper structure
+  const rawFaqs = parseArrayField(service.faqs);
+  const parsedFaqs = rawFaqs.map(faq => {
+    if (typeof faq === 'string') {
+      return { question: faq, answer: '' };
+    }
+    return {
+      question: faq.question || '',
+      answer: faq.answer || ''
+    };
+  });
+  
   return {
     title: service.title || '',
     description: service.description || '',
     shortDescription: service.shortDescription || '',
-    category: service.category?._id || service.category || '',
-    subcategory: service.subcategory?._id || service.subcategory || '',
+    category: categoryId || '',
+    subcategory: subcategoryId || '',
     price: service.price || 0,
     currency: service.currency || 'USD',
     deliveryTime: service.deliveryTime || 7,
@@ -96,14 +135,37 @@ const parseServiceData = (service) => {
     isRecommended: Boolean(service.isRecommended),
     isPopular: Boolean(service.isPopular),
     tags: parseArrayField(service.tags),
-    features: parseArrayField(service.features),
-    faqs: parseArrayField(service.faqs),
+    features: parsedFeatures,
+    faqs: parsedFaqs,
     packages: parseArrayField(service.packages),
     requirements: parseArrayField(service.requirements),
-    images: parseArrayField(service.images)
+    images: parseArrayField(service.images),
+    searchKeywords: parseArrayField(service.searchKeywords),
+    metaTitle: service.metaTitle || '',
+    metaDescription: service.metaDescription || '',
+    slug: service.slug || ''
   };
 };
 
+// Function to fetch subcategories for a category
+const fetchSubcategoriesForCategory = async (categoryId) => {
+  if (!categoryId) return [];
+  
+  try {
+    const response = await adminAPI.getSubcategoriesByCategory(categoryId, {
+      active: true,
+      limit: 100
+    });
+    
+    if (response.data.success) {
+      return response.data.data || [];
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching subcategories:', error);
+    return [];
+  }
+};
 
 const ServiceEditModal = memo(({ 
   service, 
@@ -135,7 +197,11 @@ const ServiceEditModal = memo(({
     faqs: [],
     packages: [],
     requirements: [],
-    images: []
+    images: [],
+    searchKeywords: [],
+    metaTitle: '',
+    metaDescription: '',
+    slug: ''
   });
   
   const [errors, setErrors] = useState({});
@@ -144,27 +210,26 @@ const ServiceEditModal = memo(({
   const [imagePreviews, setImagePreviews] = useState([]);
   const [newImages, setNewImages] = useState([]);
   const [imagesToRemove, setImagesToRemove] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [subcategories, setSubcategories] = useState([]);
+  const [isLoadingSubcategories, setIsLoadingSubcategories] = useState(false);
+  const [originalSubcategoryId, setOriginalSubcategoryId] = useState('');
   const formRef = useRef(null);
-
-  // Use the subcategories hook - it will only fetch when category has a value
-  const { 
-    data: subcategoriesData, 
-    isLoading: isLoadingSubcategories,
-    refetch: refetchSubcategories 
-  } = useSubcategoriesByCategory(formData.category, {
-    active: true, // Only fetch active subcategories
-    limit: 100 // Adjust limit as needed
-  });
-
-  // Get subcategories from the API response
-  const subcategories = subcategoriesData?.data || [];
 
   // Initialize form with service data
   useEffect(() => {
-    if (service) {
+    if (service && isOpen) {
       const parsedData = parseServiceData(service);
       if (parsedData) {
+        console.log('Parsed service data:', {
+          category: parsedData.category,
+          subcategory: parsedData.subcategory,
+          originalCategory: service.category,
+          originalSubcategory: service.subcategory
+        });
+        
         setFormData(parsedData);
+        setOriginalSubcategoryId(parsedData.subcategory);
         setErrors({});
         setNewTag('');
         
@@ -173,28 +238,106 @@ const ServiceEditModal = memo(({
           url: typeof img === 'string' ? img : img.url || '',
           name: typeof img === 'string' ? 'Existing Image' : img.name || 'Existing Image',
           isExisting: true,
-          id: typeof img === 'string' ? img : img._id || img.id || img.url
+          id: typeof img === 'string' ? img : img._id || img.id || img.url,
+          public_id: img.public_id
         }));
         setImagePreviews(initialImagePreviews);
         setImagesToRemove([]);
         setNewImages([]);
+        
+        // Fetch subcategories for the current category
+        if (parsedData.category) {
+          loadSubcategories(parsedData.category);
+        }
       }
     }
-  }, [service]);
+  }, [service, isOpen]);
 
-  // Reset subcategory when category changes and subcategory doesn't belong to new category
-  useEffect(() => {
-    if (formData.category && formData.subcategory) {
-      // Check if the current subcategory belongs to the selected category
-      const subcategoryExists = subcategories.some(sub => sub._id === formData.subcategory);
-      if (!subcategoryExists) {
-        setFormData(prev => ({ ...prev, subcategory: '' }));
-      }
-    } else if (!formData.category) {
-      // Clear subcategory if no category is selected
-      setFormData(prev => ({ ...prev, subcategory: '' }));
+  // Load subcategories when category changes
+  const loadSubcategories = useCallback(async (categoryId) => {
+    if (!categoryId) {
+      setSubcategories([]);
+      return;
     }
-  }, [formData.category, formData.subcategory, subcategories]);
+    
+    setIsLoadingSubcategories(true);
+    try {
+      const subs = await fetchSubcategoriesForCategory(categoryId);
+      setSubcategories(subs);
+      console.log('Loaded subcategories:', subs.map(s => ({ id: s._id, name: s.name })));
+    } catch (error) {
+      console.error('Error loading subcategories:', error);
+      toast.error('Failed to load subcategories');
+      setSubcategories([]);
+    } finally {
+      setIsLoadingSubcategories(false);
+    }
+  }, []);
+
+  // Handle category change
+  const handleCategoryChange = useCallback(async (e) => {
+    const { value } = e.target;
+    
+    console.log('Category changed to:', value, 'Previous subcategory:', formData.subcategory);
+    
+    setFormData(prev => ({
+      ...prev,
+      category: value,
+      // Clear subcategory if category changes, unless we're reverting to original category
+      subcategory: value === prev.category ? prev.subcategory : ''
+    }));
+    
+    // Load subcategories for the new category
+    if (value) {
+      await loadSubcategories(value);
+    } else {
+      setSubcategories([]);
+    }
+    
+    // Validate category
+    const error = validationRules.category(value);
+    setErrors(prev => ({
+      ...prev,
+      category: error,
+      subcategory: value ? prev.subcategory : 'Please select a category first'
+    }));
+  }, [formData.subcategory, loadSubcategories]);
+
+  // Handle subcategory change
+  const handleSubcategoryChange = useCallback((e) => {
+    const { value } = e.target;
+    
+    console.log('Subcategory selected:', value);
+    
+    setFormData(prev => ({
+      ...prev,
+      subcategory: value
+    }));
+    
+    // Validate subcategory
+    const error = validationRules.subcategory(value);
+    setErrors(prev => ({
+      ...prev,
+      subcategory: error
+    }));
+  }, []);
+
+  // When subcategories are loaded, try to restore the original subcategory
+  useEffect(() => {
+    if (subcategories.length > 0 && originalSubcategoryId && !formData.subcategory) {
+      const originalSubcategoryExists = subcategories.some(
+        sub => sub._id === originalSubcategoryId
+      );
+      
+      if (originalSubcategoryExists) {
+        console.log('Restoring original subcategory:', originalSubcategoryId);
+        setFormData(prev => ({
+          ...prev,
+          subcategory: originalSubcategoryId
+        }));
+      }
+    }
+  }, [subcategories, originalSubcategoryId, formData.subcategory]);
 
   // Validate a single field
   const validateField = useCallback((name, value) => {
@@ -222,27 +365,6 @@ const ServiceEditModal = memo(({
       }));
     }
   }, [validateField]);
-
-  // Handle category change with special handling
-  const handleCategoryChange = useCallback((e) => {
-    const { value } = e.target;
-    
-    setFormData(prev => ({
-      ...prev,
-      category: value,
-      // Keep subcategory only if it belongs to the new category
-      subcategory: prev.subcategory && subcategories.some(sub => sub._id === prev.subcategory) 
-        ? prev.subcategory 
-        : ''
-    }));
-    
-    // Validate category
-    const error = validateField('category', value);
-    setErrors(prev => ({
-      ...prev,
-      category: error
-    }));
-  }, [validateField, subcategories]);
 
   // Handle description change
   const handleDescriptionChange = useCallback((content) => {
@@ -337,7 +459,7 @@ const ServiceEditModal = memo(({
     
     if (imageToRemove.isExisting) {
       // Mark existing image for removal
-      setImagesToRemove(prev => [...prev, imageToRemove.id]);
+      setImagesToRemove(prev => [...prev, imageToRemove.public_id || imageToRemove.id]);
     } else {
       // Remove new image from previews and newImages list
       URL.revokeObjectURL(imageToRemove.url);
@@ -361,67 +483,75 @@ const ServiceEditModal = memo(({
     return newErrors;
   }, [formData, validateField]);
 
-// In ServiceEditModal.jsx - Update the prepareFormData function:
-const prepareFormData = useCallback(() => {
-  const formDataToSubmit = new FormData();
-  
-  // Helper function to safely stringify arrays
-  const safeStringify = (data) => {
-    try {
-      if (Array.isArray(data)) {
-        return JSON.stringify(data);
+  // Prepare form data for submission
+  const prepareFormData = useCallback(() => {
+    const formDataToSubmit = new FormData();
+    
+    // Helper function to safely stringify arrays
+    const safeStringify = (data) => {
+      try {
+        if (Array.isArray(data)) {
+          return JSON.stringify(data);
+        }
+        return '[]';
+      } catch (error) {
+        console.error('Stringify error:', error);
+        return '[]';
       }
-      return '[]';
-    } catch (error) {
-      console.error('Stringify error:', error);
-      return '[]';
+    };
+    
+    // Append basic fields
+    const basicFields = [
+      'title', 'description', 'shortDescription', 'category', 'subcategory',
+      'price', 'currency', 'deliveryTime', 'deliveryTimeUnit', 'revisions',
+      'status', 'metaTitle', 'metaDescription', 'slug'
+    ];
+    
+    basicFields.forEach(key => {
+      if (formData[key] !== undefined && formData[key] !== null) {
+        formDataToSubmit.append(key, String(formData[key]));
+      }
+    });
+    
+    // Append boolean fields
+    const booleanFields = ['isFeatured', 'isRecommended', 'isPopular'];
+    booleanFields.forEach(key => {
+      if (formData[key] !== undefined) {
+        formDataToSubmit.append(key, String(Boolean(formData[key])));
+      }
+    });
+    
+    // Append array fields as JSON strings
+    const arrayFields = ['tags', 'features', 'faqs', 'packages', 'requirements', 'searchKeywords'];
+    arrayFields.forEach(key => {
+      if (formData[key] && formData[key].length > 0) {
+        formDataToSubmit.append(key, safeStringify(formData[key]));
+      } else {
+        formDataToSubmit.append(key, '[]');
+      }
+    });
+    
+    // Append images to remove
+    if (imagesToRemove.length > 0) {
+      formDataToSubmit.append('imagesToRemove', JSON.stringify(imagesToRemove));
     }
-  };
-  
-  // Append basic fields
-  const basicFields = [
-    'title', 'description', 'shortDescription', 'category', 'subcategory',
-    'price', 'currency', 'deliveryTime', 'deliveryTimeUnit', 'revisions',
-    'status'
-  ];
-  
-  basicFields.forEach(key => {
-    if (formData[key] !== undefined && formData[key] !== null) {
-      formDataToSubmit.append(key, String(formData[key]));
-    }
-  });
-  
-  
-  // Append boolean fields
-  const booleanFields = ['isFeatured', 'isRecommended', 'isPopular'];
-  booleanFields.forEach(key => {
-    if (formData[key] !== undefined) {
-      formDataToSubmit.append(key, String(Boolean(formData[key])));
-    }
-  });
-  
-  // Append array fields as JSON strings
-  const arrayFields = ['tags', 'features', 'faqs', 'packages', 'requirements'];
-  arrayFields.forEach(key => {
-    if (formData[key] && formData[key].length > 0) {
-      formDataToSubmit.append(key, safeStringify(formData[key]));
-    } else {
-      formDataToSubmit.append(key, '[]');
-    }
-  });
-  
-  // Append images to remove
-  if (imagesToRemove.length > 0) {
-    formDataToSubmit.append('imagesToRemove', JSON.stringify(imagesToRemove));
-  }
-  
-  // Append new images
-  newImages.forEach((file, index) => {
-    formDataToSubmit.append(`newImages`, file);
-  });
-  
-  return formDataToSubmit;
-}, [formData, imagesToRemove, newImages, service]); // ✅ Add service to dependencies
+    
+    // Append new images
+    newImages.forEach((file, index) => {
+      formDataToSubmit.append(`newImages`, file);
+    });
+    
+    // Log what we're submitting
+    console.log('Submitting form data:', {
+      category: formData.category,
+      subcategory: formData.subcategory,
+      imagesToRemove,
+      newImagesCount: newImages.length
+    });
+    
+    return formDataToSubmit;
+  }, [formData, imagesToRemove, newImages, service]);
+
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -446,26 +576,31 @@ const prepareFormData = useCallback(() => {
       return;
     }
     
+    setIsLoading(true);
+    
     try {
       const formDataToSubmit = prepareFormData();
       
       // Use the mutation hook
       await updateServiceMutation.mutateAsync({
         id: service._id,
-        data: formDataToSubmit // Pass FormData object
+        data: formDataToSubmit
       }, {
-        onSuccess: () => {
+        onSuccess: (response) => {
+          console.log('Update successful:', response.data);
           toast.success('Service updated successfully');
           onClose();
         },
         onError: (error) => {
           console.error('Update error:', error);
-          toast.error(error.message || 'Failed to update service');
+          toast.error(error.response?.data?.message || 'Failed to update service');
         }
       });
     } catch (error) {
       console.error('Form submission error:', error);
       toast.error(error.message || 'Failed to update service');
+    } finally {
+      setIsLoading(false);
     }
   }, [formData, validateForm, prepareFormData, service, updateServiceMutation, onClose]);
 
@@ -498,7 +633,11 @@ const prepareFormData = useCallback(() => {
       faqs: [],
       packages: [],
       requirements: [],
-      images: []
+      images: [],
+      searchKeywords: [],
+      metaTitle: '',
+      metaDescription: '',
+      slug: ''
     });
     setErrors({});
     setNewTag('');
@@ -506,6 +645,10 @@ const prepareFormData = useCallback(() => {
     setNewImages([]);
     setImagesToRemove([]);
     setActiveTab('basic');
+    setSubcategories([]);
+    setOriginalSubcategoryId('');
+    setIsLoading(false);
+    setIsLoadingSubcategories(false);
     onClose();
   }, [imagePreviews, onClose]);
 
@@ -520,8 +663,17 @@ const prepareFormData = useCallback(() => {
   // Don't render if not open or no service
   if (!isOpen || !service) return null;
 
-  const loading = updateServiceMutation.isLoading;
+  const loading = isLoading || updateServiceMutation.isLoading;
   const totalLoading = loading || isLoadingSubcategories;
+
+  // Debug info
+  console.log('Current form state:', {
+    category: formData.category,
+    subcategory: formData.subcategory,
+    subcategoriesCount: subcategories.length,
+    originalSubcategoryId,
+    isLoadingSubcategories
+  });
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -539,6 +691,7 @@ const prepareFormData = useCallback(() => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Edit Service</h3>
                 <p className="text-sm text-gray-500">{service.title}</p>
+                <p className="text-xs text-gray-400">ID: {service._id}</p>
               </div>
             </div>
             <button
@@ -565,7 +718,17 @@ const prepareFormData = useCallback(() => {
             </div>
             
             <div className="flex items-center text-sm text-gray-600">
-              <span className="font-medium">Created: {new Date(service.createdAt).toLocaleDateString()}</span>
+              <FiGrid className="h-4 w-4 mr-2 text-blue-400" />
+              <span className="font-medium">
+                Category: {service.category?.name || 'Unknown'}
+              </span>
+            </div>
+            
+            <div className="flex items-center text-sm text-gray-600">
+              <FiLayers className="h-4 w-4 mr-2 text-green-400" />
+              <span className="font-medium">
+                Subcategory: {service.subcategory?.name || 'None'}
+              </span>
             </div>
           </div>
         </div>
@@ -701,53 +864,95 @@ const prepareFormData = useCallback(() => {
                 <div>
                   <label htmlFor="subcategory" className="block text-sm font-medium text-gray-700 mb-2">
                     Subcategory *
+                    {formData.category && !isLoadingSubcategories && (
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({subcategories.length} available)
+                      </span>
+                    )}
                   </label>
                   <div className="relative">
                     <select
                       id="subcategory"
                       name="subcategory"
                       value={formData.subcategory}
-                      onChange={handleChange}
+                      onChange={handleSubcategoryChange}
                       disabled={loading || !formData.category || isLoadingSubcategories}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
                         errors.subcategory ? 'border-red-300' : 'border-gray-300'
                       } ${loading || !formData.category || isLoadingSubcategories ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                     >
-                      <option value="">Select a subcategory</option>
-                      {isLoadingSubcategories ? (
-                        <option value="" disabled>
-                          Loading subcategories...
+                      <option value="">{
+                        !formData.category 
+                          ? 'Select a category first'
+                          : isLoadingSubcategories
+                            ? 'Loading subcategories...'
+                            : 'Select a subcategory'
+                      }</option>
+                      
+                      {!isLoadingSubcategories && subcategories.map(subcategory => (
+                        <option 
+                          key={subcategory._id} 
+                          value={subcategory._id}
+                          selected={formData.subcategory === subcategory._id}
+                        >
+                          {subcategory.name}
+                          {subcategory.description && ` - ${subcategory.description.substring(0, 30)}...`}
                         </option>
-                      ) : subcategories.length > 0 ? (
-                        subcategories.map(subcategory => (
-                          <option key={subcategory._id} value={subcategory._id}>
-                            {subcategory.name}
-                          </option>
-                        ))
-                      ) : (
+                      ))}
+                      
+                      {!isLoadingSubcategories && subcategories.length === 0 && formData.category && (
                         <option value="" disabled>
-                          No subcategories found for this category
+                          No subcategories available for this category
                         </option>
                       )}
                     </select>
-                    <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
+                    
+                    {isLoadingSubcategories ? (
+                      <FiLoader className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 h-5 w-5 animate-spin" />
+                    ) : (
+                      <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
+                    )}
+                    
+                    {formData.category && !isLoadingSubcategories && (
+                      <button
+                        type="button"
+                        onClick={() => loadSubcategories(formData.category)}
+                        className="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        title="Refresh subcategories"
+                      >
+                        <FiRefreshCw className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
+                  
                   {isLoadingSubcategories && formData.category && (
                     <div className="mt-1.5 text-sm text-blue-600 flex items-center">
                       <FiLoader className="h-4 w-4 mr-1 animate-spin" />
                       Loading subcategories...
                     </div>
                   )}
+                  
                   {errors.subcategory && (
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       {errors.subcategory}
                     </p>
                   )}
+                  
                   {!isLoadingSubcategories && formData.category && subcategories.length === 0 && (
                     <p className="mt-1.5 text-sm text-yellow-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       No subcategories available for this category
+                    </p>
+                  )}
+                  
+                  {formData.subcategory && !isLoadingSubcategories && (
+                    <p className="mt-1.5 text-sm text-green-600 flex items-center">
+                      <FiCheck className="h-4 w-4 mr-1" />
+                      Subcategory selected: {
+                        subcategories.find(s => s._id === formData.subcategory)?.name || 
+                        'Unknown subcategory'
+                      }
                     </p>
                   )}
                 </div>
@@ -1114,7 +1319,7 @@ const prepareFormData = useCallback(() => {
                         <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                           {image.isExisting ? 'Existing' : 'New'}
                         </div>
-                        {imagesToRemove.includes(image.id) && (
+                        {imagesToRemove.includes(image.public_id || image.id) && (
                           <div className="absolute inset-0 bg-red-500 bg-opacity-20 flex items-center justify-center rounded-lg">
                             <span className="text-xs font-semibold text-white bg-red-600 px-2 py-1 rounded">
                               To be removed
@@ -1248,6 +1453,45 @@ const prepareFormData = useCallback(() => {
                     </p>
                   </div>
                 </label>
+              </div>
+              
+              {/* Meta Information */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
+                  SEO Settings
+                </h4>
+                
+                <div>
+                  <label htmlFor="metaTitle" className="block text-sm font-medium text-gray-700 mb-2">
+                    Meta Title
+                  </label>
+                  <input
+                    id="metaTitle"
+                    name="metaTitle"
+                    type="text"
+                    value={formData.metaTitle}
+                    onChange={handleChange}
+                    disabled={loading}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-50"
+                    placeholder="Title for search engines (optional)"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="metaDescription" className="block text-sm font-medium text-gray-700 mb-2">
+                    Meta Description
+                  </label>
+                  <textarea
+                    id="metaDescription"
+                    name="metaDescription"
+                    value={formData.metaDescription}
+                    onChange={handleChange}
+                    rows={3}
+                    disabled={loading}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-50"
+                    placeholder="Description for search engines (optional)"
+                  />
+                </div>
               </div>
             </div>
           )}
