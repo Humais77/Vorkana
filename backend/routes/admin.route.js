@@ -2,17 +2,16 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller.js');
 const { 
- verifyAdmin,
-   requirePermission,
-   adminDashboardLimiter,
-   auditLog,
-   setAdminCookie,
-   clearAdminCookies
+  verifyAdmin,
+  requirePermission,
+  adminDashboardLimiter,
+  auditLog,
+  setAdminCookie,
+  clearAdminCookies
 } = require('../middleware/admin.middleware.js');
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
 const mongoose = require('mongoose');
-const authController = require('../controllers/auth.controller.js'); 
 // IMPORT MODELS
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
@@ -20,24 +19,38 @@ const User = require('../models/user.model.js');
 
 // Security: Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
-router.post('/login', 
-  adminDashboardLimiter,
-  (req, res, next) => {
-    // Add admin-specific validation if needed
-    req.body.isAdmin = true;
-    next();
-  },
-  authController.login // Use auth controller's login
-);
 
 router.post('/logout',
   verifyAdmin,
-  authController.logout // Use auth controller's logout
+  (req, res, next) => {
+    // Pass control to auth controller logout
+    // The auth controller will handle cookie clearing
+    next();
+  },
+  (req, res) => {
+    // Clear admin-specific cookies if any
+    res.clearCookie('adminToken', {
+      path: '/',
+      domain: process.env.COOKIE_DOMAIN || 'localhost'
+    });
+    
+    res.clearCookie('adminRefreshToken', {
+      path: '/api/auth/refresh',
+      domain: process.env.COOKIE_DOMAIN || 'localhost'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Admin logged out successfully'
+    });
+  }
 );
+
 router.get('/session',
   verifyAdmin,
   adminController.checkAdminSession
 );
+
 // ============================================
 // SUBCATEGORY MANAGEMENT ROUTES
 // ============================================
@@ -94,18 +107,21 @@ router.get('/subcategories',
   },
   adminController.getSubcategories
 );
+
 router.get('/subcategories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
   auditLog('EXPORT_SUBCATEGORIES', 'categories'),
   adminController.exportSubcategories
 );
+
 router.get('/subcategories/stats', 
   verifyAdmin, 
   requirePermission('view_analytics'),
   auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
   adminController.getSubcategoryStats
 );
+
 router.post('/subcategories/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -113,6 +129,7 @@ router.post('/subcategories/bulk',
   auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
   adminController.bulkUpdateSubcategories
 );
+
 router.get('/subcategories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -154,6 +171,7 @@ router.get('/subcategories/dropdown',
     }
   }
 );
+
 router.get('/categories/:categoryId/subcategories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -161,12 +179,14 @@ router.get('/categories/:categoryId/subcategories/dropdown',
   auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
   adminController.getSubcategoriesDropdown
 );
+
 router.get('/categories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
   auditLog('EXPORT_CATEGORIES', 'categories'),
   adminController.exportCategories
 );
+
 // Get subcategory by ID - FIXED ROUTE
 router.get('/subcategories/:id', 
   verifyAdmin, 
@@ -280,20 +300,10 @@ router.delete('/subcategories/:id',
   },
   adminController.deleteSubcategory
 );
-router.post('/refresh',
-  verifyAdmin,
-  (req, res, next) => {
-    const refreshToken = req.cookies?.adminRefreshToken;
-    
-    if (refreshToken) {
-      req.body.refreshToken = refreshToken;
-    }
-    
-    next();
-  },
-  authController.refreshToken // Use auth controller's refreshToken
-);
-// Dashboard Routes
+
+// ============================================
+// DASHBOARD ROUTES
+// ============================================
 router.get('/dashboard', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -302,7 +312,9 @@ router.get('/dashboard',
   adminController.getDashboardStats
 );
 
-// User Management Routes
+// ============================================
+// USER MANAGEMENT ROUTES
+// ============================================
 router.get('/users', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -325,7 +337,6 @@ router.get('/users/export',
   auditLog('EXPORT_USERS', 'users'),
   adminController.exportUsers
 );
-// Add this route after the existing user routes in admin.route.js
 
 // User bulk operations
 router.post('/users/bulk-action', 
@@ -347,6 +358,7 @@ router.post('/users/bulk-action',
   },
   adminController.bulkUpdateUsers
 );
+
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -363,7 +375,9 @@ router.delete('/users/:id',
   adminController.deleteUser
 );
 
-// Category Management Routes
+// ============================================
+// CATEGORY MANAGEMENT ROUTES
+// ============================================
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -436,6 +450,47 @@ router.put('/categories/:id',
   categoryController.updateCategory
 );
 
+// Get single category by ID (Admin)
+router.get('/categories/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('VIEW_CATEGORY', 'categories'),
+  async (req, res, next) => {
+    try {
+      console.log('[ADMIN GET CATEGORY] Request received:', {
+        id: req.params.id,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if needed
+      if (req.params.id === '[object Object]') {
+        if (req.body && req.body.id) {
+          req.params.id = req.body.id;
+        } else if (req.query && req.query.id) {
+          req.params.id = req.query.id;
+        }
+      }
+      
+      // Fix quoted ID
+      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
+        req.params.id = req.params.id.slice(1, -1);
+      }
+      
+      // Set admin query parameters
+      req.query.showAll = true;
+      req.query.includeDeleted = true;
+      req.query.populate = 'true';
+      
+      next();
+    } catch (error) {
+      console.error('[ADMIN GET CATEGORY MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  categoryController.getCategoryById
+);
+
 router.delete('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -475,6 +530,60 @@ router.delete('/categories/:id',
   categoryController.deleteCategory
 );
 
+router.post('/categories/:id/restore', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_categories'),
+  auditLog('RESTORE_CATEGORY', 'categories'),
+  express.json({ limit: '10mb' }),
+  async (req, res, next) => {
+    try {
+      console.log('[RESTORE CATEGORY ROUTE] Request received:', {
+        params: req.params,
+        body: req.body,
+        query: req.query,
+        admin: req.admin?.email
+      });
+      
+      // Fix the ID if it's [object Object]
+      if (req.params.id === '[object Object]') {
+        console.log('[RESTORE CATEGORY ROUTE] Detected object ID, attempting to fix...');
+        
+        if (req.body && req.body.id) {
+          req.params.id = req.body.id;
+          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from body:', req.params.id);
+        } else if (req.query && req.query.id) {
+          req.params.id = req.query.id;
+          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from query:', req.params.id);
+        } else if (req.body && req.body._id) {
+          req.params.id = req.body._id;
+          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from body._id:', req.params.id);
+        }
+      }
+      
+      // Fix quoted ID
+      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
+        req.params.id = req.params.id.slice(1, -1);
+      }
+      
+      // Ensure we have proper JSON body for POST requests
+      if (req.method === 'POST' && !req.body && req.query.searchValue) {
+        req.body = {
+          searchBy: req.query.searchBy || 'id',
+          searchValue: req.query.searchValue,
+          force: req.query.force || 'false'
+        };
+      }
+      
+      next();
+    } catch (error) {
+      console.error('[RESTORE CATEGORY ROUTE MIDDLEWARE ERROR]', error);
+      next(error);
+    }
+  },
+  categoryController.restoreCategory
+);
+
 router.post('/categories/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -489,60 +598,11 @@ router.get('/categories/analytics',
   auditLog('VIEW_CATEGORY_ANALYTICS', 'categories'),
   categoryController.getCategoryStats
 );
-router.post('/services/bulk/restore', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  requirePermission('manage_services'),
-  auditLog('BULK_RESTORE_SERVICES', 'services'),
-  async (req, res, next) => {
-    try {
-      const { ids } = req.body;
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Service IDs are required',
-          code: 'IDS_REQUIRED'
-        });
-      }
-      
-      // Process bulk restore
-      const results = [];
-      for (const id of ids) {
-        try {
-          const service = await Service.findById(id);
-          if (service && !service.isActive) {
-            service.isActive = true;
-            service.status = 'active';
-            service.lastUpdatedBy = req.user._id;
-            service.updatedAt = new Date();
-            await service.save();
-            results.push({ id, success: true });
-            
-            // Invalidate cache for each service
-            await invalidateServiceCache(id);
-          } else {
-            results.push({ id, success: false, message: 'Service not found or already active' });
-          }
-        } catch (error) {
-          results.push({ id, success: false, message: error.message });
-        }
-      }
-      
-      // Invalidate all services cache
-      await invalidateAllServiceCache();
-      
-      res.json({
-        success: true,
-        message: `Successfully restored ${results.filter(r => r.success).length} services`,
-        results
-      });
-    } catch (error) {
-      console.error('Bulk restore error:', error);
-      next(error);
-    }
-  }
-);
-// Service Management
+
+
+// ============================================
+// SERVICE MANAGEMENT ROUTES
+// ============================================
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
@@ -563,6 +623,7 @@ router.get('/services',
   },
   serviceController.getAdminServices
 );
+
 router.get('/services/stats', 
   verifyAdmin, 
   adminApiLimiter,
@@ -570,6 +631,7 @@ router.get('/services/stats',
   auditLog('VIEW_SERVICE_STATS', 'services'),
   adminController.getServiceStats
 );
+
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -645,8 +707,9 @@ router.put('/services/:id',
 );
 
 
-
-// Gig Management Routes
+// ============================================
+// GIG MANAGEMENT ROUTES
+// ============================================
 router.get('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -670,18 +733,21 @@ router.get('/gigs',
   },
   adminController.getGigs
 );
+
 router.get('/gigs/stats', 
   verifyAdmin, 
   requirePermission('view_analytics'),
   auditLog('VIEW_GIG_STATS', 'gigs'),
   adminController.getGigStats
 );
+
 router.get('/gigs/export', 
   verifyAdmin, 
   requirePermission('manage_gigs'),
   auditLog('EXPORT_GIGS', 'gigs'),
   adminController.exportGigs
 );
+
 // Ensure the GET /api/admin/gigs/:id route includes proper population
 router.get('/gigs/:id', 
   verifyAdmin, 
@@ -761,11 +827,9 @@ router.post('/gigs/bulk',
   adminController.bulkUpdateGigs
 );
 
-
-
-
-
-// Dropdown routes
+// ============================================
+// DROPDOWN ROUTES
+// ============================================
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -828,8 +892,6 @@ router.get('/categories/dropdown',
   }
 );
 
-
-
 router.get('/users/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -872,7 +934,9 @@ router.get('/users/dropdown',
   }
 );
 
-// System Management
+// ============================================
+// SYSTEM MANAGEMENT ROUTES
+// ============================================
 router.get('/system/health', 
   verifyAdmin, 
   adminApiLimiter,
@@ -880,6 +944,7 @@ router.get('/system/health',
   auditLog('VIEW_SYSTEM_HEALTH', 'system'),
   adminController.getSystemHealthHandler
 );
+
 router.get('/activity/recent', 
   verifyAdmin, 
   adminApiLimiter,
@@ -887,4 +952,5 @@ router.get('/activity/recent',
   auditLog('VIEW_RECENT_ACTIVITY', 'dashboard'),
   adminController.getRecentActivity
 );
+
 module.exports = router;

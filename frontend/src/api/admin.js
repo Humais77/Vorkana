@@ -74,15 +74,10 @@ adminApi.interceptors.response.use(
       } catch (refreshError) {
         console.error('[ADMIN API] Token refresh failed:', refreshError);
         
-        // Clear admin state and redirect to login
         localStorage.removeItem('adminInfo');
         sessionStorage.removeItem('adminInfo');
         
-        // Check if we're not already on login page
-        if (!window.location.pathname.includes('/admin/login') &&
-            !window.location.pathname.includes('/signin')) {
-          window.location.href = '/admin/login';
-        }
+        
       }
     }
     
@@ -211,16 +206,19 @@ exportSubcategories: (format = 'csv') =>
     populateSubcategories: true
   }
 }),
-  
   getServiceById: (id) => adminApi.get(`/api/admin/services/${id}`, {
   params: { 
     includeCommunication: true,
-    populateSubcategories: true 
+    populateSubcategories: true,
+    includeFullDetails: true  // Add this
   }
 }),
   
   createService: (data) => adminApi.post('/api/admin/services', data), // You need to add this route
   updateService: (id, data) => adminApi.put(`/api/admin/services/${id}`, data),
+  restoreService: (id) => adminApi.post(`/api/admin/services/${id}/restore`),
+
+bulkRestoreServices: (ids) => adminApi.post('/api/admin/services/bulk/restore', { ids }),
 deleteService: (id, options = {}) => 
   adminApi.delete(`/api/admin/services/${id}`, { 
     params: {
@@ -248,7 +246,6 @@ getServiceStats: () => adminApi.get('/api/admin/services/stats'),
   getSystemHealth: () => adminApi.get('/api/admin/system/health'),
   
   // Authentication
-  adminLogin: (credentials) => adminApi.post('/api/admin/login', credentials),
   adminLogout: () => adminApi.post('/api/admin/logout'),
   verifyAdminSession: () => adminApi.get('/api/admin/verify-session'),
   
@@ -295,7 +292,9 @@ deleteGig: (id, params = {}) => adminApi.delete(`/api/admin/gigs/${id}`, { param
     }),
      getSubcategoriesDropdown: (categoryId, params = {}) => 
     adminApi.get(`/api/admin/categories/${categoryId}/subcategories/dropdown`, { params }),
-  
+  restoreCategory: (id) => adminApi.post(`/api/admin/categories/${id}/restore`),
+  bulkRestoreCategories: (ids) => 
+  adminApi.post('/api/admin/categories/bulk/restore', { ids }),
     getSubcategoriesByCategory: (categoryId, params = {}) => 
   adminApi.get(`/api/admin/categories/${categoryId}/subcategories/dropdown`, { params }),
   // Get users for dropdown (clients/freelancers)

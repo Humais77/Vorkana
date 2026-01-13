@@ -542,6 +542,156 @@ export const useDeleteCategory = () => {
     }
   });
 };
+export const useRestoreCategory = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id) => {
+      console.log('[USE RESTORE CATEGORY] Restoring category:', id);
+      
+      // Handle different ID formats
+      let categoryId;
+      
+      if (typeof id === 'object') {
+        // If an object is passed, extract the _id
+        categoryId = id._id || id.id;
+        console.log('[USE RESTORE CATEGORY] Extracted ID from object:', categoryId);
+      } else {
+        categoryId = id;
+      }
+      
+      // Ensure it's a string
+      categoryId = String(categoryId).trim();
+      
+      if (!categoryId || categoryId === 'undefined' || categoryId === 'null') {
+        throw new Error('Invalid category ID');
+      }
+      
+      console.log('[USE RESTORE CATEGORY] Calling API with ID:', categoryId);
+      
+      return await adminAPI.restoreCategory(categoryId);
+    },
+    onMutate: async (id) => {
+      console.log('[USE RESTORE CATEGORY] Optimistic update for category:', id);
+      
+      await queryClient.cancelQueries(['admin', 'categories']);
+      
+      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      
+      // Optimistically update the category in cache
+      queryClient.setQueryData(['admin', 'categories'], (old) => {
+        if (!old || !old.data) return old;
+        
+        return {
+          ...old,
+          data: old.data.map(category => 
+            category._id === id 
+              ? { 
+                  ...category, 
+                  isActive: true,
+                  deletedAt: null,
+                  deletedBy: null,
+                  updatedAt: new Date().toISOString()
+                } 
+              : category
+          )
+        };
+      });
+      
+      return { previousCategories };
+    },
+    onSuccess: (response) => {
+      console.log('[USE RESTORE CATEGORY] Success:', response.data);
+      
+      if (response.data.success) {
+        toast.success(response.data.message || 'Category restored successfully');
+        
+        // Invalidate and refetch all relevant queries
+        queryClient.invalidateQueries(['admin', 'categories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+        queryClient.invalidateQueries(['admin', 'categories', 'stats']);
+        
+        // Also update category in single category query if it exists
+        if (response.data.data?._id) {
+          queryClient.setQueryData(['admin', 'categories', response.data.data._id], response.data.data);
+        }
+      } else {
+        toast.error(response.data.message || 'Restore failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      console.error('[USE RESTORE CATEGORY] Mutation error:', error);
+      
+      // Revert optimistic update on error
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
+      }
+      
+      // Show error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to restore category';
+      
+      toast.error(errorMessage);
+    }
+  });
+};
+
+// Bulk restore categories hook
+export const useBulkRestoreCategories = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ids) => adminAPI.bulkRestoreCategories(ids),
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries(['admin', 'categories']);
+      
+      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      
+      // Optimistically update categories in cache
+      queryClient.setQueryData(['admin', 'categories'], (old) => {
+        if (!old || !old.data) return old;
+        
+        return {
+          ...old,
+          data: old.data.map(category => 
+            ids.includes(category._id) 
+              ? { 
+                  ...category, 
+                  isActive: true,
+                  deletedAt: null,
+                  deletedBy: null,
+                  updatedAt: new Date().toISOString()
+                } 
+              : category
+          )
+        };
+      });
+      
+      return { previousCategories };
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(`Successfully restored ${response.data.count || 0} categories`);
+        
+        // Invalidate and refetch
+        queryClient.invalidateQueries(['admin', 'categories']);
+        queryClient.invalidateQueries(['admin', 'dashboard']);
+        queryClient.invalidateQueries(['admin', 'categories', 'stats']);
+      } else {
+        toast.error(response.data.message || 'Bulk restore failed');
+      }
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
+      }
+      
+      toast.error(error.response?.data?.message || 'Bulk restore failed');
+    }
+  });
+};
 export const useAdminServices = (params = {}) => {
   return useQuery({
     queryKey: ['admin', 'services', params],

@@ -438,93 +438,100 @@ const UsersManagement = () => {
   const bulkUserMutation = useBulkUserOperations();
   const exportUsersMutation = useExportUsers();
 
-
-// Optimize the users extraction logic
 const users = useMemo(() => {
   if (!data) return [];
   
-  // Try multiple access patterns
-  const possiblePaths = [
-    data.data?.users,        // data.data.users
-    data.users,              // data.users
-    data.data,               // data.data (array)
-    data                     // data itself (array)
-  ];
+  // Debug logging
+  console.log('[USERS EXTRACTION] Raw data structure:', {
+    hasDataProp: !!data.data,
+    dataType: typeof data.data,
+    dataKeys: Object.keys(data)
+  });
   
-  for (const path of possiblePaths) {
-    if (Array.isArray(path) && path.length > 0) {
-      // Validate that first item has user-like properties
-      const firstItem = path[0];
-      if (firstItem && (firstItem.email || firstItem.name || firstItem._id)) {
-        return path;
-      }
+  // First check if data.data exists and is an object with users array
+  if (data.data && typeof data.data === 'object') {
+    // Check multiple possible user array locations
+    if (Array.isArray(data.data.users)) {
+      console.log('[USERS EXTRACTION] Found users in data.data.users');
+      return data.data.users;
+    }
+    if (Array.isArray(data.data)) {
+      console.log('[USERS EXTRACTION] Found users in data.data (direct array)');
+      return data.data;
+    }
+    if (data.data.data && Array.isArray(data.data.data)) {
+      console.log('[USERS EXTRACTION] Found users in data.data.data');
+      return data.data.data;
     }
   }
   
-  // If data is a single user object
-  if (data._id && (data.email || data.name)) {
-    return [data];
+  // Check direct properties
+  if (Array.isArray(data.users)) {
+    console.log('[USERS EXTRACTION] Found users in data.users');
+    return data.users;
   }
   
+  if (Array.isArray(data)) {
+    console.log('[USERS EXTRACTION] Found users in data (direct array)');
+    return data;
+  }
+  
+  // Fallback to empty array
+  console.log('[USERS EXTRACTION] No users found, returning empty array');
   return [];
 }, [data]);
- // Safely extract pagination data
 const pagination = useMemo(() => {
   try {
     if (!data) {
-      console.log('No data for pagination');
-      return { total: 0, totalPages: 1 };
+      return { total: 0, totalPages: 1, page: 1, limit };
     }
 
-    // Check for pagination in data.pagination
-    if (data.data && data.data.pagination && typeof data.data.pagination === 'object') {
-      console.log('Found data.data.pagination:', data.data.pagination);
-      return {
-        total: data.data.pagination.total || 0,
-        totalPages: data.data.pagination.totalPages || 
-                   Math.ceil((data.data.pagination.total || 0) / limit) || 1
-      };
+    // Check multiple possible pagination locations
+    let total = 0;
+    let pageNum = parseInt(page) || 1;
+    
+    // Check data.data.pagination
+    if (data.data && data.data.pagination) {
+      const paginationData = data.data.pagination;
+      total = paginationData.total || paginationData.count || 0;
+      console.log('[PAGINATION] Found in data.data.pagination:', paginationData);
     }
-
-    // Check for direct pagination
-    if (data.pagination && typeof data.pagination === 'object') {
-      console.log('Found pagination object:', data.pagination);
-      return {
-        total: data.pagination.total || 0,
-        totalPages: data.pagination.totalPages || 
-                   Math.ceil((data.pagination.total || 0) / limit) || 1
-      };
+    // Check data.pagination
+    else if (data.pagination) {
+      total = data.pagination.total || data.pagination.count || 0;
+      console.log('[PAGINATION] Found in data.pagination:', data.pagination);
     }
-
-    // Check for direct total property in data
-    if (data.data && data.data.total !== undefined) {
-      console.log('Found data.data.total:', data.data.total);
-      return {
-        total: data.data.total,
-        totalPages: Math.ceil(data.data.total / limit)
-      };
+    // Check data.total directly
+    else if (data.total !== undefined) {
+      total = data.total;
+      console.log('[PAGINATION] Found in data.total:', total);
     }
-
-    // Check for direct total property
-    if (data.total !== undefined) {
-      console.log('Found total property:', data.total);
-      return {
-        total: data.total,
-        totalPages: Math.ceil(data.total / limit)
-      };
+    // Check data.data.total
+    else if (data.data && data.data.total !== undefined) {
+      total = data.data.total;
+      console.log('[PAGINATION] Found in data.data.total:', total);
     }
-
-    // Fallback to users length
-    console.log('Using users length for pagination:', users.length);
-    return { 
-      total: users.length, 
-      totalPages: Math.ceil(users.length / limit) || 1 
+    // Use users length as last resort
+    else if (Array.isArray(users)) {
+      total = users.length;
+      console.log('[PAGINATION] Using users length as total:', total);
+    }
+    
+    const totalPages = Math.ceil(total / limit) || 1;
+    
+    return {
+      total,
+      totalPages,
+      page: pageNum,
+      limit,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1
     };
   } catch (err) {
-    console.error('Error parsing pagination data:', err);
-    return { total: 0, totalPages: 1 };
+    console.error('[PAGINATION ERROR]', err);
+    return { total: 0, totalPages: 1, page: 1, limit, hasNext: false, hasPrev: false };
   }
-}, [data, users.length, limit]);
+}, [data, users, page, limit]);
   // Memoized stats calculation with safe array handling
 const userStats = useMemo(() => {
   try {
@@ -819,23 +826,38 @@ const handleDeleteUser = useCallback(async (deleteOptions) => {
   }, [actionMenu]);
 // Update the handleDelete function to extract ID properly
 const handleDelete = useCallback((user) => {
-  if (!user || !user._id) {
+  if (!user) {
     toast.error('Invalid user data');
     return;
   }
   
-  // Ensure we're passing only the ID string, not the whole object
-  const userId = typeof user === 'string' ? user : (user._id || user.id);
+  // Safely extract the ID
+  let userId;
+  if (typeof user === 'string') {
+    userId = user;
+  } else if (user._id) {
+    userId = user._id;
+  } else if (user.id) {
+    userId = user.id;
+  } else {
+    toast.error('No valid user ID found');
+    return;
+  }
   
-  if (!userId || userId === 'undefined' || userId === 'null') {
-    toast.error('Invalid user ID');
+  // Validate the ID format
+  if (!userId || 
+      userId === 'undefined' || 
+      userId === 'null' || 
+      userId.includes('[object') ||
+      userId.includes('temp-')) {
+    toast.error('Invalid user ID format');
     return;
   }
   
   console.log('[DELETE USER] Setting user to delete:', { 
     type: 'single', 
     id: userId,
-    userEmail: user.email 
+    userEmail: user.email || 'No email'
   });
   
   setUserToDelete({ type: 'single', id: userId });
