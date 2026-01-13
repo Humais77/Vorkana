@@ -8,6 +8,7 @@ import default_pp from '../../../assets/default_pp-modified.png'
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
+
 const LOGO_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -16,6 +17,7 @@ const LOGO_URL = buildImageUrl({
 const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
@@ -37,6 +39,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   // Refs for dropdowns
   const profileRef = useRef(null);
   const exploreRef = useRef(null);
+  const mobileProfileRef = useRef(null);
 
   // Memoized categories from database
   const categories = useMemo(() => {
@@ -65,28 +68,28 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   // Handle scroll
   useEffect(() => {
-  let ticking = false;
+    let ticking = false;
 
-  const handleScroll = () => {
-    if (!ticking) {
-      window.requestAnimationFrame(() => {
-        if (!isHomePage) return;
-        const scrolled = window.scrollY > 100;
-        setShowSearch(scrolled);
-        setScrolled(scrolled);
-        ticking = false;
-      });
-      ticking = true;
-    }
-  };
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          if (!isHomePage) return;
+          const scrolled = window.scrollY > 100;
+          setShowSearch(scrolled);
+          setScrolled(scrolled);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
 
-  window.addEventListener("scroll", handleScroll, { passive: true });
-  return () => window.removeEventListener("scroll", handleScroll);
-}, [isHomePage]);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [isHomePage]);
 
   // Handle mobile menu overflow
   useEffect(() => {
-    if (mobileMenuOpen) {
+    if (mobileMenuOpen || mobileProfileOpen) {
       const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
       document.body.style.paddingRight = `${scrollbarWidth}px`;
@@ -99,7 +102,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
       document.body.style.overflow = 'unset';
       document.body.style.paddingRight = '';
     };
-  }, [mobileMenuOpen]);
+  }, [mobileMenuOpen, mobileProfileOpen]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -110,18 +113,26 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
       if (activeDropdown === 'explore' && exploreRef.current && !exploreRef.current.contains(event.target)) {
         setActiveDropdown(null);
       }
+      if (mobileProfileOpen && mobileProfileRef.current && !mobileProfileRef.current.contains(event.target)) {
+        setMobileProfileOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [activeDropdown]);
+  }, [activeDropdown, mobileProfileOpen]);
 
   const toggleDropdown = useCallback((dropdown) => {
     setActiveDropdown(prev => prev === dropdown ? null : dropdown);
   }, []);
 
+  const toggleMobileProfile = useCallback(() => {
+    setMobileProfileOpen(prev => !prev);
+  }, []);
+
   const closeAllDropdowns = useCallback(() => {
     setActiveDropdown(null);
+    setMobileProfileOpen(false);
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -129,9 +140,10 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
       await logoutMutation.mutateAsync();
       closeAllDropdowns();
       setMobileMenuOpen(false);
+      setMobileProfileOpen(false);
       navigate("/");
     } catch (error) {
-      console.error("Logout failed:", error);
+      throw error("Logout failed:", error);
     }
   }, [logoutMutation, closeAllDropdowns, navigate]);
 
@@ -153,18 +165,26 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     exit: { x: "-100%", transition: { duration: 0.2, ease: "easeIn" } }
   }), []);
 
+  const mobileProfileAnimation = useMemo(() => ({
+    hidden: { opacity: 0, scale: 0.95 },
+    visible: { opacity: 1, scale: 1, transition: { duration: 0.15, ease: "easeOut" } },
+    exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15, ease: "easeIn" } }
+  }), []);
+
   const overlayAnimation = useMemo(() => ({
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { duration: 0.2 } },
     exit: { opacity: 0, transition: { duration: 0.2 } }
   }), []);
 
-
   return (
     <>
-      <nav className="w-full bg-white border-b sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between h-10 lg:h-12">
+      <nav className="w-full bg-white border-b sticky top-0 z-50 h-16 lg:h-20">
+
+        <div className="max-w-7xl mx-auto px-4 h-full">
+
+          <div className="flex items-center justify-between h-full">
+
             {/* Left: Hamburger Menu (Mobile only) */}
             <div className="flex items-center lg:hidden">
               <button
@@ -181,28 +201,23 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             {/* Desktop: Logo */}
-            <div className="hidden lg:flex items-center shrink-0 mr-8">
-  <Link
-  to="/"
-  className="flex items-center gap-1"
-  onClick={closeAllDropdowns}
-  draggable="true"
->
-  <img
-    src={LOGO_URL}
-    width={40}
-    height={40}
-    alt="Vorkanna Logo"
-    className="h-20 w-36 object-contain pointer-events-none"
-    loading="eager"
-    draggable="false"
-  />
-</Link>
+            <div className="hidden lg:flex items-center shrink-0 mr-8 mb-2">
+              <Link
+                to="/"
+                className="flex items-center gap-1"
+                onClick={closeAllDropdowns}
+                draggable="true"
+              >
+                <img
+  src={LOGO_URL}
+  className="h-10 lg:h-10 w-auto object-contain"
+ />
 
-</div>
+              </Link>
+            </div>
 
             {/* Desktop: Search */}
-            <div className="hidden lg:flex items-center ml-6 mr-auto min-w-[520px]">
+            <div className="hidden lg:flex items-center ml-6 mr-auto min-w-[520px] h-full">
 
               <div>
                 <SearchComponent 
@@ -215,36 +230,148 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             {/* Center: Logo (Mobile only) */}
             <div className="flex items-center justify-center lg:hidden">
               <Link
-  to="/"
-  className="flex items-center shrink-0 gap-1"
-  onClick={closeAllDropdowns}
-  draggable="true"
->
-  <img
-    src={LOGO_URL}
-    alt="Vorkanna Logo"
-    className="h-10 w-auto pointer-events-none"
-    loading="eager"
-    draggable="false"
-  />
-</Link>
+                to="/"
+                className="flex items-center shrink-0 gap-1"
+                onClick={closeAllDropdowns}
+                draggable="true"
+              >
+                <img
+                  src={LOGO_URL}
+                  alt="Vorkanna Logo"
+                  className="h-10 w-auto pointer-events-none"
+                  loading="eager"
+                  draggable="false"
+                />
+              </Link>
             </div>
 
             {/* Right: Profile/Join Button (Mobile) */}
-            <div className="flex items-center lg:hidden">
+            <div className="flex items-center lg:hidden relative" ref={mobileProfileRef}>
               {isAuthenticated ? (
-                <button
-                  onClick={() => toggleDropdown('profile')}
-                  className="p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
-                  aria-label="Profile menu"
-                >
-                  <img
-  src={user?.picture || default_pp}
-  className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
-  loading="lazy"
-/>
+                <>
+                  <button
+                    onClick={toggleMobileProfile}
+                    className="p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
+                    aria-label="Profile menu"
+                  >
+                    <img
+                      src={user?.picture || default_pp}
+                      className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
+                      loading="lazy"
+                      alt="Profile"
+                    />
+                  </button>
 
-                </button>
+                  {/* Mobile Profile Dropdown */}
+                  <AnimatePresence>
+                    {mobileProfileOpen && (
+                      <>
+                        <motion.div
+                          initial="hidden"
+                          animate="visible"
+                          exit="exit"
+                          variants={mobileProfileAnimation}
+                          className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-50"
+                        >
+                          <div className="p-4 border-b border-gray-100">
+                            <div className="flex items-center space-x-3">
+                              <img
+                                src={user?.picture || default_pp}
+                                alt={user?.name}
+                                className="w-10 h-10 rounded-full object-cover"
+                                loading="lazy"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">{user?.name}</div>
+                                <div className="text-sm text-gray-500 truncate">{user?.email}</div>
+                                <div className="mt-1">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${isAdminUser
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-green-100 text-green-700'
+                                      }`}
+                                  >
+                                    {isAdminUser ? 'Admin' : 'User'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-2">
+                            {isAdminUser && (
+                              <Link
+                                to="/admin"
+                                onClick={() => {
+                                  setMobileProfileOpen(false);
+                                  setMobileMenuOpen(false);
+                                }}
+                                className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
+                              >
+                                <Settings className="w-4 h-4" />
+                                <span>Admin Panel</span>
+                              </Link>
+                            )}
+
+                            <Link
+                              to="/profile"
+                              onClick={() => {
+                                setMobileProfileOpen(false);
+                                setMobileMenuOpen(false);
+                              }}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
+                            >
+                              <User className="w-4 h-4" />
+                              <span>Profile</span>
+                            </Link>
+
+                            <Link
+                              to="/dashboard"
+                              onClick={() => {
+                                setMobileProfileOpen(false);
+                                setMobileMenuOpen(false);
+                              }}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
+                            >
+                              <Package className="w-4 h-4" />
+                              <span>Dashboard</span>
+                            </Link>
+
+                            <Link
+                              to="/settings"
+                              onClick={() => {
+                                setMobileProfileOpen(false);
+                                setMobileMenuOpen(false);
+                              }}
+                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
+                            >
+                              <Settings className="w-4 h-4" />
+                              <span>Settings</span>
+                            </Link>
+
+                            <button
+                              onClick={handleLogout}
+                              className="w-full flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
+                            >
+                              <LogOut className="w-4 h-4" />
+                              <span>Logout</span>
+                            </button>
+                          </div>
+                        </motion.div>
+                        
+                        {/* Mobile Profile Dropdown Overlay */}
+                        <motion.div
+                          initial="hidden"
+                          animate="visible"
+                          exit="exit"
+                          variants={overlayAnimation}
+                          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
+                          onClick={() => setMobileProfileOpen(false)}
+                        />
+                      </>
+                    )}
+                  </AnimatePresence>
+                </>
               ) : (
                 <button
                   onClick={() => {
@@ -285,31 +412,30 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Browse Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
                             {categoriesLoading ? (
-  <div className="col-span-2 space-y-2 px-2">
-    {[...Array(6)].map((_, i) => (
-      <div
-        key={i}
-        className="h-8 bg-gray-100 animate-pulse rounded-lg"
-      />
-    ))}
-  </div>
-) : categories.length > 0 ? (
-  categories.slice(0, 8).map((category) => (
-    <Link
-      key={category._id}
-      to={`/categories/${category.slug}`}
-      onClick={closeAllDropdowns}
-      className="flex items-center px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition"
-    >
-      <span className="truncate">{category.name}</span>
-    </Link>
-  ))
-) : (
-  <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
-    No categories found
-  </div>
-)}
-
+                              <div className="col-span-2 space-y-2 px-2">
+                                {[...Array(6)].map((_, i) => (
+                                  <div
+                                    key={i}
+                                    className="h-8 bg-gray-100 animate-pulse rounded-lg"
+                                  />
+                                ))}
+                              </div>
+                            ) : categories.length > 0 ? (
+                              categories.slice(0, 8).map((category) => (
+                                <Link
+                                  key={category._id}
+                                  to={`/categories/${category.slug}`}
+                                  onClick={closeAllDropdowns}
+                                  className="flex items-center px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-black rounded-lg transition"
+                                >
+                                  <span className="truncate">{category.name}</span>
+                                </Link>
+                              ))
+                            ) : (
+                              <div className="col-span-2 px-3 py-2.5 text-sm text-gray-500">
+                                No categories found
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -353,11 +479,11 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                     >
                       <img
-  src={user?.picture || default_pp}
-  className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
-  loading="lazy"
-/>
-
+                        src={user?.picture || default_pp}
+                        className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
+                        loading="lazy"
+                        alt="Profile"
+                      />
                       <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -531,15 +657,15 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <h4 className="text-sm font-semibold text-gray-900 mb-2 px-3">Categories</h4>
                           <div className="grid grid-cols-2 gap-2">
                             {categoriesLoading ? (
-  <div className="col-span-2 space-y-2 px-3">
-    {[...Array(4)].map((_, i) => (
-      <div
-        key={i}
-        className="h-8 bg-gray-100 animate-pulse rounded-lg"
-      />
-    ))}
-  </div>
-) :categories.length > 0 ? (
+                              <div className="col-span-2 space-y-2 px-3">
+                                {[...Array(4)].map((_, i) => (
+                                  <div
+                                    key={i}
+                                    className="h-8 bg-gray-100 animate-pulse rounded-lg"
+                                  />
+                                ))}
+                              </div>
+                            ) : categories.length > 0 ? (
                               categories.slice(0, 6).map((category) => (
                                 <Link
                                   key={category._id}

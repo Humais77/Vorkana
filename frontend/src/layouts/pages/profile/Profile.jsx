@@ -578,7 +578,6 @@ useEffect(() => {
       }
     });
     
-    console.log('Saving data:', { field, dataToUpdate });
     
     const response = await updateProfileMutation.mutateAsync(dataToUpdate);
     
@@ -622,7 +621,7 @@ useEffect(() => {
       toast.error(response.message || 'Failed to update profile');
     }
   } catch (error) {
-    console.error('Error saving profile:', error);
+ throw error('Error saving profile:', error);
     toast.error(error.response?.data?.message || 'Failed to save changes');
   } finally {
     setIsSaving(false);

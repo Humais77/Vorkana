@@ -19,6 +19,9 @@ const VIDEO_PUBLIC_ID = "hhmgxyoqn3mu3frjok4n";
 const cloudinaryVideoUrl = `https://res.cloudinary.com/${cloudName}/video/upload/
 f_auto,q_auto:eco,vc_vp9,br_900k,ac_none,so_0/${VIDEO_PUBLIC_ID}`
 .replace(/\s+/g, "");
+const posterUrl = `https://res.cloudinary.com/${cloudName}/image/upload/
+f_auto,q_auto,w_1920/${VIDEO_PUBLIC_ID}.jpg`.replace(/\s+/g, "");
+
 
   // Detect mobile
   useEffect(() => {
@@ -118,31 +121,35 @@ f_auto,q_auto:eco,vc_vp9,br_900k,ac_none,so_0/${VIDEO_PUBLIC_ID}`
   const trustedCompanies = ["Google", "NETFLIX", "ABC", "PayPal", "Olympiant"];
 
   return (
-    <section className="relative w-full h-[70vh] md:h-[85vh] overflow-hidden flex items-center">
+    <section className="relative w-full h-[90vh]  overflow-hidden flex items-center bg-black">
+
       
       {/* GREEN SPLASH / MOBILE BACKGROUND */}
-      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-green-600" />
+      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-green-600 lg:hidden" />
+<video
+  ref={videoRef}
+  autoPlay
+  muted
+  loop
+  playsInline
+  preload="auto"
+  fetchPriority="high"
+  poster={posterUrl}
+  onCanPlayThrough={() => setVideoReady(true)}
+  className={`
+    absolute inset-0 w-full h-full object-cover
+    transition-opacity duration-700 ease-out
+    hidden lg:block
+    ${videoReady ? "opacity-100" : "opacity-0"}
+  `}
+  src={cloudinaryVideoUrl}
+/>
 
-      {/* VIDEO (DESKTOP ONLY) */}
-      {!isMobile && (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          fetchPriority="high"
-          onLoadedMetadata={() => setVideoReady(true)}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
-            videoReady ? "opacity-100" : "opacity-0"
-          }`}
-          src={cloudinaryVideoUrl}
-        />
-      )}
+
 
       {/* DARK OVERLAY */}
-      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/20 pointer-events-none" />
+
 
       {/* CONTENT */}
       <div className="relative z-10 max-w-4xl w-full px-8 md:px-16 text-left text-white">

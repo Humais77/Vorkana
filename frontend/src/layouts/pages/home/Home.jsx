@@ -1,3 +1,4 @@
+// Home.jsx
 import React from 'react'
 import Hero from './Hero'
 import CategoryGrid from '../../../components/categories/CategoryGrid'
@@ -10,7 +11,7 @@ import { useState } from 'react'
 import GetQuoteBanner from './GetQuoteBanner'
 import PopularCategoriesSection from '../../../components/home/PopularCategoriesSection'
 
-const Home = ({ onSignupClick, onSigninClick }) => {
+const Home = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('signin'); 
 
@@ -21,13 +22,11 @@ const Home = ({ onSignupClick, onSigninClick }) => {
 
   const closeAuthModal = () => {
     setIsAuthModalOpen(false);
-    // Optional: reset tab when closing
-    // setActiveTab('signin');
   };
 
   return (
     <div>
-      <Hero isAuthModalOpen={isAuthModalOpen} />
+      <Hero openAuthModal={openAuthModal} />
 
       {isAuthModalOpen && (
         <AuthModal
@@ -39,15 +38,11 @@ const Home = ({ onSignupClick, onSigninClick }) => {
 
       <CategoryGrid />
       <PopularCategoriesSection/>
-      {/* <PopularServices /> */}
-      <GetQuoteBanner/>
+      <GetQuoteBanner openAuthModal={openAuthModal} />
       <Testimonials />
-      <MakeItHappen 
-        onSignupClick={() => openAuthModal('signup')} 
-        // or pass openAuthModal directly if needed
-      />
+      <MakeItHappen openAuthModal={openAuthModal} />
       <LogoMakerBanner/>
-      <CallToAction onSignupClick={() => openAuthModal('signup')} />
+      <CallToAction openAuthModal={openAuthModal} />
     </div>
   );
 };

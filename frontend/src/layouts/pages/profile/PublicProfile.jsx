@@ -224,7 +224,7 @@ const PublicProfile = () => {
             {errorMessage.includes('login') && (
               <div className="mb-6">
                 <Link
-                  to="/sign-in"
+                  to="/signin"
                   className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                 >
                   Sign In to View

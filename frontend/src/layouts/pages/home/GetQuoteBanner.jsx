@@ -1,19 +1,19 @@
 // components/CompactQuoteBanner.jsx
 import React from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../../store/useAuthStore";
+import { useNavigate } from "react-router-dom";
 
 const CompactQuoteBanner = ({ openAuthModal }) => {
   const navigate = useNavigate();
-  const token = useAuthStore((state) => state.token);
+  const { isAuthenticated } = useAuthStore();
 
   const handleGetQuote = () => {
-    if (!token) {
-      navigate("/signin")
+    if (!isAuthenticated) {
+      // User not logged in → open auth modal
+      openAuthModal?.('signin');
     } else {
-      // User logged in → go to dashboard
-      navigate("/dashboard");
+       navigate("/dashboard");
     }
   };
 
@@ -23,8 +23,6 @@ const CompactQuoteBanner = ({ openAuthModal }) => {
         
         {/* Left Content */}
         <div className="text-center md:text-left">
-        
-
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
             Get matched with top freelancers
           </h2>

@@ -13,7 +13,15 @@ import {
   Mail,
   HelpCircle,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  DollarSign,
+  Calendar,
+  Globe,
+  Shield,
+  TrendingUp,
+  Star,
+  Target,
+  Zap
 } from 'lucide-react';
 
 const GigsInfoPage = () => {
@@ -65,6 +73,66 @@ const GigsInfoPage = () => {
         'All the above benefits'
       ],
       bestFor: 'Projects where different phases may require different communication styles'
+    }
+  ];
+
+  const gigFeatures = [
+    {
+      title: 'Budget Flexibility',
+      description: 'Set budgets from $5 to $100,000 with multiple currency options',
+      icon: <DollarSign className="w-5 h-5" />,
+      details: ['USD, EUR, GBP, CAD, AUD, INR, PKR', 'Clear pricing upfront', 'No hidden fees']
+    },
+    {
+      title: 'Category System',
+      description: 'Organized by categories and subcategories for easy discovery',
+      icon: <Target className="w-5 h-5" />,
+      details: ['Main categories & subcategories', 'Specialized project types', 'Better matching algorithm']
+    },
+    {
+      title: 'Secure Platform',
+      description: 'Built-in security measures and content sanitization',
+      icon: <Shield className="w-5 h-5" />,
+      details: ['XSS protection', 'Input validation', 'Secure file uploads']
+    },
+    {
+      title: 'Global Reach',
+      description: 'Connect with freelancers and clients worldwide',
+      icon: <Globe className="w-5 h-5" />,
+      details: ['International currency support', 'Multiple timezones', 'Cultural diversity']
+    }
+  ];
+
+  const gigStatuses = [
+    {
+      status: 'Open',
+      description: 'Project is available for freelancers to apply',
+      color: 'bg-green-100 text-green-800'
+    },
+    {
+      status: 'In Progress',
+      description: 'Freelancer is working on the project',
+      color: 'bg-blue-100 text-blue-800'
+    },
+    {
+      status: 'Assigned',
+      description: 'Freelancer has been selected and work is starting',
+      color: 'bg-purple-100 text-purple-800'
+    },
+    {
+      status: 'Completed',
+      description: 'Project has been successfully delivered',
+      color: 'bg-emerald-100 text-emerald-800'
+    },
+    {
+      status: 'Cancelled',
+      description: 'Project was cancelled before completion',
+      color: 'bg-red-100 text-red-800'
+    },
+    {
+      status: 'Closed',
+      description: 'Project is no longer accepting applications',
+      color: 'bg-gray-100 text-gray-800'
     }
   ];
 
@@ -121,13 +189,14 @@ const GigsInfoPage = () => {
               What are Gigs?
             </h1>
             <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Gigs are one-time projects where clients post their needs and freelancers apply with proposals.
+              Gigs are one-time projects where clients post specific needs and freelancers apply with detailed proposals.
+              Connect, collaborate, and get work done efficiently.
             </p>
           </motion.div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Basic Information */}
         <motion.div
           initial="hidden"
@@ -137,8 +206,9 @@ const GigsInfoPage = () => {
         >
           <motion.h2 
             variants={itemVariants}
-            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4"
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
           >
+            <FileText className="w-6 h-6 mr-2 text-gray-700" />
             Understanding Gigs
           </motion.h2>
           
@@ -151,14 +221,32 @@ const GigsInfoPage = () => {
               whileHover="hover"
               className="bg-gray-50 rounded-lg p-6"
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                <FileText className="w-5 h-5 mr-2 text-gray-700" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
                 What is a Gig?
               </h3>
-              <p className="text-gray-700">
-                A gig is a project posted by a client looking for a freelancer to complete specific work. 
-                Clients describe what they need, set a budget and timeline, and freelancers submit proposals.
+              <p className="text-gray-700 mb-4">
+                A gig is a specific project posted by clients who need freelance talent. It includes detailed requirements, 
+                budget, timeline, and deliverables. Freelancers browse gigs and submit proposals showcasing their skills 
+                and approach.
               </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">One-time project basis</span>
+                </div>
+                <div className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">Clear deliverables and timeline</span>
+                </div>
+                <div className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">Fixed or negotiated budget</span>
+                </div>
+                <div className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">Skill-based matching</span>
+                </div>
+              </div>
             </motion.div>
 
             <motion.div 
@@ -170,25 +258,105 @@ const GigsInfoPage = () => {
                 <Users className="w-5 h-5 mr-2 text-gray-700" />
                 How Gigs Work
               </h3>
-              <ul className="space-y-3 text-gray-700">
-                <li className="flex items-start">
-                  <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
-                  <span>Client posts project details and requirements</span>
-                </li>
-                <li className="flex items-start">
-                  <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
-                  <span>Freelancers review and submit proposals</span>
-                </li>
-                <li className="flex items-start">
-                  <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
-                  <span>Client reviews proposals and selects freelancer</span>
-                </li>
-                <li className="flex items-start">
-                  <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
-                  <span>Work is completed and delivered</span>
-                </li>
-              </ul>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">For Clients:</h4>
+                  <ul className="space-y-2 text-gray-700">
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Post detailed project requirements</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Set budget and timeline</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Review freelancer proposals</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Select the best match</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Manage project milestones</span>
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">For Freelancers:</h4>
+                  <ul className="space-y-2 text-gray-700">
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Browse available gigs</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Submit tailored proposals</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Showcase portfolio and skills</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Communicate with clients</span>
+                    </li>
+                    <li className="flex items-start">
+                      <ChevronRight className="w-5 h-5 mr-2 text-gray-500 flex-shrink-0 mt-0.5" />
+                      <span>Deliver quality work</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </motion.div>
+          </motion.div>
+        </motion.div>
+
+        {/* Key Features */}
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={containerVariants}
+          className="mb-16"
+        >
+          <motion.h2 
+            variants={itemVariants}
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
+          >
+            <Star className="w-6 h-6 mr-2 text-gray-700" />
+            Key Features
+          </motion.h2>
+          
+          <motion.div 
+            variants={containerVariants}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+          >
+            {gigFeatures.map((feature, index) => (
+              <motion.div
+                key={index}
+                variants={cardVariants}
+                whileHover="hover"
+                className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow"
+              >
+                <div className="flex items-center mb-4">
+                  <div className="p-2 bg-gray-100 rounded-lg mr-3">
+                    {feature.icon}
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">{feature.title}</h3>
+                </div>
+                <p className="text-gray-700 mb-4">{feature.description}</p>
+                <ul className="space-y-2">
+                  {feature.details.map((detail, idx) => (
+                    <li key={idx} className="flex items-start text-sm text-gray-600">
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                      <span>{detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            ))}
           </motion.div>
         </motion.div>
 
@@ -201,8 +369,9 @@ const GigsInfoPage = () => {
         >
           <motion.h2 
             variants={itemVariants}
-            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4"
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
           >
+            <MessageSquare className="w-6 h-6 mr-2 text-gray-700" />
             Communication Methods
           </motion.h2>
           
@@ -210,7 +379,7 @@ const GigsInfoPage = () => {
             variants={itemVariants}
             className="text-gray-700 mb-6"
           >
-            Choose the communication method that works best for your project. Different methods offer different benefits:
+            Choose the communication method that works best for your project. All methods are securely integrated into our platform:
           </motion.p>
 
           <motion.div 
@@ -251,7 +420,7 @@ const GigsInfoPage = () => {
           </motion.div>
         </motion.div>
 
-        {/* Benefits */}
+        {/* Gig Statuses */}
         <motion.div
           initial="hidden"
           animate="visible"
@@ -260,71 +429,156 @@ const GigsInfoPage = () => {
         >
           <motion.h2 
             variants={itemVariants}
-            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4"
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
           >
-            Benefits of Using Gigs
+            <TrendingUp className="w-6 h-6 mr-2 text-gray-700" />
+            Gig Status Guide
           </motion.h2>
           
+          <motion.p 
+            variants={itemVariants}
+            className="text-gray-700 mb-6"
+          >
+            Understanding gig statuses helps you track your project progress and manage expectations:
+          </motion.p>
+
           <motion.div 
             variants={containerVariants}
-            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
           >
-            <motion.div variants={itemVariants} className="space-y-4">
-              <motion.div 
+            {gigStatuses.map((statusItem, index) => (
+              <motion.div
+                key={index}
                 variants={itemVariants}
-                className="flex items-start"
+                className="border border-gray-200 rounded-lg p-4"
               >
-                <div className="bg-gray-100 p-2 rounded mr-3">
-                  <Clock className="w-5 h-5 text-gray-700" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusItem.color}`}>
+                    {statusItem.status}
+                  </span>
                 </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-1">Flexible Timeline</h4>
-                  <p className="text-gray-700">Set deadlines that work with your schedule</p>
-                </div>
+                <p className="text-gray-700">{statusItem.description}</p>
               </motion.div>
-
-              <motion.div 
-                variants={itemVariants}
-                className="flex items-start"
-              >
-                <div className="bg-gray-100 p-2 rounded mr-3">
-                  <Users className="w-5 h-5 text-gray-700" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-1">Access to Talent</h4>
-                  <p className="text-gray-700">Connect with skilled professionals worldwide</p>
-                </div>
-              </motion.div>
-            </motion.div>
-
-            <motion.div variants={itemVariants} className="space-y-4">
-              <motion.div 
-                variants={itemVariants}
-                className="flex items-start"
-              >
-                <div className="bg-gray-100 p-2 rounded mr-3">
-                  <FileText className="w-5 h-5 text-gray-700" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-1">Clear Requirements</h4>
-                  <p className="text-gray-700">Define exactly what you need in your project description</p>
-                </div>
-              </motion.div>
-
-              <motion.div 
-                variants={itemVariants}
-                className="flex items-start"
-              >
-                <div className="bg-gray-100 p-2 rounded mr-3">
-                  <CheckCircle className="w-5 h-5 text-gray-700" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-1">Quality Results</h4>
-                  <p className="text-gray-700">Review freelancer profiles and previous work before hiring</p>
-                </div>
-              </motion.div>
-            </motion.div>
+            ))}
           </motion.div>
+        </motion.div>
+
+        {/* Requirements & Guidelines */}
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={containerVariants}
+          className="mb-16"
+        >
+          <motion.h2 
+            variants={itemVariants}
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
+          >
+            <Zap className="w-6 h-6 mr-2 text-gray-700" />
+            Requirements & Guidelines
+          </motion.h2>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <motion.div 
+              variants={cardVariants}
+              whileHover="hover"
+              className="bg-gray-50 rounded-lg p-6"
+            >
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">For Creating Gigs:</h3>
+              <ul className="space-y-3">
+                <li className="flex items-start">
+                  <div className="w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    1
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Title:</span>
+                    <span className="text-gray-700"> 5-200 characters, descriptive and clear</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <div className="w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    2
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Description:</span>
+                    <span className="text-gray-700"> 20-5000 characters, detailed project requirements</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <div className="w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    3
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Budget:</span>
+                    <span className="text-gray-700"> $5 - $100,000 in supported currencies</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <div className="w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    4
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Timeline:</span>
+                    <span className="text-gray-700"> Specify duration in days, weeks, or months</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <div className="w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    5
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Skills Required:</span>
+                    <span className="text-gray-700"> List specific skills needed (max 50 chars each)</span>
+                  </div>
+                </li>
+              </ul>
+            </motion.div>
+
+            <motion.div 
+              variants={cardVariants}
+              whileHover="hover"
+              className="bg-gray-50 rounded-lg p-6"
+            >
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Platform Features:</h3>
+              <ul className="space-y-3">
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium text-gray-900">Image Support:</span>
+                    <span className="text-gray-700"> Upload up to 10 images (Cloudinary integration)</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium text-gray-900">Automatic Slug Generation:</span>
+                    <span className="text-gray-700"> URL-friendly titles created automatically</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium text-gray-900">Category System:</span>
+                    <span className="text-gray-700"> Main categories with subcategories for better organization</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium text-gray-900">Security Features:</span>
+                    <span className="text-gray-700"> XSS protection, input validation, secure uploads</span>
+                  </div>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium text-gray-900">Version Control:</span>
+                    <span className="text-gray-700"> Track changes and prevent conflicts</span>
+                  </div>
+                </li>
+              </ul>
+            </motion.div>
+          </div>
         </motion.div>
 
         {/* Getting Started */}
@@ -336,9 +590,10 @@ const GigsInfoPage = () => {
         >
           <motion.h2 
             variants={itemVariants}
-            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4"
+            className="text-2xl font-bold text-gray-900 mb-8 border-b border-gray-200 pb-4 flex items-center"
           >
-            Getting Started
+            <ArrowRight className="w-6 h-6 mr-2 text-gray-700" />
+            Getting Started with Gigs
           </motion.h2>
           
           <motion.div 
@@ -346,46 +601,75 @@ const GigsInfoPage = () => {
             whileHover="hover"
             className="bg-gray-50 rounded-lg p-6"
           >
-            <ol className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
                 {
                   step: 1,
-                  title: 'Complete Your Profile',
-                  description: 'Ensure your profile is at least 70% complete'
+                  title: 'Complete Profile',
+                  description: 'Ensure your profile is complete with skills and portfolio',
+                  icon: <Users className="w-8 h-8 text-gray-700" />
                 },
                 {
                   step: 2,
-                  title: 'Define Your Project',
-                  description: 'Clearly describe what you need to be done'
+                  title: 'Define Project',
+                  description: 'Create clear title, description, requirements, and deliverables',
+                  icon: <FileText className="w-8 h-8 text-gray-700" />
                 },
                 {
                   step: 3,
-                  title: 'Choose Communication',
-                  description: 'Select your preferred communication method'
+                  title: 'Set Details',
+                  description: 'Choose budget, timeline, category, and communication method',
+                  icon: <DollarSign className="w-8 h-8 text-gray-700" />
                 },
                 {
                   step: 4,
-                  title: 'Post Your Gig',
-                  description: 'Make your project visible to freelancers'
+                  title: 'Post & Review',
+                  description: 'Publish your gig and review incoming proposals',
+                  icon: <CheckCircle className="w-8 h-8 text-gray-700" />
                 }
               ].map((item, index) => (
-                <motion.li 
+                <motion.div 
                   key={index}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex items-start"
+                  className="text-center"
                 >
-                  <div className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-3 flex-shrink-0 mt-0.5">
-                    {item.step}
+                  <div className="relative mb-4">
+                    <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto">
+                      {item.step}
+                    </div>
+                    <div className="absolute -top-2 -right-2 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                      {item.icon}
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">{item.title}</h4>
-                    <p className="text-gray-700">{item.description}</p>
-                  </div>
-                </motion.li>
+                  <h4 className="font-semibold text-gray-900 mb-2">{item.title}</h4>
+                  <p className="text-gray-700 text-sm">{item.description}</p>
+                </motion.div>
               ))}
-            </ol>
+            </div>
+            
+            <div className="mt-8 p-4 bg-white rounded-lg border border-gray-200">
+              <h4 className="font-semibold text-gray-900 mb-3">Pro Tips:</h4>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <li className="flex items-start">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 text-sm">Be specific about deliverables and timeline</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 text-sm">Use relevant skills tags for better matching</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 text-sm">Include clear examples or references if possible</span>
+                </li>
+                <li className="flex items-start">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 text-sm">Set realistic budget based on scope and complexity</span>
+                </li>
+              </ul>
+            </div>
           </motion.div>
         </motion.div>
 
@@ -413,9 +697,9 @@ const GigsInfoPage = () => {
               whileHover={{ x: 5 }}
               className="p-4 hover:bg-gray-50 rounded-lg transition-colors"
             >
-              <h4 className="font-semibold text-gray-900 mb-2">What's the difference between a gig and a service?</h4>
+              <h4 className="font-semibold text-gray-900 mb-2">How long does a gig stay active?</h4>
               <p className="text-gray-700">
-                Gigs are projects posted by clients looking for freelancers. Services are offerings created by freelancers for clients to purchase directly.
+                Gigs automatically expire after 30 days if they remain in 'open' status. You can extend, close, or update them at any time.
               </p>
             </motion.div>
             
@@ -424,9 +708,9 @@ const GigsInfoPage = () => {
               whileHover={{ x: 5 }}
               className="p-4 hover:bg-gray-50 rounded-lg transition-colors"
             >
-              <h4 className="font-semibold text-gray-900 mb-2">How do I choose the right freelancer?</h4>
+              <h4 className="font-semibold text-gray-900 mb-2">Can I update my gig after posting?</h4>
               <p className="text-gray-700">
-                Review their portfolio, experience, and previous client reviews. Consider conducting interviews with top candidates.
+                Yes, you can update your gig details including title, description, budget, and images. The platform uses version control to track changes and prevent conflicts.
               </p>
             </motion.div>
             
@@ -435,9 +719,31 @@ const GigsInfoPage = () => {
               whileHover={{ x: 5 }}
               className="p-4 hover:bg-gray-50 rounded-lg transition-colors"
             >
-              <h4 className="font-semibold text-gray-900 mb-2">Can I change my communication method after posting?</h4>
+              <h4 className="font-semibold text-gray-900 mb-2">What happens if my gig gets deleted?</h4>
               <p className="text-gray-700">
-                Yes, you can update your gig details at any time, including your preferred communication method.
+                Gigs use soft delete - they're marked as inactive but remain in the system. Only admins can perform permanent deletion. Category and subcategory counts are automatically adjusted.
+              </p>
+            </motion.div>
+            
+            <motion.div 
+              variants={itemVariants}
+              whileHover={{ x: 5 }}
+              className="p-4 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <h4 className="font-semibold text-gray-900 mb-2">How are images handled?</h4>
+              <p className="text-gray-700">
+                Images are securely uploaded to Cloudinary with optimization. You can upload up to 10 images per gig, set thumbnails, and manage them through the platform.
+              </p>
+            </motion.div>
+            
+            <motion.div 
+              variants={itemVariants}
+              whileHover={{ x: 5 }}
+              className="p-4 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <h4 className="font-semibold text-gray-900 mb-2">What's the difference between public and private gigs?</h4>
+              <p className="text-gray-700">
+                Public gigs are visible to all freelancers. Private gigs are invite-only. You can also set gigs to 'invite_only' for specific freelancers you want to work with.
               </p>
             </motion.div>
           </motion.div>
@@ -452,16 +758,28 @@ const GigsInfoPage = () => {
           className="bg-black text-white rounded-lg p-8 text-center"
         >
           <h3 className="text-2xl font-bold mb-4">Ready to Post Your Project?</h3>
-          <p className="text-gray-300 mb-6">
-            Start your project and connect with talented freelancers
+          <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
+            Join thousands of clients who have successfully completed projects through our gig platform. 
+            Connect with skilled freelancers, manage your project efficiently, and get quality results.
           </p>
-          <Link
-            to="/create-gig"
-            className="inline-flex items-center px-6 py-3 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            Create a Gig
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              to="/create-gig"
+              className="inline-flex items-center px-6 py-3 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Create a Gig Now
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Link>
+            <Link
+              to="/gigs"
+              className="inline-flex items-center px-6 py-3 bg-transparent border border-white text-white font-medium rounded-lg hover:bg-white/10 transition-colors"
+            >
+              Browse Available Gigs
+            </Link>
+          </div>
+          <p className="text-gray-400 text-sm mt-6">
+            Need help? Check our comprehensive guide or contact support for assistance.
+          </p>
         </motion.div>
       </div>
     </div>

@@ -12,7 +12,6 @@ const PopularCategoriesSection = () => {
   const [showRightScroll, setShowRightScroll] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [imageErrors, setImageErrors] = useState({});
 
   // Calculate visible items based on screen size
   const [visibleItems, setVisibleItems] = useState(4);
@@ -28,48 +27,6 @@ const PopularCategoriesSection = () => {
     updateVisibleItems();
     window.addEventListener('resize', updateVisibleItems);
     return () => window.removeEventListener('resize', updateVisibleItems);
-  }, []);
-
-  // Predefined image URLs for different categories
-  const getCategoryImageUrl = useCallback((categoryName) => {
-    const lowerName = categoryName?.toLowerCase() || '';
-    
-    // Use Unsplash for reliable images
-    const unsplashImages = {
-      'web': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'website': 'https://images.unsplash.com/photo-1527689361190-bcf06e6c8b6d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'video': 'https://images.unsplash.com/photo-1611224923853-80b023f02d71?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'software': 'https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'mobile': 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'app': 'https://images.unsplash.com/photo-1551650975-87deedd944c3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'design': 'https://images.unsplash.com/photo-1561070791-2526d30994b5?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'graphic': 'https://images.unsplash.com/photo-1545235617-9465d2a55698?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'data': 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'analytics': 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'business': 'https://images.unsplash.com/photo-1551434678-e076c223a692?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'marketing': 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'writing': 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'content': 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'music': 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'audio': 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'ai': 'https://images.unsplash.com/photo-1677442136019-21780ecad995?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-      'default': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80'
-    };
-
-    // Check for keywords in category name
-    for (const [keyword, url] of Object.entries(unsplashImages)) {
-      if (lowerName.includes(keyword)) {
-        return url;
-      }
-    }
-
-    // Default image
-    return unsplashImages.default;
-  }, []);
-
-  // Handle image error
-  const handleImageError = useCallback((categoryId) => {
-    setImageErrors(prev => ({ ...prev, [categoryId]: true }));
   }, []);
 
   // Optimized scroll function
@@ -163,10 +120,10 @@ const PopularCategoriesSection = () => {
     );
   }
 
-  if (error || !categories?.length) {
+  if (error) {
     return (
       <section className="py-10 px-4 bg-white mb-16">
-        <div className="max-w-7xl mx-auto text-center">
+        <div className="max-w-7xl mx-auto">
           <div className="text-left mb-6">
             <h2 className="text-4xl font-bold text-gray-900 mb-2">
               Popular Services
@@ -176,24 +133,32 @@ const PopularCategoriesSection = () => {
             </p>
           </div>
           
-          <div className="bg-gray-50 rounded-lg border border-gray-200 p-12">
-            <div className="max-w-md mx-auto">
-              <div className="text-gray-400 mb-4">
-                <ImageIcon className="w-16 h-16 mx-auto" />
-              </div>
-              <h3 className="text-xl font-medium text-gray-700 mb-2">
-                No Services Available
-              </h3>
-              <p className="text-gray-500 mb-6">
-                Check back soon for our popular services.
-              </p>
-              <Link
-                to="/services"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors duration-200"
-              >
-                <span>Browse All Services</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
+          <div className="text-center p-8">
+            <div className="text-red-600 bg-red-50 border border-red-200 rounded-lg p-4 inline-block">
+              <p className="font-medium">Failed to load popular categories. Please try again later.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!categories?.length) {
+    return (
+      <section className="py-10 px-4 bg-white mb-16">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-left mb-6">
+            <h2 className="text-4xl font-bold text-gray-900 mb-2">
+              Popular Services
+            </h2>
+            <p className="text-gray-600 text-lg">
+              Browse our most popular services
+            </p>
+          </div>
+          
+          <div className="text-center p-8">
+            <div className="text-red-600 bg-red-50 border border-red-200 rounded-lg p-4 inline-block">
+              <p className="font-medium">No popular categories found.</p>
             </div>
           </div>
         </div>
@@ -232,53 +197,57 @@ const PopularCategoriesSection = () => {
             ref={scrollContainerRef}
             className="flex overflow-x-auto pb-4 gap-4 scroll-smooth snap-x snap-mandatory hide-scrollbar"
           >
-            {categories.map((category) => {
-              const imageUrl = getCategoryImageUrl(category.name);
-              const hasError = imageErrors[category._id];
-              
-              return (
-                <div
-                  key={category._id}
-                  className="flex-shrink-0 w-[280px] sm:w-[300px] snap-start"
+            {categories.map((category) => (
+              <div
+                key={category._id}
+                className="flex-shrink-0 w-[280px] sm:w-[300px] snap-start"
+              >
+                <Link
+                  to={`/popular-services/${category.slug}`}
+                  className="block bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden h-full group"
                 >
-                  <Link
-                    to={`/popular-services/${category.slug}`}
-                    className="block bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden h-full group"
-                  >
-                    {/* Category Image */}
-                    <div className="relative h-48 overflow-hidden bg-gray-100">
-                      {!hasError ? (
-                        <img
-                          src={imageUrl}
-                          alt={category.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                          onError={() => handleImageError(category._id)}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                          <div className="text-center">
-                            <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                            <span className="text-sm text-gray-500">{category.name}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  {/* Category Image */}
+                  <div className="relative h-48 overflow-hidden bg-gray-100">
+                    {category.imageUrl ? (
+                      <img
+                        src={category.imageUrl}
+                        alt={category.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                       
+                      />
+                    ) : null}
+                    
+                    {/* Fallback for missing or errored image */}
+                    <div 
+                      className={`w-full h-full ${category.imageUrl ? 'hidden' : 'flex'} items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200`}
+                    >
+                      <div className="text-center">
+                        <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <span className="text-sm text-gray-500">No Image</span>
+                      </div>
                     </div>
+                    
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  </div>
 
-                    {/* Category Content */}
-                    <div className="p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 group-hover:text-emerald-600 transition-colors line-clamp-1 mb-1">
-                        {category.name}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        View services
+                  {/* Category Content */}
+                  <div className="p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-emerald-600 transition-colors line-clamp-1 mb-1">
+                      {category.name || 'Unnamed Category'}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {category.description || 'View services'}
+                    </p>
+                    {category.serviceCount !== undefined && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {category.serviceCount} service{category.serviceCount !== 1 ? 's' : ''}
                       </p>
-                    </div>
-                  </Link>
-                </div>
-              );
-            })}
+                    )}
+                  </div>
+                </Link>
+              </div>
+            ))}
           </div>
 
           {/* Right Scroll Button */}
