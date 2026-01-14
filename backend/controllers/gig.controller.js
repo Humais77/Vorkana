@@ -297,47 +297,43 @@ const generateCacheKey = (prefix, params) => {
 };
 const invalidateGigCache = async (gigId) => {
   try {
-    const cache = require('../utils/cache.js');
-    
-    // Get gig details for more targeted invalidation
-    const gig = await Gig.findById(gigId).select('projectCategory subcategory status slug');
+    // Get gig details
+    const gig = await Gig.findById(gigId).select('projectCategory subcategory status slug createdBy');
     
     if (gig) {
-      // Invalidate specific gig cache
+      // Clear specific gig cache
       await cache.del(`gig:${gigId}`);
       await cache.del(`gig:slug:${gig.slug}`);
       
-      // Invalidate common list caches (without pattern matching)
-      const cacheKeysToDelete = [
-        `gigs:list:page:1:limit:10`, // Default pagination
-        `gigs:list:page:1:limit:12`,
-        `gigs:category:${gig.projectCategory}:page:1`,
-        `gigs:status:${gig.status}:page:1`,
-        `gigs:user:${gig.createdBy}:page:1`,
+      // Clear pattern-based cache keys (if cache.keys() exists)
+      // If not, use specific keys:
+      await cache.del('gig_stats:*'); // Use wildcard if supported
+      
+      // Clear list caches by specific patterns
+      const patterns = [
+        'gigs:list:*',           // All gig lists
+        `gigs:category:${gig.projectCategory}:*`, // Category-specific
+        `gigs:user:${gig.createdBy}:*`,           // User-specific
       ];
       
-      // Add subcategory cache if exists
       if (gig.subcategory) {
-        cacheKeysToDelete.push(`gigs:subcategory:${gig.subcategory}:page:1`);
+        patterns.push(`gigs:subcategory:${gig.subcategory}:*`);
       }
       
-      // Delete specific cache keys
-      for (const key of cacheKeysToDelete) {
+      // Delete each pattern
+      for (const pattern of patterns) {
         try {
-          await cache.del(key);
+          // If cache.keys() doesn't exist, use direct deletion
+          await cache.del(pattern.replace('*', ''));
         } catch (err) {
-          // Ignore errors for non-existent keys
+          // Ignore if key doesn't exist
         }
       }
-      
-      // Invalidate stats cache
-      await cache.del('gig_stats:*');
       
       console.log(`Cache invalidated for gig ${gigId}`);
     }
   } catch (err) {
     console.error('Error in cache invalidation:', err.message);
-    // Don't throw - cache invalidation failure shouldn't break the request
   }
 };
 
@@ -711,15 +707,19 @@ const getGigs = async (req, res, next) => {
     };
 
     // Generate cache key
-    const cacheKey = generateCacheKey('gigs', {
-      filter,
-      page: pageNum,
-      limit: limitNum,
-      sort: sortObj,
-      skip,
-      populate: populateOptions,
-      userRole
-    });
+    const cacheKey = generateCacheKey('gigs:list', {
+  filter: JSON.stringify(filter), 
+  page: pageNum,
+  limit: limitNum,
+  sort: JSON.stringify(sortObj),
+  skip,
+  populate: JSON.stringify(populateOptions),
+  userRole,
+  includeSubcategory: includeSubcategory === 'true',
+  includeCreator: includeCreator === 'true',
+  includeAssignee: includeAssignee === 'true',
+  timestamp: Math.floor(Date.now() / 60000)
+});
 
     let gigs, total;
     const shouldUseCache = useCache === 'true' && pageNum === 1 && !search && !q;
@@ -858,7 +858,27 @@ const getGigs = async (req, res, next) => {
 const searchGigs = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+  const cacheKey = generateCacheKey('gigs:search', {
+  query: sanitizedQuery,
+  fuzzy: fuzzy === 'true',
+  limit: searchLimit,
+  timestamp: Math.floor(Date.now() / 60000)
+});
+
+// Try cache first
+const cached = await cache.get(cacheKey);
+if (cached) {
+  return res.json({
+    success: true,
+    query: sanitizedQuery,
+    data: cached,
+    count: cached.length,
+    requestId,
+    timestamp: new Date().toISOString(),
+    cached: true
+  });
+}
+
   try {
     const { q: searchQuery, fuzzy = 'false', threshold = 0.3, limit = 20 } = req.query;
 
@@ -931,7 +951,7 @@ const sanitizedQuery = sanitizeText(searchQuery.trim());
       deliverables: result.deliverables || [],
       urgency: result.urgency || 'medium'
     }));
-
+await cache.set(cacheKey, safeResults, 300);
     const responseTime = Date.now() - startTime;
     
     res.json({
@@ -1047,13 +1067,15 @@ const getGigById = async (req, res, next) => {
     }
 
     // Generate cache key
-    const cacheKey = generateCacheKey('gig', {
-      id,
-      fields,
-      populate: populateOptions,
-      userRole,
-      userId
-    });
+    const cacheKey = generateCacheKey('gig:single', {
+  id,
+  fields,
+  populate: populateOptions.length,
+  userRole,
+  userId,
+  includeSubcategory: includeSubcategory === 'true',
+  timestamp: Math.floor(Date.now() / 60000)
+});
 
     let gig;
     const shouldUseCache = useCache === 'true' && userRole === 'guest';
@@ -1522,38 +1544,32 @@ const updateGig = async (req, res, next) => {
       }
     }
 
-    // Build update data
     const updateData = {
-      ...sanitizedData,
-      lastUpdatedBy: req.user._id,
-      $inc: { version: 1 }
-    };
+  lastUpdatedBy: req.user._id,
+  $inc: { version: 1 }
+};
 
-    // Handle images in update
-    if (imageOperations.images && imageOperations.images.length > 0) {
-      // Combine existing images with new ones, avoiding duplicates
-      const existingImages = gig.images || [];
-      const newImages = imageOperations.images.filter(newImg => 
-        !existingImages.some(existing => existing.public_id === newImg.public_id)
-      );
-      
-      updateData.$push = { images: { $each: newImages } };
-    }
+// Copy all fields from sanitizedData except version
+Object.keys(sanitizedData).forEach(key => {
+  if (key !== 'version' && key !== '$inc' && key !== '$set' && key !== '$push' && key !== '$pull') {
+    updateData[key] = sanitizedData[key];
+  }
+});
 
-    // Handle thumbnail
-    if (imageOperations.thumbnail) {
-      updateData.thumbnail = imageOperations.thumbnail;
-    }
+// Handle images in update
+if (imageOperations.images && imageOperations.images.length > 0) {
+  updateData.$push = { images: { $each: imageOperations.images } };
+}
 
-    // Remove specified images if requested
-    if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
-      updateData.$pull = { images: { public_id: { $in: sanitizedData.removeImages } } };
-      
-      // Also remove from thumbnail if it's in the list
-      if (gig.thumbnail && sanitizedData.removeImages.includes(gig.thumbnail.public_id)) {
-        updateData.thumbnail = null;
-      }
-    }
+// Handle thumbnail
+if (imageOperations.thumbnail) {
+  updateData.thumbnail = imageOperations.thumbnail;
+}
+
+// Remove specified images if requested
+if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
+  updateData.$pull = { images: { public_id: { $in: sanitizedData.removeImages } } };
+}
 
     console.log(`[${requestId}] Performing update with conditions:`, {
       id,
@@ -1834,7 +1850,29 @@ const handleImageOperations = async (req, gig) => {
 const getGigsBySubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  
+  const cacheKey = generateCacheKey('gigs:by_subcategory', {
+  subcategoryId,
+  page: pageNum,
+  limit: limitNum,
+  sort: JSON.stringify(sortOptions),
+  minBudget,
+  maxBudget,
+  minRating,
+  timestamp: Math.floor(Date.now() / 60000)
+});
+
+const cached = await cache.get(cacheKey);
+if (cached) {
+  return res.json({
+    success: true,
+    query: sanitizedQuery,
+    data: cached,
+    count: cached.length,
+    requestId,
+    timestamp: new Date().toISOString(),
+    cached: true
+  });
+}
   try {
     const { subcategoryId } = req.params;
     const { 
@@ -1917,7 +1955,7 @@ const getGigsBySubcategory = async (req, res, next) => {
     const totalPages = Math.ceil(total / limitNum);
 
     const responseTime = Date.now() - startTime;
-    
+    await cache.set(cacheKey, safeResults, 300);
     res.json({
       success: true,
       data: gigs.map(gig => ({

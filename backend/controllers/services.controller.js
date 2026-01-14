@@ -23,36 +23,25 @@ const generateCacheKey = (prefix, params) => {
 
 const invalidateServiceCache = async (serviceId) => {
   try {
-    // Clear all related cache patterns
-    const patterns = [
-      `service:*${serviceId}*`,
-      'services:*',
-      'service_stats:*',
-      'service_popular:*',
-      'service_similar:*',
-      'my_services:*',
-      'admin_services:*',
-      'all_active_services:*'
-    ];
+    // Clear specific service cache
+    await cache.del(`service_single:*${serviceId}*`);
+    await cache.del(`service:*${serviceId}*`);
     
-    for (const pattern of patterns) {
-      await cache.delPattern(pattern);
-    }
-    
-    // Emit update event for real-time updates
-    serviceEmitter.emit('service_updated', serviceId);
+    // Clear list caches (use exact patterns instead of wildcards)
+    await cache.del('services_list:*');
+    await cache.del('service_stats:*');
+    await cache.del('service_popular:*');
+    await cache.del('service_similar:*');
+    await cache.del('my_services:*');
+    await cache.del('admin_services:*');
+    await cache.del('all_active_services:*');
+    await cache.del('popular_services:*');
+    await cache.del('popular_services_by_category:*');
+    await cache.del('services_with_stats:*');
     
     console.log(`Cache invalidated for service: ${serviceId}`);
   } catch (err) {
     console.warn('Error invalidating service cache:', err.message);
-  }
-};
-
-// Add a function to clear cache patterns
-cache.delPattern = async (pattern) => {
-  const keys = await cache.keys(pattern);
-  if (keys.length > 0) {
-    await cache.del(keys);
   }
 };
 
@@ -834,14 +823,13 @@ const injectionPatterns = [
     const useCache = useCacheParam === 'true';
     const shouldUseCache = useCache && pageNum === 1 && !search && !q && Object.keys(filter).length <= 3;
 
-    if (shouldUseCache) {
-      const cached = await cache.get(cacheKey);
-      if (cached) {
-        services = cached.services;
-        total = cached.total;
-        console.log(`Cache hit for services: ${cacheKey}`);
-      }
-    }
+if (shouldUseCache) {
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    console.log(`[CACHE HIT] ${cacheKey.substring(0, 20)}...`);
+    return res.json({ ...cached, cached: true });
+  }
+}
 
     if (!services || !total) {
       // Build query

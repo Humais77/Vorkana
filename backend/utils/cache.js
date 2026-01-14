@@ -112,6 +112,26 @@ const cache = {
       });
     });
   },
+  async keys(pattern) {
+  if (isRedisEnabled && redisClient) {
+    try {
+      return await redisClient.keys(pattern);
+    } catch (err) {
+      console.warn('Redis KEYS error:', err.message);
+      return [];
+    }
+  }
+  
+  // Memory fallback - simple pattern matching
+  const patternRegex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+  const keys = [];
+  for (const key of memoryCache.keys()) {
+    if (patternRegex.test(key)) {
+      keys.push(key);
+    }
+  }
+  return keys;
+},
   
 
   // Manual cleanup for memory cache

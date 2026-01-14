@@ -1585,98 +1585,334 @@ const deleteCategory = async (req, res, next) => {
   }
 };
 
-// Restore Category (Admin Only)
-const restoreCategory = async (req, res, next) => {
-  const requestId = generateRequestId();
+const restoreCategory = async (req, res) => {
+  const requestId = uuidv4();
   const startTime = Date.now();
   
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Forbidden: Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
+    console.log(`[RESTORE CATEGORY] Request started - ID: ${requestId}`);
+    console.log('[RESTORE CATEGORY] Request:', {
+      params: req.params,
+      body: req.body,
+      query: req.query,
+      admin: req.admin?.email
+    });
 
-    const { id } = req.params;
+    // ===== ID EXTRACTION AND VALIDATION =====
+    let categoryId = req.params.id;
+    const { searchBy = 'id', searchValue = '', force = 'false' } = req.body;
+
+    // FIX: Handle [object Object] and various ID formats
+    if (!categoryId || categoryId === '[object Object]' || categoryId === 'undefined' || categoryId === 'null') {
+      console.log('[RESTORE CATEGORY] Invalid ID in params, checking body/query...');
+      
+      // Try to get from body
+      if (req.body && req.body.id) {
+        categoryId = req.body.id;
+        console.log('[RESTORE CATEGORY] Using ID from body:', categoryId);
+      } 
+      // Try to get from query
+      else if (req.query && req.query.id) {
+        categoryId = req.query.id;
+        console.log('[RESTORE CATEGORY] Using ID from query:', categoryId);
+      }
+      // Try alternative search methods if no ID found
+      else if (searchBy && searchValue) {
+        console.log('[RESTORE CATEGORY] Using search method:', searchBy, searchValue);
+        
+        let category = null;
+        
+        switch (searchBy.toLowerCase()) {
+          case 'slug':
+            category = await Category.findOne({ 
+              slug: searchValue.trim().toLowerCase(),
+              deletedAt: { $ne: null } // Only find deleted categories
+            });
+            break;
+            
+          case 'name':
+            category = await Category.findOne({ 
+              name: { $regex: new RegExp(`^${searchValue.trim()}$`, 'i') },
+              deletedAt: { $ne: null }
+            });
+            break;
+            
+          case 'id':
+          default:
+            category = await Category.findOne({ 
+              _id: searchValue.trim(),
+              deletedAt: { $ne: null }
+            });
+            break;
+        }
+        
+        if (category) {
+          categoryId = category._id;
+          console.log('[RESTORE CATEGORY] Found category via search:', categoryId);
+        } else {
+          return res.status(404).json({
+            success: false,
+            message: 'Category not found or not deleted',
+            code: 'CATEGORY_NOT_FOUND',
+            requestId,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    }
     
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    // ===== VALIDATE FINAL ID =====
+    if (!categoryId || categoryId === 'undefined' || categoryId === 'null') {
       return res.status(400).json({
         success: false,
-        message: 'Invalid category ID',
-        code: 'INVALID_ID',
-        requestId
+        message: 'Category ID is required',
+        code: 'MISSING_CATEGORY_ID',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Clean up the ID
+    if (typeof categoryId === 'object') {
+      categoryId = categoryId._id || categoryId.id || JSON.stringify(categoryId);
+    }
+    
+    // Remove quotes if present
+    if (categoryId.startsWith('"') && categoryId.endsWith('"')) {
+      categoryId = categoryId.slice(1, -1);
+    }
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      console.error('[RESTORE CATEGORY] Invalid MongoDB ID format:', categoryId);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID format. Must be a valid MongoDB ObjectId',
+        code: 'INVALID_CATEGORY_ID_FORMAT',
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    const category = await Category.findById(id);
+    // ===== FIND CATEGORY =====
+    console.log('[RESTORE CATEGORY] Searching for category:', categoryId);
     
+    const category = await Category.findOne({ 
+      _id: categoryId,
+      deletedAt: { $ne: null } // Only find deleted categories
+    }).populate('parentCategory', 'name slug');
+
     if (!category) {
+      // Check if category exists but is not deleted
+      const existingCategory = await Category.findById(categoryId);
+      if (existingCategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category is not deleted. No restoration needed.',
+          code: 'CATEGORY_NOT_DELETED',
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
       return res.status(404).json({
         success: false,
         message: 'Category not found',
         code: 'CATEGORY_NOT_FOUND',
-        requestId
+        requestId,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Check if already active
-    if (category.isActive && !category.deletedAt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category is already active',
-        code: 'ALREADY_ACTIVE',
-        requestId
+    // ===== CHECK DEPENDENCIES =====
+    const forceRestore = force === 'true';
+    
+    if (!forceRestore) {
+      // Check if category has active services
+      const activeServicesCount = await Service.countDocuments({
+        category: categoryId,
+        deletedAt: null,
+        status: 'active'
       });
-    }
-
-    // Security: Check if parent category is active
-    if (category.parentCategory) {
-      const parent = await Category.findById(category.parentCategory);
-      if (parent && !parent.isActive) {
+      
+      // Check if category has active gigs
+      const activeGigsCount = await Gig.countDocuments({
+        projectCategory: categoryId,
+        deletedAt: null,
+        status: { $in: ['open', 'in_progress'] }
+      });
+      
+      if (activeServicesCount > 0 || activeGigsCount > 0) {
         return res.status(400).json({
           success: false,
-          message: 'Cannot restore category with inactive parent',
-          code: 'PARENT_INACTIVE',
-          requestId
+          message: 'Cannot restore category with active services or gigs. Use force=true to override.',
+          code: 'ACTIVE_DEPENDENCIES',
+          details: {
+            activeServicesCount,
+            activeGigsCount
+          },
+          requestId,
+          timestamp: new Date().toISOString()
         });
       }
     }
 
-    category.isActive = true;
-    category.deletedAt = null;
-    category.deletedBy = null;
-    category.lastUpdatedBy = req.user._id;
-    await category.save();
+    // ===== RESTORE CATEGORY =====
+    console.log('[RESTORE CATEGORY] Restoring category:', categoryId);
+    
+    const now = new Date();
+    
+    // Restore category
+    const restoredCategory = await Category.findByIdAndUpdate(
+      categoryId,
+      {
+        $set: {
+          isActive: true,
+          deletedAt: null,
+          deletedBy: null,
+          deletionReason: null,
+          lastUpdatedBy: req.admin._id,
+          updatedAt: now
+        },
+        $unset: {
+          deletedBy: "",
+          deletionReason: ""
+        }
+      },
+      {
+        new: true,
+        runValidators: true,
+        context: 'query'
+      }
+    ).populate('parentCategory', 'name slug').populate('createdBy', 'name email');
 
-    // Security: Audit log
-    logAudit('RESTORE', 'CATEGORY', id, req.user._id);
+    if (!restoredCategory) {
+      console.error('[RESTORE CATEGORY] Failed to restore category:', categoryId);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to restore category',
+        code: 'RESTORE_FAILED',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-    // Invalidate cache after restoration
-    await invalidateCategoryCache();
-    await invalidateSpecificCategoryCache(id);
+    // ===== UPDATE PARENT CATEGORY COUNTS =====
+    if (restoredCategory.parentCategory) {
+      await Category.findByIdAndUpdate(
+        restoredCategory.parentCategory,
+        {
+          $inc: { subcategoriesCount: 1 },
+          $addToSet: { subcategories: restoredCategory._id }
+        }
+      );
+    }
 
+    // ===== PREPARE RESPONSE =====
+    const responseData = {
+      _id: restoredCategory._id,
+      name: restoredCategory.name,
+      slug: restoredCategory.slug,
+      description: restoredCategory.description,
+      isActive: restoredCategory.isActive,
+      featured: restoredCategory.featured,
+      popular: restoredCategory.popular,
+      parentCategory: restoredCategory.parentCategory,
+      servicesCount: restoredCategory.servicesCount || 0,
+      gigsCount: restoredCategory.gigsCount || 0,
+      createdAt: restoredCategory.createdAt.toISOString(),
+      updatedAt: restoredCategory.updatedAt.toISOString(),
+      deletedAt: null,
+      createdBy: restoredCategory.createdBy,
+      lastUpdatedBy: {
+        _id: req.admin._id,
+        name: req.admin.name,
+        email: req.admin.email
+      }
+    };
+
+    // ===== LOG ADMIN ACTION =====
+    await logAdminAction(req.admin._id, 'RESTORE_CATEGORY', `category:${categoryId}`, {
+      categoryName: category.name,
+      force: forceRestore,
+      ip: req.ip,
+      timestamp: now.toISOString()
+    });
+
+    // ===== SEND RESPONSE =====
     const responseTime = Date.now() - startTime;
+    
+    console.log(`[RESTORE CATEGORY] Successfully restored: ${categoryId}`);
     
     res.json({
       success: true,
       message: 'Category restored successfully',
-      data: {
-        _id: category._id,
-        name: category.name,
-        slug: category.slug,
-        isActive: category.isActive
-      },
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      data: responseData,
+      meta: {
+        requestId,
+        timestamp: now.toISOString(),
+        executionTime: `${responseTime}ms`,
+        restoredBy: {
+          id: req.admin._id,
+          name: req.admin.name,
+          email: req.admin.email
+        },
+        forceUsed: forceRestore
+      }
     });
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'RESTORE', req.user._id, { error: error.message });
-    next(error);
+    console.error(`[RESTORE CATEGORY ERROR] Request ID: ${requestId}`, error);
+    console.error('[RESTORE CATEGORY ERROR DETAILS]', error.stack);
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Handle specific error types
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Category with this slug already exists. Cannot restore duplicate.',
+        code: 'DUPLICATE_CATEGORY',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+        code: 'VALIDATION_ERROR',
+        requestId,
+        timestamp: new Date().toISOString(),
+        executionTime: `${responseTime}ms`
+      });
+    }
+    
+    // Generic error response
+    res.status(500).json({
+      success: false,
+      message: 'Failed to restore category',
+      code: 'CATEGORY_RESTORE_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      executionTime: `${responseTime}ms`,
+      details: process.env.NODE_ENV === 'production' ? undefined : error.message
+    });
   }
 };
 
