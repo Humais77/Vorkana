@@ -1,3 +1,4 @@
+// admin.controller.js 
 const mongoose = require('mongoose');
 const User = require('../models/user.model.js');
 const Category = require('../models/category.model.js');
@@ -10,7 +11,65 @@ const jwt = require('jsonwebtoken');
 const validator = require('validator');
 const parsePhoneNumberFromString = require("libphonenumber-js").parsePhoneNumberFromString;
 const bcrypt = require('bcryptjs');
+const cache = require('../utils/cache.js'); // Import cache utility
 
+// Cache helper functions (similar to category controller)
+const generateRequestId = () => crypto.randomUUID();
+
+const generateCacheKey = (prefix, params) => {
+  const key = `${prefix}:${JSON.stringify(params)}`;
+  return crypto.createHash('md5').update(key).digest('hex');
+};
+
+// Cache invalidation functions
+const invalidateAdminCache = async (type = 'all') => {
+  try {
+    switch(type) {
+      case 'users':
+        await cache.del('admin:users:*');
+        await cache.del('admin:user:*');
+        await cache.del('admin:stats:users:*');
+        break;
+      case 'gigs':
+        await cache.del('admin:gigs:*');
+        await cache.del('admin:gig:*');
+        await cache.del('admin:stats:gigs:*');
+        break;
+      case 'services':
+        await cache.del('admin:services:*');
+        await cache.del('admin:service:*');
+        await cache.del('admin:stats:services:*');
+        break;
+      case 'subcategories':
+        await cache.del('admin:subcategories:*');
+        await cache.del('admin:subcategory:*');
+        await cache.del('admin:stats:subcategories:*');
+        break;
+      case 'dashboard':
+        await cache.del('admin:dashboard:*');
+        await cache.del('admin:stats:*');
+        await cache.del('admin:activity:*');
+        break;
+      case 'all':
+      default:
+        await cache.del('admin:*');
+        break;
+    }
+    console.log(`Admin cache invalidated for: ${type}`);
+  } catch (err) {
+    console.warn('Error invalidating admin cache:', err.message);
+  }
+};
+
+const invalidateSpecificCache = async (resource, id) => {
+  try {
+    await cache.del(`admin:${resource}:single:*${id}*`);
+    await cache.del(`admin:${resource}:*${id}*`);
+    console.log(`Cache invalidated for ${resource}: ${id}`);
+  } catch (err) {
+    console.warn('Error invalidating specific admin cache:', err.message);
+  }
+};
 
 // Admin Logout
 const adminLogout = async (req, res) => {
@@ -159,6 +218,7 @@ const getAdminPermissions = (role) => {
   
   return userPermissions;
 };
+
 // Security: Audit trail function
 const logAdminAction = async (adminId, action, resource, details = {}) => {
   try {
@@ -182,6 +242,7 @@ const logAdminAction = async (adminId, action, resource, details = {}) => {
     console.error('[AUDIT LOG ERROR]', error);
   }
 };
+
 // In your admin categories controller
 const getCategories = async (req, res) => {
   try {
@@ -224,7 +285,27 @@ const getCategories = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Get categories
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:categories', {
+      filter: JSON.stringify(filter),
+      page: parseInt(page),
+      limit: parseInt(limit),
+      sort,
+      skip
+    });
+
+    // Try to get from cache
+    const cachedResult = await cache.get(cacheKey);
+    if (cachedResult) {
+      console.log('Cache HIT admin:categories:', cacheKey);
+      return res.json({
+        ...cachedResult,
+        cached: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Get categories from DB
     const categories = await Category.find(filter)
       .sort(sort)
       .skip(skip)
@@ -236,7 +317,7 @@ const getCategories = async (req, res) => {
     // Get total count
     const total = await Category.countDocuments(filter);
 
-    res.json({
+    const result = {
       success: true,
       data: categories,
       pagination: {
@@ -245,7 +326,12 @@ const getCategories = async (req, res) => {
         limit: parseInt(limit),
         totalPages: Math.ceil(total / parseInt(limit))
       }
-    });
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, result, 300); // 5 minutes cache
+
+    res.json(result);
   } catch (error) {
     console.error('Get categories error:', error);
     res.status(500).json({
@@ -254,6 +340,7 @@ const getCategories = async (req, res) => {
     });
   }
 };
+
 const bulkUpdateUsers = async (req, res) => {
   const requestId = uuidv4();
   
@@ -369,6 +456,9 @@ const bulkUpdateUsers = async (req, res) => {
       { $set: updateData }
     );
 
+    // Invalidate cache
+    await invalidateAdminCache('users');
+
     // Security: Log bulk action
     await logAdminAction(req.admin._id, `BULK_${operation.toUpperCase()}_USERS`, 'users', {
       count: validIds.length,
@@ -407,6 +497,7 @@ const bulkUpdateUsers = async (req, res) => {
     });
   }
 };
+
 const getDashboardStats = async (req, res) => {
   const requestId = uuidv4();
   const startTime = Date.now();
@@ -414,6 +505,24 @@ const getDashboardStats = async (req, res) => {
   try {
     console.log(`[DASHBOARD STATS] Starting dashboard stats collection for request: ${requestId}`);
     
+    // Generate cache key for dashboard stats
+    const cacheKey = generateCacheKey('admin:dashboard:stats', {
+      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+    });
+
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:dashboard:stats');
+      return res.json({
+        ...cachedStats,
+        cached: true,
+        requestId,
+        executionTime: `${Date.now() - startTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // Run all queries in parallel for better performance
     const [
       userStats,
@@ -590,6 +699,12 @@ const getDashboardStats = async (req, res) => {
       gigs: stats.gigs.totalGigs
     });
 
+    // Cache the result
+    await cache.set(cacheKey, {
+      success: true,
+      data: stats
+    }, 300); // Cache for 5 minutes
+
     res.json({
       success: true,
       data: stats,
@@ -702,6 +817,7 @@ const getDashboardStats = async (req, res) => {
     }
   }
 };
+
 const getUsers = async (req, res) => {
   const requestId = uuidv4();
   const startTime = Date.now();
@@ -720,7 +836,8 @@ const getUsers = async (req, res) => {
       emailVerified = '',
       sortBy = 'createdAt',
       sortOrder = 'desc',
-      accountType = ''
+      accountType = '',
+      cache: useCacheParam = 'false'
     } = req.query;
 
     // Build secure query filter
@@ -737,7 +854,7 @@ const getUsers = async (req, res) => {
     }
     
     // Role filter
-    if (role && ['user', 'admin', 'seller', 'buyer'].includes(role)) { // Added seller and buyer
+    if (role && ['user', 'admin', 'seller', 'buyer'].includes(role)) {
       filter.role = role;
     }
     
@@ -779,6 +896,31 @@ const getUsers = async (req, res) => {
     // If sorting by name, add secondary sort by email for consistency
     if (sortField === 'name') {
       sort.email = 1;
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:users', {
+      filter: JSON.stringify(filter),
+      page: pageNum,
+      limit: limitNum,
+      sort,
+      skip
+    });
+
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedResult = await cache.get(cacheKey);
+      if (cachedResult) {
+        console.log('Cache HIT admin:users:', cacheKey);
+        return res.json({
+          ...cachedResult,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString(),
+          executionTime: `${Date.now() - startTime}ms`
+        });
+      }
     }
 
     // Projection to exclude sensitive fields - ADMIN VERSION (no privacy filtering)
@@ -904,6 +1046,11 @@ const getUsers = async (req, res) => {
       }
     };
 
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+    }
+
     console.log(`[ADMIN GET USERS] Request completed - ID: ${requestId}, Users: ${sanitizedUsers.length}, Total: ${total}`);
     
     res.json(response);
@@ -928,11 +1075,13 @@ const getUsers = async (req, res) => {
     });
   }
 };
+
 const getUserById = async (req, res) => {
   const requestId = uuidv4();
   
   try {
     const { id } = req.params;
+    const { cache: useCacheParam = 'false' } = req.query;
 
     // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -942,6 +1091,25 @@ const getUserById = async (req, res) => {
         code: 'INVALID_USER_ID',
         requestId
       });
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:user:single', { id });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedUser = await cache.get(cacheKey);
+      if (cachedUser) {
+        console.log('Cache HIT admin:user:single:', cacheKey);
+        return res.json({
+          ...cachedUser,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString(),
+          adminView: true
+        });
+      }
     }
 
     // Find user - ADMIN VERSION (no privacy filtering)
@@ -999,13 +1167,20 @@ const getUserById = async (req, res) => {
     formattedUser._isAdminView = true;
     formattedUser._privacyOverridden = true;
 
-    res.json({
+    const response = {
       success: true,
       data: formattedUser,
       requestId,
       timestamp: new Date().toISOString(),
       adminView: true
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error(`[ADMIN GET USER BY ID ERROR] Request ID: ${requestId}`, error);
@@ -1019,6 +1194,7 @@ const getUserById = async (req, res) => {
     });
   }
 };
+
 /**
  * @desc    Create a new user (Admin)
  * @route   POST /api/admin/users
@@ -1201,6 +1377,9 @@ const createUser = async (req, res) => {
       createdByAdmin: user.createdByAdmin,
       languages: user.languages || []
     };
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('users');
 
     // ===== LOG ADMIN ACTION =====
     
@@ -1451,6 +1630,10 @@ const updateUser = async (req, res) => {
         executionTime: `${Date.now() - startTime}ms`
       });
     }
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('user', id);
+    await invalidateAdminCache('users');
 
     // ===== PREPARE RESPONSE =====
     
@@ -1758,6 +1941,10 @@ const deleteUser = async (req, res) => {
       console.log(`[ADMIN DELETE USER] User soft deleted: ${userId}`);
     }
 
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('user', userId);
+    await invalidateAdminCache('users');
+
     // ===== LOG ADMIN ACTION =====
     
     await logAdminAction(adminId, 'DELETE_USER', `user:${userId}`, {
@@ -1821,6 +2008,7 @@ const deleteUser = async (req, res) => {
     });
   }
 };
+
 /**
  * Validate password strength
  */
@@ -1891,15 +2079,48 @@ const validatePhoneNumber = (phone) => {
   
   return phoneRegex.test(phoneStr) && cleanPhone.length >= 8 && cleanPhone.length <= 16;
 };
-// Export Users
+
 // Export Users - FIXED VERSION
 const exportUsers = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    const { format = 'json' } = req.query;
+    const { format = 'json', cache: useCacheParam = 'false' } = req.query;
 
     console.log(`[EXPORT USERS] Starting export with format: ${format}, requestId: ${requestId}`);
+
+    // Generate cache key for export
+    const cacheKey = generateCacheKey('admin:export:users', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:users:', cacheKey);
+        
+        if (format.toLowerCase() === 'csv') {
+          res.header('Content-Type', 'text/csv; charset=utf-8');
+          res.header('Content-Disposition', `attachment; filename="users_export_${Date.now()}.csv"`);
+          res.header('X-Request-ID', requestId);
+          res.header('X-Export-Records', cachedExport.count || 0);
+          res.header('X-Export-Timestamp', new Date().toISOString());
+          res.header('X-Cache', 'HIT');
+          
+          return res.send(cachedExport.csvContent);
+        }
+        
+        return res.json({
+          success: true,
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          format: 'json',
+          cached: true
+        });
+      }
+    }
 
     // Security: Get users with minimal sensitive data
     const users = await User.find()
@@ -1953,12 +2174,22 @@ const exportUsers = async (req, res) => {
 
       console.log(`[EXPORT USERS] CSV content generated, ${csvRows.length} rows`);
 
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: users.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
       // Set proper CSV headers
       res.header('Content-Type', 'text/csv; charset=utf-8');
       res.header('Content-Disposition', `attachment; filename="users_export_${Date.now()}.csv"`);
       res.header('X-Request-ID', requestId);
       res.header('X-Export-Records', users.length);
       res.header('X-Export-Timestamp', new Date().toISOString());
+      res.header('X-Cache', useCache ? 'MISS' : 'BYPASSED');
       
       return res.send(csvContent);
     }
@@ -1966,14 +2197,21 @@ const exportUsers = async (req, res) => {
     // Default to JSON format
     console.log(`[EXPORT USERS] Returning JSON format, ${users.length} users`);
     
-    res.json({
+    // Cache the JSON export if enabled
+    const exportData = {
       success: true,
       count: users.length,
       data: users,
       exportedAt: new Date().toISOString(),
       requestId,
       format: 'json'
-    });
+    };
+    
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.json(exportData);
 
   } catch (error) {
     console.error('[EXPORT USERS ERROR]', error);
@@ -1986,6 +2224,7 @@ const exportUsers = async (req, res) => {
     });
   }
 };
+
 const checkSystemHealth = async () => {
   try {
     const mongoose = require('mongoose');
@@ -2026,7 +2265,30 @@ const getSystemHealthHandler = async (req, res) => {
   const requestId = uuidv4();
   
   try {
+    // Generate cache key for health check
+    const cacheKey = generateCacheKey('admin:system:health', {
+      timestamp: Math.floor(Date.now() / 30000) // Cache for 30 seconds
+    });
+    
+    // Try to get from cache
+    const cachedHealth = await cache.get(cacheKey);
+    if (cachedHealth) {
+      console.log('Cache HIT admin:system:health');
+      return res.json({
+        ...cachedHealth,
+        cached: true,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     const health = await checkSystemHealth();
+    
+    // Cache the health check result
+    await cache.set(cacheKey, {
+      success: true,
+      data: health
+    }, 30); // Cache for 30 seconds
     
     res.json({
       success: true,
@@ -2047,12 +2309,30 @@ const getSystemHealthHandler = async (req, res) => {
     });
   }
 };
+
 // In admin.controller.js - Fix the getServiceStats function
 const getServiceStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
     console.log('[SERVICE STATS] Starting stats aggregation');
+    
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:stats:services', {
+      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+    });
+    
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:stats:services');
+      return res.json({
+        ...cachedStats,
+        cached: true,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // Simplify the aggregation for better performance
     const stats = await Service.aggregate([
@@ -2267,7 +2547,7 @@ const getServiceStats = async (req, res) => {
       period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`
     }));
 
-    res.json({
+    const response = {
       success: true,
       data: {
         overview: result.overview[0] || result.overview,
@@ -2277,7 +2557,12 @@ const getServiceStats = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    res.json(response);
 
   } catch (error) {
     console.error('[SERVICE STATS ERROR]', error);
@@ -2291,14 +2576,53 @@ const getServiceStats = async (req, res) => {
     });
   }
 };
+
 // In admin.controller.js - Add exportCategories function
 const exportCategories = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    const { format = 'csv' } = req.query;
+    const { format = 'csv', cache: useCacheParam = 'false' } = req.query;
 
     console.log('[EXPORT CATEGORIES] Starting export, format:', format);
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:categories', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:categories:', cacheKey);
+        
+        if (format.toLowerCase() === 'csv') {
+          res.set({
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="categories_export_${Date.now()}.csv"`,
+            'X-Request-ID': requestId,
+            'X-Export-Records': cachedExport.count,
+            'X-Export-Timestamp': new Date().toISOString(),
+            'X-Cache': 'HIT',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          
+          return res.send(cachedExport.csvContent);
+        }
+        
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
+    }
 
     // Get categories with minimal data
     const categories = await Category.find({ deletedAt: null })
@@ -2348,6 +2672,15 @@ const exportCategories = async (req, res) => {
 
       console.log(`[EXPORT CATEGORIES] CSV content generated, ${categories.length} rows`);
 
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: categories.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
       // Set proper CSV headers
       res.set({
         'Content-Type': 'text/csv; charset=utf-8',
@@ -2355,6 +2688,7 @@ const exportCategories = async (req, res) => {
         'X-Request-ID': requestId,
         'X-Export-Records': categories.length.toString(),
         'X-Export-Timestamp': new Date().toISOString(),
+        'X-Cache': useCache ? 'MISS' : 'BYPASSED',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
@@ -2366,14 +2700,21 @@ const exportCategories = async (req, res) => {
     // Default to JSON format
     console.log(`[EXPORT CATEGORIES] Returning JSON format, ${categories.length} categories`);
     
-    res.json({
+    const exportData = {
       success: true,
       format: 'json',
       count: categories.length,
       data: categories,
       exportedAt: new Date().toISOString(),
       requestId
-    });
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.json(exportData);
 
   } catch (error) {
     console.error('[EXPORT CATEGORIES ERROR]', error);
@@ -2386,6 +2727,7 @@ const exportCategories = async (req, res) => {
     });
   }
 };
+
 // Add these functions to admin.controller.js
 
 // Get Gigs (Admin)
@@ -2403,7 +2745,8 @@ const getGigs = async (req, res) => {
       maxBudget = '',
       urgency = '',
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      cache: useCacheParam = 'false'
     } = req.query;
 
     // Security: Build secure query
@@ -2450,6 +2793,31 @@ const getGigs = async (req, res) => {
     const allowedSortFields = ['title', 'budget', 'createdAt', 'updatedAt', 'deadline', 'urgency'];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:gigs', {
+      filter: JSON.stringify(filter),
+      page: pageNum,
+      limit: limitNum,
+      sortField,
+      sortDirection,
+      skip
+    });
+
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedResult = await cache.get(cacheKey);
+      if (cachedResult) {
+        console.log('Cache HIT admin:gigs:', cacheKey);
+        return res.json({
+          ...cachedResult,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
 
     // Execute query with population
     const [gigs, total] = await Promise.all([
@@ -2500,7 +2868,7 @@ const getGigs = async (req, res) => {
 
     const totalPages = Math.ceil(total / limitNum);
 
-    res.json({
+    const response = {
       success: true,
       data: sanitizedGigs,
       pagination: {
@@ -2513,7 +2881,14 @@ const getGigs = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET GIGS ERROR]', error);
@@ -2532,6 +2907,7 @@ const getGigById = async (req, res) => {
   
   try {
     const { id } = req.params;
+    const { cache: useCacheParam = 'false' } = req.query;
 
     // Security: Validate ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -2543,11 +2919,29 @@ const getGigById = async (req, res) => {
       });
     }
 
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:gig:single', { id });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedGig = await cache.get(cacheKey);
+      if (cachedGig) {
+        console.log('Cache HIT admin:gig:single:', cacheKey);
+        return res.json({
+          ...cachedGig,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
     const gig = await Gig.findOne({ _id: id, deletedAt: null })
       .populate('projectCategory', 'name slug icon')
       .populate({
         path: 'subcategory',
-        select: 'name slug description icon order category', // Added category field
+        select: 'name slug description icon order category',
         populate: {
           path: 'category',
           select: 'name slug'
@@ -2598,12 +2992,19 @@ const getGigById = async (req, res) => {
       delete gig.communicationHistory;
     }
 
-    res.json({
+    const response = {
       success: true,
       data: gig,
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET GIG BY ID ERROR]', error);
@@ -2737,6 +3138,9 @@ const createGig = async (req, res) => {
     delete populatedGig.deletedBy;
     delete populatedGig.version;
     delete populatedGig.communicationHistory;
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('gigs');
 
     // Security: Log admin action
     await logAdminAction(req.admin._id, 'CREATE_GIG', `gig:${gig._id}`, {
@@ -2940,7 +3344,7 @@ const updateGig = async (req, res) => {
       { new: true, runValidators: true }
     )
     .populate('projectCategory', 'name slug icon')
-    .populate('subcategory', 'name slug icon description') // Updated to Subcategory model
+    .populate('subcategory', 'name slug icon description')
     .populate('createdBy', 'name email picture')
     .lean();
 
@@ -2966,6 +3370,10 @@ const updateGig = async (req, res) => {
     delete gig.deletedBy;
     delete gig.version;
     delete gig.communicationHistory;
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('gig', id);
+    await invalidateAdminCache('gigs');
 
     // Security: Log admin action
     await logAdminAction(req.admin._id, 'UPDATE_GIG', `gig:${id}`, {
@@ -3160,6 +3568,10 @@ const deleteGig = async (req, res) => {
       console.log('[ADMIN DELETE GIG] Soft deletion successful:', gigId);
     }
     
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('gig', gigId);
+    await invalidateAdminCache('gigs');
+    
     // Log admin action
     await logAdminAction(req.admin._id, 'DELETE_GIG', `gig:${gigId}`, {
       title: gig.title || 'Unknown',
@@ -3202,6 +3614,7 @@ const deleteGig = async (req, res) => {
     });
   }
 };
+
 // Bulk Update Gigs
 const bulkUpdateGigs = async (req, res) => {
   const requestId = uuidv4();
@@ -3313,6 +3726,9 @@ const bulkUpdateGigs = async (req, res) => {
       }
     }
 
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('gigs');
+
     // Security: Log bulk action
     await logAdminAction(req.admin._id, `BULK_${operation.toUpperCase()}_GIGS`, 'gigs', {
       count: validIds.length,
@@ -3339,13 +3755,12 @@ const bulkUpdateGigs = async (req, res) => {
   }
 };
 
-// Export Gigs
 // Export Gigs - FIXED VERSION
 const exportGigs = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    const { format = 'json' } = req.query;
+    const { format = 'json', cache: useCacheParam = 'false' } = req.query;
     
     console.log('[EXPORT GIGS] Request received:', {
       format,
@@ -3353,6 +3768,46 @@ const exportGigs = async (req, res) => {
       params: req.params,
       admin: req.admin?.email
     });
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:gigs', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:gigs:', cacheKey);
+        
+        if (format.toLowerCase() === 'csv') {
+          res.set({
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="gigs_export_${Date.now()}.csv"`,
+            'X-Request-ID': requestId,
+            'X-Export-Records': cachedExport.count,
+            'X-Export-Timestamp': new Date().toISOString(),
+            'X-Cache': 'HIT',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          
+          console.log(`[EXPORT GIGS] Sending cached CSV with ${cachedExport.count} records`);
+          return res.send(cachedExport.csvContent);
+        }
+        
+        console.log(`[EXPORT GIGS] Sending cached JSON with ${cachedExport.count} records`);
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
+    }
 
     // Get gigs with populated data
     const gigs = await Gig.find({ deletedAt: null })
@@ -3406,6 +3861,15 @@ const exportGigs = async (req, res) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: gigs.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
       // Set proper headers
       res.set({
         'Content-Type': 'text/csv',
@@ -3413,6 +3877,7 @@ const exportGigs = async (req, res) => {
         'X-Request-ID': requestId,
         'X-Export-Records': gigs.length.toString(),
         'X-Export-Timestamp': new Date().toISOString(),
+        'X-Cache': useCache ? 'MISS' : 'BYPASSED',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
@@ -3425,20 +3890,28 @@ const exportGigs = async (req, res) => {
     // Default to JSON
     console.log(`[EXPORT GIGS] Sending JSON response with ${gigs.length} records`);
     
-    res.set({
-      'Content-Type': 'application/json',
-      'X-Request-ID': requestId,
-      'X-Export-Records': gigs.length.toString()
-    });
-    
-    res.json({
+    const exportData = {
       success: true,
       format: 'json',
       count: gigs.length,
       data: gigs,
       exportedAt: new Date().toISOString(),
       requestId
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.set({
+      'Content-Type': 'application/json',
+      'X-Request-ID': requestId,
+      'X-Export-Records': gigs.length.toString(),
+      'X-Cache': useCache ? 'MISS' : 'BYPASSED'
     });
+    
+    res.json(exportData);
 
   } catch (error) {
     console.error('[EXPORT GIGS ERROR]', error);
@@ -3451,12 +3924,28 @@ const exportGigs = async (req, res) => {
   }
 };
 
-// Get Gig Statistics
 // Get Gig Statistics - FIXED VERSION
 const getGigStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:stats:gigs', {
+      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+    });
+    
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:stats:gigs');
+      return res.json({
+        ...cachedStats,
+        cached: true,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     const stats = await Gig.aggregate([
       { $match: { deletedAt: null } },
       {
@@ -3596,7 +4085,7 @@ const getGigStats = async (req, res) => {
       category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
     }));
 
-    res.json({
+    const response = {
       success: true,
       data: {
         ...stats[0],
@@ -3604,7 +4093,12 @@ const getGigStats = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GIG STATS ERROR]', error);
@@ -3619,12 +4113,13 @@ const getGigStats = async (req, res) => {
     });
   }
 };
+
 const getSubcategoriesDropdown = async (req, res) => {
   const requestId = uuidv4();
   
   try {
     const { categoryId } = req.params;
-    const { activeOnly = true } = req.query;
+    const { activeOnly = true, cache: useCacheParam = 'false' } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({
@@ -3633,6 +4128,27 @@ const getSubcategoriesDropdown = async (req, res) => {
         code: 'INVALID_CATEGORY_ID',
         requestId
       });
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategories:dropdown', {
+      categoryId,
+      activeOnly
+    });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedSubcategories = await cache.get(cacheKey);
+      if (cachedSubcategories) {
+        console.log('Cache HIT admin:subcategories:dropdown:', cacheKey);
+        return res.json({
+          ...cachedSubcategories,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     // Build filter
@@ -3651,13 +4167,20 @@ const getSubcategoriesDropdown = async (req, res) => {
       .sort({ order: 1, name: 1 })
       .lean();
 
-    res.json({
+    const response = {
       success: true,
       data: subcategories,
       count: subcategories.length,
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET SUBCATEGORIES DROPDOWN ERROR]', error);
@@ -3669,6 +4192,7 @@ const getSubcategoriesDropdown = async (req, res) => {
     });
   }
 };
+
 const getSubcategories = async (req, res) => {
   const requestId = uuidv4();
   
@@ -3680,7 +4204,8 @@ const getSubcategories = async (req, res) => {
       category = '',
       isActive = '',
       sortBy = 'order',
-      sortOrder = 'asc'
+      sortOrder = 'asc',
+      cache: useCacheParam = 'false'
     } = req.query;
 
     // Build filter
@@ -3713,6 +4238,31 @@ const getSubcategories = async (req, res) => {
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'order';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategories', {
+      filter: JSON.stringify(filter),
+      page: pageNum,
+      limit: limitNum,
+      sortField,
+      sortDirection,
+      skip
+    });
+
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedResult = await cache.get(cacheKey);
+      if (cachedResult) {
+        console.log('Cache HIT admin:subcategories:', cacheKey);
+        return res.json({
+          ...cachedResult,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
     // Execute query
     const [subcategories, total] = await Promise.all([
       Subcategory.find(filter)
@@ -3743,7 +4293,7 @@ const getSubcategories = async (req, res) => {
 
     const totalPages = Math.ceil(total / limitNum);
 
-    res.json({
+    const response = {
       success: true,
       data: safeSubcategories,
       pagination: {
@@ -3756,7 +4306,14 @@ const getSubcategories = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET SUBCATEGORIES ERROR]', error);
@@ -3775,6 +4332,7 @@ const getSubcategoryById = async (req, res) => {
   
   try {
     const { id } = req.params;
+    const { cache: useCacheParam = 'false' } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -3783,6 +4341,24 @@ const getSubcategoryById = async (req, res) => {
         code: 'INVALID_SUBCATEGORY_ID',
         requestId
       });
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategory:single', { id });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedSubcategory = await cache.get(cacheKey);
+      if (cachedSubcategory) {
+        console.log('Cache HIT admin:subcategory:single:', cacheKey);
+        return res.json({
+          ...cachedSubcategory,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     const subcategory = await Subcategory.findOne({ _id: id, deletedAt: null })
@@ -3811,12 +4387,19 @@ const getSubcategoryById = async (req, res) => {
       delete subcategory.createdBy.resetPasswordExpires;
     }
 
-    res.json({
+    const response = {
       success: true,
       data: subcategory,
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET SUBCATEGORY BY ID ERROR]', error);
@@ -3901,6 +4484,10 @@ const createSubcategory = async (req, res) => {
     delete populatedSubcategory.deletedBy;
     delete populatedSubcategory.version;
     delete populatedSubcategory.lastUpdatedBy;
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
 
     // Update category stats
     await Category.findByIdAndUpdate(subcategoryData.category, {
@@ -4081,6 +4668,10 @@ const updateSubcategory = async (req, res) => {
     delete subcategory.version;
     delete subcategory.lastUpdatedBy;
 
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('subcategory', id);
+    await invalidateAdminCache('subcategories');
+
     res.json({
       success: true,
       message: 'Subcategory updated successfully',
@@ -4186,6 +4777,11 @@ const deleteSubcategory = async (req, res) => {
       console.log('[DELETE SUBCATEGORY] Soft deletion successful:', id);
     }
 
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('subcategory', id);
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
+
     res.json({
       success: true,
       message: permanent === 'true' ? 'Subcategory permanently deleted' : 'Subcategory deleted successfully',
@@ -4275,6 +4871,10 @@ const bulkUpdateSubcategories = async (req, res) => {
       { $set: updateData }
     );
 
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
+
     res.json({
       success: true,
       message,
@@ -4299,6 +4899,23 @@ const getSubcategoryStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:stats:subcategories', {
+      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+    });
+    
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:stats:subcategories');
+      return res.json({
+        ...cachedStats,
+        cached: true,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     const stats = await Subcategory.aggregate([
       { $match: { deletedAt: null } },
       {
@@ -4363,7 +4980,7 @@ const getSubcategoryStats = async (req, res) => {
       category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
     }));
 
-    res.json({
+    const response = {
       success: true,
       data: {
         ...stats[0],
@@ -4371,7 +4988,12 @@ const getSubcategoryStats = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    res.json(response);
 
   } catch (error) {
     console.error('[SUBCATEGORY STATS ERROR]', error);
@@ -4389,7 +5011,40 @@ const exportSubcategories = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    const { format = 'json' } = req.query;
+    const { format = 'json', cache: useCacheParam = 'false' } = req.query;
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:subcategories', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:subcategories:', cacheKey);
+        
+        if (format === 'csv') {
+          res.header('Content-Type', 'text/csv');
+          res.header('Content-Disposition', `attachment; filename="subcategories_export_${Date.now()}.csv"`);
+          res.header('X-Request-ID', requestId);
+          res.header('X-Export-Records', cachedExport.count);
+          res.header('X-Export-Timestamp', new Date().toISOString());
+          res.header('X-Cache', 'HIT');
+          
+          return res.send(cachedExport.csvContent);
+        }
+        
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
+    }
 
     // Get subcategories with populated data
     const subcategories = await Subcategory.find({ deletedAt: null })
@@ -4424,23 +5079,41 @@ const exportSubcategories = async (req, res) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: subcategories.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
       res.header('Content-Type', 'text/csv');
       res.header('Content-Disposition', `attachment; filename="subcategories_export_${Date.now()}.csv"`);
       res.header('X-Request-ID', requestId);
       res.header('X-Export-Records', subcategories.length);
       res.header('X-Export-Timestamp', new Date().toISOString());
+      res.header('X-Cache', useCache ? 'MISS' : 'BYPASSED');
       
       return res.send(csvContent);
     }
 
-    res.json({
+    // Default to JSON
+    const exportData = {
       success: true,
       format: 'json',
       count: subcategories.length,
       data: subcategories,
       exportedAt: new Date().toISOString(),
       requestId
-    });
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.json(exportData);
 
   } catch (error) {
     console.error('[EXPORT SUBCATEGORIES ERROR]', error);
@@ -4452,14 +5125,37 @@ const exportSubcategories = async (req, res) => {
     });
   }
 };
+
 const getRecentActivity = async (req, res) => {
   const requestId = uuidv4();
 
   try {
-    const { limit = 15, days = 30 } = req.query;
+    const { limit = 15, days = 30, cache: useCacheParam = 'false' } = req.query;
 
     const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Safety cap
     const cutoffDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000);
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:activity:recent', {
+      limit: limitNum,
+      days,
+      cutoffDate: cutoffDate.toISOString()
+    });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedActivity = await cache.get(cacheKey);
+      if (cachedActivity) {
+        console.log('Cache HIT admin:activity:recent:', cacheKey);
+        return res.json({
+          ...cachedActivity,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
 
     // Base filter for "recent" and not deleted
     const baseFilter = {
@@ -4585,7 +5281,7 @@ const getRecentActivity = async (req, res) => {
     // Apply final limit
     const finalActivities = activities.slice(0, limitNum);
 
-    res.json({
+    const response = {
       success: true,
       data: finalActivities,
       count: finalActivities.length,
@@ -4595,7 +5291,14 @@ const getRecentActivity = async (req, res) => {
       },
       requestId,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
     console.error('[GET RECENT ACTIVITY ERROR]', error);
@@ -4627,9 +5330,9 @@ module.exports = {
   exportGigs,
   getGigStats,
   getSystemHealthHandler, 
-  logAdminAction ,
+  logAdminAction,
   getSubcategoriesDropdown,
-   getSubcategories,
+  getSubcategories,
   getSubcategoryById,
   createSubcategory,
   updateSubcategory,
@@ -4640,6 +5343,13 @@ module.exports = {
   bulkUpdateUsers,
   exportCategories,
   getRecentActivity,
-  checkAdminSession,adminLogout,fakeDelay,getAdminPermissions,
-  getUserById 
+  checkAdminSession,
+  adminLogout,
+  fakeDelay,
+  getAdminPermissions,
+  getUserById,
+  // Cache utilities for testing/debugging
+  generateCacheKey,
+  invalidateAdminCache,
+  invalidateSpecificCache
 };

@@ -1,14 +1,8 @@
 // api/auth.js
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
-
-// Request ID generator
-const generateRequestId = () => {
-  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
 
 // Create axios instance with optimized configuration
 const axiosInstance = axios.create({
@@ -18,17 +12,22 @@ const axiosInstance = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  withCredentials: true, // Critical for cookie-based auth
+  withCredentials: true,
 });
 
-// Request interceptor
+// Request ID generator
+const generateRequestId = () => {
+  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+// Request interceptor for logging and adding request ID
 axiosInstance.interceptors.request.use(
   (config) => {
     const requestId = generateRequestId();
     config.headers['X-Request-ID'] = requestId;
     
     if (DEBUG) {
-      console.group(`📤 Request: ${config.method?.toUpperCase()} ${config.url}`);
+      console.group(`📤 Request: ${config.method?.toUpperCase() || 'GET'} ${config.url}`);
       console.log('Headers:', config.headers);
       console.log('Data:', config.data);
       console.groupEnd();
@@ -42,192 +41,73 @@ axiosInstance.interceptors.request.use(
   }
 );
 
+// Response interceptor for handling errors
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (DEBUG) {
+      console.group(`📥 Response: ${response.config.method?.toUpperCase() || 'GET'} ${response.config.url}`);
+      console.log('Status:', response.status);
+      console.log('Data:', response.data);
+      console.groupEnd();
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     
-    // Handle 401 errors
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      // Don't retry auth endpoints
-      if (originalRequest.url?.includes('/auth/login') || 
-          originalRequest.url?.includes('/auth/register') ||
-          originalRequest.url?.includes('/auth/refresh')) {
-        return Promise.reject(error);
-      }
-
-      originalRequest._retry = true;
+    // Handle specific status codes
+    if (error.response) {
+      const { status, data } = error.response;
       
-      try {
-        // Try to refresh the token
-        await axiosInstance.post('/api/auth/refresh', {}, {
-          withCredentials: true,
-          headers: { 'X-Silent-Refresh': 'true' }
-        });
+      if (DEBUG) {
+        console.group(`❌ Error: ${originalRequest.method?.toUpperCase() || 'GET'} ${originalRequest.url}`);
+        console.log('Status:', status);
+        console.log('Data:', data);
+        console.groupEnd();
+      }
+      
+      // Check if it's a login/register endpoint - don't redirect for auth errors
+      const isAuthEndpoint = originalRequest.url?.includes('/auth/login') || 
+                            originalRequest.url?.includes('/auth/register');
+      
+      if (status === 401 && !isAuthEndpoint && !originalRequest._retry) {
+        // Try to refresh token for expired sessions
+        originalRequest._retry = true;
         
-        // Retry the original request
-        return axiosInstance(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed, clear auth and redirect
-        console.log('❌ Token refresh failed, redirecting to login');
-        
-        // Clear local storage
-        localStorage.removeItem('userInfo');
-        
-        // Redirect to login page if not already there
-        if (!window.location.pathname.includes('/signin') && 
-            !window.location.pathname.includes('/signup')) {
-          toast.error('Session expired. Please login again.');
-          setTimeout(() => {
-            window.location.href = '/signin?session=expired';
-          }, 1000);
+        try {
+          await axiosInstance.post('/api/auth/refresh', {}, {
+            withCredentials: true,
+            headers: { 'X-Silent-Refresh': 'true' }
+          });
+          
+          // Retry original request after refresh
+          return axiosInstance(originalRequest);
+        } catch (refreshError) {
+          // Clear auth data on refresh failure
+          localStorage.removeItem('userInfo');
+          
+          // Only redirect if not already on auth pages
+          if (!window.location.pathname.includes('/signin') && 
+              !window.location.pathname.includes('/signup')) {
+            setTimeout(() => {
+              window.location.href = '/signin?session=expired';
+            }, 1000);
+          }
         }
       }
+    } else if (error.request) {
+      // Network error
+      if (DEBUG) console.error('🌐 Network Error:', error.message);
+    } else {
+      // Request configuration error
+      if (DEBUG) console.error('⚙️ Request Setup Error:', error.message);
     }
     
     return Promise.reject(error);
   }
 );
 
-// Error handlers
-const handle400Error = (data, request) => {
-  const isAuthEndpoint = request.url?.includes('/auth/');
-  let message = 'Invalid request. Please check your input.';
-  
-  if (data.message) {
-    message = isAuthEndpoint 
-      ? formatAuthErrorMessage(data.message)
-      : data.message;
-  }
-  
-  if (data.errors && Array.isArray(data.errors)) {
-    message = data.errors.join(', ');
-  }
-  
-  toast.error(message);
-};
-
-const handle401Error = async (originalRequest, error) => {
-  // Skip refresh for auth endpoints
-  if (originalRequest.url?.includes('/auth/login') || 
-      originalRequest.url?.includes('/auth/register') ||
-      originalRequest.url?.includes('/auth/refresh')) {
-    const message = formatAuthErrorMessage(error.response?.data?.message);
-    toast.error(message || 'Invalid credentials');
-    return;
-  }
-  
-  // Try to refresh token
-  if (!originalRequest._retry) {
-    originalRequest._retry = true;
-    
-    try {
-      await axiosInstance.post('/api/auth/refresh', {}, {
-        withCredentials: true,
-        headers: { 'X-Silent-Refresh': 'true' }
-      });
-      
-      // Retry original request
-      return axiosInstance(originalRequest);
-    } catch (refreshError) {
-      // Clear auth data and redirect
-      localStorage.removeItem('userInfo');
-      
-      // Only redirect if not already on auth pages
-      if (!window.location.pathname.includes('/signin') && 
-          !window.location.pathname.includes('/signup')) {
-        toast.error('Session expired. Please login again.');
-        setTimeout(() => {
-          window.location.href = '/signin';
-        }, 1000);
-      }
-    }
-  }
-};
-
-const handle403Error = (data) => {
-  const message = data.message || 'Access denied. You do not have permission.';
-  
-  if (message.includes('CSRF')) {
-    toast.error('Security token expired. Please reload the page.');
-    setTimeout(() => window.location.reload(), 2000);
-  } else {
-    toast.error(message);
-  }
-};
-
-const handle404Error = (request) => {
-  const message = request.url?.includes('/auth/') 
-    ? 'This feature is not available'
-    : 'Resource not found';
-  toast.error(message);
-};
-
-const handle409Error = (data) => {
-  const message = data.message || 'Conflict occurred.';
-  
-  if (message.includes('already exists') || message.includes('already registered')) {
-    toast.error('An account with this email already exists.');
-  } else {
-    toast.error(message);
-  }
-};
-
-const handle423Error = (data) => {
-  let message = 'Your account has been temporarily locked.';
-  
-  if (data.message) {
-    if (data.message.includes('locked')) {
-      const match = data.message.match(/(\d+)/);
-      const minutes = match ? match[1] : 'a few';
-      message = `Account locked. Try again in ${minutes} minutes.`;
-    }
-  }
-  
-  toast.error(message);
-};
-
-const handle429Error = (data) => {
-  const retryAfter = data.retryAfter || 60;
-  const minutes = Math.ceil(retryAfter / 60);
-  toast.error(`Too many attempts. Please try again in ${minutes} minute${minutes > 1 ? 's' : ''}.`);
-};
-
-const handle500Error = () => {
-  toast.error('Server error. Please try again later.');
-};
-
-const handleGenericError = (error) => {
-  const message = error.response?.data?.message || 'Something went wrong.';
-  toast.error(message);
-};
-
-// Format auth error messages for users
-const formatAuthErrorMessage = (message) => {
-  if (!message) return 'Invalid credentials';
-  
-  const lowerMessage = message.toLowerCase();
-  
-  if (lowerMessage.includes('invalid') || lowerMessage.includes('incorrect')) {
-    return 'Invalid email or password';
-  }
-  
-  if (lowerMessage.includes('not verified')) {
-    return 'Please verify your email first';
-  }
-  
-  if (lowerMessage.includes('suspended') || lowerMessage.includes('banned')) {
-    return 'Account suspended. Please contact support.';
-  }
-  
-  if (lowerMessage.includes('inactive')) {
-    return 'Account is not active';
-  }
-  
-  return message.charAt(0).toUpperCase() + message.slice(1);
-};
-
-// Validation utilities (enhanced)
+// Validation utilities
 export const validatePassword = (password) => {
   if (typeof password !== 'string') {
     return { valid: false, message: 'Password must be a string' };
@@ -270,7 +150,7 @@ export const validateEmail = (email) => {
 
 export const validatePhoneNumber = (phone) => {
   if (!phone) return true;
-  const phoneRegex = /^[\+]?[1-9]{1,4}[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,4}[-\s\.]?[0-9]{1,9}$/;
+  const phoneRegex = /^[\+]?[1-9]{1,4}[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,9}$/;
   return phoneRegex.test(phone.trim());
 };
 
@@ -288,13 +168,21 @@ export const validateName = (name) => {
 export const authAPI = {
   // Authentication
   login: async (userData) => {
-    const response = await axiosInstance.post('/api/auth/login', userData);
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/login', userData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Login failed' };
+    }
   },
   
   register: async (userData) => {
-    const response = await axiosInstance.post('/api/auth/register', userData);
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/register', userData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Registration failed' };
+    }
   },
   
   logout: async () => {
@@ -307,22 +195,34 @@ export const authAPI = {
   
   // Session management
   refreshSession: async () => {
-    const response = await axiosInstance.post('/api/auth/refresh');
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/refresh');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Session refresh failed' };
+    }
   },
   
   checkSessionStatus: async () => {
-    const response = await axiosInstance.get('/api/auth/session/status');
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/api/auth/session/status');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Session check failed' };
+    }
   },
   
   // Profile management
   getProfile: async () => {
-    const response = await axiosInstance.get('/api/auth/profile');
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    try {
+      const response = await axiosInstance.get('/api/auth/profile');
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch profile' };
     }
-    return response.data;
   },
   
   updateProfile: async (userData) => {
@@ -333,101 +233,147 @@ export const authAPI = {
       )
     );
     
-    const response = await axiosInstance.put('/api/auth/profile', cleanData);
-    
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    try {
+      const response = await axiosInstance.put('/api/auth/profile', cleanData);
+      
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to update profile' };
     }
-    
-    return response.data;
   },
   
   changePassword: async (currentPassword, newPassword) => {
-    const response = await axiosInstance.post('/api/auth/change-password', {
-      currentPassword,
-      newPassword
-    });
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/change-password', {
+        currentPassword,
+        newPassword
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to change password' };
+    }
   },
   
   // Email verification
   verifyEmail: async (token) => {
-    const response = await axiosInstance.get(`/api/auth/verify-email/${token}`);
-    return response.data;
+    try {
+      const response = await axiosInstance.get(`/api/auth/verify-email/${token}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Email verification failed' };
+    }
   },
   
   resendVerification: async (email) => {
-    const response = await axiosInstance.post('/api/auth/resend-verification', { email });
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/resend-verification', { email });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to resend verification' };
+    }
   },
   
   checkVerificationStatus: async (email) => {
-    const response = await axiosInstance.get(`/api/auth/check-verification?email=${email}`);
-    return response.data;
+    try {
+      const response = await axiosInstance.get(`/api/auth/check-verification?email=${encodeURIComponent(email)}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to check verification status' };
+    }
   },
   
   // Password recovery
   forgotPassword: async (email) => {
-    const response = await axiosInstance.post('/api/auth/forgot-password', { email });
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/forgot-password', { email });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to send reset email' };
+    }
   },
   
   resetPassword: async (token, newPassword) => {
-    const response = await axiosInstance.post('/api/auth/reset-password', {
-      token,
-      newPassword
-    });
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/reset-password', {
+        token,
+        newPassword
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to reset password' };
+    }
   },
   
   // Account management
   deactivateAccount: async (password, reason = '') => {
-    const response = await axiosInstance.post('/api/auth/deactivate', {
-      password,
-      reason
-    });
-    return response.data;
+    try {
+      const response = await axiosInstance.post('/api/auth/deactivate', {
+        password,
+        reason
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to deactivate account' };
+    }
   },
   
   reactivateAccount: async (email, password) => {
-    const response = await axiosInstance.post('/api/auth/reactivate', {
-      email,
-      password
-    });
-    
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    try {
+      const response = await axiosInstance.post('/api/auth/reactivate', {
+        email,
+        password
+      });
+      
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to reactivate account' };
     }
-    
-    return response.data;
   },
   
   // Sessions management
   getActiveSessions: async () => {
-    const response = await axiosInstance.get('/api/auth/sessions');
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/api/auth/sessions');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch sessions' };
+    }
   },
   
   terminateSession: async (sessionId) => {
-    const response = await axiosInstance.delete(`/api/auth/sessions/${sessionId}`);
-    return response.data;
+    try {
+      const response = await axiosInstance.delete(`/api/auth/sessions/${sessionId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to terminate session' };
+    }
   },
   
   terminateAllOtherSessions: async () => {
-    const response = await axiosInstance.delete('/api/auth/sessions/others');
-    return response.data;
+    try {
+      const response = await axiosInstance.delete('/api/auth/sessions/others');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to terminate sessions' };
+    }
   },
   
   // Public profiles
   getPublicProfile: async (userId) => {
-    const response = await axiosInstance.get(`/api/auth/profile/${userId}/public`);
-    return response.data;
-  },
-  
-  // OAuth
-  googleAuth: () => {
-    const backendUrl = API_URL;
-    window.location.href = `${backendUrl}/api/auth/google`;
+    try {
+      const response = await axiosInstance.get(`/api/auth/profile/${userId}/public`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch profile' };
+    }
   },
   
   // Check authentication
@@ -520,68 +466,100 @@ export const authAPI = {
   }
 };
 
-// User management API (for admin/advanced features)
+// User management API
 export const userAPI = {
   uploadProfilePicture: async (file) => {
     const formData = new FormData();
     formData.append('picture', file);
     
-    const response = await axiosInstance.post('/api/users/upload-picture', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    try {
+      const response = await axiosInstance.post('/api/users/upload-picture', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to upload picture' };
     }
-    
-    return response.data;
   },
   
   updateUserSettings: async (settings) => {
-    const response = await axiosInstance.put('/api/users/settings', settings);
-    
-    if (response.data.success && response.data.user) {
-      localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+    try {
+      const response = await axiosInstance.put('/api/users/settings', settings);
+      
+      if (response.data.success && response.data.user) {
+        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      }
+      
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to update settings' };
     }
-    
-    return response.data;
   },
   
   // Admin endpoints
   getAllUsers: async (params = {}) => {
-    const response = await axiosInstance.get('/api/admin/users', { params });
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/api/admin/users', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch users' };
+    }
   },
   
   getUserById: async (userId) => {
-    const response = await axiosInstance.get(`/api/admin/users/${userId}`);
-    return response.data;
+    try {
+      const response = await axiosInstance.get(`/api/admin/users/${userId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch user' };
+    }
   },
   
   updateUserStatus: async (userId, status) => {
-    const response = await axiosInstance.patch(`/api/admin/users/${userId}/status`, { status });
-    return response.data;
+    try {
+      const response = await axiosInstance.patch(`/api/admin/users/${userId}/status`, { status });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to update user status' };
+    }
   }
 };
 
 // Public API functions
 export const publicAPI = {
   healthCheck: async () => {
-    const response = await axiosInstance.get('/health');
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/health');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Health check failed' };
+    }
   },
   
   getStats: async () => {
-    const response = await axiosInstance.get('/api/public/stats');
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/api/public/stats');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Failed to fetch stats' };
+    }
   },
   
   searchServices: async (query = '', filters = {}) => {
-    const response = await axiosInstance.get('/api/public/services/search', {
-      params: { q: query, ...filters }
-    });
-    return response.data;
+    try {
+      const response = await axiosInstance.get('/api/public/services/search', {
+        params: { q: query, ...filters }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { success: false, message: 'Search failed' };
+    }
   }
 };

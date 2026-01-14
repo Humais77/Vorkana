@@ -38,88 +38,104 @@ class SessionMiddleware {
 
     return baseConfig;
   };
-
-  authenticate = async (req, res, next) => {
+ authenticate = async (req, res, next) => {
   try {
-    // Get tokens from cookies
     let token = req.cookies?.token;
     const refreshToken = req.cookies?.refreshToken;
 
-    // If no token but have refreshToken, try to refresh
-    if (!token && refreshToken) {
-      console.log('🔄 No access token, attempting refresh...');
-      try {
-        const refreshed = await this.sessionService.refreshSession(refreshToken);
-        if (refreshed) {
-          token = refreshed.token;
-          // Set new cookies
-          this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
-        }
-      } catch (refreshError) {
-        console.log('❌ Refresh failed:', refreshError.message);
-        this.clearAuthCookies(res);
-        return this.handleUnauthorized(res, 'Session expired. Please login again.');
-      }
-    }
-
-    if (!token) {
-      return this.handleUnauthorized(res, 'Authentication required');
+    // If no token at all
+    if (!token && !refreshToken) {
+      return this.handleUnauthorized(res, 'Please login to continue');
     }
 
     // Validate session
-    const sessionResult = await this.sessionService.validateSession(token, refreshToken);
+    let sessionResult;
     
-    if (!sessionResult.valid) {
+    if (token) {
+      sessionResult = await SessionService.validateSession(token, refreshToken);
+    } else if (refreshToken) {
+      // Try to refresh if only refresh token exists
+      try {
+        const refreshed = await SessionService.refreshSession(refreshToken);
+        if (refreshed) {
+          token = refreshed.token;
+          this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
+          sessionResult = {
+            valid: true,
+            userId: refreshed.userId,
+            sessionId: refreshed.sessionId,
+            token: refreshed.token,
+            refreshToken: refreshed.refreshToken
+          };
+        }
+      } catch (refreshError) {
+        this.clearAuthCookies(res);
+        return this.handleUnauthorized(res, 'Session expired');
+      }
+    }
+
+    // Check if session is valid
+    if (!sessionResult || !sessionResult.valid) {
+      // Check if it's an admin timeout
+      const isAdminTimeout = sessionResult?.error?.includes('Admin session timeout');
+      
+      if (isAdminTimeout) {
+        console.log('[AUTH] Admin session timeout detected');
+        this.clearAuthCookies(res);
+        
+        // If it's an admin route, return admin-specific error
+        const isAdminRoute = req.path.startsWith('/admin');
+        if (isAdminRoute) {
+          return res.status(401).json({
+            success: false,
+            message: 'Admin session expired after 1 hour of inactivity',
+            code: 'ADMIN_SESSION_TIMEOUT',
+            requiresLogin: true,
+            redirectUrl: '/signin'
+          });
+        }
+      }
+      
       this.clearAuthCookies(res);
-      return this.handleUnauthorized(res, 'Session expired or invalid. Please login again.');
+      return this.handleUnauthorized(res, 'Session expired. Please login again.');
     }
 
     // Get user
-    const user = await User.findById(sessionResult.userId)
-      .select('+isActive +emailVerified')
-      .lean(false);
+    const user = await User.findById(sessionResult.userId);
     
     if (!user || !user.isActive) {
-      console.log('❌ User not found or inactive');
-      if (sessionResult.sessionId) {
-        try {
-          await this.sessionService.logoutSession(
-            sessionResult.sessionId,
-            sessionResult.userId,
-            'system'
-          );
-        } catch (logoutError) {
-          console.error('Error logging out inactive user:', logoutError);
-        }
-      }
+      await SessionService.logoutSession(sessionResult.sessionId, sessionResult.userId, 'inactive');
       this.clearAuthCookies(res);
       return this.handleUnauthorized(res, 'Account not found or deactivated');
     }
 
-    // Update user's last seen
-    await User.findByIdAndUpdate(
-      user._id, 
-      { lastSeenAt: new Date() },
-      { new: true }
-    );
+    // Special check for admin routes
+    const isAdminRoute = req.path.startsWith('/admin');
+    if (isAdminRoute && user.role !== 'admin') {
+      console.log(`[AUTH] Non-admin trying to access admin route: ${user.email}`);
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.',
+        code: 'ADMIN_ACCESS_REQUIRED'
+      });
+    }
+
+    // Update last seen
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
 
     // Set request data
     req.user = user;
     req.token = sessionResult.token;
     req.sessionId = sessionResult.sessionId;
-    req.refreshToken = sessionResult.refreshToken;
+    req.isAdmin = user.role === 'admin';
 
-    // Update cookies if token was refreshed
-    if (sessionResult.refreshed) {
-      console.log('🔄 Token was auto-refreshed, updating cookies');
-      this.setAuthCookies(res, sessionResult.token, sessionResult.refreshToken);
-    }
+    console.log(`✅ Authenticated: ${user.email}, Role: ${user.role}, Admin Route: ${isAdminRoute}, Is admin from token: ${sessionResult.isAdmin}`);
 
-    console.log('✅ Authentication successful for user:', user.email);
     next();
 
   } catch (error) {
-    console.error('🔥 Authentication error:', error);
+    console.error('Authentication error:', error);
     this.clearAuthCookies(res);
     return this.handleUnauthorized(res, 'Authentication failed');
   }
@@ -131,7 +147,7 @@ class SessionMiddleware {
       message,
       code: 'UNAUTHORIZED',
       requiresLogin: true,
-      redirectUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
+      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/signin`
     });
   };
 
@@ -288,8 +304,27 @@ handleRefresh = async (req, res) => {
       });
     }
   };
- setAuthCookies = (res, token, refreshToken) => {
-    const cookieConfig = this.getCookieConfig();
+ clearAuthCookies = (res) => {
+    const clearOpts = {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
+    };
+
+    res.clearCookie('token', clearOpts);
+    res.clearCookie('refreshToken', clearOpts);
+    res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
+  };
+
+  // Set cookies helper
+  setAuthCookies = (res, token, refreshToken) => {
+    const cookieConfig = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
 
     // Access token (1 hour)
     res.cookie('token', token, {
@@ -297,37 +332,17 @@ handleRefresh = async (req, res) => {
       maxAge: 60 * 60 * 1000
     });
 
-    // Refresh token (30 days)
+    // Refresh token (7 days)
     res.cookie('refreshToken', refreshToken, {
       ...cookieConfig,
-      maxAge: 30 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
-    // Non-httpOnly cookie for client-side checking
+    // Client-side auth flag
     res.cookie('isAuthenticated', 'true', {
       ...cookieConfig,
       httpOnly: false,
       maxAge: 60 * 60 * 1000
-    });
-  };
-
-  clearAuthCookies = (res) => {
-    const clearOpts = {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-    };
-
-    // Clear all auth cookies
-    res.clearCookie('token', clearOpts);
-    res.clearCookie('refreshToken', clearOpts);
-    res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
-    
-    // Clear any legacy cookies
-    const legacyCookies = ['auth_status', 'access_token', 'refresh_token'];
-    legacyCookies.forEach(cookie => {
-      res.clearCookie(cookie, clearOpts);
     });
   };
 
@@ -358,14 +373,13 @@ handleRefresh = async (req, res) => {
     const originalEnd = res.end;
     
     res.end = async function(...args) {
-      if (req.sessionId && res.statusCode < 400) {
+      if (req.sessionId) {
         try {
           await SessionService.updateActivity(req.sessionId);
         } catch (error) {
-          console.error('Failed to update activity:', error);
+          console.error('Activity update failed:', error);
         }
       }
-      
       originalEnd.apply(this, args);
     };
     

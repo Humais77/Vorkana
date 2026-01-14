@@ -4,7 +4,7 @@ import { authAPI, userAPI } from '../api/auth';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 // Export validation functions
 export { 
@@ -58,15 +58,12 @@ export const validateDateOfBirth = (date) => {
   }
 };
 
-// Custom error handler for auth operations
+// Custom error handler
 const handleAuthError = (error, defaultMessage = 'Operation failed') => {
-  console.error('Auth error:', error);
-  
-  // Extract meaningful error message
   let errorMessage = defaultMessage;
   let errorCode = null;
   
-  if (error.response) {
+  if (error?.response?.data) {
     const backendData = error.response.data;
     errorMessage = backendData.message || errorMessage;
     errorCode = backendData.code;
@@ -85,8 +82,10 @@ const handleAuthError = (error, defaultMessage = 'Operation failed') => {
       case 'EMAIL_EXISTS':
         errorMessage = 'Email already exists. Please use a different email.';
         break;
+      default:
+        break;
     }
-  } else if (error.request) {
+  } else if (error?.request) {
     errorMessage = 'Network error. Please check your connection.';
   }
   
@@ -109,21 +108,15 @@ export const useLogin = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
-        // Update store
         setAuth(data.user);
-        
-        // Invalidate and refetch all user queries
         queryClient.invalidateQueries(['userProfile']);
         queryClient.invalidateQueries(['checkAuth']);
         
-        // Show success message
         const message = data.message || 'Welcome back!';
         toast.success(message);
         
-        // Navigate to dashboard
         setTimeout(() => navigate('/dashboard'), 500);
       } else {
-        // Show backend error
         const errorMessage = data.message || 'Login failed';
         setError(errorMessage);
         toast.error(errorMessage);
@@ -191,12 +184,11 @@ export const useLogout = () => {
     },
     onSuccess: () => {
       logout();
-      queryClient.clear(); // Clear all queries
+      queryClient.clear();
       toast.success('Logged out successfully');
       navigate('/');
     },
     onError: (error) => {
-      // Still logout locally even if API call fails
       logout();
       queryClient.clear();
       console.error('Logout error:', error);
@@ -220,7 +212,7 @@ export const useCheckSessionStatus = () => {
   return useQuery({
     queryKey: ['sessionStatus'],
     queryFn: authAPI.checkSessionStatus,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
     retry: 1,
     refetchOnWindowFocus: true,
   });
@@ -237,7 +229,6 @@ export const useGetProfile = (options = {}) => {
         const response = await authAPI.getProfile();
         
         if (response.success && response.user) {
-          // Add cache busting for profile picture
           if (response.user.picture) {
             const pictureUrl = new URL(response.user.picture, window.location.origin);
             pictureUrl.searchParams.set('t', Date.now());
@@ -256,8 +247,8 @@ export const useGetProfile = (options = {}) => {
     enabled: options.enabled !== false,
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-    staleTime: 60000, // 1 minute
-    gcTime: 300000, // 5 minutes
+    staleTime: 60000,
+    gcTime: 300000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });
@@ -341,7 +332,6 @@ export const useVerifyEmail = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
-        // Update user in store if token is provided
         if (data.user) {
           setUser(data.user);
         }
@@ -397,7 +387,7 @@ export const useCheckVerificationStatus = (email) => {
     queryKey: ['verificationStatus', email],
     queryFn: () => authAPI.checkVerificationStatus(email),
     enabled: !!email,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   });
 };
 
@@ -474,7 +464,6 @@ export const useDeactivateAccount = () => {
       if (data.success) {
         toast.success(data.message || 'Account deactivated successfully');
         
-        // Show reactivation deadline
         if (data.reactivationDeadline) {
           const deadline = new Date(data.reactivationDeadline);
           const daysLeft = Math.ceil((deadline - new Date()) / (1000 * 60 * 60 * 24));
@@ -484,7 +473,6 @@ export const useDeactivateAccount = () => {
           });
         }
         
-        // Logout and redirect
         setTimeout(() => {
           logout();
           navigate('/');
@@ -537,7 +525,7 @@ export const useGetActiveSessions = () => {
   return useQuery({
     queryKey: ['activeSessions'],
     queryFn: authAPI.getActiveSessions,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
     retry: 1,
   });
 };
@@ -580,7 +568,7 @@ export const useGetPublicProfile = (userId) => {
     queryKey: ['publicProfile', userId],
     queryFn: () => authAPI.getPublicProfile(userId),
     enabled: !!userId,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
     retry: 1,
   });
 };
@@ -605,7 +593,7 @@ export const useCheckAuth = () => {
         return { success: false, isAuthenticated: false };
       }
     },
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
     retry: 1,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
@@ -619,7 +607,7 @@ export const useProfileForm = (initialData = {}) => {
   const [touched, setTouched] = useState({});
   const updateProfile = useUpdateProfile();
   
-  const validateField = (name, value) => {
+  const validateField = useCallback((name, value) => {
     const newErrors = { ...errors };
     
     switch (name) {
@@ -663,23 +651,22 @@ export const useProfileForm = (initialData = {}) => {
     
     setErrors(newErrors);
     return !newErrors[name];
-  };
+  }, [errors]);
   
-  const handleChange = (name, value) => {
+  const handleChange = useCallback((name, value) => {
     setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Validate on change if field has been touched
     if (touched[name]) {
       validateField(name, value);
     }
-  };
+  }, [touched, validateField]);
   
-  const handleBlur = (name) => {
+  const handleBlur = useCallback((name) => {
     setTouched(prev => ({ ...prev, [name]: true }));
     validateField(name, formData[name]);
-  };
+  }, [validateField, formData]);
   
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const newErrors = {};
     const fieldsToValidate = Object.keys(formData);
     
@@ -693,15 +680,14 @@ export const useProfileForm = (initialData = {}) => {
     setTouched(Object.fromEntries(fieldsToValidate.map(f => [f, true])));
     
     return Object.keys(newErrors).length === 0;
-  };
+  }, [formData, validateField, errors]);
   
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!validateForm()) {
       toast.error('Please fix validation errors');
       return null;
     }
     
-    // Remove empty strings and undefined values
     const cleanData = Object.fromEntries(
       Object.entries(formData).filter(([_, v]) => 
         v !== undefined && v !== null && v !== ''
@@ -715,13 +701,13 @@ export const useProfileForm = (initialData = {}) => {
       console.error('Form submission error:', error);
       throw error;
     }
-  };
+  }, [validateForm, formData, updateProfile]);
   
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData(initialData);
     setErrors({});
     setTouched({});
-  };
+  }, [initialData]);
   
   return {
     formData,
@@ -751,24 +737,19 @@ export const usePasswordStrength = (password) => {
     let score = 0;
     const length = password.length;
     
-    // Length check
     if (length >= 8) score += 20;
     if (length >= 12) score += 10;
     if (length >= 16) score += 10;
     
-    // Character variety
     if (/[A-Z]/.test(password)) score += 20;
     if (/[a-z]/.test(password)) score += 20;
     if (/\d/.test(password)) score += 20;
     if (/[@$!%*?&]/.test(password)) score += 20;
     
-    // Avoid repeated characters
     if (!/(.)\1{2,}/.test(password)) score += 10;
     
-    // Normalize score to 0-100
     score = Math.min(Math.max(score, 0), 100);
     
-    // Determine label and color
     let label, color;
     if (score >= 80) {
       label = 'Strong';
