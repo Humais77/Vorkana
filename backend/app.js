@@ -43,6 +43,7 @@ const adminRoutes = require('./routes/admin.route.js');
 const searchRoute = require("./routes/search.routes.js");
 const popularServicesRoute = require('./routes/popularService.route.js');
 const subscribeRoute = require('./routes/subscribe.route.js');
+const contactRoutes = require('./routes/contact.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
@@ -264,6 +265,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/search', searchRoute);
 app.use('/api/popular-services', popularServicesRoute);
 app.use('/api/subscribe-email', subscribeRoute);
+app.use('/api/contact', contactRoutes); 
 // Add this route to your Express server
 app.get('/api/proxy/image', async (req, res) => {
   try {
