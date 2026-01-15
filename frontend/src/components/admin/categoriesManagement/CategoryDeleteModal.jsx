@@ -1,5 +1,5 @@
-// components/admin/modals/CategoryDeleteModal.jsx
-import React, { useState } from 'react';
+// CategoryDeleteModal.jsx - UPDATED with error handling
+import React, { useState, useEffect } from 'react';
 import { 
   FiX, 
   FiTrash2, 
@@ -8,8 +8,11 @@ import {
   FiDatabase, 
   FiFolder,
   FiHardDrive,
-  FiArchive
+  FiArchive,
+  FiLoader,
+  FiAlertCircle
 } from 'react-icons/fi';
+import { toast } from 'react-hot-toast';
 
 const CategoryDeleteModal = ({ 
   category, 
@@ -17,16 +20,55 @@ const CategoryDeleteModal = ({
   onClose, 
   onDelete, 
   permanent = false,
-  loading = false 
+  loading = false,
+  error = null
 }) => {
   const [deleteType, setDeleteType] = useState(permanent ? 'permanent' : 'soft');
   const [forceDelete, setForceDelete] = useState(false);
-  const [error, setError] = useState('');
+  const [backendError, setBackendError] = useState('');
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setDeleteType(permanent ? 'permanent' : 'soft');
+      setForceDelete(false);
+      setBackendError('');
+    }
+  }, [isOpen, permanent]);
+
+  // Handle backend errors
+  useEffect(() => {
+    if (error) {
+      const errorData = error.response?.data;
+      if (errorData) {
+        let errorMessage = errorData.message || 'Failed to delete category';
+        
+        if (errorData.code === 'DEPENDENCIES_EXIST') {
+          errorMessage = 'Cannot delete category with active dependencies. Use force delete or remove dependencies first.';
+          if (errorData.details) {
+            const { subcategories, services, gigs } = errorData.details;
+            errorMessage += ` (Subcategories: ${subcategories}, Services: ${services}, Gigs: ${gigs})`;
+          }
+        }
+        
+        if (errorData.code === 'ALREADY_DELETED') {
+          errorMessage = 'This category is already deleted.';
+        }
+        
+        if (errorData.code === 'CATEGORY_NOT_FOUND') {
+          errorMessage = 'Category not found. It may have been already deleted.';
+        }
+        
+        setBackendError(errorMessage);
+        toast.error(errorMessage);
+      }
+    }
+  }, [error]);
 
   if (!isOpen || !category) return null;
 
   const getDependencyStats = () => {
-    // In a real app, you would fetch these from your API
+    // Use actual data from category
     return {
       services: category.servicesCount || 0,
       gigs: category.gigsCount || 0,
@@ -38,10 +80,11 @@ const CategoryDeleteModal = ({
   const hasDependencies = Object.values(dependencies).some(count => count > 0);
 
   const handleDelete = async () => {
-    setError('');
+    setBackendError('');
     
     if (!forceDelete && hasDependencies && deleteType === 'permanent') {
-      setError('Category has dependencies. Check "Force delete" to proceed.');
+      setBackendError('Category has dependencies. Check "Force delete" to proceed.');
+      toast.error('Category has dependencies. Check "Force delete" to proceed.');
       return;
     }
 
@@ -53,16 +96,15 @@ const CategoryDeleteModal = ({
       };
       
       await onDelete(deleteOptions);
-      handleClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete category');
+      // Error handled in useEffect
     }
   };
 
   const handleClose = () => {
     setDeleteType(permanent ? 'permanent' : 'soft');
     setForceDelete(false);
-    setError('');
+    setBackendError('');
     onClose();
   };
 
@@ -80,6 +122,20 @@ const CategoryDeleteModal = ({
               <p className="text-sm text-gray-500">{category.name}</p>
             </div>
           </div>
+
+          {/* Backend Error */}
+          {backendError && (
+            <div className="mb-6">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <FiAlertCircle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm text-red-800 font-medium">{backendError}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Warning Message */}
           <div className="mb-6">
@@ -111,11 +167,12 @@ const CategoryDeleteModal = ({
               <button
                 type="button"
                 onClick={() => setDeleteType('soft')}
+                disabled={loading}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'soft'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } disabled:opacity-50`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -137,11 +194,12 @@ const CategoryDeleteModal = ({
               <button
                 type="button"
                 onClick={() => setDeleteType('permanent')}
+                disabled={loading}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'permanent'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } disabled:opacity-50`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -228,6 +286,7 @@ const CategoryDeleteModal = ({
                             checked={forceDelete}
                             onChange={(e) => setForceDelete(e.target.checked)}
                             className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                            disabled={loading}
                           />
                           <span className="ml-2 text-sm font-medium text-amber-800">
                             Force delete despite dependencies
@@ -246,15 +305,6 @@ const CategoryDeleteModal = ({
                     )}
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-700">{error}</p>
               </div>
             </div>
           )}
@@ -281,7 +331,7 @@ const CategoryDeleteModal = ({
             >
               {loading ? (
                 <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <FiLoader className="h-4 w-4 animate-spin" />
                   <span>Deleting...</span>
                 </>
               ) : (

@@ -1,10 +1,13 @@
+// CategoriesManagement.jsx - UPDATED with loading states
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
   useCreateCategory, 
   useDeleteCategory,
-  useBulkCategoryOperations, useExportCategories, useCategoryStats
+  useBulkCategoryOperations, 
+  useExportCategories, 
+  useCategoryStats
 } from '../../../hooks/useAdminDashboard';
 import { toast } from 'react-hot-toast';
 import {
@@ -29,7 +32,8 @@ import {
   FiTrendingUp,
   FiFolderPlus,
   FiX,
-  FiClock
+  FiClock,
+  FiLoader
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
@@ -49,7 +53,9 @@ const CategoryTableRow = memo(({
   onDelete,
   onDuplicate,
   onOpenActionMenu,
-  actionMenuId
+  actionMenuId,
+  isUpdatingId,
+  isDeletingId
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
@@ -63,6 +69,9 @@ const CategoryTableRow = memo(({
       : 'bg-gray-100 text-gray-800 border border-gray-200';
   };
 
+  const isUpdating = isUpdatingId === category._id;
+  const isDeleting = isDeletingId === category._id;
+
   return (
     <React.Fragment>
       <tr className="hover:bg-gray-50">
@@ -71,14 +80,16 @@ const CategoryTableRow = memo(({
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(category._id)}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            disabled={isDeleting}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
           />
         </td>
         <td className="px-4 py-4">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => onToggleExpand(category._id)}
-              className="p-1 hover:bg-gray-100 rounded"
+              onClick={() => !isDeleting && onToggleExpand(category._id)}
+              disabled={isDeleting}
+              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
             >
               {isExpanded ? (
                 <FiChevronUp className="h-4 w-4 text-gray-500" />
@@ -87,7 +98,15 @@ const CategoryTableRow = memo(({
               )}
             </button>
             <div>
-              <div className="text-sm font-medium text-gray-900">{category.name}</div>
+              <div className="flex items-center space-x-2">
+                {isUpdating && (
+                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+                )}
+                <div className="text-sm font-medium text-gray-900">{category.name}</div>
+                {isDeleting && (
+                  <span className="text-xs text-red-500">Deleting...</span>
+                )}
+              </div>
               <div className="text-xs text-gray-500 mt-1">
                 Slug: {category.slug || 'N/A'}
               </div>
@@ -117,28 +136,35 @@ const CategoryTableRow = memo(({
         <td className="px-4 py-4">
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => onView(category)}
-              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+              onClick={() => !isDeleting && onView(category)}
+              disabled={isDeleting}
+              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
             </button>
             <button
-              onClick={() => onEdit(category)}
-              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+              onClick={() => !isDeleting && onEdit(category)}
+              disabled={isDeleting || isUpdating}
+              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
               title="Edit Category"
             >
-              <FiEdit2 className="h-4 w-4" />
+              {isUpdating ? (
+                <FiLoader className="h-4 w-4 animate-spin text-blue-500" />
+              ) : (
+                <FiEdit2 className="h-4 w-4" />
+              )}
             </button>
             <div className="relative">
               <button
-                onClick={() => onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
-                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+                onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
+                disabled={isDeleting}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
               
-              {actionMenuId === category._id && (
+              {actionMenuId === category._id && !isDeleting && (
                 <>
                   <div 
                     className="fixed inset-0 z-10"
@@ -161,10 +187,15 @@ const CategoryTableRow = memo(({
                           onDelete(category);
                           onOpenActionMenu(null);
                         }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        disabled={isDeleting}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        <FiTrash2 className="h-4 w-4 mr-2" />
-                        Delete
+                        {isDeleting ? (
+                          <FiLoader className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FiTrash2 className="h-4 w-4 mr-2" />
+                        )}
+                        {isDeleting ? 'Deleting...' : 'Delete'}
                       </button>
                     </div>
                   </div>
@@ -234,6 +265,8 @@ const CategoriesManagement = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedCategories, setExpandedCategories] = useState([]);
+  const [updatingCategoryId, setUpdatingCategoryId] = useState(null);
+  const [deletingCategoryId, setDeletingCategoryId] = useState(null);
 
   const limit = 20;
   
@@ -255,7 +288,8 @@ const CategoriesManagement = () => {
   const deleteCategoryMutation = useDeleteCategory();
   const bulkOperationsMutation = useBulkCategoryOperations();
   const exportCategoriesMutation = useExportCategories();
-const { data: categoryStatsData } = useCategoryStats();
+  
+  const { data: categoryStatsData } = useCategoryStats();
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -292,7 +326,14 @@ const { data: categoryStatsData } = useCategoryStats();
       refetch();
       toast.success(`${selectedCategories.length} categories ${action}ed successfully`);
     } catch (error) {
-      toast.error('Failed to perform bulk action');
+      const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
+      const validationErrors = error.response?.data?.errors;
+      
+      if (validationErrors) {
+        validationErrors.forEach(err => toast.error(err));
+      } else {
+        toast.error(errorMessage);
+      }
     }
   }, [selectedCategories, bulkOperationsMutation, refetch]);
 
@@ -311,6 +352,7 @@ const { data: categoryStatsData } = useCategoryStats();
     if (!selectedCategory) return;
     
     try {
+      setUpdatingCategoryId(selectedCategory._id);
       await updateCategoryMutation.mutateAsync({
         id: selectedCategory._id,
         data: categoryData
@@ -318,25 +360,28 @@ const { data: categoryStatsData } = useCategoryStats();
       toast.success('Category updated successfully');
       setShowEditModal(false);
       setSelectedCategory(null);
+      setUpdatingCategoryId(null);
       refetch();
     } catch (error) {
+      setUpdatingCategoryId(null);
       throw error;
     }
   }, [selectedCategory, updateCategoryMutation, refetch]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
     try {
-      await deleteCategoryMutation.mutateAsync({
-        id: deleteOptions.id,
-        options: {
-          permanent: deleteOptions.permanent || false,
-          force: deleteOptions.force || false
-        }
-      });
+      setDeletingCategoryId(deleteOptions.id);
+      await deleteCategoryMutation.mutateAsync(deleteOptions);
+      toast.success('Category deleted successfully');
+      setShowDeleteModal(false);
+      setSelectedCategory(null);
+      setDeletingCategoryId(null);
+      refetch();
     } catch (error) {
+      setDeletingCategoryId(null);
       throw error;
     }
-  }, [deleteCategoryMutation]);
+  }, [deleteCategoryMutation, refetch]);
 
   const handleDuplicate = useCallback(async (category) => {
     try {
@@ -357,28 +402,37 @@ const { data: categoryStatsData } = useCategoryStats();
       toast.success('Category duplicated successfully');
       refetch();
     } catch (error) {
-      toast.error('Failed to duplicate category');
+      const errorMessage = error.response?.data?.message || 'Failed to duplicate category';
+      const validationErrors = error.response?.data?.errors;
+      
+      if (validationErrors) {
+        validationErrors.forEach(err => toast.error(err));
+      } else {
+        toast.error(errorMessage);
+      }
     }
   }, [createCategoryMutation, refetch]);
-const exportCategories = useCallback(async () => {
-  try {
-    const response = await exportCategoriesMutation.mutateAsync('csv');
-    
-    const blob = new Blob([response.data], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `categories_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    
-    toast.success('Categories exported successfully');
-  } catch (error) {
-    toast.error('Failed to export categories');
-  }
-}, [exportCategoriesMutation]);
+
+  const exportCategories = useCallback(async () => {
+    try {
+      const response = await exportCategoriesMutation.mutateAsync('csv');
+      
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `categories_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success('Categories exported successfully');
+    } catch (error) {
+      toast.error('Failed to export categories');
+    }
+  }, [exportCategoriesMutation]);
+
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
       setSelectedCategories(categories.map(cat => cat._id));
@@ -414,9 +468,9 @@ const exportCategories = useCallback(async () => {
   }, []);
 
   const handleDelete = useCallback((category) => {
-  setSelectedCategory(category);
-  setShowDeleteModal(true);
-}, []);
+    setSelectedCategory(category);
+    setShowDeleteModal(true);
+  }, []);
 
   const refreshData = useCallback(() => {
     refetch();
@@ -445,6 +499,13 @@ const exportCategories = useCallback(async () => {
     };
   }, [categories, pagination.total]);
 
+  // Loading states
+  const isCreating = createCategoryMutation.isLoading;
+  const isUpdating = updateCategoryMutation.isLoading;
+  const isDeleting = deleteCategoryMutation.isLoading;
+  const isBulkOperating = bulkOperationsMutation.isLoading;
+  const isExporting = exportCategoriesMutation.isLoading;
+
   if (isLoading && !categories.length) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -463,15 +524,25 @@ const exportCategories = useCallback(async () => {
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-  onClick={exportCategories}
-  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
->
-  <FiDownload className="h-4 w-4" />
-  <span>Export</span>
-</button>
+            onClick={exportCategories}
+            disabled={isExporting}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
+          >
+            {isExporting ? (
+              <>
+                <FiLoader className="h-4 w-4 animate-spin" />
+                <span>Exporting...</span>
+              </>
+            ) : (
+              <>
+                <FiDownload className="h-4 w-4" />
+                <span>Export</span>
+              </>
+            )}
+          </button>
           <button
             onClick={refreshData}
-            disabled={isRefetching}
+            disabled={isRefetching || isBulkOperating}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
@@ -479,10 +550,20 @@ const exportCategories = useCallback(async () => {
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            disabled={isCreating}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
           >
-            <FiPlus className="h-4 w-4" />
-            <span>Add Category</span>
+            {isCreating ? (
+              <>
+                <FiLoader className="h-4 w-4 animate-spin" />
+                <span>Creating...</span>
+              </>
+            ) : (
+              <>
+                <FiPlus className="h-4 w-4" />
+                <span>Add Category</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -518,7 +599,6 @@ const exportCategories = useCallback(async () => {
             <FiStar className="h-8 w-8 text-purple-600" />
           </div>
         </div>
-
         
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
@@ -547,30 +627,59 @@ const exportCategories = useCallback(async () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiCheckCircle className="h-4 w-4" />
-                <span>Activate</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCheckCircle className="h-4 w-4" />
+                    <span>Activate</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('deactivate')}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiXCircle className="h-4 w-4" />
-                <span>Deactivate</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiXCircle className="h-4 w-4" />
+                    <span>Deactivate</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiTrash2 className="h-4 w-4" />
-                <span>Delete</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 className="h-4 w-4" />
+                    <span>Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
-      
 
       {/* Search and Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -603,7 +712,8 @@ const exportCategories = useCallback(async () => {
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+            disabled={isBulkOperating}
+            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
             <span className="hidden md:inline">Filters</span>
@@ -679,7 +789,8 @@ const exportCategories = useCallback(async () => {
                     type="checkbox"
                     checked={selectedCategories.length === categories.length && categories.length > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={isBulkOperating}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -711,6 +822,8 @@ const exportCategories = useCallback(async () => {
                   onDuplicate={handleDuplicate}
                   onOpenActionMenu={setActionMenu}
                   actionMenuId={actionMenu}
+                  isUpdatingId={updatingCategoryId}
+                  isDeletingId={deletingCategoryId}
                 />
               ))}
             </tbody>
@@ -738,7 +851,7 @@ const exportCategories = useCallback(async () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  disabled={page === 1 || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronLeft className="h-4 w-4" />
@@ -761,11 +874,12 @@ const exportCategories = useCallback(async () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
+                        disabled={isBulkOperating}
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
                             : 'border border-gray-300 hover:bg-gray-50'
-                        }`}
+                        } disabled:opacity-50`}
                       >
                         {pageNum}
                       </button>
@@ -777,7 +891,8 @@ const exportCategories = useCallback(async () => {
                       <span className="px-2 text-gray-400">...</span>
                       <button
                         onClick={() => setPage(pagination.totalPages)}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
+                        disabled={isBulkOperating}
+                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
                       >
                         {pagination.totalPages}
                       </button>
@@ -787,7 +902,7 @@ const exportCategories = useCallback(async () => {
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages}
+                  disabled={page === pagination.totalPages || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronRight className="h-4 w-4" />
@@ -805,6 +920,7 @@ const exportCategories = useCallback(async () => {
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateCategory}
           loading={createCategoryMutation.isLoading}
+          error={createCategoryMutation.error}
         />
       )}
       
@@ -818,6 +934,7 @@ const exportCategories = useCallback(async () => {
           }}
           onSubmit={handleUpdateCategory}
           loading={updateCategoryMutation.isLoading}
+          error={updateCategoryMutation.error}
         />
       )}
       
@@ -844,6 +961,8 @@ const exportCategories = useCallback(async () => {
             setSelectedCategory(null);
           }}
           onDelete={handleDeleteCategory}
+          loading={deleteCategoryMutation.isLoading}
+          error={deleteCategoryMutation.error}
         />
       )}
     </div>
