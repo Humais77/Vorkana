@@ -195,9 +195,9 @@ const GigCreate = () => {
   // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
-  const topContainerRef = useRef(null); // Add ref for scroll to top
+  const topContainerRef = useRef(null);
 
-  // TanStack Query hooks - declared BEFORE useEffect that uses them
+  // TanStack Query hooks
   const {
     data: categoriesData,
     isLoading: categoryLoading,
@@ -234,7 +234,7 @@ const GigCreate = () => {
     form: errors.form || gigError?.message || authError || categoryError?.message
   }), [errors, gigError, authError, categoryError]);
 
-  // Get category name for display - memoized
+  // Get category name for display
   const getCategoryName = useCallback(() => {
     if (!formData.projectCategory) return "";
     const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
@@ -244,7 +244,7 @@ const GigCreate = () => {
     return category?.name || "";
   }, [formData.projectCategory, storedCategories, categoriesData]);
 
-  // Get subcategory name for display - memoized
+  // Get subcategory name for display
   const getSubcategoryName = useCallback(() => {
     if (!formData.subcategory) return "";
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
@@ -303,7 +303,6 @@ const GigCreate = () => {
 
         toast.success(createdGigData.message || "Gig created successfully!");
 
-        // Scroll to top when success is shown
         setTimeout(() => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
           if (topContainerRef.current) {
@@ -327,7 +326,6 @@ const GigCreate = () => {
       setSuccess(true);
       setActiveStep(5);
 
-      // Scroll to top when success is shown
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         if (topContainerRef.current) {
@@ -349,7 +347,6 @@ const GigCreate = () => {
       clearLastCreatedGig();
       resetGigMutation();
       
-      // Clean up object URLs
       uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
       if (thumbnailFile) {
         URL.revokeObjectURL(thumbnailFile.preview);
@@ -381,25 +378,21 @@ const GigCreate = () => {
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     
-    // Update form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
     
-    // Update completed status based on validation
     const isValid = validateField(name, value);
     setCompletedFields(prev => ({
       ...prev,
       [name]: isValid
     }));
     
-    // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
     
-    // If category changes, trigger subcategories fetch
     if (name === 'projectCategory' && value) {
       refetchSubcategories();
     }
@@ -442,13 +435,11 @@ const GigCreate = () => {
     
     const newFiles = Array.from(files);
     
-    // Validate file count
     if (uploadedImages.length + newFiles.length > 10) {
       toast.error('Maximum 10 images allowed');
       return;
     }
     
-    // Validate each file
     for (const file of newFiles) {
       if (file.size > 5 * 1024 * 1024) {
         toast.error(`${file.name} exceeds 5MB limit`);
@@ -532,7 +523,7 @@ const GigCreate = () => {
   }, []);
 
   const addSkill = useCallback(() => {
-    if (skillsInput.trim() && formData.skillsRequired.length < 10) {
+    if (skillsInput.trim()) {
       const skill = skillsInput.trim().substring(0, 50);
       setFormData(prev => ({
         ...prev,
@@ -540,7 +531,7 @@ const GigCreate = () => {
       }));
       setSkillsInput("");
     }
-  }, [skillsInput, formData.skillsRequired]);
+  }, [skillsInput]);
 
   const removeSkill = useCallback((index) => {
     setFormData(prev => ({
@@ -550,7 +541,7 @@ const GigCreate = () => {
   }, []);
 
   const addDeliverable = useCallback(() => {
-    if (deliverableInput.trim() && formData.deliverables.length < 10) {
+    if (deliverableInput.trim()) {
       const deliverable = deliverableInput.trim().substring(0, 200);
       setFormData(prev => ({
         ...prev,
@@ -558,7 +549,7 @@ const GigCreate = () => {
       }));
       setDeliverableInput("");
     }
-  }, [deliverableInput, formData.deliverables]);
+  }, [deliverableInput]);
 
   const removeDeliverable = useCallback((index) => {
     setFormData(prev => ({
@@ -1170,7 +1161,7 @@ const GigCreate = () => {
                     <form onSubmit={handleEmailLogin} className="space-y-4">
                       <div>
                         <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1">
-                          Email Address
+                          Email Address *
                         </label>
                         <input
                           type="email"
@@ -1185,7 +1176,7 @@ const GigCreate = () => {
                       </div>
                       <div>
                         <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-1">
-                          Password
+                          Password *
                         </label>
                         <input
                           type="password"
@@ -1214,7 +1205,7 @@ const GigCreate = () => {
                     <form onSubmit={handleRegister} className="space-y-4">
                       <div>
                         <label htmlFor="register-name" className="block text-sm font-medium text-gray-700 mb-1">
-                          Full Name
+                          Full Name *
                         </label>
                         <input
                           type="text"
@@ -1229,7 +1220,7 @@ const GigCreate = () => {
                       </div>
                       <div>
                         <label htmlFor="register-email" className="block text-sm font-medium text-gray-700 mb-1">
-                          Email Address
+                          Email Address *
                         </label>
                         <input
                           type="email"
@@ -1244,7 +1235,7 @@ const GigCreate = () => {
                       </div>
                       <div>
                         <label htmlFor="register-password" className="block text-sm font-medium text-gray-700 mb-1">
-                          Password
+                          Password *
                         </label>
                         <input
                           type="password"
@@ -1259,7 +1250,7 @@ const GigCreate = () => {
                       </div>
                       <div>
                         <label htmlFor="register-confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
-                          Confirm Password
+                          Confirm Password *
                         </label>
                         <input
                           type="password"
@@ -1660,7 +1651,7 @@ const GigCreate = () => {
 
                 <div>
                   <label htmlFor="currency" className="text-sm font-semibold text-gray-700 mb-2">
-                    Currency
+                    Currency *
                   </label>
                   <select
                     id="currency"
@@ -1669,6 +1660,7 @@ const GigCreate = () => {
                     onChange={handleInputChange}
                     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white transition-all text-sm md:text-base"
                     disabled={gigLoading}
+                    required
                   >
                     {CURRENCY_OPTIONS.map(currency => (
                       <option key={currency.value} value={currency.value}>
@@ -1737,6 +1729,7 @@ const GigCreate = () => {
                         onChange={handleInputChange}
                         className="text-sm border border-gray-300 rounded-lg p-2"
                         disabled={gigLoading}
+                        required
                       >
                         {DELIVERY_TIME_UNITS.map(unit => (
                           <option key={unit.value} value={unit.value}>
@@ -1755,7 +1748,7 @@ const GigCreate = () => {
                   <fieldset>
                     <legend className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                       <MessageSquare className="mr-2" size={14} />
-                      Communication Preference
+                      Communication Preference *
                     </legend>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3" role="radiogroup">
                       {COMMUNICATION_OPTIONS.map((method) => (
@@ -1768,6 +1761,7 @@ const GigCreate = () => {
                             onChange={handleInputChange}
                             className="sr-only disabled:cursor-not-allowed"
                             disabled={gigLoading}
+                            required
                           />
                           <div className={`
                             w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center
@@ -1788,7 +1782,7 @@ const GigCreate = () => {
                 <div>
                   <fieldset>
                     <legend className="text-sm font-semibold text-gray-700 mb-2">
-                      Urgency Level
+                      Urgency Level *
                     </legend>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3" role="radiogroup">
                       {URGENCY_LEVELS.map((level) => (
@@ -1801,6 +1795,7 @@ const GigCreate = () => {
                             onChange={handleInputChange}
                             className="sr-only disabled:cursor-not-allowed"
                             disabled={gigLoading}
+                            required
                           />
                           <div className={`
                             w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center capitalize
@@ -1825,7 +1820,7 @@ const GigCreate = () => {
                   <fieldset>
                     <legend className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                       <Shield className="mr-2" size={14} />
-                      Gig Visibility
+                      Gig Visibility *
                     </legend>
                     <div className="grid grid-cols-3 gap-2 md:gap-3" role="radiogroup">
                       {VISIBILITY_OPTIONS.map((visibility) => (
@@ -1838,6 +1833,7 @@ const GigCreate = () => {
                             onChange={handleInputChange}
                             className="sr-only disabled:cursor-not-allowed"
                             disabled={gigLoading}
+                            required
                           />
                           <div className={`
                             w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm text-center
@@ -1899,7 +1895,7 @@ const GigCreate = () => {
 
                 <div>
                   <label htmlFor="skillsInput" className="text-sm font-semibold text-gray-700 mb-2">
-                    Required Skills (Optional)
+                    Required Skills *
                   </label>
                   <div className="flex flex-col md:flex-row gap-2 mb-3">
                     <input
@@ -1939,14 +1935,14 @@ const GigCreate = () => {
                     </div>
                   )}
                   <p className="mt-2 text-xs text-gray-500">
-                    Add relevant skills to attract the right freelancers (max 10)
+                    Add relevant skills to attract the right freelancers (at least 1 skill required)
                   </p>
                 </div>
 
                 <div>
                   <label htmlFor="deliverableInput" className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
                     <Package className="mr-2" size={14} />
-                    Expected Deliverables (Optional)
+                    Expected Deliverables *
                   </label>
                   <div className="flex flex-col md:flex-row gap-2 mb-3">
                     <input
@@ -1986,7 +1982,7 @@ const GigCreate = () => {
                     </div>
                   )}
                   <p className="mt-2 text-xs text-gray-500">
-                    List specific items you expect to receive from the freelancer (max 10)
+                    List specific items you expect to receive from the freelancer (at least 1 deliverable required)
                   </p>
                 </div>
 
@@ -1999,7 +1995,7 @@ const GigCreate = () => {
 
                   <div className="space-y-8">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Project Images</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Project Images *</h3>
                       <div className="space-y-4">
                         <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors">
                           <input
@@ -2010,6 +2006,7 @@ const GigCreate = () => {
                             onChange={(e) => handleImageUpload(e.target.files)}
                             className="hidden"
                             disabled={uploadingImages || gigLoading}
+                            required
                           />
                           <label htmlFor="image-upload" className="cursor-pointer">
                             <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -2020,7 +2017,7 @@ const GigCreate = () => {
                               Drag & drop images or click to browse
                             </p>
                             <p className="text-sm text-gray-500">
-                              Supports JPEG, PNG, WebP, GIF • Max 5MB each • Up to 10 images
+                              Supports JPEG, PNG, WebP, GIF • Max 5MB each • At least 1 image required
                             </p>
                           </label>
                         </div>
@@ -2071,11 +2068,10 @@ const GigCreate = () => {
                     </div>
 
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Thumbnail *</h3>
                       <div className="space-y-4">
                         <p className="text-gray-600 text-sm">
-                          The thumbnail is the main image displayed in gig listings. 
-                          It should be eye-catching and representative of your project.
+                          The thumbnail is required and will be displayed as the main image in gig listings.
                         </p>
 
                         {thumbnailFile ? (
@@ -2114,11 +2110,12 @@ const GigCreate = () => {
                               onChange={(e) => handleThumbnailUpload(e.target.files[0])}
                               className="hidden"
                               disabled={uploadingThumbnail || gigLoading}
+                              required
                             />
                             <label htmlFor="thumbnail-upload" className="cursor-pointer">
                               <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                               <h4 className="text-lg font-medium text-gray-900 mb-1">
-                                Upload Thumbnail
+                                Upload Thumbnail (Required)
                               </h4>
                               <p className="text-gray-600 text-sm mb-2">
                                 Recommended: 800×600 pixels, max 5MB
@@ -2247,7 +2244,6 @@ const GigCreate = () => {
       canonical={`${window.location.origin}/create-gig`}
       structuredData={GIG_CREATION_STRUCTURED_DATA}
     >
-      {/* Add ref to the top container for scroll to top */}
       <div ref={topContainerRef} className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
         {renderTopInfo}
 

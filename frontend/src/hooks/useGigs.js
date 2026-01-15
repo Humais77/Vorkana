@@ -297,95 +297,68 @@ export const useUpdateGig = () => {
       // Snapshot the previous value
       const previousGig = queryClient.getQueryData(gigKeys.detail(id));
       
-      // Extract updates from data
-      let updates = {};
-      
-      if (data instanceof FormData) {
-        // Try to extract data from FormData for optimistic update
-        try {
-          // Extract title if available
-          const title = data.get('title');
-          if (title) updates.title = title;
-          
-          // Extract description if available
-          const description = data.get('description');
-          if (description) updates.description = description;
-          
-          // Extract budget if available
-          const budget = data.get('budget');
-          if (budget) updates.budget = parseFloat(budget);
-          
-          // Extract currency if available
-          const currency = data.get('currency');
-          if (currency) updates.currency = currency;
-          
-          // Add timestamp
-          updates.updatedAt = new Date().toISOString();
-        } catch (e) {
-          // Fallback basic update
-          updates.updatedAt = new Date().toISOString();
-        }
-      } else {
-        updates = {
-          ...data,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      
-      // Optimistically update the gig
-      queryClient.setQueryData(gigKeys.detail(id), (old) => {
-        if (!old) return old;
-        
-        const oldGig = old.data || old.gig || old;
-        
-        return {
-          ...old,
-          gig: { ...oldGig, ...updates },
-          data: { ...oldGig, ...updates },
-        };
-      });
-      
+      // Return context for rollback
       return { previousGig };
     },
     onSuccess: (response, variables) => {
-      // Get the updated gig from response
-      const updatedGig = response.data || response.gig || response;
+      // CRITICAL FIX: Get the UPDATED gig from response
+      const updatedGig = response.data || response;
       
-      // Update cache with server response
+      console.log('Update success - updated gig:', updatedGig);
+      
+      // DIRECTLY SET the cache with fresh server data
       queryClient.setQueryData(gigKeys.detail(variables.id), {
-        gig: updatedGig,
-        data: updatedGig,
         success: true,
-        message: response.message,
+        data: updatedGig,
+        gig: updatedGig,
+        message: response.message
       });
       
-      // Also update in the list queries
+      // Force immediate cache update for lists
       queryClient.setQueriesData(
         { queryKey: gigKeys.lists() },
         (old) => {
           if (!old) return old;
           
+          // Update in data array
           if (old.data && Array.isArray(old.data)) {
             return {
               ...old,
               data: old.data.map(gig => 
                 gig._id === variables.id ? { ...gig, ...updatedGig } : gig
-              ),
+              )
             };
           }
           
+          // Update in gigs array  
           if (old.gigs && Array.isArray(old.gigs)) {
             return {
               ...old,
               gigs: old.gigs.map(gig => 
                 gig._id === variables.id ? { ...gig, ...updatedGig } : gig
-              ),
+              )
             };
           }
           
           return old;
         }
       );
+      
+      // IMPORTANT: Invalidate ALL queries that might have this gig
+      queryClient.invalidateQueries({ 
+        queryKey: gigKeys.detail(variables.id),
+        refetchType: 'none' // Don't refetch, we already set the data
+      });
+      
+      queryClient.invalidateQueries({ 
+        queryKey: gigKeys.lists(),
+        refetchType: 'none'
+      });
+      
+      queryClient.invalidateQueries({ 
+        queryKey: gigKeys.myGigs(),
+        refetchType: 'none'
+      });
       
       toast.success(response.message || 'Gig updated successfully!');
     },
@@ -395,8 +368,21 @@ export const useUpdateGig = () => {
         queryClient.setQueryData(gigKeys.detail(variables.id), context.previousGig);
       }
       
+      if (err.code === 'VERSION_CONFLICT') {
+        queryClient.invalidateQueries({ 
+          queryKey: gigKeys.detail(variables.id) 
+        });
+      }
+      
       toast.error(err.message || 'Failed to update gig');
     },
+    // Add onSettled to ensure fresh data
+    onSettled: (data, error, variables) => {
+      // Force a fresh fetch to ensure data consistency
+      queryClient.invalidateQueries({ 
+        queryKey: gigKeys.detail(variables.id) 
+      });
+    }
   });
 };
 

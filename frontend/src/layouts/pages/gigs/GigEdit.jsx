@@ -34,7 +34,7 @@ import {
   Edit,
   Briefcase
 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { useGigToast } from '../../../hooks/useGigToast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from "../../../store/useAuthStore";
 import { useGigStore } from "../../../store/useGigStore";
@@ -121,10 +121,11 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp
 const GigEdit = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
+  
   // Zustand stores
   const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
-  const { setGigDetails, clearGigDetails } = useGigStore();
+  const { setGigDetails } = useGigStore();
   const { categories: storedCategories, setCategories } = useCategoryStore();
 
   // TanStack Query hooks
@@ -133,13 +134,12 @@ const queryClient = useQueryClient();
     isLoading: gigLoading,
     error: gigError,
     refetch: refetchGig
-  } = useGig(id);
+  } = useGig(id, { skipCache: true });
 
   const {
     data: categoriesData,
     isLoading: categoryLoading,
-    error: categoryError,
-    refetch: refetchCategories
+    error: categoryError
   } = useParentCategories();
 
   const {
@@ -149,7 +149,16 @@ const queryClient = useQueryClient();
     isSuccess: updateSuccess,
     data: updatedGigData
   } = useUpdateGig();
- const [shouldRedirect, setShouldRedirect] = useState({
+  
+  const {
+    showGigLoading,
+    showGigUpdateSuccess,
+    showGigError,
+    showGigInfo,
+    dismissGigToast
+  } = useGigToast();
+  
+  const [shouldRedirect, setShouldRedirect] = useState({
     toGigPage: false,
     toDashboard: false
   });
@@ -182,7 +191,6 @@ const queryClient = useQueryClient();
   const [thumbnailFile, setThumbnailFile] = useState(null);
   const [existingThumbnail, setExistingThumbnail] = useState(null);
   const [errors, setErrors] = useState({});
-  const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skillsInput, setSkillsInput] = useState("");
   const [deliverableInput, setDeliverableInput] = useState("");
@@ -191,11 +199,13 @@ const queryClient = useQueryClient();
   const [versionConflict, setVersionConflict] = useState(false);
   const [currentVersion, setCurrentVersion] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+
   // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
+  const hasPopulatedRef = useRef(false);
+  const hasProcessedSuccessRef = useRef(false);
   
   // Memoized values
   const subcategoriesData = useSubcategoriesByCategory(formData.projectCategory, {
@@ -207,20 +217,30 @@ const queryClient = useQueryClient();
     return subcategoriesData.data?.subcategories || subcategoriesData.data || [];
   }, [subcategoriesData.data]);
 
-  const allErrors = useMemo(() => ({
-    ...errors,
-    form: errors.form || gigError?.message || authError || categoryError?.message || updateError?.message
-  }), [errors, gigError, authError, categoryError, updateError]);
+  const allErrors = useMemo(() => {
+  const errorMessages = { ...errors };
+  
+  // Convert all error messages to strings
+  if (gigError?.message) errorMessages.form = gigError.message.toString();
+  if (authError) errorMessages.form = authError.toString();
+  if (categoryError?.message) errorMessages.form = categoryError.message.toString();
+  if (updateError?.message) errorMessages.form = updateError.message.toString();
+  
+  return errorMessages;
+}, [errors, gigError, authError, categoryError, updateError]);
 
- 
-
-useEffect(() => {
-    if (gigData?.gig || gigData) {
+  // Populate form with gig data
+  useEffect(() => {
+    if ((gigData?.gig || gigData) && !hasPopulatedRef.current) {
+      hasPopulatedRef.current = true;
+      
       const gig = gigData.gig || gigData;
+      
+      console.log('Populating form with gig data:', gig.title);
       
       // Check if user is owner
       if (currentUser && gig.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
-        toast.error('You can only edit your own gigs');
+        showGigError('You can only edit your own gigs');
         setShouldRedirect(prev => ({ ...prev, toGigPage: true }));
         return;
       }
@@ -228,7 +248,7 @@ useEffect(() => {
       // Set current version
       setCurrentVersion(gig.version || 1);
 
-      // Populate form
+      // Populate form with LATEST data
       setFormData({
         title: gig.title || "",
         fullName: gig.fullName || "",
@@ -262,7 +282,8 @@ useEffect(() => {
       // Set gig details in store
       setGigDetails(gig);
     }
-  }, [gigData, currentUser, id, setGigDetails]);
+  }, [gigData, currentUser, id, setGigDetails, showGigError]);
+
   // Sync categories from query to store
   useEffect(() => {
     if (categoriesData && categoriesData.length > 0) {
@@ -270,64 +291,95 @@ useEffect(() => {
     }
   }, [categoriesData, setCategories]);
 
-  // Handle successful update
+  // Handle update success
   useEffect(() => {
-    if (updateSuccess && updatedGigData) {
-      setSuccess(true);
-      toast.success(updatedGigData.message || "Gig updated successfully!");
+    if (updateSuccess && updatedGigData && isSubmitting && !hasProcessedSuccessRef.current) {
+      console.log('Update successful, processing...');
+      hasProcessedSuccessRef.current = true;
+      
+      setIsSubmitting(false);
+      
+      showGigUpdateSuccess(
+      id, 
+      'Gig Updated Successfully',
+      'Your changes are being processed and will be visible across the platform shortly.'
+    );
+      
+      // Update local state with fresh data
+      const updatedGig = updatedGigData.data || updatedGigData.gig || updatedGigData;
+      if (updatedGig) {
+        setCurrentVersion(updatedGig.version || (currentVersion + 1));
+        
+        if (updatedGig.images && Array.isArray(updatedGig.images)) {
+          setExistingImages(updatedGig.images);
+        }
+        
+        if (updatedGig.thumbnail) {
+          setExistingThumbnail(updatedGig.thumbnail);
+        }
+        
+        // Clear uploaded images
+        setUploadedImages([]);
+        setThumbnailFile(null);
+      }
+      
+      // Invalidate query to refresh data
+      queryClient.invalidateQueries({ queryKey: ['gig', id] });
+    }
+    
+    // Reset success flag when submission starts
+    return () => {
+      if (isSubmitting) {
+        hasProcessedSuccessRef.current = false;
+      }
+    };
+  }, [updateSuccess, updatedGigData, id, showGigUpdateSuccess, currentVersion, isSubmitting, queryClient]);
 
-      // Refresh gig data
+  // Handle update errors
+  useEffect(() => {
+  if (updateError) {
+    setIsSubmitting(false);
+    hasProcessedSuccessRef.current = false;
+    
+    const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
+    const isAdmin = currentUser?.role === 'admin';
+    
+    if (updateError.code === 'VERSION_CONFLICT' && !isAdmin && !isOwner) {
+      setVersionConflict(true);
+      showGigError('This gig was modified by another user. Please refresh and try again.');
+    } else if (updateError.code === 'VERSION_CONFLICT') {
+      showGigInfo('Gig was updated elsewhere. Refreshing data...');
       refetchGig();
-
-      // Navigate back after delay
-      setTimeout(() => {
-        navigate(`/gig/${id}`);
-      }, 2000);
+    } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
+      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
+      showGigError('Subcategory is required');
+    } else {
+      // Ensure this is a string, not an object
+      const errorMessage = updateError.message ? updateError.message.toString() : 'Failed to update gig';
+      showGigError(errorMessage);
     }
-  }, [updateSuccess, updatedGigData, navigate, id, refetchGig]);
+  }
+}, [updateError, currentUser, gigData, refetchGig, showGigError, showGigInfo]);
 
-  useEffect(() => {
-    if (updateError) {
-      // Check if user is owner or admin
-      const isOwner = currentUser && gigData?.gig?.createdBy?._id === currentUser._id;
-      const isAdmin = currentUser?.role === 'admin';
-      
-      if (updateError.code === 'VERSION_CONFLICT' && (isOwner || isAdmin)) {
-        // Owners and admins should not see version conflict errors
-        // Just refresh the data silently
-        refetchGig();
-        return;
-      }
-      
-      if (updateError.code === 'VERSION_CONFLICT') {
-        setVersionConflict(true);
-        toast.error('This gig was modified by another user. Please refresh and try again.');
-      } else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
-        setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-        toast.error('Subcategory is required');
-      } else {
-        toast.error(updateError.message || 'Failed to update gig');
-      }
-    }
-  }, [updateError, currentUser, gigData, refetchGig]);
-
-  // Cleanup
+  // Cleanup URL objects
   useEffect(() => {
     return () => {
-      clearGigDetails();
       uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
       if (thumbnailFile) {
         URL.revokeObjectURL(thumbnailFile.preview);
       }
     };
-  }, [clearGigDetails, uploadedImages, thumbnailFile]);
+  }, [uploadedImages, thumbnailFile]);
 
-useEffect(() => {
+  // Check profile completeness
+  useEffect(() => {
     if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
-      toast.error('Please complete your profile before editing gigs');
+      showGigError('Please complete your profile before editing gigs');
       setShouldRedirect(prev => ({ ...prev, toDashboard: true }));
     }
-  }, [currentUser]);
+  }, [currentUser, showGigError]);
+
+  // Handle redirects
   useEffect(() => {
     if (shouldRedirect.toGigPage) {
       navigate(`/gig/${id}`);
@@ -336,22 +388,29 @@ useEffect(() => {
       navigate('/dashboard');
     }
   }, [shouldRedirect, id, navigate]);
-  // Get category name for display
-  const getCategoryName = useCallback(() => {
-    if (!formData.projectCategory) return "";
-    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-      ? storedCategories
-      : (Array.isArray(categoriesData) ? categoriesData : []);
-    const category = categoryList.find(c => c._id === formData.projectCategory);
-    return category?.name || "";
-  }, [formData.projectCategory, storedCategories, categoriesData]);
 
-  // Get subcategory name for display
-  const getSubcategoryName = useCallback(() => {
-    if (!formData.subcategory) return "";
-    const subcategory = subcategories.find(s => s._id === formData.subcategory);
-    return subcategory?.name || "";
-  }, [formData.subcategory, subcategories]);
+const getCategoryName = useCallback(() => {
+  if (!formData.projectCategory) return "";
+  
+  const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+    ? storedCategories
+    : (Array.isArray(categoriesData) ? categoriesData : []);
+  
+  const category = categoryList.find(c => c._id === formData.projectCategory);
+  
+  // Return only the name string, not the entire object
+  return category?.name || formData.projectCategory || "";
+}, [formData.projectCategory, storedCategories, categoriesData]);
+
+// Update the getSubcategoryName function:
+const getSubcategoryName = useCallback(() => {
+  if (!formData.subcategory) return "";
+  
+  const subcategory = subcategories.find(s => s._id === formData.subcategory);
+  
+  // Return only the name string, not the entire object
+  return subcategory?.name || formData.subcategory || "";
+}, [formData.subcategory, subcategories]);
 
   // Memoized handlers
   const handleInputChange = useCallback((e) => {
@@ -375,37 +434,40 @@ useEffect(() => {
     }
   }, [errors, formData.projectCategory, subcategoriesData]);
 
-  const validateField = useCallback((fieldName, value) => {
-    switch (fieldName) {
-      case 'fullName':
-        return value.trim().length >= 3;
-      case 'oauthEmail':
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(value);
-      case 'country':
-        return value.trim().length >= 2;
-      case 'phone':
-        return value.trim().length >= 5;
-      case 'title':
-        return value.trim().length >= 5;
-      case 'projectCategory':
-        return !!value;
-      case 'subcategory':
-        if (subcategories.length > 0) {
-          return !!value;
-        }
-        return true;
-      case 'budget':
-        const budgetNum = parseFloat(value);
-        return !isNaN(budgetNum) && budgetNum >= 5 && budgetNum <= 100000;
-      case 'description':
-        return value.trim().length >= 20;
-      case 'timeline':
-        return value.trim().length >= 3;
-      default:
-        return !!value;
+  const validateForm = useCallback(() => {
+    const newErrors = {};
+
+    // Basic validation
+    if (!formData.title || formData.title.trim().length < 5) {
+      newErrors.title = "Title must be at least 5 characters.";
     }
-  }, [subcategories]);
+
+    if (!formData.projectCategory) {
+      newErrors.projectCategory = "Please select a project category.";
+    }
+
+    if (subcategories.length > 0 && !formData.subcategory) {
+      newErrors.subcategory = "Please select a subcategory.";
+    }
+
+    const budgetNum = parseFloat(formData.budget);
+    if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
+      newErrors.budget = "Budget must be between $5 and $100,000.";
+    }
+
+    if (!formData.description || formData.description.trim().length < 20) {
+      newErrors.description = "Description must be at least 20 characters.";
+    } else if (formData.description.trim().length > 5000) {
+      newErrors.description = "Description cannot exceed 5000 characters.";
+    }
+
+    if (!formData.timeline || formData.timeline.trim().length < 3) {
+      newErrors.timeline = "Timeline is required.";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [formData, subcategories]);
 
   const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
@@ -415,19 +477,19 @@ useEffect(() => {
     // Validate total image count
     const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
     if (totalImages > 10) {
-      toast.error('Maximum 10 images allowed');
+      showGigError('Maximum 10 images allowed');
       return;
     }
     
     // Validate each file
     for (const file of newFiles) {
       if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} exceeds 5MB limit`);
+        showGigError(`${file.name} exceeds 5MB limit`);
         return;
       }
       
       if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-        toast.error(`${file.name} is not a valid image type`);
+        showGigError(`${file.name} is not a valid image type`);
         return;
       }
     }
@@ -445,25 +507,25 @@ useEffect(() => {
       }));
       
       setUploadedImages(prev => [...prev, ...previewImages]);
-      toast.success(`${newFiles.length} image(s) added successfully`);
+      showGigInfo(`${newFiles.length} image(s) added successfully`);
     } catch (error) {
       console.error('Error uploading images:', error);
-      toast.error('Failed to add images');
+      showGigError('Failed to add images');
     } finally {
       setUploadingImages(false);
     }
-  }, [uploadingImages, existingImages, uploadedImages]);
+  }, [uploadingImages, existingImages, uploadedImages, showGigError, showGigInfo]);
 
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
     
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Thumbnail exceeds 5MB limit');
+      showGigError('Thumbnail exceeds 5MB limit');
       return;
     }
     
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      toast.error('Invalid image type for thumbnail');
+      showGigError('Invalid image type for thumbnail');
       return;
     }
     
@@ -476,8 +538,8 @@ useEffect(() => {
       isNew: true
     });
     
-    toast.success('Thumbnail selected');
-  }, [uploadingThumbnail]);
+    showGigInfo('Thumbnail selected');
+  }, [uploadingThumbnail, showGigError, showGigInfo]);
 
   const removeExistingImage = useCallback((index) => {
     const imageToRemove = existingImages[index];
@@ -488,26 +550,26 @@ useEffect(() => {
       setExistingThumbnail(null);
     }
     
-    toast.success('Image removed');
-  }, [existingImages, existingThumbnail]);
+    showGigInfo('Image removed');
+  }, [existingImages, existingThumbnail, showGigInfo]);
 
   const removeUploadedImage = useCallback((index) => {
     const image = uploadedImages[index];
     URL.revokeObjectURL(image.preview);
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
-    toast.success('Image removed');
-  }, [uploadedImages]);
+    showGigInfo('Image removed');
+  }, [uploadedImages, showGigInfo]);
 
   const removeThumbnail = useCallback(() => {
     if (thumbnailFile) {
       URL.revokeObjectURL(thumbnailFile.preview);
       setThumbnailFile(null);
-      toast.success('Thumbnail removed');
+      showGigInfo('Thumbnail removed');
     } else if (existingThumbnail) {
       setExistingThumbnail(null);
-      toast.success('Thumbnail removed');
+      showGigInfo('Thumbnail removed');
     }
-  }, [thumbnailFile, existingThumbnail]);
+  }, [thumbnailFile, existingThumbnail, showGigInfo]);
 
   const addSkill = useCallback(() => {
     if (skillsInput.trim() && formData.skillsRequired.length < 10) {
@@ -553,116 +615,69 @@ useEffect(() => {
     }
   }, [addSkill, addDeliverable]);
 
-  const validateForm = useCallback(() => {
-    const newErrors = {};
-
-    // Basic validation
-    if (!formData.title || formData.title.trim().length < 5) {
-      newErrors.title = "Title must be at least 5 characters.";
-    }
-
-    if (!formData.projectCategory) {
-      newErrors.projectCategory = "Please select a project category.";
-    }
-
-    if (subcategories.length > 0 && !formData.subcategory) {
-      newErrors.subcategory = "Please select a subcategory.";
-    }
-
-    const budgetNum = parseFloat(formData.budget);
-    if (!formData.budget || isNaN(budgetNum) || budgetNum < 5 || budgetNum > 100000) {
-      newErrors.budget = "Budget must be between $5 and $100,000.";
-    }
-
-    if (!formData.description || formData.description.trim().length < 20) {
-      newErrors.description = "Description must be at least 20 characters.";
-    } else if (formData.description.trim().length > 5000) {
-      newErrors.description = "Description cannot exceed 5000 characters.";
-    }
-
-    if (!formData.timeline || formData.timeline.trim().length < 3) {
-      newErrors.timeline = "Timeline is required.";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [formData, subcategories]);
-
   const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
-  setVersionConflict(false);
-
-  if (!isAuthenticated) {
-    toast.error("Please sign in to update gigs");
-    setIsSubmitting(false);
-    return;
-  }
-
-  if (!validateForm()) {
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    const formDataObj = new FormData();
-
-    // Append fields with better structure for optimistic updates
-    const updateData = {
-      title: formData.title.trim(),
-      fullName: formData.fullName.trim(),
-      oauthEmail: formData.oauthEmail.trim().toLowerCase(),
-      country: formData.country.trim(),
-      phone: formData.phone.trim(),
-      projectCategory: formData.projectCategory,
-      subcategory: formData.subcategory || '',
-      description: formData.description.trim(),
-      budget: parseFloat(formData.budget),
-      currency: formData.currency,
-      timeline: formData.timeline.trim(),
-      timelineUnit: formData.timelineUnit,
-      communication: formData.communication,
-      urgency: formData.urgency,
-      visibility: formData.visibility,
-      skillsRequired: formData.skillsRequired || [],
-      deliverables: formData.deliverables || [],
-    };
-
-    // Append all data for optimistic update
-    Object.entries(updateData).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
-          value.forEach((item, index) => {
-            formDataObj.append(`${key}[${index}]`, item);
-          });
-        } else {
-          formDataObj.append(key, value);
-        }
-      }
-    });
-
-    // Append thumbnail
-    if (thumbnailFile) {
-      formDataObj.append('thumbnail', thumbnailFile.file);
+    e.preventDefault();
+    
+    // Prevent double submission
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    setVersionConflict(false);
+    
+    if (!isAuthenticated) {
+      showGigError("Please sign in to update gigs");
+      setIsSubmitting(false);
+      return;
     }
 
-    // Append new images
-    uploadedImages.forEach((image) => {
-      formDataObj.append('images', image.file);
-    });
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
 
-    // Call update mutation
-    updateGig({
-      id: id,
-      data: formDataObj,
-    });
+    // Show loading toast
+    showGigLoading('Updating gig...');
 
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    toast.error(error.message || "Failed to update gig");
-    setIsSubmitting(false);
-  }
-}, [formData, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig]);
+    try {
+      const formDataObj = new FormData();
+
+      // Append all fields except version
+      Object.entries(formData).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && key !== 'version') {
+          if (Array.isArray(value)) {
+            value.forEach((item, index) => {
+              formDataObj.append(`${key}[${index}]`, item);
+            });
+          } else if (typeof value === 'object' && value !== null) {
+            formDataObj.append(key, JSON.stringify(value));
+          } else {
+            formDataObj.append(key, value.toString());
+          }
+        }
+      });
+
+      // Append thumbnail
+      if (thumbnailFile) {
+        formDataObj.append('thumbnail', thumbnailFile.file);
+      }
+
+      // Append new images
+      uploadedImages.forEach((image) => {
+        formDataObj.append('images', image.file);
+      });
+
+      // Call update mutation
+      updateGig({
+        id: id,
+        data: formDataObj,
+      });
+
+    } catch (error) {
+      console.error('Error in handleSubmit:', error);
+      showGigError(error.message || "Failed to prepare update data");
+      setIsSubmitting(false);
+    }
+  }, [formData, isAuthenticated, id, thumbnailFile, uploadedImages, validateForm, updateGig, showGigLoading, showGigError, isSubmitting]);
 
   const handleRefreshGig = useCallback(async () => {
     setIsRefreshing(true);
@@ -671,23 +686,17 @@ useEffect(() => {
       if (refreshedData?.gig || refreshedData) {
         const gig = refreshedData.gig || refreshedData;
         setVersionConflict(false);
-        toast.success('Gig data refreshed successfully! Latest version: ' + (gig.version || 1));
+        showGigInfo('Gig data refreshed successfully! Latest version: ' + (gig.version || 1));
+        
+        // Reset populated flag to allow re-population
+        hasPopulatedRef.current = false;
       }
     } catch (error) {
-      toast.error('Failed to refresh gig data');
+      showGigError('Failed to refresh gig data');
     } finally {
       setIsRefreshing(false);
     }
-  }, [refetchGig]);
-
-  useEffect(() => {
-    // Refresh gig data when component mounts to ensure fresh version
-    if (id && !gigLoading) {
-      refetchGig().then(() => {
-        console.log('Gig data refreshed on mount');
-      });
-    }
-  }, [id, gigLoading, refetchGig]);
+  }, [refetchGig, showGigInfo, showGigError]);
 
   const formatBudget = useCallback((budget) => {
     const num = parseFloat(budget);
@@ -697,7 +706,6 @@ useEffect(() => {
     });
   }, []);
 
- 
   // Memoized render functions
   const renderTopInfo = useMemo(() => (
     <div className="max-w-6xl mx-auto mb-8">
@@ -759,57 +767,62 @@ useEffect(() => {
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
             <h3 className="font-bold text-lg mb-3">Current Information</h3>
             <ul className="space-y-2 text-sm">
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Title:</span>
-                <span className="font-medium truncate max-w-[150px]">
-                  {formData.title || 'Not set'}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Category:</span>
-                <span className="font-medium truncate max-w-[120px]">
-                  {getCategoryName() || 'Not selected'}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Subcategory:</span>
-                <span className="font-medium truncate max-w-[120px]">
-                  {getSubcategoryName() || 'Not selected'}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Budget:</span>
-                <span className="font-medium">
-                  ${formatBudget(formData.budget)}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Timeline:</span>
-                <span className="font-medium">{formData.timeline || 'Not set'}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Urgency:</span>
-                <span className="font-medium capitalize">{formData.urgency}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Visibility:</span>
-                <span className="font-medium capitalize">{formData.visibility}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Skills:</span>
-                <span className="font-medium">{formData.skillsRequired.length} added</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Deliverables:</span>
-                <span className="font-medium">{formData.deliverables.length} added</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-emerald-100">Total Images:</span>
-                <span className="font-medium">
-                  {existingImages.length + uploadedImages.length}/10
-                </span>
-              </li>
-            </ul>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Title:</span>
+              <span className="font-medium truncate max-w-[150px]">
+                {formData.title || 'Not set'}
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Category:</span>
+              <span className="font-medium truncate max-w-[120px]">
+                {getCategoryName() || 'Not selected'}
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Subcategory:</span>
+              <span className="font-medium truncate max-w-[120px]">
+                {getSubcategoryName() || 'Not selected'}
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Budget:</span>
+              <span className="font-medium">
+                ${formatBudget(formData.budget)}
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Timeline:</span>
+              <span className="font-medium">{formData.timeline || 'Not set'}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Urgency:</span>
+              <span className="font-medium capitalize">{formData.urgency}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Visibility:</span>
+              <span className="font-medium capitalize">{formData.visibility}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Skills:</span>
+              <span className="font-medium">
+                {Array.isArray(formData.skillsRequired) ? formData.skillsRequired.length : 0} added
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Deliverables:</span>
+              <span className="font-medium">
+                {Array.isArray(formData.deliverables) ? formData.deliverables.length : 0} added
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-emerald-100">Total Images:</span>
+              <span className="font-medium">
+                {(Array.isArray(existingImages) ? existingImages.length : 0) + 
+                 (Array.isArray(uploadedImages) ? uploadedImages.length : 0)}/10
+              </span>
+            </li>
+          </ul>
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
@@ -855,7 +868,8 @@ useEffect(() => {
       </div>
     </div>
   ), [formData, getCategoryName, getSubcategoryName, formatBudget, existingImages, uploadedImages, thumbnailFile, currentVersion]);
-// Loading state
+
+  // Loading state
   if (gigLoading || categoryLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
@@ -907,32 +921,7 @@ useEffect(() => {
     );
   }
 
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <div className="bg-white rounded-2xl p-12 shadow-xl">
-            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Gig Updated Successfully!</h2>
-            <p className="text-gray-600 text-lg mb-8">
-              Your gig has been updated. Redirecting to gig page...
-            </p>
-            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
-            <div className="mt-8">
-              <button
-                onClick={() => navigate(`/gig/${id}`)}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
-              >
-                View Updated Gig
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
- if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
+  if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12 flex items-center justify-center">
         <div className="text-center">
@@ -942,6 +931,7 @@ useEffect(() => {
       </div>
     );
   }
+
   return (
     <SeoWrapper
       title={`Edit ${formData.title} | Vorkana`}
@@ -962,10 +952,12 @@ useEffect(() => {
                 <div className="p-6 md:p-8">
                   {/* Error Messages */}
                   {allErrors.form && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-                      <p className="text-red-600 font-medium">{allErrors.form}</p>
-                    </div>
-                  )}
+  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+    <p className="text-red-600 font-medium">
+      {typeof allErrors.form === 'string' ? allErrors.form : 'An error occurred'}
+    </p>
+  </div>
+)}
 
                   {versionConflict && (
                     <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
@@ -984,24 +976,6 @@ useEffect(() => {
                               <RefreshCw className="h-3 w-3" />
                               Refresh Gig Data
                             </button>
-                            {/* Only show "Continue Anyway" for owners/admins */}
-                            {(currentUser?._id === gigData?.gig?.createdBy?._id || currentUser?.role === 'admin') && (
-                              <button
-                                onClick={() => {
-                                  setVersionConflict(false);
-                                  toast('Continuing with current data', {
-                                    icon: '⚠️',
-                                    style: {
-                                      background: '#f59e0b',
-                                      color: 'white',
-                                    },
-                                  });
-                                }}
-                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
-                              >
-                                Continue Anyway (Owner/Admin Override)
-                              </button>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -1065,24 +1039,24 @@ useEffect(() => {
                               Subcategory {subcategories.length > 0 && '*'}
                             </label>
                             <select
-                              id="subcategory"
-                              name="subcategory"
-                              value={formData.subcategory}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                              disabled={!formData.projectCategory || subcategoriesData.isLoading}
-                              required={subcategories.length > 0}
-                            >
-                              <option value="">
-                                {subcategoriesData.isLoading ? 'Loading...' : 
-                                  subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
-                              </option>
-                              {subcategories.map((subcategory) => (
-                                <option key={subcategory._id} value={subcategory._id}>
-                                  {subcategory.name}
-                                </option>
-                              ))}
-                            </select>
+  id="subcategory"
+  name="subcategory"
+  value={formData.subcategory}
+  onChange={handleInputChange}
+  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+  disabled={!formData.projectCategory || subcategoriesData.isLoading}
+  required={subcategories.length > 0}
+>
+  <option value="">
+    {subcategoriesData.isLoading ? 'Loading...' : 
+      subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
+  </option>
+  {subcategories.map((subcategory) => (
+    <option key={subcategory._id} value={subcategory._id}>
+      {subcategory.name} {/* Only render the name */}
+    </option>
+  ))}
+</select>
                             {errors.subcategory && (
                               <p className="mt-2 text-sm text-red-600">{errors.subcategory}</p>
                             )}
@@ -1674,9 +1648,10 @@ useEffect(() => {
                         )}
                       </button>
                       <button
+                        type="button"
                         onClick={handleRefreshGig}
                         disabled={isRefreshing}
-                        className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {isRefreshing ? (
                           <>
