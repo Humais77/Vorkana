@@ -1,4 +1,4 @@
-// components/admin/modals/SubcategoryDeleteModal.jsx
+// SubcategoryDeleteModal.jsx - UPDATED
 import React, { useState } from 'react';
 import { 
   FiX, 
@@ -10,7 +10,8 @@ import {
   FiHardDrive,
   FiArchive,
   FiPackage,
-  FiUsers
+  FiUsers,
+  FiLoader
 } from 'react-icons/fi';
 
 const SubcategoryDeleteModal = ({ 
@@ -19,29 +20,35 @@ const SubcategoryDeleteModal = ({
   onClose, 
   onDelete, 
   permanent = false,
-  loading = false 
+  loading = false,
+  error: backendError
 }) => {
   const [deleteType, setDeleteType] = useState(permanent ? 'permanent' : 'soft');
   const [forceDelete, setForceDelete] = useState(false);
-  const [error, setError] = useState('');
+  const [backendErrorState, setBackendErrorState] = useState('');
+
+  // Handle backend errors
+  React.useEffect(() => {
+    if (backendError) {
+      if (backendError.response?.data?.message) {
+        setBackendErrorState(backendError.response.data.message);
+      } else if (backendError.response?.data?.code === 'DEPENDENCIES_EXIST') {
+        setBackendErrorState('Cannot delete subcategory with active services or gigs');
+      } else {
+        setBackendErrorState('Failed to delete subcategory');
+      }
+    } else {
+      setBackendErrorState('');
+    }
+  }, [backendError]);
 
   if (!isOpen || !subcategory) return null;
 
-  const getDependencyStats = () => {
-    return {
-      services: subcategory.servicesCount || 0,
-      gigs: subcategory.gigsCount || 0
-    };
-  };
-
-  const dependencies = getDependencyStats();
-  const hasDependencies = Object.values(dependencies).some(count => count > 0);
-
   const handleDelete = async () => {
-    setError('');
+    setBackendErrorState('');
     
-    if (!forceDelete && hasDependencies && deleteType === 'permanent') {
-      setError('Subcategory has dependencies. Check "Force delete" to proceed.');
+    if (!forceDelete && deleteType === 'permanent') {
+      setBackendErrorState('Check "Force delete" to proceed with permanent deletion');
       return;
     }
 
@@ -55,14 +62,15 @@ const SubcategoryDeleteModal = ({
       await onDelete(deleteOptions);
       handleClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete subcategory');
+      // Error is handled by parent component
+      console.error('Delete error:', err);
     }
   };
 
   const handleClose = () => {
     setDeleteType(permanent ? 'permanent' : 'soft');
     setForceDelete(false);
-    setError('');
+    setBackendErrorState('');
     onClose();
   };
 
@@ -162,75 +170,27 @@ const SubcategoryDeleteModal = ({
             </div>
           </div>
 
-          {/* Dependencies Warning */}
-          {hasDependencies && (
+          {/* Force Delete Option */}
+          {deleteType === 'permanent' && (
             <div className="mb-6">
-              <div className={`border rounded-lg p-4 ${
-                deleteType === 'permanent' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
-              }`}>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                 <div className="flex items-start">
-                  <FiInfo className={`h-5 w-5 mr-2 flex-shrink-0 mt-0.5 ${
-                    deleteType === 'permanent' ? 'text-amber-500' : 'text-blue-500'
-                  }`} />
+                  <FiAlertTriangle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className={`text-sm font-medium mb-2 ${
-                      deleteType === 'permanent' ? 'text-amber-800' : 'text-blue-800'
-                    }`}>
-                      This subcategory has dependencies:
+                    <p className="text-sm font-medium text-amber-800 mb-2">
+                      Permanent deletion warning
                     </p>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      {dependencies.services > 0 && (
-                        <div className={`flex flex-col items-center p-3 rounded-lg ${
-                          deleteType === 'permanent' ? 'bg-amber-100' : 'bg-blue-100'
-                        }`}>
-                          <FiPackage className={`h-4 w-4 mb-1 ${
-                            deleteType === 'permanent' ? 'text-amber-600' : 'text-blue-600'
-                          }`} />
-                          <span className="font-medium">{dependencies.services}</span>
-                          <span className={`text-xs ${
-                            deleteType === 'permanent' ? 'text-amber-700' : 'text-blue-700'
-                          }`}>Services</span>
-                        </div>
-                      )}
-                      {dependencies.gigs > 0 && (
-                        <div className={`flex flex-col items-center p-3 rounded-lg ${
-                          deleteType === 'permanent' ? 'bg-amber-100' : 'bg-blue-100'
-                        }`}>
-                          <FiUsers className={`h-4 w-4 mb-1 ${
-                            deleteType === 'permanent' ? 'text-amber-600' : 'text-blue-600'
-                          }`} />
-                          <span className="font-medium">{dependencies.gigs}</span>
-                          <span className={`text-xs ${
-                            deleteType === 'permanent' ? 'text-amber-700' : 'text-blue-700'
-                          }`}>Gigs</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {deleteType === 'permanent' && hasDependencies && (
-                      <div className="mt-4">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={forceDelete}
-                            onChange={(e) => setForceDelete(e.target.checked)}
-                            className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                          />
-                          <span className="ml-2 text-sm font-medium text-amber-800">
-                            Force delete despite dependencies
-                          </span>
-                        </label>
-                        <p className="text-xs text-amber-700 mt-1 ml-6">
-                          This will orphan the services and gigs associated with this subcategory.
-                        </p>
-                      </div>
-                    )}
-                    
-                    {deleteType === 'soft' && hasDependencies && (
-                      <p className="text-sm text-blue-700 mt-3">
-                        With soft delete, these dependencies will remain but the subcategory will be hidden.
-                      </p>
-                    )}
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={forceDelete}
+                        onChange={(e) => setForceDelete(e.target.checked)}
+                        className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                      />
+                      <span className="ml-2 text-sm text-amber-800">
+                        I understand this action cannot be undone
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -238,10 +198,10 @@ const SubcategoryDeleteModal = ({
           )}
 
           {/* Error Message */}
-          {error && (
+          {(backendErrorState || backendErrorState) && (
             <div className="mb-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-700">{error}</p>
+                <p className="text-sm text-red-700">{backendErrorState}</p>
               </div>
             </div>
           )}
@@ -259,7 +219,7 @@ const SubcategoryDeleteModal = ({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={loading}
+              disabled={loading || (deleteType === 'permanent' && !forceDelete)}
               className={`px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
                 deleteType === 'permanent'
                   ? 'bg-red-600 text-white hover:bg-red-700'
@@ -268,7 +228,7 @@ const SubcategoryDeleteModal = ({
             >
               {loading ? (
                 <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <FiLoader className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   <span>Deleting...</span>
                 </>
               ) : (

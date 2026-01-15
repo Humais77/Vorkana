@@ -1,3 +1,4 @@
+// SubcategoriesManagement.jsx - UPDATED
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminSubcategories, 
@@ -5,9 +6,10 @@ import {
   useCreateSubcategory, 
   useDeleteSubcategory,
   useBulkSubcategoryOperations,
-  useCategoriesForDropdown,useExportSubcategories, useSubcategoryStats 
+  useCategoriesForDropdown,
+  useExportSubcategories
 } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useSubcategoryToast } from '../../../hooks/useSubcategoryToast';
 import {
   FiFolder,
   FiSearch,
@@ -22,15 +24,13 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiRefreshCw,
-  FiStar,
   FiPackage,
   FiMoreVertical,
   FiChevronDown,
   FiChevronUp,
-  FiTrendingUp,
   FiFolderPlus,
   FiX,
-  FiClock
+  FiLoader
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import SubcategoryCreateModal from './SubcategoryCreateModal';
@@ -51,13 +51,18 @@ const SubcategoryTableRow = memo(({
   onDuplicate,
   onOpenActionMenu,
   actionMenuId,
-  categoriesMap
+  categoriesMap,
+  isUpdatingId,
+  isDeletingId
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
       ? 'bg-green-100 text-green-800 border border-green-200' 
       : 'bg-red-100 text-red-800 border border-red-200';
   };
+
+  const isUpdating = isUpdatingId === subcategory._id;
+  const isDeleting = isDeletingId === subcategory._id;
 
   return (
     <React.Fragment>
@@ -67,14 +72,16 @@ const SubcategoryTableRow = memo(({
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(subcategory._id)}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            disabled={isDeleting}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
           />
         </td>
         <td className="px-4 py-4">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => onToggleExpand(subcategory._id)}
-              className="p-1 hover:bg-gray-100 rounded"
+              onClick={() => !isDeleting && onToggleExpand(subcategory._id)}
+              disabled={isDeleting}
+              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
             >
               {isExpanded ? (
                 <FiChevronUp className="h-4 w-4 text-gray-500" />
@@ -83,10 +90,18 @@ const SubcategoryTableRow = memo(({
               )}
             </button>
             <div>
-              <div className="text-sm font-medium text-gray-900">{subcategory.name}</div>
+              <div className="flex items-center space-x-2">
+                {isUpdating && (
+                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+                )}
+                <div className="text-sm font-medium text-gray-900">{subcategory.name}</div>
+                {isDeleting && (
+                  <span className="text-xs text-red-500">Deleting...</span>
+                )}
+              </div>
               <div className="text-xs text-gray-500 mt-1">
                 Slug: {subcategory.slug || 'N/A'} • 
-                Category: {subcategory.category?.name || categoriesMap[subcategory.category]?._id || 'N/A'}
+                Category: {subcategory.category?.name || categoriesMap[subcategory.category]?.name || 'N/A'}
               </div>
             </div>
           </div>
@@ -106,28 +121,35 @@ const SubcategoryTableRow = memo(({
         <td className="px-4 py-4">
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => onView(subcategory)}
-              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+              onClick={() => !isDeleting && onView(subcategory)}
+              disabled={isDeleting}
+              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
             </button>
             <button
-              onClick={() => onEdit(subcategory)}
-              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+              onClick={() => !isDeleting && onEdit(subcategory)}
+              disabled={isDeleting || isUpdating}
+              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
               title="Edit Subcategory"
             >
-              <FiEdit2 className="h-4 w-4" />
+              {isUpdating ? (
+                <FiLoader className="h-4 w-4 animate-spin text-blue-500" />
+              ) : (
+                <FiEdit2 className="h-4 w-4" />
+              )}
             </button>
             <div className="relative">
               <button
-                onClick={() => onOpenActionMenu(actionMenuId === subcategory._id ? null : subcategory._id)}
-                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+                onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === subcategory._id ? null : subcategory._id)}
+                disabled={isDeleting}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
               
-              {actionMenuId === subcategory._id && (
+              {actionMenuId === subcategory._id && !isDeleting && (
                 <>
                   <div 
                     className="fixed inset-0 z-10"
@@ -150,10 +172,15 @@ const SubcategoryTableRow = memo(({
                           onDelete(subcategory);
                           onOpenActionMenu(null);
                         }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        disabled={isDeleting}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        <FiTrash2 className="h-4 w-4 mr-2" />
-                        Delete
+                        {isDeleting ? (
+                          <FiLoader className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FiTrash2 className="h-4 w-4 mr-2" />
+                        )}
+                        {isDeleting ? 'Deleting...' : 'Delete'}
                       </button>
                     </div>
                   </div>
@@ -167,18 +194,11 @@ const SubcategoryTableRow = memo(({
       {isExpanded && (
         <tr>
           <td colSpan="5" className="px-4 py-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
                 <div className="text-sm text-gray-700">
                   {subcategory.description || 'No description provided'}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Stats</div>
-                <div className="text-sm">
-                  <div><span className="text-gray-500">Services:</span> {subcategory.servicesCount || 0}</div>
-                  <div><span className="text-gray-500">Gigs:</span> {subcategory.gigsCount || 0}</div>
                 </div>
               </div>
               <div className="space-y-2">
@@ -223,6 +243,8 @@ const SubcategoriesManagement = () => {
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedSubcategories, setExpandedSubcategories] = useState([]);
+  const [updatingSubcategoryId, setUpdatingSubcategoryId] = useState(null);
+  const [deletingSubcategoryId, setDeletingSubcategoryId] = useState(null);
 
   const limit = 20;
   
@@ -247,9 +269,19 @@ const SubcategoriesManagement = () => {
   const deleteSubcategoryMutation = useDeleteSubcategory();
   const bulkOperationsMutation = useBulkSubcategoryOperations();
   const exportSubcategoriesMutation = useExportSubcategories();
-const { data: subcategoryStatsData } = useSubcategoryStats();
+  
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
+
+  // Use custom toast hook
+  const {
+    showSubcategoryLoading,
+    showSubcategorySuccess,
+    showSubcategoryError,
+    showSubcategoryWarning,
+    showSubcategoryInfo,
+    dismissSubcategoryToast
+  } = useSubcategoryToast();
 
   // Search with debounce
   useEffect(() => {
@@ -258,7 +290,7 @@ const { data: subcategoryStatsData } = useSubcategoryStats();
         setPage(1);
         refetch();
       }
-    }, 500); // 500ms delay
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [searchTerm, refetch]);
@@ -289,9 +321,11 @@ const { data: subcategoryStatsData } = useSubcategoryStats();
 
   const handleBulkAction = useCallback(async (action) => {
     if (selectedSubcategories.length === 0) {
-      toast.error('Please select subcategories first');
+      showSubcategoryWarning('Please select subcategories first');
       return;
     }
+
+    const loadingToastId = showSubcategoryLoading(`Processing ${selectedSubcategories.length} subcategories...`);
 
     try {
       const bulkData = {
@@ -302,53 +336,82 @@ const { data: subcategoryStatsData } = useSubcategoryStats();
       await bulkOperationsMutation.mutateAsync(bulkData);
       setSelectedSubcategories([]);
       refetch();
-      toast.success(`${selectedSubcategories.length} subcategories ${action}ed successfully`);
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess(`${selectedSubcategories.length} subcategories ${action}ed successfully`);
     } catch (error) {
-      toast.error('Failed to perform bulk action');
+      dismissSubcategoryToast(loadingToastId);
+      const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
+      const validationErrors = error.response?.data?.errors;
+      
+      if (validationErrors) {
+        validationErrors.forEach(err => showSubcategoryError(err));
+      } else {
+        showSubcategoryError(errorMessage);
+      }
     }
-  }, [selectedSubcategories, bulkOperationsMutation, refetch]);
+  }, [selectedSubcategories, bulkOperationsMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
 
   const handleCreateSubcategory = useCallback(async (subcategoryData) => {
+    const loadingToastId = showSubcategoryLoading('Creating subcategory...');
+    
     try {
       await createSubcategoryMutation.mutateAsync(subcategoryData);
-      toast.success('Subcategory created successfully');
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory created successfully');
       setShowCreateModal(false);
       refetch();
     } catch (error) {
+      dismissSubcategoryToast(loadingToastId);
       throw error;
     }
-  }, [createSubcategoryMutation, refetch]);
+  }, [createSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
 
   const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
     if (!selectedSubcategory) return;
     
+    const loadingToastId = showSubcategoryLoading('Updating subcategory...');
+    
     try {
+      setUpdatingSubcategoryId(selectedSubcategory._id);
       await updateSubcategoryMutation.mutateAsync({
         id: selectedSubcategory._id,
         data: subcategoryData
       });
-      toast.success('Subcategory updated successfully');
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory updated successfully');
       setShowEditModal(false);
       setSelectedSubcategory(null);
+      setUpdatingSubcategoryId(null);
       refetch();
     } catch (error) {
+      dismissSubcategoryToast(loadingToastId);
+      setUpdatingSubcategoryId(null);
       throw error;
     }
-  }, [selectedSubcategory, updateSubcategoryMutation, refetch]);
+  }, [selectedSubcategory, updateSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
 
   const handleDeleteSubcategory = useCallback(async (deleteOptions) => {
+    const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
+    
     try {
+      setDeletingSubcategoryId(deleteOptions.id);
       await deleteSubcategoryMutation.mutateAsync(deleteOptions);
-      toast.success('Subcategory deleted successfully');
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory deleted successfully');
       setShowDeleteModal(false);
       setSelectedSubcategory(null);
+      setDeletingSubcategoryId(null);
       refetch();
     } catch (error) {
+      dismissSubcategoryToast(loadingToastId);
+      setDeletingSubcategoryId(null);
       throw error;
     }
-  }, [deleteSubcategoryMutation, refetch]);
+  }, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
 
   const handleDuplicate = useCallback(async (subcategory) => {
+    const loadingToastId = showSubcategoryLoading('Duplicating subcategory...');
+    
     try {
       const duplicateData = {
         name: `${subcategory.name} (Copy)`,
@@ -361,12 +424,21 @@ const { data: subcategoryStatsData } = useSubcategoryStats();
       };
       
       await createSubcategoryMutation.mutateAsync(duplicateData);
-      toast.success('Subcategory duplicated successfully');
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory duplicated successfully');
       refetch();
     } catch (error) {
-      toast.error('Failed to duplicate subcategory');
+      dismissSubcategoryToast(loadingToastId);
+      const errorMessage = error.response?.data?.message || 'Failed to duplicate subcategory';
+      const validationErrors = error.response?.data?.errors;
+      
+      if (validationErrors) {
+        validationErrors.forEach(err => showSubcategoryError(err));
+      } else {
+        showSubcategoryError(errorMessage);
+      }
     }
-  }, [createSubcategoryMutation, refetch]);
+  }, [createSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -406,45 +478,57 @@ const { data: subcategoryStatsData } = useSubcategoryStats();
     setSelectedSubcategory(subcategory);
     setShowDeleteModal(true);
   }, []);
-const exportSubcategories = useCallback(async () => {
-  try {
-    const response = await exportSubcategoriesMutation.mutateAsync('csv');
+
+  const exportSubcategories = useCallback(async () => {
+    const loadingToastId = showSubcategoryLoading('Exporting subcategories...');
     
-    const blob = new Blob([response.data], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `subcategories_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    
-    toast.success('Subcategories exported successfully');
-  } catch (error) {
-    toast.error('Failed to export subcategories');
-  }
-}, [exportSubcategoriesMutation]);
+    try {
+      const response = await exportSubcategoriesMutation.mutateAsync('csv');
+      
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `subcategories_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategories exported successfully');
+    } catch (error) {
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategoryError('Failed to export subcategories');
+    }
+  }, [exportSubcategoriesMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+
   const refreshData = useCallback(() => {
     refetch();
     setSelectedSubcategories([]);
     setExpandedSubcategories([]);
-    toast.success('Data refreshed');
-  }, [refetch]);
+    showSubcategorySuccess('Data refreshed');
+  }, [refetch, showSubcategorySuccess]);
 
   // Memoized stats calculation
   const stats = useMemo(() => {
     const active = subcategories.filter(s => s.isActive).length;
-    const totalServices = subcategories.reduce((sum, sub) => sum + (sub.servicesCount || 0), 0);
-    const totalGigs = subcategories.reduce((sum, sub) => sum + (sub.gigsCount || 0), 0);
+    // Remove services and gigs counts to prevent negative values
+    // Only show basic stats
 
     return {
       total: pagination.total || subcategories.length,
       active,
-      totalServices,
-      totalGigs
+      activePercentage: subcategories.length > 0 ? Math.round((active / subcategories.length) * 100) : 0
     };
   }, [subcategories, pagination.total]);
+
+  // Loading states
+  const isCreating = createSubcategoryMutation.isLoading;
+  const isUpdating = updateSubcategoryMutation.isLoading;
+  const isDeleting = deleteSubcategoryMutation.isLoading;
+  const isBulkOperating = bulkOperationsMutation.isLoading;
+  const isExporting = exportSubcategoriesMutation.isLoading;
 
   if (isLoading && !subcategories.length) {
     return (
@@ -464,15 +548,25 @@ const exportSubcategories = useCallback(async () => {
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-  onClick={exportSubcategories}
-  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
->
-  <FiDownload className="h-4 w-4" />
-  <span>Export</span>
-</button>
+            onClick={exportSubcategories}
+            disabled={isExporting}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
+          >
+            {isExporting ? (
+              <>
+                <FiLoader className="h-4 w-4 animate-spin" />
+                <span>Exporting...</span>
+              </>
+            ) : (
+              <>
+                <FiDownload className="h-4 w-4" />
+                <span>Export</span>
+              </>
+            )}
+          </button>
           <button
             onClick={refreshData}
-            disabled={isRefetching}
+            disabled={isRefetching || isBulkOperating}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
@@ -480,10 +574,20 @@ const exportSubcategories = useCallback(async () => {
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            disabled={isCreating}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
           >
-            <FiPlus className="h-4 w-4" />
-            <span>Add Subcategory</span>
+            {isCreating ? (
+              <>
+                <FiLoader className="h-4 w-4 animate-spin" />
+                <span>Creating...</span>
+              </>
+            ) : (
+              <>
+                <FiPlus className="h-4 w-4" />
+                <span>Add Subcategory</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -505,6 +609,7 @@ const exportSubcategories = useCallback(async () => {
             <div>
               <p className="text-sm text-gray-600">Active</p>
               <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+              <p className="text-xs text-gray-500 mt-1">{stats.activePercentage}% active</p>
             </div>
             <FiCheckCircle className="h-8 w-8 text-green-600" />
           </div>
@@ -513,20 +618,25 @@ const exportSubcategories = useCallback(async () => {
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Services</p>
-              <p className="text-2xl font-bold text-orange-600">{stats.totalServices}</p>
+              <p className="text-sm text-gray-600">By Category</p>
+              <p className="text-2xl font-bold text-orange-600">{categories.length}</p>
             </div>
-            <FiPackage className="h-8 w-8 text-orange-600" />
+            <FiFolderPlus className="h-8 w-8 text-orange-600" />
           </div>
         </div>
         
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Gigs</p>
-              <p className="text-2xl font-bold text-teal-600">{stats.totalGigs}</p>
+              <p className="text-sm text-gray-600">Last Updated</p>
+              <p className="text-lg font-bold text-teal-600">
+                {subcategories.length > 0 
+                  ? format(new Date(Math.max(...subcategories.map(s => new Date(s.updatedAt).getTime()))), 'MMM d')
+                  : 'Never'
+                }
+              </p>
             </div>
-            <FiFolderPlus className="h-8 w-8 text-teal-600" />
+            <FiRefreshCw className="h-8 w-8 text-teal-600" />
           </div>
         </div>
       </div>
@@ -547,53 +657,59 @@ const exportSubcategories = useCallback(async () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiCheckCircle className="h-4 w-4" />
-                <span>Activate</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCheckCircle className="h-4 w-4" />
+                    <span>Activate</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('deactivate')}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiXCircle className="h-4 w-4" />
-                <span>Deactivate</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiXCircle className="h-4 w-4" />
+                    <span>Deactivate</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiTrash2 className="h-4 w-4" />
-                <span>Delete</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 className="h-4 w-4" />
+                    <span>Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
-      {subcategoryStatsData && (
-  <div className="bg-white rounded-lg border border-gray-200 p-4">
-    <h3 className="text-lg font-semibold text-gray-900 mb-4">Subcategory Distribution</h3>
-    <div className="space-y-3">
-      {subcategoryStatsData?.data?.byCategory?.slice(0, 5).map((item, index) => (
-        <div key={index} className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="h-3 w-3 rounded-full" 
-                 style={{ backgroundColor: `hsl(${index * 60}, 70%, 50%)` }}></div>
-            <span className="text-sm text-gray-700 truncate">
-              {item.category?.name || 'Unknown'}
-            </span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium text-gray-900">{item.count}</span>
-            <span className="text-xs text-gray-500">
-              {item.totalServices} services
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
 
       {/* Search and Filters */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -626,7 +742,8 @@ const exportSubcategories = useCallback(async () => {
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+            disabled={isBulkOperating}
+            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
             <span className="hidden md:inline">Filters</span>
@@ -693,7 +810,8 @@ const exportSubcategories = useCallback(async () => {
                     type="checkbox"
                     checked={selectedSubcategories.length === subcategories.length && subcategories.length > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={isBulkOperating}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -726,6 +844,8 @@ const exportSubcategories = useCallback(async () => {
                   onOpenActionMenu={setActionMenu}
                   actionMenuId={actionMenu}
                   categoriesMap={categoriesMap}
+                  isUpdatingId={updatingSubcategoryId}
+                  isDeletingId={deletingSubcategoryId}
                 />
               ))}
             </tbody>
@@ -753,7 +873,7 @@ const exportSubcategories = useCallback(async () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  disabled={page === 1 || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronLeft className="h-4 w-4" />
@@ -776,11 +896,12 @@ const exportSubcategories = useCallback(async () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
+                        disabled={isBulkOperating}
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
                             : 'border border-gray-300 hover:bg-gray-50'
-                        }`}
+                        } disabled:opacity-50`}
                       >
                         {pageNum}
                       </button>
@@ -792,7 +913,8 @@ const exportSubcategories = useCallback(async () => {
                       <span className="px-2 text-gray-400">...</span>
                       <button
                         onClick={() => setPage(pagination.totalPages)}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
+                        disabled={isBulkOperating}
+                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
                       >
                         {pagination.totalPages}
                       </button>
@@ -802,7 +924,7 @@ const exportSubcategories = useCallback(async () => {
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages}
+                  disabled={page === pagination.totalPages || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronRight className="h-4 w-4" />
@@ -820,6 +942,7 @@ const exportSubcategories = useCallback(async () => {
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateSubcategory}
           loading={createSubcategoryMutation.isLoading}
+          error={createSubcategoryMutation.error}
           categories={categories}
         />
       )}
@@ -833,7 +956,8 @@ const exportSubcategories = useCallback(async () => {
             setSelectedSubcategory(null);
           }}
           onSubmit={handleUpdateSubcategory}
-          loading={updateSubcategoryMutation.isPending}
+          loading={updateSubcategoryMutation.isLoading}
+          error={updateSubcategoryMutation.error}
           categories={categories}
         />
       )}
@@ -862,6 +986,8 @@ const exportSubcategories = useCallback(async () => {
             setSelectedSubcategory(null);
           }}
           onDelete={handleDeleteSubcategory}
+          loading={deleteSubcategoryMutation.isLoading}
+          error={deleteSubcategoryMutation.error}
         />
       )}
     </div>

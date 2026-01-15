@@ -1,13 +1,25 @@
-// components/admin/modals/SubcategoryEditModal.jsx
+// SubcategoryEditModal.jsx - UPDATED with full backend integration
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { FiX, FiFolder, FiInfo, FiAlertCircle, FiSave, FiChevronDown } from 'react-icons/fi';
+import { 
+  FiX, 
+  FiFolder, 
+  FiInfo, 
+  FiAlertCircle, 
+  FiSave,
+  FiRefreshCw,
+  FiLoader,
+  FiAlertTriangle,
+  FiChevronDown
+} from 'react-icons/fi';
+import { useCategoriesForDropdown } from '../../../hooks/useAdminDashboard';
+import { useSubcategoryToast } from '../../../hooks/useSubcategoryToast';
 
 // Validation rules
 const validationRules = {
   name: (value) => {
     if (!value.trim()) return 'Subcategory name is required';
     if (value.length < 2) return 'Subcategory name must be at least 2 characters';
-    if (value.length > 50) return 'Subcategory name cannot exceed 50 characters';
+    if (value.length > 100) return 'Subcategory name cannot exceed 100 characters';
     return null;
   },
   category: (value) => {
@@ -23,6 +35,8 @@ const validationRules = {
     if (!/^[a-z0-9-]+$/.test(value)) {
       return 'Slug can only contain lowercase letters, numbers, and hyphens';
     }
+    if (value.length < 2) return 'Slug must be at least 2 characters';
+    if (value.length > 100) return 'Slug cannot exceed 100 characters';
     return null;
   },
   order: (value) => {
@@ -30,8 +44,12 @@ const validationRules = {
     if (num < 0 || num > 1000) return 'Order must be between 0 and 1000';
     return null;
   },
-  icon: (value) => {
-    if (value && value.length > 50) return 'Icon text is too long';
+  metaTitle: (value) => {
+    if (value.length > 60) return 'Meta title cannot exceed 60 characters';
+    return null;
+  },
+  metaDescription: (value) => {
+    if (value.length > 160) return 'Meta description cannot exceed 160 characters';
     return null;
   }
 };
@@ -56,11 +74,25 @@ const SubcategoryEditModal = memo(({
   onClose, 
   onSubmit, 
   loading = false,
-  categories = []
+  error = null
 }) => {
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState({});
+  const [backendErrors, setBackendErrors] = useState({});
   const [originalSlug, setOriginalSlug] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false);
+
+  const { data: categoriesData, refetch: refetchCategories } = useCategoriesForDropdown();
+  const categories = categoriesData?.data || [];
+
+  // Use custom toast hook
+  const {
+    showSubcategorySuccess,
+    showSubcategoryError,
+    showSubcategoryInfo,
+    dismissSubcategoryToast
+  } = useSubcategoryToast();
 
   // Initialize form with subcategory data
   useEffect(() => {
@@ -81,8 +113,96 @@ const SubcategoryEditModal = memo(({
       setFormData(data);
       setOriginalSlug(subcategory.slug || '');
       setErrors({});
+      setBackendErrors({});
+      setHasChanges(false);
+      setShowUnsavedChanges(false);
     }
   }, [subcategory]);
+
+  // Handle backend errors
+  useEffect(() => {
+    if (error) {
+      const errorData = error.response?.data;
+      if (errorData) {
+        const fieldErrors = {};
+        
+        // Handle version conflict
+        if (errorData.code === 'UPDATE_CONFLICT' || errorData.message?.includes('version')) {
+          fieldErrors.version = 'This subcategory was modified by another user. Please refresh and try again.';
+          showSubcategoryError('Version conflict detected. Please refresh the data.');
+        }
+        
+        if (errorData.code === 'DUPLICATE_SUBCATEGORY') {
+          fieldErrors.name = 'Subcategory with this name already exists in this category';
+        }
+        
+        if (errorData.code === 'DUPLICATE_IN_NEW_CATEGORY') {
+          fieldErrors.name = 'Subcategory with this name already exists in the new category';
+        }
+        
+        if (errorData.code === 'DUPLICATE_SLUG') {
+          fieldErrors.slug = 'Subcategory with this slug already exists';
+        }
+        
+        if (errorData.code === 'PARENT_CATEGORY_NOT_FOUND') {
+          fieldErrors.category = 'Parent category not found or inactive';
+        }
+        
+        if (errorData.code === 'PARENT_CATEGORY_INACTIVE') {
+          fieldErrors.category = 'Parent category is inactive or deleted';
+        }
+        
+        if (errorData.code === 'VALIDATION_ERROR' && errorData.errors) {
+          errorData.errors.forEach(err => {
+            if (err.includes('name')) fieldErrors.name = err;
+            else if (err.includes('slug')) fieldErrors.slug = err;
+            else if (err.includes('description')) fieldErrors.description = err;
+            else if (err.includes('order')) fieldErrors.order = err;
+            else if (err.includes('category')) fieldErrors.category = err;
+            else if (err.includes('metaTitle')) fieldErrors.metaTitle = err;
+            else if (err.includes('metaDescription')) fieldErrors.metaDescription = err;
+          });
+        }
+        
+        if (errorData.message && !fieldErrors.version) {
+          fieldErrors.general = errorData.message;
+          showSubcategoryError(errorData.message);
+        }
+        
+        setBackendErrors(fieldErrors);
+        
+        // Focus on first error field
+        const firstError = Object.keys(fieldErrors)[0];
+        if (firstError && firstError !== 'general' && firstError !== 'version') {
+          const element = document.querySelector(`[name="${firstError}"]`);
+          if (element) {
+            setTimeout(() => {
+              element.focus();
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+          }
+        }
+      }
+    }
+  }, [error, showSubcategoryError]);
+
+  // Check for changes
+  useEffect(() => {
+    if (subcategory) {
+      const hasFormChanges = 
+        formData.name !== subcategory.name ||
+        formData.description !== (subcategory.description || '') ||
+        formData.category !== (subcategory.category?._id || subcategory.category || '') ||
+        formData.isActive !== (subcategory.isActive !== false) ||
+        formData.order !== (subcategory.order || 0) ||
+        formData.metaTitle !== (subcategory.metaTitle || '') ||
+        formData.metaDescription !== (subcategory.metaDescription || '') ||
+        formData.slug !== (subcategory.slug || '') ||
+        formData.icon !== (subcategory.icon || '📁');
+      
+      setHasChanges(hasFormChanges);
+    }
+  }, [formData, subcategory]);
 
   // Validate a single field
   const validateField = useCallback((name, value) => {
@@ -101,15 +221,43 @@ const SubcategoryEditModal = memo(({
       [name]: newValue
     }));
     
-    // Validate field if it has validation rules
-    if (validationRules[name]) {
-      const error = validateField(name, newValue);
-      setErrors(prev => ({
-        ...prev,
-        [name]: error
-      }));
+    // Clear errors for this field
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: null }));
     }
-  }, [validateField]);
+    if (backendErrors[name]) {
+      setBackendErrors(prev => ({ ...prev, [name]: null }));
+    }
+  }, [errors, backendErrors]);
+
+  const handleRefreshCategories = useCallback(() => {
+    refetchCategories();
+    showSubcategorySuccess('Categories list refreshed');
+  }, [refetchCategories, showSubcategorySuccess]);
+
+  const handleRefreshData = useCallback(() => {
+    if (subcategory) {
+      // Reset form to original subcategory data
+      const data = {
+        name: subcategory.name || '',
+        description: subcategory.description || '',
+        category: subcategory.category?._id || subcategory.category || '',
+        order: subcategory.order || 0,
+        isActive: subcategory.isActive !== false,
+        metaTitle: subcategory.metaTitle || '',
+        metaDescription: subcategory.metaDescription || '',
+        slug: subcategory.slug || '',
+        icon: subcategory.icon || '📁',
+        version: subcategory.version || 1
+      };
+      
+      setFormData(data);
+      setErrors({});
+      setBackendErrors({});
+      setHasChanges(false);
+      showSubcategorySuccess('Form data refreshed from server');
+    }
+  }, [subcategory, showSubcategorySuccess]);
 
   // Validate entire form
   const validateForm = useCallback(() => {
@@ -128,42 +276,64 @@ const SubcategoryEditModal = memo(({
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
+    if (!hasChanges) {
+      showSubcategorySuccess('No changes to save');
+      return;
+    }
+    
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
-      
-      // Scroll to first error
       const firstError = Object.keys(validationErrors)[0];
       const element = document.querySelector(`[name="${firstError}"]`);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         element.focus();
       }
-      
       return;
     }
     
     try {
       const submitData = {
         ...formData,
+        // Ensure category is properly formatted
+        category: formData.category || null,
       };
       
-   await onSubmit(submitData);
-    } catch (error) {
-      console.error('Form submission error:', error);
+      // Remove version to avoid conflict
+      delete submitData.version;
+      
+      await onSubmit(submitData);
+    } catch (err) {
+      // Error handled in useEffect
     }
-  }, [formData, subcategory, validateForm, onSubmit]);
+  }, [formData, subcategory, hasChanges, validateForm, onSubmit, showSubcategorySuccess]);
 
-  // Reset and close modal
+  // Reset and close modal with confirmation
   const handleClose = useCallback(() => {
+    if (hasChanges && !showUnsavedChanges) {
+      setShowUnsavedChanges(true);
+      return;
+    }
+    
+    if (showUnsavedChanges) {
+      setShowUnsavedChanges(false);
+    }
+    
     setFormData(initialFormData);
     setErrors({});
+    setBackendErrors({});
     setOriginalSlug('');
+    setHasChanges(false);
     onClose();
-  }, [onClose]);
+  }, [onClose, hasChanges, showUnsavedChanges]);
 
   // Don't render if not open or no subcategory
   if (!isOpen || !subcategory) return null;
+
+  const getError = (fieldName) => {
+    return backendErrors[fieldName] || errors[fieldName];
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -180,26 +350,127 @@ const SubcategoryEditModal = memo(({
                 <p className="text-sm text-gray-500">{subcategory.name}</p>
               </div>
             </div>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Close modal"
-            >
-              <FiX className="h-5 w-5 text-gray-500" />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleRefreshData}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Refresh data"
+                title="Refresh form data"
+              >
+                <FiRefreshCw className="h-5 w-5 text-gray-500" />
+              </button>
+              <button
+                onClick={handleClose}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close modal"
+              >
+                <FiX className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
           </div>
         </div>
 
+        {/* Unsaved Changes Warning */}
+        {showUnsavedChanges && (
+          <div className="mx-6 mt-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex">
+                <FiAlertTriangle className="h-5 w-5 text-amber-400 mr-2 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-800">You have unsaved changes</p>
+                  <p className="text-sm text-amber-700 mt-1">Are you sure you want to discard your changes?</p>
+                  <div className="flex space-x-3 mt-3">
+                    <button
+                      onClick={() => setShowUnsavedChanges(false)}
+                      className="px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-md"
+                    >
+                      Continue Editing
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowUnsavedChanges(false);
+                        setTimeout(() => handleClose(), 100);
+                      }}
+                      className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                    >
+                      Discard Changes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Version Conflict Error */}
+        {backendErrors.version && (
+          <div className="mx-6 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex">
+                <FiAlertCircle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">{backendErrors.version}</p>
+                  <button
+                    onClick={handleRefreshData}
+                    className="mt-2 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-md flex items-center space-x-1"
+                  >
+                    <FiRefreshCw className="h-3 w-3" />
+                    <span>Refresh Data</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* General Backend Error */}
+        {backendErrors.general && !backendErrors.version && (
+          <div className="mx-6 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex">
+                <FiAlertCircle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">{backendErrors.general}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6">
-          {/* Version Info */}
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center text-sm text-blue-800">
-              <FiInfo className="h-4 w-4 mr-2 flex-shrink-0" />
-              <div>
-                <span className="font-medium">Version {formData.version}</span>
-                <span className="mx-2">•</span>
-                <span>Last updated: {new Date(subcategory.updatedAt).toLocaleDateString()}</span>
+          {/* Version and Changes Indicator */}
+          <div className="mb-6">
+            <div className={`p-4 border rounded-lg ${
+              hasChanges ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                    hasChanges ? 'bg-blue-100' : 'bg-gray-100'
+                  }`}>
+                    <span className={`text-sm font-medium ${
+                      hasChanges ? 'text-blue-600' : 'text-gray-600'
+                    }`}>
+                      v{formData.version}
+                    </span>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-medium ${
+                      hasChanges ? 'text-blue-800' : 'text-gray-800'
+                    }`}>
+                      {hasChanges ? 'You have unsaved changes' : 'No changes made'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Last updated: {new Date(subcategory.updatedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                {hasChanges && (
+                  <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                    Unsaved
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -223,13 +494,14 @@ const SubcategoryEditModal = memo(({
                   value={formData.name}
                   onChange={handleChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                    errors.name ? 'border-red-300' : 'border-gray-300'
+                    getError('name') ? 'border-red-300' : 'border-gray-300'
                   }`}
+                  disabled={loading}
                 />
-                {errors.name && (
+                {getError('name') && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.name}
+                    {getError('name')}
                   </p>
                 )}
               </div>
@@ -246,22 +518,25 @@ const SubcategoryEditModal = memo(({
                     value={formData.category}
                     onChange={handleChange}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
-                      errors.category ? 'border-red-300' : 'border-gray-300'
+                      getError('category') ? 'border-red-300' : 'border-gray-300'
                     }`}
+                    disabled={loading}
                   >
                     <option value="">Select a category</option>
-                    {categories.map(category => (
-                      <option key={category._id} value={category._id}>
-                        {category.name}
-                      </option>
-                    ))}
+                    {categories
+                      .filter(cat => cat.isActive !== false)
+                      .map(category => (
+                        <option key={category._id} value={category._id}>
+                          {category.name}
+                        </option>
+                      ))}
                   </select>
                   <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
                 </div>
-                {errors.category && (
+                {getError('category') && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.category}
+                    {getError('category')}
                   </p>
                 )}
               </div>
@@ -278,14 +553,15 @@ const SubcategoryEditModal = memo(({
                   onChange={handleChange}
                   rows={3}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                    errors.description ? 'border-red-300' : 'border-gray-300'
+                    getError('description') ? 'border-red-300' : 'border-gray-300'
                   }`}
+                  disabled={loading}
                 />
                 <div className="flex justify-between mt-1.5">
-                  {errors.description ? (
+                  {getError('description') ? (
                     <p className="text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
-                      {errors.description}
+                      {getError('description')}
                     </p>
                   ) : (
                     <div></div>
@@ -300,7 +576,7 @@ const SubcategoryEditModal = memo(({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="icon" className="block text-sm font-medium text-gray-700 mb-2">
-                    Icon
+                    Icon (Optional)
                   </label>
                   <div className="flex items-center space-x-3">
                     <input
@@ -310,17 +586,19 @@ const SubcategoryEditModal = memo(({
                       value={formData.icon}
                       onChange={handleChange}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                        errors.icon ? 'border-red-300' : 'border-gray-300'
+                        getError('icon') ? 'border-red-300' : 'border-gray-300'
                       }`}
+                      disabled={loading}
+                      placeholder="📁, 🔧, ✨, etc."
                     />
                     <div className="text-2xl flex-shrink-0">
                       {formData.icon || '📁'}
                     </div>
                   </div>
-                  {errors.icon && (
+                  {getError('icon') && (
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
-                      {errors.icon}
+                      {getError('icon')}
                     </p>
                   )}
                 </div>
@@ -338,13 +616,14 @@ const SubcategoryEditModal = memo(({
                     min="0"
                     max="1000"
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                      errors.order ? 'border-red-300' : 'border-gray-300'
+                      getError('order') ? 'border-red-300' : 'border-gray-300'
                     }`}
+                    disabled={loading}
                   />
-                  {errors.order && (
+                  {getError('order') && (
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
-                      {errors.order}
+                      {getError('order')}
                     </p>
                   )}
                 </div>
@@ -362,13 +641,14 @@ const SubcategoryEditModal = memo(({
                   value={formData.slug}
                   onChange={handleChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                    errors.slug ? 'border-red-300' : 'border-gray-300'
+                    getError('slug') ? 'border-red-300' : 'border-gray-300'
                   }`}
+                  disabled={loading}
                 />
-                {errors.slug && (
+                {getError('slug') && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
-                    {errors.slug}
+                    {getError('slug')}
                   </p>
                 )}
                 {originalSlug !== formData.slug && (
@@ -387,13 +667,16 @@ const SubcategoryEditModal = memo(({
             </h4>
             
             <div className="space-y-4">
-              <label className="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+              <label className={`flex items-start space-x-3 p-4 border rounded-lg transition-colors cursor-pointer ${
+                loading ? 'opacity-50 cursor-not-allowed' : 'border-gray-200 hover:bg-gray-50'
+              }`}>
                 <input
                   type="checkbox"
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleChange}
                   className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5"
+                  disabled={loading}
                 />
                 <div>
                   <span className="font-medium text-gray-900">Active</span>
@@ -423,11 +706,22 @@ const SubcategoryEditModal = memo(({
                   value={formData.metaTitle}
                   onChange={handleChange}
                   maxLength="60"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                    getError('metaTitle') ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  disabled={loading}
                 />
-                <p className="mt-1.5 text-xs text-gray-500">
-                  {formData.metaTitle.length}/60 characters
-                </p>
+                <div className="flex justify-between mt-1.5">
+                  {getError('metaTitle') && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      {getError('metaTitle')}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-500">
+                    {formData.metaTitle.length}/60 characters
+                  </p>
+                </div>
               </div>
               
               <div>
@@ -441,11 +735,22 @@ const SubcategoryEditModal = memo(({
                   onChange={handleChange}
                   rows={2}
                   maxLength="160"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                    getError('metaDescription') ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  disabled={loading}
                 />
-                <p className="mt-1.5 text-xs text-gray-500">
-                  {formData.metaDescription.length}/160 characters
-                </p>
+                <div className="flex justify-between mt-1.5">
+                  {getError('metaDescription') && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      {getError('metaDescription')}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-500">
+                    {formData.metaDescription.length}/160 characters
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -453,6 +758,14 @@ const SubcategoryEditModal = memo(({
           {/* Form Actions */}
           <div className="flex items-center justify-between pt-6 border-t border-gray-200">
             <div className="flex items-center space-x-2 text-sm text-gray-500">
+              <button
+                type="button"
+                onClick={handleRefreshCategories}
+                className="p-1.5 hover:bg-gray-100 rounded-md"
+                title="Refresh categories list"
+              >
+                <FiRefreshCw className="h-4 w-4" />
+              </button>
               <FiInfo className="h-4 w-4" />
               <span>Fields marked with * are required</span>
             </div>
@@ -461,18 +774,19 @@ const SubcategoryEditModal = memo(({
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
+                disabled={loading}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !hasChanges}
                 className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <FiLoader className="h-4 w-4 animate-spin" />
                     <span>Saving...</span>
                   </>
                 ) : (

@@ -1,4 +1,4 @@
-// components/admin/modals/SubcategoryCreateModal.jsx
+// SubcategoryCreateModal.jsx - UPDATED
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FiX, FiFolder, FiInfo, FiAlertCircle, FiPlus, FiChevronDown } from 'react-icons/fi';
 
@@ -7,7 +7,8 @@ const SubcategoryCreateModal = ({
   onClose, 
   onSubmit, 
   loading = false, 
-  categories = [] 
+  categories = [],
+  error: backendError
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -22,9 +23,37 @@ const SubcategoryCreateModal = ({
   });
 
   const [errors, setErrors] = useState({});
+  const [backendErrors, setBackendErrors] = useState({});
   const [generateSlug, setGenerateSlug] = useState(true);
   const formRef = useRef(null);
   const nameInputRef = useRef(null);
+
+  // Handle backend errors
+  useEffect(() => {
+    if (backendError) {
+      if (backendError.response?.data?.errors) {
+        // Handle validation errors from backend
+        const validationErrors = backendError.response.data.errors.reduce((acc, error) => {
+          const fieldMatch = error.match(/`([^`]+)`/);
+          if (fieldMatch) {
+            const field = fieldMatch[1].toLowerCase();
+            acc[field] = error;
+          } else {
+            acc.general = error;
+          }
+          return acc;
+        }, {});
+        setBackendErrors(validationErrors);
+      } else if (backendError.response?.data?.message) {
+        // Handle general error message
+        setBackendErrors({ general: backendError.response.data.message });
+      } else {
+        setBackendErrors({ general: 'Failed to create subcategory' });
+      }
+    } else {
+      setBackendErrors({});
+    }
+  }, [backendError]);
 
   // Auto-focus on name input when modal opens
   useEffect(() => {
@@ -99,6 +128,15 @@ const SubcategoryCreateModal = ({
       [name]: newValue
     }));
     
+    // Clear backend errors for this field
+    if (backendErrors[name]) {
+      setBackendErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+    
     // Validate field if it has validation rules
     if (validationRules[name]) {
       const error = validateField(name, newValue);
@@ -107,7 +145,7 @@ const SubcategoryCreateModal = ({
         [name]: error
       }));
     }
-  }, [validateField]);
+  }, [validateField, backendErrors]);
 
   const validateForm = useCallback(() => {
     const newErrors = {};
@@ -143,6 +181,7 @@ const SubcategoryCreateModal = ({
       await onSubmit(formData);
     } catch (error) {
       console.error('Form submission error:', error);
+      // Error handling is done in the useEffect above
     }
   }, [formData, validateForm, onSubmit]);
 
@@ -159,6 +198,7 @@ const SubcategoryCreateModal = ({
       icon: '📁'
     });
     setErrors({});
+    setBackendErrors({});
     onClose();
   }, [onClose]);
 
@@ -204,6 +244,23 @@ const SubcategoryCreateModal = ({
           </div>
         </div>
 
+        {/* Backend Error Alert */}
+        {backendErrors.general && (
+          <div className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <FiAlertCircle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-800">{backendErrors.general}</p>
+                {Object.keys(backendErrors).filter(k => k !== 'general').map(key => (
+                  <p key={key} className="text-sm text-red-700 mt-1">
+                    {backendErrors[key]}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <form ref={formRef} onSubmit={handleSubmit} className="p-6">
           {/* Basic Information */}
           <div className="mb-8">
@@ -225,7 +282,7 @@ const SubcategoryCreateModal = ({
                   value={formData.name}
                   onChange={handleChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                    errors.name ? 'border-red-300' : 'border-gray-300'
+                    errors.name || backendErrors.name ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="e.g., Frontend Development"
                   autoComplete="off"
@@ -234,6 +291,12 @@ const SubcategoryCreateModal = ({
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
                     {errors.name}
+                  </p>
+                )}
+                {backendErrors.name && !errors.name && (
+                  <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    {backendErrors.name}
                   </p>
                 )}
               </div>
@@ -250,7 +313,7 @@ const SubcategoryCreateModal = ({
                     value={formData.category}
                     onChange={handleChange}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
-                      errors.category ? 'border-red-300' : 'border-gray-300'
+                      errors.category || backendErrors.category ? 'border-red-300' : 'border-gray-300'
                     }`}
                   >
                     <option value="">Select a category</option>
@@ -266,6 +329,12 @@ const SubcategoryCreateModal = ({
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
                     {errors.category}
+                  </p>
+                )}
+                {backendErrors.category && !errors.category && (
+                  <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    {backendErrors.category}
                   </p>
                 )}
                 {formData.category && categories.find(c => c._id === formData.category)?.subcategories?.length > 0 && (
@@ -287,7 +356,7 @@ const SubcategoryCreateModal = ({
                   onChange={handleChange}
                   rows={3}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                    errors.description ? 'border-red-300' : 'border-gray-300'
+                    errors.description || backendErrors.description ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="Describe what this subcategory is about..."
                   autoComplete="off"
@@ -297,6 +366,12 @@ const SubcategoryCreateModal = ({
                     <p className="text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       {errors.description}
+                    </p>
+                  )}
+                  {backendErrors.description && !errors.description && (
+                    <p className="text-sm text-red-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      {backendErrors.description}
                     </p>
                   )}
                   <p className="text-sm text-gray-500 ml-auto">
@@ -319,7 +394,7 @@ const SubcategoryCreateModal = ({
                       value={formData.icon}
                       onChange={handleChange}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                        errors.icon ? 'border-red-300' : 'border-gray-300'
+                        errors.icon || backendErrors.icon ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="📁, 🔧, ✨, etc."
                       autoComplete="off"
@@ -332,6 +407,12 @@ const SubcategoryCreateModal = ({
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       {errors.icon}
+                    </p>
+                  )}
+                  {backendErrors.icon && !errors.icon && (
+                    <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      {backendErrors.icon}
                     </p>
                   )}
                 </div>
@@ -349,7 +430,7 @@ const SubcategoryCreateModal = ({
                     min="0"
                     max="1000"
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                      errors.order ? 'border-red-300' : 'border-gray-300'
+                      errors.order || backendErrors.order ? 'border-red-300' : 'border-gray-300'
                     }`}
                     autoComplete="off"
                   />
@@ -357,6 +438,12 @@ const SubcategoryCreateModal = ({
                     <p className="mt-1.5 text-sm text-red-600 flex items-center">
                       <FiAlertCircle className="h-4 w-4 mr-1" />
                       {errors.order}
+                    </p>
+                  )}
+                  {backendErrors.order && !errors.order && (
+                    <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                      <FiAlertCircle className="h-4 w-4 mr-1" />
+                      {backendErrors.order}
                     </p>
                   )}
                 </div>
@@ -376,7 +463,7 @@ const SubcategoryCreateModal = ({
                       value={formData.slug}
                       onChange={handleChange}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
-                        errors.slug ? 'border-red-300' : 'border-gray-300'
+                        errors.slug || backendErrors.slug ? 'border-red-300' : 'border-gray-300'
                       }`}
                       placeholder="frontend-development"
                       autoComplete="off"
@@ -398,6 +485,12 @@ const SubcategoryCreateModal = ({
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
                     <FiAlertCircle className="h-4 w-4 mr-1" />
                     {errors.slug}
+                  </p>
+                )}
+                {backendErrors.slug && !errors.slug && (
+                  <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    {backendErrors.slug}
                   </p>
                 )}
                 <p className="mt-1.5 text-xs text-gray-500">
@@ -450,10 +543,18 @@ const SubcategoryCreateModal = ({
                   value={formData.metaTitle}
                   onChange={handleChange}
                   maxLength="60"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
+                    backendErrors.metaTitle ? 'border-red-300' : 'border-gray-300'
+                  }`}
                   placeholder="Title for search engines (max 60 characters)"
                   autoComplete="off"
                 />
+                {backendErrors.metaTitle && (
+                  <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    {backendErrors.metaTitle}
+                  </p>
+                )}
                 <p className="mt-1.5 text-xs text-gray-500">
                   {formData.metaTitle.length}/60 characters
                 </p>
@@ -470,10 +571,18 @@ const SubcategoryCreateModal = ({
                   onChange={handleChange}
                   rows={2}
                   maxLength="160"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
+                    backendErrors.metaDescription ? 'border-red-300' : 'border-gray-300'
+                  }`}
                   placeholder="Description for search engines (max 160 characters)"
                   autoComplete="off"
                 />
+                {backendErrors.metaDescription && (
+                  <p className="mt-1.5 text-sm text-red-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    {backendErrors.metaDescription}
+                  </p>
+                )}
                 <p className="mt-1.5 text-xs text-gray-500">
                   {formData.metaDescription.length}/160 characters
                 </p>
@@ -492,8 +601,8 @@ const SubcategoryCreateModal = ({
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
                 disabled={loading}
+                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
