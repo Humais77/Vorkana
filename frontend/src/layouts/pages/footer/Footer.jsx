@@ -76,6 +76,7 @@ const Footer = () => {
         { label: "Contact Us", path: "/contact", source: "footer", section: "support" },
         { label: "Trust & Safety", path: "/trust", source: "footer", section: "support" },
         { label: "FAQ", path: "/faq", source: "footer", section: "support" },
+        { label :"Help", path: "/help", source: "footer", section: "support"}
       ]
     },
   };

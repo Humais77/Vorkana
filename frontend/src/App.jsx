@@ -22,6 +22,7 @@ import ResetPasswordRedirect from './layouts/pages/profile/ResetPasswordRedirect
 import EmailVerificationHandler from './layouts/pages/profile/EmailVerificationHandler';
 import VerificationStatus from './layouts/pages/profile/VerificationStatus';
 import SessionMonitor from './components/SessionMonitor';
+import Toaster from './components/Toaster';
 
 // =======================
 // LAZY LOADED PAGES
@@ -59,7 +60,10 @@ const PopularServicesPage = lazy(() => import('./components/services/PopularServ
 const OAuthSuccess = lazy(() => import('./layouts/pages/OAuthSuccess'));
 const SearchResults = lazy(() => import('./layouts/pages/SearchResults'));
 const NotFound = lazy(() => import('./layouts/pages/NotFound'));
-
+const HowItWorksPage = lazy(() => import('./layouts/pages/footer/HowItWorksPage'));
+const HelpCenterPage = lazy(() => import('./layouts/pages/footer/HelpCenterPage'));
+const ContactPage = lazy(() => import('./layouts/pages/footer/ContactPage'));
+const FaqPage = lazy(()=> import('./layouts/pages/footer/FaqSection'))
 // Loading fallback
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -104,6 +108,7 @@ useEffect(() => {
   return (
     <BrowserRouter>
       <SecurityProvider>
+        <Toaster/>
         <ScrollToTop />
          <CookieChecker />
         <Suspense fallback={<LoadingFallback />}>
@@ -147,7 +152,10 @@ useEffect(() => {
 
               <Route path="/popular-services" element={<PopularServicesPage />} />
               <Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
-
+<Route path="/how-it-works" element={<HowItWorksPage />} />
+<Route path="/help" element={<HelpCenterPage />} />
+<Route path="/contact" element={<ContactPage />} />
+<Route path="/faq" element={<FaqPage />} />
               <Route path="/verify-email/:token?" element={
                 <VerificationWrapper>
                   <VerifyEmail />
