@@ -1,4 +1,4 @@
-// CategoryCreateModal.jsx - UPDATED with backend error handling
+// CategoryCreateModal.jsx - UPDATED with Toaster.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   FiX, 
@@ -10,7 +10,7 @@ import {
   FiRefreshCw 
 } from 'react-icons/fi';
 import { useCategoriesForDropdown } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useCategoryToast } from '../../../hooks/useCategoryToast';
 
 const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error = null }) => {
   const [formData, setFormData] = useState({
@@ -35,11 +35,32 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
   const { data: categoriesData, refetch: refetchCategories } = useCategoriesForDropdown();
   const categories = categoriesData?.data || [];
 
+  // Use custom toast hook
+  const {
+    showCategorySuccess,
+    showCategoryError,
+    showCategoryInfo,
+    dismissCategoryToast
+  } = useCategoryToast();
+
   // Reset on open
   useEffect(() => {
     if (isOpen) {
+      setFormData({
+        name: '',
+        description: '',
+        parentCategory: '',
+        featured: false,
+        popular: false,
+        isActive: true,
+        order: 0,
+        metaTitle: '',
+        metaDescription: '',
+        slug: ''
+      });
       setErrors({});
       setBackendErrors({});
+      setGenerateSlug(true);
       if (nameInputRef.current) {
         setTimeout(() => {
           nameInputRef.current?.focus();
@@ -53,12 +74,10 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
     if (error) {
       const errorData = error.response?.data;
       if (errorData) {
-        // Set field-specific errors
         const fieldErrors = {};
         
         if (errorData.errors && Array.isArray(errorData.errors)) {
           errorData.errors.forEach(err => {
-            // Extract field name from error message
             if (err.includes('name')) fieldErrors.name = err;
             else if (err.includes('slug')) fieldErrors.slug = err;
             else if (err.includes('description')) fieldErrors.description = err;
@@ -93,7 +112,7 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
         
         // Show general error toast
         if (fieldErrors.general) {
-          toast.error(fieldErrors.general);
+          showCategoryError(fieldErrors.general);
         }
         
         // Focus on first error field
@@ -109,7 +128,7 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
         }
       }
     }
-  }, [error]);
+  }, [error, showCategoryError]);
 
   // Debounced slug generation
   useEffect(() => {
@@ -236,8 +255,8 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
-    toast.success('Categories refreshed');
-  }, [refetchCategories]);
+    showCategorySuccess('Categories refreshed');
+  }, [refetchCategories, showCategorySuccess]);
 
   // Handle escape key
   useEffect(() => {

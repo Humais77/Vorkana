@@ -1,4 +1,4 @@
-// CategoryDeleteModal.jsx - UPDATED with error handling
+// CategoryDeleteModal.jsx - UPDATED with Toaster.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   FiX, 
@@ -12,7 +12,7 @@ import {
   FiLoader,
   FiAlertCircle
 } from 'react-icons/fi';
-import { toast } from 'react-hot-toast';
+import { useCategoryToast } from '../../../hooks/useCategoryToast';
 
 const CategoryDeleteModal = ({ 
   category, 
@@ -26,6 +26,12 @@ const CategoryDeleteModal = ({
   const [deleteType, setDeleteType] = useState(permanent ? 'permanent' : 'soft');
   const [forceDelete, setForceDelete] = useState(false);
   const [backendError, setBackendError] = useState('');
+
+  // Use custom toast hook
+  const {
+    showCategoryError,
+    dismissCategoryToast
+  } = useCategoryToast();
 
   // Reset state when modal opens
   useEffect(() => {
@@ -60,10 +66,10 @@ const CategoryDeleteModal = ({
         }
         
         setBackendError(errorMessage);
-        toast.error(errorMessage);
+        showCategoryError(errorMessage);
       }
     }
-  }, [error]);
+  }, [error, showCategoryError]);
 
   if (!isOpen || !category) return null;
 
@@ -84,7 +90,7 @@ const CategoryDeleteModal = ({
     
     if (!forceDelete && hasDependencies && deleteType === 'permanent') {
       setBackendError('Category has dependencies. Check "Force delete" to proceed.');
-      toast.error('Category has dependencies. Check "Force delete" to proceed.');
+      showCategoryError('Category has dependencies. Check "Force delete" to proceed.');
       return;
     }
 

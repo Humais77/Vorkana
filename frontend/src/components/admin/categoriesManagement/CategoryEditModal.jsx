@@ -1,4 +1,4 @@
-// CategoryEditModal.jsx - UPDATED with backend error handling and refresh
+// CategoryEditModal.jsx - UPDATED with Toaster.jsx
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
   FiX, 
@@ -11,7 +11,7 @@ import {
   FiAlertTriangle
 } from 'react-icons/fi';
 import { useCategoriesForDropdown } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useCategoryToast } from '../../../hooks/useCategoryToast';
 
 // Validation rules
 const validationRules = {
@@ -82,6 +82,14 @@ const CategoryEditModal = memo(({
   const { data: categoriesData, refetch: refetchCategories } = useCategoriesForDropdown();
   const categories = categoriesData?.data || [];
 
+  // Use custom toast hook
+  const {
+    showCategorySuccess,
+    showCategoryError,
+    showCategoryInfo,
+    dismissCategoryToast
+  } = useCategoryToast();
+
   // Initialize form with category data
   useEffect(() => {
     if (category) {
@@ -118,7 +126,7 @@ const CategoryEditModal = memo(({
         // Handle version conflict
         if (errorData.code === 'UPDATE_CONFLICT' || errorData.message?.includes('version')) {
           fieldErrors.version = 'This category was modified by another user. Please refresh and try again.';
-          toast.error('Version conflict detected. Please refresh the data.');
+          showCategoryError('Version conflict detected. Please refresh the data.');
         }
         
         if (errorData.code === 'DUPLICATE_CATEGORY') {
@@ -142,7 +150,7 @@ const CategoryEditModal = memo(({
         
         if (errorData.message && !fieldErrors.version) {
           fieldErrors.general = errorData.message;
-          toast.error(errorData.message);
+          showCategoryError(errorData.message);
         }
         
         setBackendErrors(fieldErrors);
@@ -156,11 +164,11 @@ const CategoryEditModal = memo(({
               element.focus();
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 100);
+            }
           }
         }
       }
-    }
-  }, [error]);
+  }, [error, showCategoryError]);
 
   // Check for changes
   useEffect(() => {
@@ -209,8 +217,8 @@ const CategoryEditModal = memo(({
 
   const handleRefreshCategories = useCallback(() => {
     refetchCategories();
-    toast.success('Categories list refreshed');
-  }, [refetchCategories]);
+    showCategorySuccess('Categories list refreshed');
+  }, [refetchCategories, showCategorySuccess]);
 
   const handleRefreshData = useCallback(() => {
     if (category) {
@@ -233,9 +241,9 @@ const CategoryEditModal = memo(({
       setErrors({});
       setBackendErrors({});
       setHasChanges(false);
-      toast.success('Form data refreshed from server');
+      showCategorySuccess('Form data refreshed from server');
     }
-  }, [category]);
+  }, [category, showCategorySuccess]);
 
   // Validate entire form
   const validateForm = useCallback(() => {
@@ -260,7 +268,7 @@ const CategoryEditModal = memo(({
     e.preventDefault();
     
     if (!hasChanges) {
-      toast.success('No changes to save');
+      showCategorySuccess('No changes to save');
       return;
     }
     
@@ -289,7 +297,7 @@ const CategoryEditModal = memo(({
     } catch (err) {
       // Error handled in useEffect
     }
-  }, [formData, category, hasChanges, validateForm, onSubmit]);
+  }, [formData, category, hasChanges, validateForm, onSubmit, showCategorySuccess]);
 
   // Reset and close modal with confirmation
   const handleClose = useCallback(() => {

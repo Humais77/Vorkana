@@ -1,4 +1,3 @@
-// CategoriesManagement.jsx - UPDATED with loading states
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import { 
   useAdminCategories, 
@@ -9,7 +8,7 @@ import {
   useExportCategories, 
   useCategoryStats
 } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useCategoryToast } from '../../../hooks/useCategoryToast';
 import {
   FiFolder,
   FiDownload,
@@ -290,6 +289,17 @@ const CategoriesManagement = () => {
   const exportCategoriesMutation = useExportCategories();
   
   const { data: categoryStatsData } = useCategoryStats();
+  
+  // Use custom toast hook
+  const {
+    showCategoryLoading,
+    showCategorySuccess,
+    showCategoryError,
+    showCategoryWarning,
+    showCategoryInfo,
+    dismissCategoryToast
+  } = useCategoryToast();
+  
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -311,9 +321,11 @@ const CategoriesManagement = () => {
 
   const handleBulkAction = useCallback(async (action) => {
     if (selectedCategories.length === 0) {
-      toast.error('Please select categories first');
+      showCategoryWarning('Please select categories first');
       return;
     }
+
+    const loadingToastId = showCategoryLoading(`Processing ${selectedCategories.length} categories...`);
 
     try {
       const bulkData = {
@@ -324,32 +336,40 @@ const CategoriesManagement = () => {
       await bulkOperationsMutation.mutateAsync(bulkData);
       setSelectedCategories([]);
       refetch();
-      toast.success(`${selectedCategories.length} categories ${action}ed successfully`);
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess(`${selectedCategories.length} categories ${action}ed successfully`);
     } catch (error) {
+      dismissCategoryToast(loadingToastId);
       const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
       const validationErrors = error.response?.data?.errors;
       
       if (validationErrors) {
-        validationErrors.forEach(err => toast.error(err));
+        validationErrors.forEach(err => showCategoryError(err));
       } else {
-        toast.error(errorMessage);
+        showCategoryError(errorMessage);
       }
     }
-  }, [selectedCategories, bulkOperationsMutation, refetch]);
+  }, [selectedCategories, bulkOperationsMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, showCategoryWarning, dismissCategoryToast]);
 
   const handleCreateCategory = useCallback(async (categoryData) => {
+    const loadingToastId = showCategoryLoading('Creating category...');
+    
     try {
       await createCategoryMutation.mutateAsync(categoryData);
-      toast.success('Category created successfully');
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Category created successfully');
       setShowCreateModal(false);
       refetch();
     } catch (error) {
+      dismissCategoryToast(loadingToastId);
       throw error;
     }
-  }, [createCategoryMutation, refetch]);
+  }, [createCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
 
   const handleUpdateCategory = useCallback(async (categoryData) => {
     if (!selectedCategory) return;
+    
+    const loadingToastId = showCategoryLoading('Updating category...');
     
     try {
       setUpdatingCategoryId(selectedCategory._id);
@@ -357,33 +377,41 @@ const CategoriesManagement = () => {
         id: selectedCategory._id,
         data: categoryData
       });
-      toast.success('Category updated successfully');
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Category updated successfully');
       setShowEditModal(false);
       setSelectedCategory(null);
       setUpdatingCategoryId(null);
       refetch();
     } catch (error) {
+      dismissCategoryToast(loadingToastId);
       setUpdatingCategoryId(null);
       throw error;
     }
-  }, [selectedCategory, updateCategoryMutation, refetch]);
+  }, [selectedCategory, updateCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
+    const loadingToastId = showCategoryLoading('Deleting category...');
+    
     try {
       setDeletingCategoryId(deleteOptions.id);
       await deleteCategoryMutation.mutateAsync(deleteOptions);
-      toast.success('Category deleted successfully');
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Category deleted successfully');
       setShowDeleteModal(false);
       setSelectedCategory(null);
       setDeletingCategoryId(null);
       refetch();
     } catch (error) {
+      dismissCategoryToast(loadingToastId);
       setDeletingCategoryId(null);
       throw error;
     }
-  }, [deleteCategoryMutation, refetch]);
+  }, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
 
   const handleDuplicate = useCallback(async (category) => {
+    const loadingToastId = showCategoryLoading('Duplicating category...');
+    
     try {
       const duplicateData = {
         name: `${category.name} (Copy)`,
@@ -399,21 +427,25 @@ const CategoriesManagement = () => {
       };
       
       await createCategoryMutation.mutateAsync(duplicateData);
-      toast.success('Category duplicated successfully');
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Category duplicated successfully');
       refetch();
     } catch (error) {
+      dismissCategoryToast(loadingToastId);
       const errorMessage = error.response?.data?.message || 'Failed to duplicate category';
       const validationErrors = error.response?.data?.errors;
       
       if (validationErrors) {
-        validationErrors.forEach(err => toast.error(err));
+        validationErrors.forEach(err => showCategoryError(err));
       } else {
-        toast.error(errorMessage);
+        showCategoryError(errorMessage);
       }
     }
-  }, [createCategoryMutation, refetch]);
+  }, [createCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const exportCategories = useCallback(async () => {
+    const loadingToastId = showCategoryLoading('Exporting categories...');
+    
     try {
       const response = await exportCategoriesMutation.mutateAsync('csv');
       
@@ -427,11 +459,13 @@ const CategoriesManagement = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      toast.success('Categories exported successfully');
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Categories exported successfully');
     } catch (error) {
-      toast.error('Failed to export categories');
+      dismissCategoryToast(loadingToastId);
+      showCategoryError('Failed to export categories');
     }
-  }, [exportCategoriesMutation]);
+  }, [exportCategoriesMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -476,8 +510,8 @@ const CategoriesManagement = () => {
     refetch();
     setSelectedCategories([]);
     setExpandedCategories([]);
-    toast.success('Data refreshed');
-  }, [refetch]);
+    showCategorySuccess('Data refreshed');
+  }, [refetch, showCategorySuccess]);
 
   // Memoized stats calculation
   const stats = useMemo(() => {

@@ -349,7 +349,6 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
 const logAudit = (action, resource, resourceId, userId, details = {}) => {
   console.log(`[AUDIT] ${new Date().toISOString()} - ${action} - ${resource}:${resourceId} - User:${userId}`, details);
 };
-
 // Create Category (Admin Only)
 const createCategory = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -369,6 +368,42 @@ const createCategory = async (req, res, next) => {
 
     const sanitizedData = sanitizeCategoryInput(req.body);
     
+    // *** FIX: Handle empty parentCategory string ***
+    if (sanitizedData.parentCategory === '') {
+      sanitizedData.parentCategory = null;
+    }
+    
+    // Validate parentCategory if provided
+    if (sanitizedData.parentCategory && sanitizedData.parentCategory !== null) {
+      // Check if it's a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(sanitizedData.parentCategory)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid parent category ID format',
+          code: 'INVALID_PARENT_CATEGORY_ID',
+          requestId
+        });
+      }
+      
+      // Check if parent category exists and is not deleted
+      const parentCategory = await Category.findOne({
+        _id: sanitizedData.parentCategory,
+        deletedAt: null
+      });
+      
+      if (!parentCategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Parent category not found or is deleted',
+          code: 'PARENT_CATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
+      
+      // Check for circular reference (category cannot be its own parent)
+      // This check is mostly for updates, but kept here for safety
+    }
+
     // Additional manual validation for XSS
     const validateForXSS = (fieldName, value) => {
       if (!value) return true;
@@ -395,20 +430,40 @@ const createCategory = async (req, res, next) => {
     if (sanitizedData.metaTitle) validateForXSS('metaTitle', sanitizedData.metaTitle);
     if (sanitizedData.metaDescription) validateForXSS('metaDescription', sanitizedData.metaDescription);
     
-    // Check for circular parent reference
-    if (sanitizedData.parentCategory) {
-      if (sanitizedData.parentCategory === req.body._id) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category cannot be its own parent',
-          code: 'CIRCULAR_REFERENCE',
-          requestId
-        });
-      }
+    // Check for duplicate name
+    const existingCategory = await Category.findOne({
+      name: sanitizedData.name.trim(),
+      deletedAt: null
+    });
+
+    if (existingCategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category with this name already exists',
+        code: 'DUPLICATE_CATEGORY',
+        requestId
+      });
+    }
+
+    // Check for duplicate slug
+    const existingSlug = await Category.findOne({
+      slug: sanitizedData.slug?.toLowerCase(),
+      deletedAt: null
+    });
+
+    if (existingSlug) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category with this slug already exists',
+        code: 'DUPLICATE_SLUG',
+        requestId
+      });
     }
 
     const category = await Category.create({
       ...sanitizedData,
+      // Ensure parentCategory is null if empty, not empty string
+      parentCategory: sanitizedData.parentCategory || null,
       createdBy: req.user._id,
       version: 1
     });
@@ -472,13 +527,28 @@ const createCategory = async (req, res, next) => {
       });
     }
     
+    // Handle CastError specifically (for ObjectId casting)
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid value for field ${error.path}: ${error.value}`,
+        code: 'INVALID_FIELD_VALUE',
+        requestId
+      });
+    }
+    
+    console.error('[CREATE CATEGORY ERROR]', error);
     logAudit('ERROR', 'CATEGORY', 'CREATE', req.user?._id, { error: error.message });
-    next(error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create category',
+      code: 'CATEGORY_CREATE_ERROR',
+      requestId,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
-
-// Also fix the updateCategory function similarly:
-
 // Get Categories with Advanced Security
 const getCategories = async (req, res, next) => {
   const requestId = generateRequestId();
