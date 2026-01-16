@@ -192,7 +192,48 @@ router.get('/session',
 // ============================================
 // SUBCATEGORY MANAGEMENT ROUTES
 // ============================================
-
+router.get('/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  cacheMiddleware(600, 'admin:subcategories:dropdown'), // Cache for 10 minutes
+  async (req, res) => {
+    try {
+      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
+      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
+      
+      const { categoryId } = req.query;
+      
+      const filter = {
+        isActive: true,
+        deletedAt: null
+      };
+      
+      if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+        filter.category = categoryId;
+      }
+      
+      const subcategories = await Subcategory.find(filter)
+        .select('name slug icon description category order')
+        .populate('category', 'name slug')
+        .sort({ order: 1, name: 1 })
+        .lean();
+      
+      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
+      
+      res.json({
+        success: true,
+        data: subcategories
+      });
+    } catch (error) {
+      console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch subcategories',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
 // Get all subcategories with pagination and filtering
 router.get('/subcategories', 
   verifyAdmin, 
@@ -272,48 +313,7 @@ router.post('/subcategories/bulk',
   adminController.bulkUpdateSubcategories
 );
 
-router.get('/subcategories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  cacheMiddleware(600, 'admin:subcategories:dropdown'), // Cache for 10 minutes
-  async (req, res) => {
-    try {
-      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
-      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
-      
-      const { categoryId } = req.query;
-      
-      const filter = {
-        isActive: true,
-        deletedAt: null
-      };
-      
-      if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
-        filter.category = categoryId;
-      }
-      
-      const subcategories = await Subcategory.find(filter)
-        .select('name slug icon description category order')
-        .populate('category', 'name slug')
-        .sort({ order: 1, name: 1 })
-        .lean();
-      
-      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
-      
-      res.json({
-        success: true,
-        data: subcategories
-      });
-    } catch (error) {
-      console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch subcategories',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
+
 
 router.get('/categories/:categoryId/subcategories/dropdown', 
   verifyAdmin, 
@@ -534,6 +534,68 @@ router.delete('/users/:id',
 // ============================================
 // CATEGORY MANAGEMENT ROUTES
 // ============================================
+router.get('/categories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  cacheMiddleware(600, 'admin:categories:dropdown'), // Cache for 10 minutes
+  async (req, res) => {
+    try {
+      console.log('[CATEGORIES DROPDOWN] Fetching categories...');
+      console.log('[CATEGORIES DROPDOWN] Admin user:', req.admin?.email);
+      
+      const { includeSubcategories = false } = req.query;
+      
+      const categories = await Category.find({ 
+        isActive: true,
+        deletedAt: null,
+        isSubcategory: false
+      })
+      .select('name slug icon parentCategory')
+      .sort({ name: 1 })
+      .lean();
+      
+      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
+      
+      if (includeSubcategories === 'true') {
+        const categoryIds = categories.map(cat => cat._id);
+        
+        const subcategories = await Subcategory.find({
+          category: { $in: categoryIds },
+          isActive: true,
+          deletedAt: null
+        })
+        .select('name slug icon category order')
+        .sort({ order: 1, name: 1 })
+        .lean();
+        
+        const subcategoriesByCategory = {};
+        subcategories.forEach(sub => {
+          const catId = sub.category.toString();
+          if (!subcategoriesByCategory[catId]) {
+            subcategoriesByCategory[catId] = [];
+          }
+          subcategoriesByCategory[catId].push(sub);
+        });
+        
+        categories.forEach(category => {
+          category.subcategories = subcategoriesByCategory[category._id.toString()] || [];
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: categories
+      });
+    } catch (error) {
+      console.error('[CATEGORIES DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch categories',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -1007,68 +1069,7 @@ router.post('/gigs/bulk',
 // ============================================
 // DROPDOWN ROUTES
 // ============================================
-router.get('/categories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  cacheMiddleware(600, 'admin:categories:dropdown'), // Cache for 10 minutes
-  async (req, res) => {
-    try {
-      console.log('[CATEGORIES DROPDOWN] Fetching categories...');
-      console.log('[CATEGORIES DROPDOWN] Admin user:', req.admin?.email);
-      
-      const { includeSubcategories = false } = req.query;
-      
-      const categories = await Category.find({ 
-        isActive: true,
-        deletedAt: null,
-        isSubcategory: false
-      })
-      .select('name slug icon parentCategory')
-      .sort({ name: 1 })
-      .lean();
-      
-      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
-      
-      if (includeSubcategories === 'true') {
-        const categoryIds = categories.map(cat => cat._id);
-        
-        const subcategories = await Subcategory.find({
-          category: { $in: categoryIds },
-          isActive: true,
-          deletedAt: null
-        })
-        .select('name slug icon category order')
-        .sort({ order: 1, name: 1 })
-        .lean();
-        
-        const subcategoriesByCategory = {};
-        subcategories.forEach(sub => {
-          const catId = sub.category.toString();
-          if (!subcategoriesByCategory[catId]) {
-            subcategoriesByCategory[catId] = [];
-          }
-          subcategoriesByCategory[catId].push(sub);
-        });
-        
-        categories.forEach(category => {
-          category.subcategories = subcategoriesByCategory[category._id.toString()] || [];
-        });
-      }
-      
-      res.json({
-        success: true,
-        data: categories
-      });
-    } catch (error) {
-      console.error('[CATEGORIES DROPDOWN ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch categories',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
+
 
 router.get('/users/dropdown', 
   verifyAdmin, 

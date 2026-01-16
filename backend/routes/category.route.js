@@ -7,7 +7,6 @@ const {
   validateUpdate, 
   validateBulk, 
   validateQuery ,
-  validateSubcategory 
 } = require('../middleware/validators/category.validator.js');
 const SessionMiddleware = require("../middleware/session.middleware");
 const timeout = (ms) => {
@@ -90,17 +89,12 @@ router.get('/repair-counts/status',  SessionMiddleware.authenticate, adminOnly, 
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
 router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
-router.get('/:categoryId/subcategories', publicLimiter, optionalAuth, controller.getSubcategoriesByCategory);
 
 // ========== ADMIN  SESSIONMIDDLEWARE.AUTHENTICATEED ROUTES (cookies required) ==========
 router.post('/',  SessionMiddleware.authenticate, adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
 router.put('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
 router.delete('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.deleteCategory);
 router.patch('/:id/restore',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.restoreCategory);
-
-// Subcategory routes
-router.post('/subcategories',  SessionMiddleware.authenticate, adminOnly, adminLimiter, validateSubcategory, controller.createSubcategory);
-
 
 
 // Health check (public)

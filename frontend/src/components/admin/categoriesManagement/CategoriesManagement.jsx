@@ -518,7 +518,6 @@ const CategoriesManagement = () => {
     const active = categories.filter(c => c.isActive).length;
     const featured = categories.filter(c => c.featured).length;
     const popular = categories.filter(c => c.popular).length;
-    const totalSubcategories = categories.filter(c => c.parentCategory).length;
     const totalServices = categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0);
     const totalGigs = categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0);
 
@@ -527,7 +526,6 @@ const CategoriesManagement = () => {
       active,
       featured,
       popular,
-      totalSubcategories,
       totalServices,
       totalGigs
     };

@@ -15,7 +15,6 @@ export const useCategories = (options = {}) => {
     queryFn: async () => {
       try {
         const categories = await categoriesAPI.getAll({
-          includeSubcategories: false, // Don't load subcategories here
         });
         return categories;
       } catch (error) {
@@ -42,25 +41,7 @@ export const useCategories = (options = {}) => {
     ...options,
   });
 };
-export const useCategoriesWithSubcategories = (options = {}) => {
-  return useQuery({
-    queryKey: ['categories', 'with-subcategories'],
-    queryFn: async () => {
-      try {
-        const categories = await categoriesAPI.getAll({
-          includeSubcategories: true,
-          limit: 100,
-        });
-        return categories;
-      } catch (error) {
-        console.error('Error fetching categories with subcategories:', error);
-        throw error;
-      }
-    },
-    staleTime: 10 * 60 * 1000,
-    ...options,
-  });
-};
+
 /**
  * Hook to get a single category by ID
  */
@@ -85,7 +66,6 @@ export const useParentCategories = (options = {}) => {
     queryFn: async () => {
       try {
         const parentCategories = await categoriesAPI.getParentCategories();
-        console.log('Parent categories fetched (hook):', parentCategories?.length || 0);
         return parentCategories;
       } catch (error) {
         console.error('Error in useParentCategories:', error);

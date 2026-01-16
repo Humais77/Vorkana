@@ -574,15 +574,6 @@ const CategoryDetailsModal = ({
                         </div>
                         <span className="text-lg font-bold text-blue-900">{formatNumber(category.gigsCount)}</span>
                       </div>
-                      <div className="flex items-center justify-between py-2">
-                        <div className="flex items-center space-x-2">
-                          <FiFolder className="h-4 w-4 text-blue-600" />
-                          <span className="text-sm text-blue-700">Subcategories</span>
-                        </div>
-                        <span className="text-lg font-bold text-blue-900">
-                          {formatNumber(category.subcategories?.length || 0)}
-                        </span>
-                      </div>
                     </div>
                   </div>
 

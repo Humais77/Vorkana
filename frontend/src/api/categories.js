@@ -121,7 +121,6 @@ export const categoriesAPI = {
         slug: category.slug || (category.name ? category.name.toLowerCase().replace(/\s+/g, '-') : ''),
         parentCategory: category.parentCategory || null,
         level: category.level || 0,
-        children: category.children || category.subcategories || [],
         createdAt: category.createdAt || '',
         updatedAt: category.updatedAt || '',
         isActive: category.isActive !== false,
@@ -145,7 +144,6 @@ export const categoriesAPI = {
         params: {
           parentCategory: null,
           level: 0,
-          includeSubcategories: true,
           limit: 50,
           _: Date.now()
         }
@@ -164,7 +162,6 @@ export const categoriesAPI = {
       }
       
       return categories.map(category => {
-        const children = category.children || category.subcategories || [];
         
         return {
           _id: category._id || category.id,
@@ -172,12 +169,6 @@ export const categoriesAPI = {
           description: category.description || '',
           slug: category.slug || (category.name ? category.name.toLowerCase().replace(/\s+/g, '-') : ''),
           parentCategory: category.parentCategory || null,
-          children: children.map(child => ({
-            _id: child._id || child.id,
-            name: child.name || '',
-            slug: child.slug || (child.name ? child.name.toLowerCase().replace(/\s+/g, '-') : ''),
-            parentCategory: category._id || category.id
-          })),
           level: category.level || 0,
           createdAt: category.createdAt || '',
           updatedAt: category.updatedAt || '',

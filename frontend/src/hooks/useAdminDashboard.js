@@ -19,7 +19,7 @@ export const useAdminDashboard = () => {
 
         const stats = response.data.data;
 
-        console.log('[DASHBOARD STATS] Raw data:', stats); // ← ADD THIS FOR DEBUGGING
+        console.log('[DASHBOARD STATS] Raw data:', stats);
 
         // Extract safely with fallbacks
         const overview = stats.overview || {};
@@ -34,6 +34,7 @@ export const useAdminDashboard = () => {
           totalCategories: categories.totalCategories || 0,
           activeCategories: categories.activeCategories || 0,
           
+          // Note: Subcategories are now separate, these might come from different endpoint
           totalSubcategories: categories.totalSubcategories || 0,
           activeSubcategories: categories.activeSubcategories || 0,
           
@@ -143,7 +144,6 @@ export const useAdminCategories = (params = {}) => {
   });
 };
 
-// Keep the mutation hooks as they are
 export const useCreateUser = () => {
   const queryClient = useQueryClient();
 
@@ -252,6 +252,7 @@ export const useDeleteUser = () => {
     }
   });
 };
+
 export const useUpdateUser = () => {
   const queryClient = useQueryClient();
 
@@ -338,11 +339,11 @@ export const useUpdateUser = () => {
         toast.error(errorMessage);
       }
     },
-    // Retry logic
     retry: 1,
     retryDelay: 1000
   });
 };
+
 export const useUpdateCategory = () => {
   const queryClient = useQueryClient();
 
@@ -542,6 +543,7 @@ export const useDeleteCategory = () => {
     }
   });
 };
+
 export const useRestoreCategory = () => {
   const queryClient = useQueryClient();
 
@@ -692,6 +694,7 @@ export const useBulkRestoreCategories = () => {
     }
   });
 };
+
 export const useAdminServices = (params = {}) => {
   return useQuery({
     queryKey: ['admin', 'services', params],
@@ -978,6 +981,7 @@ export const useServicePolling = (params = {}) => {
   
   return { data, refetch, lastUpdate, ...rest };
 };
+
 export const useDeleteService = () => {
   const queryClient = useQueryClient();
 
@@ -1098,7 +1102,7 @@ export const useBulkServiceOperations = () => {
     }
   });
 };
-// Add to useAdminDashboard.js
+
 export const useAdminGigs = (params = {}) => {
   return useQuery({
     queryKey: ['admin', 'gigs', params],
@@ -1161,7 +1165,6 @@ export const useUpdateGig = () => {
   });
 };
 
-// In useAdminDashboard.js or similar
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
 
@@ -1254,8 +1257,7 @@ export const useUsersForDropdown = (role = '') => {
     staleTime: 300000,
   });
 };
-// Add this to your useAdminDashboard.js file
-// In useAdminDashboard.js - Add the bulk category operations hook
+
 export const useBulkCategoryOperations = () => {
   const queryClient = useQueryClient();
 
@@ -1307,7 +1309,6 @@ export const useBulkCategoryOperations = () => {
     }
   });
 };
-// In useAdminDashboard.js - Add these hooks:
 
 export const useCreateService = () => {
   const queryClient = useQueryClient();
@@ -1350,6 +1351,7 @@ export const useServiceStats = () => {
   });
 };
 
+// KEEP THESE - These are for SEPARATE Subcategory management
 export const useAdminSubcategories = (params = {}) => {
   const setSubcategories = useAdminStore((state) => state.setSubcategories);
 
@@ -1566,9 +1568,7 @@ export const useBulkSubcategoryOperations = () => {
     }
   });
 };
-// In useAdminDashboard.js - Add these missing hooks
 
-// Bulk user operations hook
 export const useBulkUserOperations = () => {
   const queryClient = useQueryClient();
 
@@ -1622,7 +1622,6 @@ export const useBulkUserOperations = () => {
   });
 };
 
-// Export functions hooks
 export const useExportUsers = () => {
   return useMutation({
     mutationFn: (format = 'csv') => adminAPI.exportUsers(format),
@@ -1634,6 +1633,7 @@ export const useExportUsers = () => {
     }
   });
 };
+
 export const useExportCategories = () => {
   return useMutation({
     mutationFn: (format = 'csv') => adminAPI.exportCategories(format),
@@ -1682,7 +1682,6 @@ export const useExportGigs = () => {
   });
 };
 
-// Stats hooks
 export const useCategoryStats = () => {
   return useQuery({
     queryKey: ['admin', 'categories', 'stats'],
@@ -1751,7 +1750,6 @@ export const useSystemHealth = () => {
   });
 };
 
-// Additional dashboard data hooks
 export const useRecentActivities = (limit = 10) => {
   return useQuery({
     queryKey: ['admin', 'dashboard', 'activities', limit],
@@ -1796,7 +1794,7 @@ export const useChartData = (chartType, timeRange = '7d') => {
   });
 };
 
-// Subcategories by category hook
+// Subcategories by category hook (for separate subcategory system)
 export const useSubcategoriesByCategory = (categoryId, params = {}) => {
   return useQuery({
     queryKey: ['admin', 'subcategories', 'by-category', categoryId, params],
@@ -1813,6 +1811,7 @@ export const useSubcategoriesByCategory = (categoryId, params = {}) => {
     staleTime: 300000,
   });
 };
+
 export const useRepairCategoryCounts = () => {
   const queryClient = useQueryClient();
 
@@ -1848,6 +1847,7 @@ export const useRepairCategoryCounts = () => {
     }
   });
 };
+
 export const useRepairAllCounts = () => {
   const repairCategory = useRepairCategoryCounts();
   const repairSubcategory = useRepairSubcategoryCounts();

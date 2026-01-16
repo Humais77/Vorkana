@@ -1,4 +1,3 @@
-// CategoryDeleteModal.jsx - UPDATED with Toaster.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   FiX, 
@@ -6,9 +5,7 @@ import {
   FiAlertTriangle, 
   FiInfo, 
   FiDatabase, 
-  FiFolder,
   FiHardDrive,
-  FiArchive,
   FiLoader,
   FiAlertCircle
 } from 'react-icons/fi';
@@ -52,8 +49,8 @@ const CategoryDeleteModal = ({
         if (errorData.code === 'DEPENDENCIES_EXIST') {
           errorMessage = 'Cannot delete category with active dependencies. Use force delete or remove dependencies first.';
           if (errorData.details) {
-            const { subcategories, services, gigs } = errorData.details;
-            errorMessage += ` (Subcategories: ${subcategories}, Services: ${services}, Gigs: ${gigs})`;
+            const { services, gigs } = errorData.details;
+            errorMessage += ` (Services: ${services}, Gigs: ${gigs})`;
           }
         }
         
@@ -78,7 +75,6 @@ const CategoryDeleteModal = ({
     return {
       services: category.servicesCount || 0,
       gigs: category.gigsCount || 0,
-      subcategories: category.subcategories?.length || category.children?.length || 0
     };
   };
 
@@ -242,20 +238,7 @@ const CategoryDeleteModal = ({
                     }`}>
                       This category has dependencies:
                     </p>
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      {dependencies.subcategories > 0 && (
-                        <div className={`flex flex-col items-center p-3 rounded-lg ${
-                          deleteType === 'permanent' ? 'bg-amber-100' : 'bg-blue-100'
-                        }`}>
-                          <FiFolder className={`h-4 w-4 mb-1 ${
-                            deleteType === 'permanent' ? 'text-amber-600' : 'text-blue-600'
-                          }`} />
-                          <span className="font-medium">{dependencies.subcategories}</span>
-                          <span className={`text-xs ${
-                            deleteType === 'permanent' ? 'text-amber-700' : 'text-blue-700'
-                          }`}>Subcategories</span>
-                        </div>
-                      )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       {dependencies.services > 0 && (
                         <div className={`flex flex-col items-center p-3 rounded-lg ${
                           deleteType === 'permanent' ? 'bg-amber-100' : 'bg-blue-100'
@@ -299,7 +282,7 @@ const CategoryDeleteModal = ({
                           </span>
                         </label>
                         <p className="text-xs text-amber-700 mt-1 ml-6">
-                          This will also delete all associated subcategories, services, and gigs.
+                          This will also delete all associated services and gigs.
                         </p>
                       </div>
                     )}

@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const Category = require('../models/category.model.js');
-const Subcategory = require('../models/subcategory.model.js');
 const Service = require('../models/services.model.js');
 const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
@@ -163,9 +162,6 @@ const buildSecureCategoryQuery = (queryParams, userRole, userId) => {
 
   const filter = {};
 
-  // ==========================================
-  // SECURITY: Prevent NoSQL Injection
-  // ==========================================
   
   // Reject any query parameter that contains MongoDB operators
   const rejectMongoOperators = (value, paramName) => {
@@ -556,14 +552,13 @@ const getCategories = async (req, res, next) => {
 
   try {
     const {
-      search, q, name, slug, parentCategory, isSubcategory,
-      onlyCategories, onlySubcategories, featured, popular, isActive, level,
+      search, q, name, slug, parentCategory, featured, popular, isActive, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
       hasParent, ids, excludeIds,
       sort = 'createdAt', order = 'desc', page = 1, limit = 10, offset,
       fields, excludeFields, populate = true, populateFields = 'name',
-      showAll = false, includeSubcategories = false, includeCounts = false,
+      showAll = false, includeCounts = false,
       includeServicesCount = false, includeGigsCount = false, // Add these
       cache: useCacheParam = false
     } = req.query;
@@ -573,30 +568,15 @@ const getCategories = async (req, res, next) => {
 
     // Build secure query with subcategory support
     const filter = buildSecureCategoryQuery({
-      search: search || q, name, slug, parentCategory, isSubcategory,
-      onlyCategories, onlySubcategories, featured, popular,
+      search: search || q, name, slug, parentCategory,
+       featured, popular,
       isActive: showAllFlag ? isActive : undefined, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
       hasParent, ids, excludeIds, showAll: showAllFlag
     }, req.user?.role, req.user?._id);
 
-    // Handle onlyCategories and onlySubcategories filters
-    if (onlyCategories === 'true') {
-      filter.isSubcategory = false;
-      filter.parentCategory = { $in: [null, undefined] };
-    }
-    
-    if (onlySubcategories === 'true') {
-      filter.isSubcategory = true;
-      filter.parentCategory = { $exists: true, $ne: null };
-    }
-
-    // If isSubcategory is explicitly set, use it
-    if (isSubcategory !== undefined) {
-      filter.isSubcategory = isSubcategory === 'true';
-    }
-
+   
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const skip = offset !== undefined ? Math.max(0, parseInt(offset) || 0) : (pageNum - 1) * limitNum;
@@ -614,7 +594,6 @@ const getCategories = async (req, res, next) => {
       sort: sortField, 
       order: sortOrder,
       populate: populate === 'true', 
-      includeSubcategories: includeSubcategories === 'true',
       includeCounts: includeCounts === 'true',
       includeServicesCount: includeServicesCount === 'true',
       includeGigsCount: includeGigsCount === 'true',
@@ -650,24 +629,11 @@ const getCategories = async (req, res, next) => {
       // Always populate parentCategory for hierarchy
       populateOptions.push({
         path: 'parentCategory',
-        select: 'name slug icon isSubcategory level',
+        select: 'name slug',
         match: { isActive: true }
       });
       
-      // Handle subcategories based on includeSubcategories flag
-      if (includeSubcategories === 'true' && filter.isSubcategory !== true) {
-        // Only include subcategories if we're querying main categories
-        populateOptions.push({
-          path: 'subcategories',
-          select: 'name slug description icon order servicesCount gigsCount featured popular isActive',
-          match: { isActive: true, deletedAt: null },
-          options: { 
-            sort: { order: 1, name: 1 }, 
-            limit: 50, // Increased limit for subcategories
-            skip: 0 
-          }
-        });
-      }
+     
     }
 
     // Build select fields
@@ -793,8 +759,7 @@ const getCategories = async (req, res, next) => {
             active: { $sum: { $cond: ['$isActive', 1, 0] } },
             featured: { $sum: { $cond: ['$featured', 1, 0] } },
             popular: { $sum: { $cond: ['$popular', 1, 0] } },
-            categories: { $sum: { $cond: [{ $eq: ['$isSubcategory', false] }, 1, 0] } },
-            subcategories: { $sum: { $cond: [{ $eq: ['$isSubcategory', true] }, 1, 0] } },
+           
             withParent: { $sum: { $cond: [{ $ne: ['$parentCategory', null] }, 1, 0] } },
             withoutParent: { $sum: { $cond: [{ $eq: ['$parentCategory', null] }, 1, 0] } }
           }
@@ -805,8 +770,6 @@ const getCategories = async (req, res, next) => {
         active: 0, 
         featured: 0, 
         popular: 0, 
-        categories: 0, 
-        subcategories: 0,
         withParent: 0,
         withoutParent: 0
       };
@@ -858,9 +821,6 @@ const getCategories = async (req, res, next) => {
       'X-Current-Page': pageNum,
       'X-Response-Time': `${Date.now() - startTime}ms`,
       'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate',
-      'X-Filter-Type': filter.isSubcategory !== undefined 
-        ? (filter.isSubcategory ? 'subcategories-only' : 'categories-only')
-        : 'all-categories'
     });
 
     res.json(responseData);
@@ -901,234 +861,7 @@ const getCategories = async (req, res, next) => {
     next(error);
   }
 };
-const getSubcategoriesByCategory = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
 
-  try {
-    const { categoryId } = req.params;
-    const { 
-      activeOnly = true, 
-      includeServicesCount = false,
-      includeGigsCount = false,
-      sort = 'order',
-      order = 'asc'
-    } = req.query;
-
-    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid category ID',
-        code: 'INVALID_CATEGORY_ID',
-        requestId
-      });
-    }
-
-    // Check if category exists
-    const category = await Category.findOne({
-      _id: categoryId,
-      isActive: true,
-      deletedAt: null
-    });
-
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found',
-        code: 'CATEGORY_NOT_FOUND',
-        requestId
-      });
-    }
-
-    // Build filter for subcategories
-    const filter = {
-      category: categoryId,
-      deletedAt: null
-    };
-
-    if (activeOnly === 'true' || activeOnly === true) {
-      filter.isActive = true;
-    }
-
-    // Sort options
-    const sortOptions = { [sort]: order === 'desc' ? -1 : 1 };
-    if (sort === 'order') {
-      sortOptions.name = 1; // Secondary sort by name
-    }
-
-    // Get subcategories
-    const subcategories = await Subcategory.find(filter)
-      .select('name slug description icon order servicesCount gigsCount isActive')
-      .sort(sortOptions)
-      .lean();
-
-    // Add counts if requested
-    if (includeServicesCount === 'true' || includeGigsCount === 'true') {
-      for (const subcategory of subcategories) {
-        if (includeServicesCount) {
-          const serviceCount = await Service.countDocuments({
-            subcategory: subcategory._id,
-            isActive: true,
-            status: 'active'
-          });
-          subcategory.servicesCount = serviceCount;
-        }
-        
-        if (includeGigsCount) {
-          const gigCount = await Gig.countDocuments({
-            subcategory: subcategory._id,
-            isActive: true
-          });
-          subcategory.gigsCount = gigCount;
-        }
-      }
-    }
-
-    const responseTime = Date.now() - startTime;
-
-    res.json({
-      success: true,
-      data: subcategories,
-      category: {
-        _id: category._id,
-        name: category.name,
-        slug: category.slug
-      },
-      count: subcategories.length,
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-
-  } catch (error) {
-    console.error('Get subcategories by category error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch subcategories',
-      code: 'SUBCATEGORIES_FETCH_ERROR',
-      requestId
-    });
-    
-    logAudit('ERROR', 'SUBCATEGORY', 'GET_BY_CATEGORY', req.user?._id, { 
-      error: error.message 
-    });
-  }
-};
-const createSubcategory = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-
-  try {
-    // Admin only
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
-    const { name, category, description, order = 0, icon = '📁' } = req.body;
-
-    // Validate parent category
-    const parentCategory = await Category.findOne({
-      _id: category,
-      isActive: true,
-      deletedAt: null,
-      isSubcategory: false // Can't nest subcategories
-    });
-
-    if (!parentCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parent category not found or invalid',
-        code: 'PARENT_CATEGORY_NOT_FOUND',
-        requestId
-      });
-    }
-
-    // Check for duplicate subcategory name in same category
-    const existingSubcategory = await Subcategory.findOne({
-      name: name.trim(),
-      category: category,
-      isActive: true,
-      deletedAt: null
-    });
-
-    if (existingSubcategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subcategory with this name already exists in this category',
-        code: 'DUPLICATE_SUBCATEGORY',
-        requestId
-      });
-    }
-
-    // Create subcategory
-    const subcategory = await Subcategory.create({
-      name: name.trim(),
-      category,
-      description: description?.trim() || '',
-      order,
-      icon,
-      createdBy: req.user._id,
-      isActive: true
-    });
-
-    // Invalidate caches
-    await invalidateCategoryCache();
-    await cache.del(`subcategories:category:${category}`);
-
-    // Audit log
-    logAudit('CREATE', 'SUBCATEGORY', subcategory._id, req.user._id, {
-      name: subcategory.name,
-      category: parentCategory.name
-    });
-
-    const responseTime = Date.now() - startTime;
-
-    res.status(201).json({
-      success: true,
-      data: subcategory,
-      message: 'Subcategory created successfully',
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-
-  } catch (error) {
-    console.error('Create subcategory error:', error);
-    
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subcategory with this slug already exists',
-        code: 'DUPLICATE_SLUG',
-        requestId
-      });
-    }
-    
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: messages,
-        code: 'VALIDATION_ERROR',
-        requestId
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create subcategory',
-      code: 'SUBCATEGORY_CREATE_ERROR',
-      requestId
-    });
-  }
-};
 // Get Category by ID or Slug with Security
 const getCategoryById = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -1136,7 +869,7 @@ const getCategoryById = async (req, res, next) => {
 
   try {
     const { id } = req.params;
-    const { fields, populate = true, includeSubcategories = false } = req.query;
+    const { fields, populate = true} = req.query;
 
     if (!id) {
       return res.status(400).json({ 
@@ -1151,7 +884,6 @@ const getCategoryById = async (req, res, next) => {
     const cacheKey = generateCacheKey('category_single', {
       id,
       populate: populate === 'true',
-      includeSubcategories: includeSubcategories === 'true',
       fields,
       userRole: req.user?.role
     });
@@ -1202,14 +934,7 @@ const getCategoryById = async (req, res, next) => {
         select: 'name slug ', 
         match: { isActive: true } 
       });
-      if (includeSubcategories === 'true') {
-        populateOptions.push({
-          path: 'subcategories',
-          select: 'name slug servicesCount gigsCount featured popular',
-          match: { isActive: true },
-          options: { sort: { order: 1, name: 1 } }
-        });
-      }
+      
     }
 
     const category = await Category.findOne(query)
@@ -1564,25 +1289,13 @@ const deleteCategory = async (req, res, next) => {
 
     // Security: Check for dependencies if not forcing
     if (force !== 'true') {
-      const [subcategories, services, gigs] = await Promise.all([
+      const [services, gigs] = await Promise.all([
         Category.countDocuments({ parentCategory: id, isActive: true, deletedAt: null }),
         Service.countDocuments({ category: id, isActive: { $ne: false } }),
         Gig.countDocuments({ projectCategory: id, isActive: true })
       ]);
 
-      if (subcategories > 0 || services > 0 || gigs > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete category with active dependencies',
-          details: {
-            subcategories,
-            services,
-            gigs
-          },
-          code: 'DEPENDENCIES_EXIST',
-          requestId
-        });
-      }
+      
     }
 
     let result;
@@ -1872,8 +1585,7 @@ const restoreCategory = async (req, res) => {
       await Category.findByIdAndUpdate(
         restoredCategory.parentCategory,
         {
-          $inc: { subcategoriesCount: 1 },
-          $addToSet: { subcategories: restoredCategory._id }
+          
         }
       );
     }
@@ -2745,7 +2457,5 @@ module.exports = {
   bulkUpdateCategories,
   exportCategories,
   searchCategories,
-  getSubcategoriesByCategory,
-  createSubcategory,
   repairCategoryCounts
 };

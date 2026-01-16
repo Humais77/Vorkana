@@ -88,14 +88,9 @@ const categorySchema = new mongoose.Schema({
       message: 'Invalid parent category or circular reference detected'
     }
   },
-   isSubcategory: {
-    type: Boolean,
-    default: false,
-    index: true,
-  },
   allowSubcategories: {
     type: Boolean,
-    default: true,
+    default: false,
   },
   featured: {
     type: Boolean,
@@ -217,14 +212,6 @@ const categorySchema = new mongoose.Schema({
     }
   }
 });
-
-categorySchema.virtual('subcategories', {
-  ref: 'Category',
-  localField: '_id',
-  foreignField: 'parentCategory',
-  match: { isActive: true, deletedAt: null }
-});
-
 categorySchema.virtual('parent', {
   ref: 'Category',
   localField: 'parentCategory',
@@ -308,11 +295,7 @@ categorySchema.pre('save', async function () {
       if (!parent) {
         throw new Error('Parent category not found');
       }
-      
-      // If parent is a subcategory, it cannot have children
-      if (parent.isSubcategory) {
-        throw new Error('Subcategories cannot have child categories');
-      }
+    
       
       // Check for circular reference using graph lookup
       const visited = new Set();
@@ -348,11 +331,7 @@ categorySchema.pre('save', async function () {
       // Set level based on parent
       const parentLevel = parent.level || 0;
       this.level = parentLevel + 1;
-      
-      // If parent is subcategory, this should also be marked as subcategory
-      if (parent.isSubcategory) {
-        this.isSubcategory = true;
-      }
+     
     } else {
       this.level = 0;
     }
