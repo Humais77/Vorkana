@@ -7,7 +7,8 @@ const geoip = require('geoip-lite');
 
 class SessionService {
   constructor() {
-    this.idleTimeout = 15 * 60 * 1000; // 15 minutes
+     this.idleTimeout = 3 * 60 * 60 * 1000;
+     this.adminIdleTimeout = 60 * 60 * 1000;
     this.sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days
     this.tokenDuration = 60 * 60 * 1000; // 1 hour for access token
     this.maxSessionsPerUser = 10;
@@ -162,72 +163,68 @@ class SessionService {
   }
 
   async validateSession(token, refreshToken) {
-  try {
-    // First decode token to check role WITHOUT verifying
-    let decoded;
     try {
-      decoded = jwt.decode(token); // Decode without verification first
-    } catch (decodeError) {
-      console.error('Token decode error:', decodeError);
-    }
-    
-    // Check if it's an admin from the token
-    const isAdmin = decoded?.role === 'admin';
-    console.log('[SESSION VALIDATION] User role from token:', decoded?.role, 'Is admin:', isAdmin);
-    
-    // Now verify the token properly
-    let session = await Session.findOne({
-      token,
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    });
+      // Decode token to check role
+      let decoded;
+      try {
+        decoded = jwt.decode(token);
+      } catch (decodeError) {
+        console.error('Token decode error:', decodeError);
+      }
+      
+      const isAdmin = decoded?.role === 'admin';
+      
+      // SET TIMEOUTS BASED ON ROLE
+      const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
+      
+      let session = await Session.findOne({
+        token,
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      });
 
-    // If token not found but have refresh token, try refresh
-    if (!session && refreshToken) {
-      return await this.refreshSession(refreshToken);
-    }
+      // If token not found but have refresh token, try refresh
+      if (!session && refreshToken) {
+        return await this.refreshSession(refreshToken);
+      }
 
-    if (!session) {
-      return { valid: false, error: 'Session not found' };
-    }
+      if (!session) {
+        return { valid: false, error: 'Session not found' };
+      }
 
-    // SET DIFFERENT TIMEOUTS BASED ON ROLE
-    const adminTimeout = 60 * 60 * 1000;     // 1 hour for admin
-    const userTimeout = 3 * 60 * 60 * 1000;  // 3 hours for users
-    const idleTimeout = isAdmin ? adminTimeout : userTimeout;
-    
-    const idleTime = Date.now() - session.lastActivity.getTime();
-    console.log(`[SESSION VALIDATION] Idle time: ${Math.round(idleTime/1000/60)}min, Timeout: ${Math.round(idleTimeout/1000/60)}min for ${isAdmin ? 'admin' : 'user'}`);
-    
-    if (idleTime > idleTimeout) {
-      console.log(`[SESSION VALIDATION] ${isAdmin ? 'Admin' : 'User'} session timeout`);
-      await this.logoutSession(session._id, session.userId, isAdmin ? 'admin_timeout' : 'timeout');
-      return { 
-        valid: false, 
-        error: isAdmin ? 'Admin session timeout (1 hour)' : 'Session timeout',
-        isAdmin: isAdmin 
+      const idleTime = Date.now() - session.lastActivity.getTime();
+      
+      if (idleTime > idleTimeout) {
+        console.log(`[SESSION TIMEOUT] ${isAdmin ? 'Admin' : 'User'} session timeout after ${Math.round(idleTime/1000/60)} minutes`);
+        await this.logoutSession(session._id, session.userId, isAdmin ? 'admin_timeout' : 'timeout');
+        return { 
+          valid: false, 
+          error: isAdmin ? 'Admin session timeout (1 hour)' : 'Session timeout (3 hours)',
+          isAdmin: isAdmin,
+          reason: 'timeout'
+        };
+      }
+
+      // Update activity
+      session.lastActivity = new Date();
+      await session.save({ validateBeforeSave: false });
+
+      return {
+        valid: true,
+        userId: session.userId,
+        sessionId: session._id,
+        token: session.token,
+        refreshToken: session.refreshToken,
+        lastActivity: session.lastActivity,
+        isAdmin: isAdmin,
+        idleTimeout: idleTimeout,
+        timeLeft: idleTimeout - idleTime
       };
+    } catch (error) {
+      console.error('Session validation error:', error.message);
+      return { valid: false, error: error.message };
     }
-
-    // Update activity
-    session.lastActivity = new Date();
-    await session.save({ validateBeforeSave: false });
-
-    return {
-      valid: true,
-      userId: session.userId,
-      sessionId: session._id,
-      token: session.token,
-      refreshToken: session.refreshToken,
-      lastActivity: session.lastActivity,
-      isAdmin: isAdmin,
-      idleTimeout: idleTimeout
-    };
-  } catch (error) {
-    console.error('Session validation error:', error.message);
-    return { valid: false, error: error.message };
   }
-}
 
   async updateActivity(sessionId) {
     try {

@@ -408,14 +408,15 @@ const session = await SessionService.createSession(user._id, req, {
 
     console.log('🎉 Login successful for:', user.email);
 
-   res.json({
+ res.json({
       success: true,
       message: 'Login successful',
       user: userResponse,
       session: {
         id: session.sessionId,
         expiresAt: session.expiresAt,
-        idleTimeout: 3 * 60 * 60 * 1000 // 3 hours
+        idleTimeout: 3 * 60 * 60 * 1000, // 3 hours in ms
+        timeoutMinutes: 180
       }
     });
 

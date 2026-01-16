@@ -74,26 +74,22 @@ class SessionMiddleware {
       }
     }
 
-    // Check if session is valid
     if (!sessionResult || !sessionResult.valid) {
-      // Check if it's an admin timeout
-      const isAdminTimeout = sessionResult?.error?.includes('Admin session timeout');
+      // Check if it's a timeout
+      const isTimeout = sessionResult?.reason === 'timeout';
       
-      if (isAdminTimeout) {
-        console.log('[AUTH] Admin session timeout detected');
+      if (isTimeout) {
+        console.log('[AUTH] Session timeout detected');
         this.clearAuthCookies(res);
         
-        // If it's an admin route, return admin-specific error
-        const isAdminRoute = req.path.startsWith('/admin');
-        if (isAdminRoute) {
-          return res.status(401).json({
-            success: false,
-            message: 'Admin session expired after 1 hour of inactivity',
-            code: 'ADMIN_SESSION_TIMEOUT',
-            requiresLogin: true,
-            redirectUrl: '/signin'
-          });
-        }
+        // Return timeout-specific response
+        return res.status(401).json({
+          success: false,
+          message: 'Session timed out due to inactivity',
+          code: 'SESSION_TIMEOUT',
+          requiresLogin: true,
+          redirectUrl: '/signin?timeout=true'
+        });
       }
       
       this.clearAuthCookies(res);

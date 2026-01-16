@@ -770,3 +770,88 @@ export const usePasswordStrength = (password) => {
   
   return strength;
 };
+export const useSessionToast = () => {
+  const navigate = useNavigate();
+  const { clearAuth } = useAuthStore();
+
+  const showSessionTimeoutToast = useCallback((message = 'Your session has timed out. Please login again.') => {
+    toast.error(message, {
+      duration: 5000,
+      position: 'top-center',
+      icon: '⏰',
+      style: {
+        background: '#fef2f2',
+        color: '#dc2626',
+        border: '1px solid #fecaca',
+      },
+    });
+
+    // Clear auth and redirect after toast
+    setTimeout(() => {
+      clearAuth();
+      navigate('/signin?timeout=true');
+    }, 2000);
+  }, [navigate, clearAuth]);
+
+  return { showSessionTimeoutToast };
+};
+export const useSessionWatcher = () => {
+  const { isAuthenticated, logout } = useAuthStore();
+  const { showSessionTimeoutToast } = useSessionToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let sessionCheckInterval;
+    let activityListeners = [];
+
+    const checkSessionStatus = async () => {
+      try {
+        const response = await authAPI.checkSessionStatus();
+        
+        if (!response.authenticated) {
+          if (response.message?.includes('timeout')) {
+            showSessionTimeoutToast('Session timed out due to 3 hours of inactivity');
+          } else {
+            logout();
+            navigate('/signin?session=expired');
+          }
+        }
+      } catch (error) {
+        console.error('Session check error:', error);
+      }
+    };
+
+    // Reset activity timer on user interaction
+    const resetActivityTimer = () => {
+      // Clear existing interval
+      if (sessionCheckInterval) clearInterval(sessionCheckInterval);
+      
+      // Set new interval
+      sessionCheckInterval = setInterval(checkSessionStatus, 60000); // Check every minute
+    };
+
+    // Set up activity listeners
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    
+    events.forEach(event => {
+      const handler = () => resetActivityTimer();
+      window.addEventListener(event, handler);
+      activityListeners.push({ event, handler });
+    });
+
+    // Initial setup
+    resetActivityTimer();
+
+    // Cleanup
+    return () => {
+      if (sessionCheckInterval) clearInterval(sessionCheckInterval);
+      activityListeners.forEach(({ event, handler }) => {
+        window.removeEventListener(event, handler);
+      });
+    };
+  }, [isAuthenticated, logout, navigate, showSessionTimeoutToast]);
+
+  return null;
+};
