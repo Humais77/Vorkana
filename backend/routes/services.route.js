@@ -64,10 +64,6 @@ const uploadWithThumbnail = upload.fields([
   { name: 'thumbnail', maxCount: 1 }
 ]);
 
-// ============================================
-// PUBLIC ROUTES
-// ============================================
-
 // Get all services
 router.get('/', optionalAuth, validateQuery, controller.getServices);
 // Get services with stats
@@ -134,17 +130,6 @@ router.get('/subcategory/slug/:slug',
   controller.getServicesBySubcategorySlug
 );
 
-// ============================================
-//  SESSIONMIDDLEWARE.AUTHENTICATEED ROUTES
-// ============================================
-
-// Like/Unlike service
-router.post('/:id/like',  SessionMiddleware.authenticate, serviceLimiter, controller.toggleLike);
-
-// ============================================
-// USER ROUTES (Service creators)
-// ============================================
-
 // Create service with Cloudinary uploads
 router.post('/', 
    SessionMiddleware.authenticate, 
@@ -210,10 +195,6 @@ router.post('/:id/thumbnail',
   handleMulterError, 
   controller.uploadThumbnail
 );
-
-// ============================================
-// ADMIN ROUTES
-// ============================================
 
 // Admin create service
 router.post('/admin/create', 
@@ -324,10 +305,6 @@ router.patch('/:id/popular',
   controller.togglePopularStatus
 );
 
-// ============================================
-// BATCH OPERATION ROUTES (Admin only)
-// ============================================
-
 // Batch update services status
 router.patch('/batch/status', 
    SessionMiddleware.authenticate, 
@@ -360,10 +337,6 @@ router.patch('/batch/popular',
   controller.bulkUpdateServices
 );
 
-// ============================================
-// HEALTH CHECK ROUTES
-// ============================================
-
 // Service health check
 router.get('/health/check', (req, res) => {
   res.json({
@@ -374,37 +347,5 @@ router.get('/health/check', (req, res) => {
     memoryUsage: process.memoryUsage()
   });
 });
-
-// // Service metrics
-// router.get('/metrics/overview', 
-//    SessionMiddleware.authenticate, 
-//   adminOnly, 
-//   serviceLimiter, 
-//   (req, res) => {
-//     res.json({
-//       success: true,
-//       metrics: {
-//         routes: {
-//           public: 4,
-//            SessionMiddleware.authenticateed: 1,
-//           user: 8,
-//           admin: 11,
-//           total: 24
-//         },
-//         features: {
-//           fileUploads: true,
-//           imageManagement: true,
-//           bulkOperations: true,
-//           search: true,
-//           stats: true,
-//           export: true,
-//           rateLimiting: true,
-//           cloudinaryUpload: true
-//         }
-//       }
-//     });
-// });
-
-
 
 module.exports = router;

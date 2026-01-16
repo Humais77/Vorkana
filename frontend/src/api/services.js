@@ -784,14 +784,6 @@ export const servicesAPI = {
     }
   },
   
-  toggleLike: async (serviceId, action = 'toggle') => {
-    try {
-      const response = await axiosInstance.post(`/api/services/${serviceId}/like`, { action });
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to like service');
-    }
-  },
   
   getStats: async (filters = {}) => {
     try {
@@ -806,7 +798,6 @@ export const servicesAPI = {
           activeServices: 0,
           draftServices: 0,
           totalRevenue: 0,
-          avgRating: 0
         }
       };
     }
@@ -904,14 +895,6 @@ export const servicesAPI = {
     }
   },
   
-  incrementViews: async (serviceId) => {
-    try {
-      const response = await axiosInstance.post(`/api/services/${serviceId}/views`);
-      return response.data;
-    } catch (error) {
-      return null;
-    }
-  },
   
   getCategories: async () => {
     try {

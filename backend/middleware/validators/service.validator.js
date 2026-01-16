@@ -762,7 +762,7 @@ const querySchema = Joi.object({
   offset: Joi.number().integer().min(0),
   
   sort: Joi.string()
-    .valid('price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'relevance', 'title')
+    .valid('price','createdAt', 'updatedAt', 'deliveryTime','relevance', 'title')
     .default('createdAt'),
   
   order: Joi.string().valid('asc', 'desc', '1', '-1').default('desc'),
@@ -778,8 +778,6 @@ const querySchema = Joi.object({
   createdBy: objectId,
   minPrice: Joi.number().min(0),
   maxPrice: Joi.number().min(0),
-  minRating: Joi.number().min(0).max(5),
-  maxRating: Joi.number().min(0).max(5),
   minDeliveryTime: Joi.number().min(1),
   maxDeliveryTime: Joi.number().min(1),
   deliveryTimeUnit: Joi.string().valid('hours', 'days', 'weeks'),
@@ -806,7 +804,6 @@ const querySchema = Joi.object({
   populateFields: Joi.string().pattern(/^[a-zA-Z0-9_,\s]+$/),
   includeCreator: Joi.boolean().default(true),
   includeCategory: Joi.boolean().default(true),
-  includeReviews: Joi.boolean(),
   includeStats: Joi.boolean(),
   
   showAll: Joi.boolean(),

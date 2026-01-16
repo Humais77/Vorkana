@@ -208,7 +208,6 @@ useEffect(() => {
     }
   }, [location.state, id, queryClient, refetch, navigate, location.pathname]);
   // Local state
-  const [isLiked, setIsLiked] = useState(false);
 const [activeImage, setActiveImage] = useState(0);
 const [viewCount, setViewCount] = useState(0);
 const [imageViewMode, setImageViewMode] = useState('thumbnail');
@@ -374,26 +373,6 @@ const handleRestoreService = async () => {
   }
 };
 
-  const renderStars = (rating) => {
-    if (!rating) rating = 0;
-    return (
-      <div className="flex items-center">
-        {[...Array(5)].map((_, i) => (
-          <Star
-            key={i}
-            className={`h-4 w-4 ${
-              i < Math.floor(rating)
-                ? 'text-yellow-400 fill-yellow-400'
-                : rating % 1 !== 0 && i === Math.floor(rating)
-                ? 'text-yellow-400 fill-yellow-400'
-                : 'text-gray-300'
-            }`}
-          />
-        ))}
-        <span className="ml-2 font-semibold">{rating.toFixed(1)}</span>
-      </div>
-    );
-  };
 const renderDeleteDialog = () => (
   <Dialog
     open={showDeleteDialog}
@@ -827,18 +806,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
-  <button
-    onClick={() => setIsLiked(!isLiked)}
-    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-    aria-label={isLiked ? 'Remove from favorites' : 'Add to favorites'}
-  >
-    <Heart
-      className={`h-6 w-6 ${
-        isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'
-      }`}
-      aria-hidden="true"
-    />
-  </button>
+
   <button
     onClick={handleShare}
     className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
@@ -1517,44 +1485,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
       </span>
     </div>
     
-    {/* Service Rating */}
-    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-      <span className="text-gray-600">Service Rating</span>
-      <div className="flex items-center">
-        {renderStars(service.rating || 0)}
-        {service.reviewsCount > 0 && (
-          <span className="ml-2 text-sm text-gray-500">
-            ({service.reviewsCount})
-          </span>
-        )}
-      </div>
-    </div>
-    
-    {/* Views */}
-    {service.views !== undefined && (
-      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-        <span className="text-gray-600 flex items-center">
-          <Eye className="h-4 w-4 mr-2" />
-          Views
-        </span>
-        <span className="font-semibold text-gray-900">
-          {service.views.toLocaleString()}
-        </span>
-      </div>
-    )}
-    
-    {/* Likes */}
-    {service.likes !== undefined && (
-      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-        <span className="text-gray-600 flex items-center">
-          <Heart className="h-4 w-4 mr-2" />
-          Likes
-        </span>
-        <span className="font-semibold text-gray-900">
-          {service.likes.toLocaleString()}
-        </span>
-      </div>
-    )}
     
     {/* Version */}
     {service.version !== undefined && (

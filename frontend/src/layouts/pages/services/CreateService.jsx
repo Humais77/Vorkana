@@ -41,21 +41,21 @@ import {
   ArrowLeft,
   Eye,
   Layers as LayersIcon,
-  Images as  ImageIcon
+  Images as ImageIcon
 } from 'lucide-react';
 import { useCreateService } from '../../../hooks/useServices.js';
-import { useCategories ,useParentCategories} from '../../../hooks/useCategories.js';
-import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories.js'; // NEW: Import subcategory hook
+import { useParentCategories } from '../../../hooks/useCategories.js';
+import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories.js';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore.js';
 import { isProfileCompleteEnough } from '../../../utils/profileUtils.js';
 import { SeoWrapper } from '../../../components/SeoWrapper.jsx';
 
-// Structured Data for Service Creation - memoized outside component
+// Structured Data for Service Creation
 const getServiceCreationStructuredData = () => ({
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Create a Service on Vorkanna",
+  "name": "Create a Service on Vorkanna | List Your Freelance Skills",
   "description": "List your freelance services and start earning on Vorkanna. Create a detailed service listing with our step-by-step form to attract clients worldwide.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/create-service` : '/create-service',
   "breadcrumb": {
@@ -142,34 +142,35 @@ const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
   
- const [formData, setFormData] = useState({
-  title: '',
-  description: '',
-  shortDescription: '',
-  category: '',
-  subcategory: '',
-  userLevel: 'new',
-  price: '',
-  currency: 'USD',
-  deliveryTime: '',
-  deliveryTimeUnit: 'days',
-  revisions: '1',
-  tags: [],
-  features: [],
-  requirements: [],
-  faqs: [],
-  searchKeywords: [],
-  metaTitle: '',
-  metaDescription: '',
-  gigType: 'basic',
-  status: 'draft',
-  sellerLevel: 'new',
-  isFeatured: false,
-  isRecommended: false,
-  isPopular: false,
-});
+  // Initialize formData with all required fields as empty strings, not undefined
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    shortDescription: '',
+    category: '',
+    subcategory: '',
+    userLevel: 'new',
+    price: '',
+    currency: 'USD',
+    deliveryTime: '',
+    deliveryTimeUnit: 'days',
+    revisions: '1',
+    tags: [],
+    features: [],
+    requirements: [],
+    faqs: [],
+    searchKeywords: [],
+    metaTitle: '',
+    metaDescription: '',
+    gigType: 'basic',
+    status: 'draft',
+    sellerLevel: 'new',
+    isFeatured: false,
+    isRecommended: false,
+    isPopular: false,
+  });
 
-  // NOW declare the subcategory hook AFTER formData is defined
+  // Subcategory hook
   const { 
     data: subcategoriesData,
     isLoading: subcategoryLoading,
@@ -179,7 +180,7 @@ const CreateService = () => {
     enabled: !!formData.category
   });
   
-  // Use the categories hook
+  // Categories hook
   const { 
     data: categoriesData, 
     isLoading: categoryLoading, 
@@ -226,16 +227,31 @@ const CreateService = () => {
     deliveryTime: false,
     description: false,
     shortDescription: false,
-     thumbnail: false,
+    thumbnail: false,
   });
 
-  // Refs for file inputs to avoid state updates on every change
+  // Refs for file inputs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
 
   // Structured data memoized
   const structuredData = useMemo(() => getServiceCreationStructuredData(), []);
 
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      uploadedImages.forEach(img => {
+        if (img?.preview) {
+          URL.revokeObjectURL(img.preview);
+        }
+      });
+      if (thumbnailFile?.preview) {
+        URL.revokeObjectURL(thumbnailFile.preview);
+      }
+    };
+  }, [uploadedImages, thumbnailFile]);
+
+  // Check profile completion
   useEffect(() => {
     if (!isProfileCompleteEnough(currentUser, 70)) {
       toast.error('Please complete your profile before creating a service');
@@ -256,156 +272,124 @@ const CreateService = () => {
       }));
     }
   }, [formData.category]);
-const handleSuccessfulNavigation = (serviceId) => {
-  try {
-    const serviceUrl = `/services/${serviceId}`;
-    console.log('Attempting navigation to:', serviceUrl);
-    
-    // Try direct navigation first
-    navigate(serviceUrl);
-    
-    // Fallback: If navigation doesn't work, redirect after delay
-    setTimeout(() => {
-      if (window.location.pathname !== serviceUrl) {
-        console.log('Direct navigation failed, using window.location');
-        window.location.href = serviceUrl;
-      }
-    }, 1000);
-  } catch (error) {
-    console.error('Navigation error:', error);
-    // Ultimate fallback
-    window.location.href = `/services/${serviceId}`;
-  }
-};
 
-// Update the useEffect for successful creation
-useEffect(() => {
-  if (createServiceMutation.isSuccess && createServiceMutation.data) {
-    console.log('Service creation success:', createServiceMutation.data);
-    
-    let serviceId = null;
-    
-    // Try multiple ways to get the service ID
-    if (createServiceMutation.data.service?._id) {
-      serviceId = createServiceMutation.data.service._id;
-    } else if (createServiceMutation.data.service?._id) {
-      serviceId = createServiceMutation.data.service._id;
-    } else if (createServiceMutation.data.serviceId) {
-      serviceId = createServiceMutation.data.serviceId;
-    } else if (createServiceMutation.data._id) {
-      serviceId = createServiceMutation.data._id;
-    }
-    
-    console.log('Extracted service ID:', serviceId);
-    
-    if (serviceId) {
-      setCreatedServiceId(serviceId);
-      setSuccess(true);
-      setActiveStep(5);
-      toast.success('Service created successfully!');
+  // Handle service creation success
+  useEffect(() => {
+    if (createServiceMutation.isSuccess && createServiceMutation.data) {
+      console.log('Service creation success:', createServiceMutation.data);
       
-      // Use setTimeout to ensure state updates complete
-      setTimeout(() => {
-        navigate(`/services/${serviceId}`);
-      }, 2000);
-    } else {
-      console.error('No service ID found in response:', createServiceMutation.data);
-      toast.error('Service created but could not find ID. Please check your services list.');
-      navigate('/profile?tab=services');
+      let serviceId = null;
+      
+      // Try multiple ways to get the service ID
+      if (createServiceMutation.data.service?._id) {
+        serviceId = createServiceMutation.data.service._id;
+      } else if (createServiceMutation.data.serviceId) {
+        serviceId = createServiceMutation.data.serviceId;
+      } else if (createServiceMutation.data._id) {
+        serviceId = createServiceMutation.data._id;
+      }
+      
+      console.log('Extracted service ID:', serviceId);
+      
+      if (serviceId) {
+        setCreatedServiceId(serviceId);
+        setSuccess(true);
+        setActiveStep(5);
+        toast.success('Service created successfully!');
+        
+        // Navigate to service page after delay
+        setTimeout(() => {
+          navigate(`/services/${serviceId}`);
+        }, 2000);
+      } else {
+        console.error('No service ID found in response:', createServiceMutation.data);
+        toast.error('Service created but could not find ID. Please check your services list.');
+        navigate('/profile?tab=services');
+      }
     }
-  }
-}, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
-  // Memoized handlers
-const handleInputChange = useCallback((e) => {
-  const { name, value, type, checked } = e.target;
-  
-  // Always ensure we have a valid value
-  let newValue;
-  
-  if (type === 'checkbox') {
-    newValue = checked;
-  } else if (type === 'number') {
-    newValue = value === '' ? '' : value;
-  } else if (type === 'select-one') {
-    newValue = value || '';
-  } else if (name === 'description') {
-    // Limit description to 5000 characters
-    newValue = (value || '').slice(0, 5000);
-  } else if (name === 'shortDescription') {
-    // Limit short description to 250 characters
-    newValue = (value || '').slice(0, 250);
-  } else {
-    newValue = value || ''; // Always ensure string
-  }
-  
-  // Special handling for empty strings in number fields
-  if ((name === 'price' || name === 'deliveryTime' || name === 'revisions') && newValue === '') {
-    // Allow empty string for number fields
-    setFormData(prev => ({
-      ...prev,
-      [name]: newValue
-    }));
-  } else {
-    setFormData(prev => ({
-      ...prev,
-      [name]: newValue
-    }));
-  }
-  
-  // Update completed status
-  const isValid = validateField(name, newValue);
-  setCompletedFields(prev => ({
-    ...prev,
-    [name]: isValid
-  }));
-  
-  // Clear error for this field
-  if (errors[name]) {
-    setErrors(prev => ({ ...prev, [name]: "" }));
-  }
-  
-  // If category changes, trigger subcategories fetch
-  if (name === 'category' && newValue) {
-    refetchSubcategories();
-  }
-}, [errors, refetchSubcategories]);
+  }, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
 
+  // Handle input change - FIXED: Always return string, never undefined
+  const handleInputChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    
+    let newValue;
+    
+    if (type === 'checkbox') {
+      newValue = checked;
+    } else if (type === 'number') {
+      newValue = value === '' ? '' : value;
+    } else if (type === 'select-one') {
+      newValue = value || '';
+    } else if (name === 'description') {
+      newValue = (value || '').slice(0, 5000);
+    } else if (name === 'shortDescription') {
+      newValue = (value || '').slice(0, 250);
+    } else {
+      newValue = value || '';
+    }
+    
+    setFormData(prev => ({
+      ...prev,
+      [name]: newValue
+    }));
+    
+    // Update completed status
+    const isValid = validateField(name, newValue);
+    setCompletedFields(prev => ({
+      ...prev,
+      [name]: isValid
+    }));
+    
+    // Clear error for this field
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: "" }));
+    }
+    
+    // If category changes, trigger subcategories fetch
+    if (name === 'category' && newValue) {
+      refetchSubcategories();
+    }
+  }, [errors, refetchSubcategories]);
+
+  // Validate field
   const validateField = useCallback((fieldName, value) => {
-  // Handle empty strings for number fields
-  if ((fieldName === 'price' || fieldName === 'deliveryTime') && value === '') {
-    return false;
-  }
-  
-  const stringValue = String(value || '');
-  const trimmedValue = stringValue.trim();
-  
-  switch (fieldName) {
-    case 'title':
-      return trimmedValue.length >= 5 && trimmedValue.length <= 200;
-    case 'description':
-      return trimmedValue.length >= 50 && trimmedValue.length <= 5000;
-    case 'shortDescription':
-      return trimmedValue.length >= 20 && trimmedValue.length <= 250;
-    case 'category':
-      return !!value;
-    case 'subcategory':
-      return !!value;
-    case 'price':
-      const priceNum = parseFloat(value);
-      return !isNaN(priceNum) && priceNum >= 1 && priceNum <= 100000;
-    case 'deliveryTime':
-      const deliveryNum = parseInt(value);
-      return !isNaN(deliveryNum) && deliveryNum >= 1 && deliveryNum <= 365;
-    default:
-      return !!trimmedValue;
-  }
-}, []);
+    if ((fieldName === 'price' || fieldName === 'deliveryTime') && value === '') {
+      return false;
+    }
+    
+    const stringValue = String(value || '');
+    const trimmedValue = stringValue.trim();
+    
+    switch (fieldName) {
+      case 'title':
+        return trimmedValue.length >= 5 && trimmedValue.length <= 200;
+      case 'description':
+        return trimmedValue.length >= 50 && trimmedValue.length <= 5000;
+      case 'shortDescription':
+        return trimmedValue.length >= 20 && trimmedValue.length <= 250;
+      case 'category':
+        return !!value;
+      case 'subcategory':
+        return !!value;
+      case 'price':
+        const priceNum = parseFloat(value);
+        return !isNaN(priceNum) && priceNum >= 1 && priceNum <= 100000;
+      case 'deliveryTime':
+        const deliveryNum = parseInt(value);
+        return !isNaN(deliveryNum) && deliveryNum >= 1 && deliveryNum <= 365;
+      default:
+        return !!trimmedValue;
+    }
+  }, []);
+
   // Tag Management
   const handleAddTag = useCallback(() => {
-    if (newTag.trim() && !formData.tags.includes(newTag.trim()) && formData.tags.length < 20) {
+    const trimmedTag = newTag.trim();
+    if (trimmedTag && !formData.tags.includes(trimmedTag) && formData.tags.length < 20) {
       setFormData(prev => ({
         ...prev,
-        tags: [...prev.tags, newTag.trim()]
+        tags: [...prev.tags, trimmedTag]
       }));
       setNewTag('');
       toast.success('Tag added');
@@ -424,10 +408,11 @@ const handleInputChange = useCallback((e) => {
 
   // Search Keywords Management
   const handleAddKeyword = useCallback(() => {
-    if (newKeyword.trim() && !formData.searchKeywords.includes(newKeyword.trim()) && formData.searchKeywords.length < 20) {
+    const trimmedKeyword = newKeyword.trim();
+    if (trimmedKeyword && !formData.searchKeywords.includes(trimmedKeyword) && formData.searchKeywords.length < 20) {
       setFormData(prev => ({
         ...prev,
-        searchKeywords: [...prev.searchKeywords, newKeyword.trim()]
+        searchKeywords: [...prev.searchKeywords, trimmedKeyword]
       }));
       setNewKeyword('');
       toast.success('Keyword added');
@@ -443,21 +428,17 @@ const handleInputChange = useCallback((e) => {
     }));
     toast.success('Keyword removed');
   }, []);
-useEffect(() => {
-  return () => {
-    // Clean up object URLs
-    uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-    if (thumbnailFile) {
-      URL.revokeObjectURL(thumbnailFile.preview);
-    }
-  };
-}, [uploadedImages, thumbnailFile]);
+
   // Features Management
   const handleAddFeature = useCallback(() => {
     if (newFeature.title.trim()) {
       setFormData(prev => ({
         ...prev,
-        features: [...prev.features, { ...newFeature }]
+        features: [...prev.features, { 
+          title: newFeature.title || '',
+          description: newFeature.description || '',
+          included: newFeature.included 
+        }]
       }));
       setNewFeature({ title: '', description: '', included: true });
       toast.success('Feature added');
@@ -496,7 +477,12 @@ useEffect(() => {
     if (newRequirement.question.trim()) {
       setFormData(prev => ({
         ...prev,
-        requirements: [...prev.requirements, { ...newRequirement }]
+        requirements: [...prev.requirements, { 
+          question: newRequirement.question || '',
+          type: newRequirement.type || 'text',
+          required: newRequirement.required || false,
+          options: [...(newRequirement.options || [])]
+        }]
       }));
       setNewRequirement({
         question: '',
@@ -521,7 +507,10 @@ useEffect(() => {
     if (newFAQ.question.trim() && newFAQ.answer.trim()) {
       setFormData(prev => ({
         ...prev,
-        faqs: [...prev.faqs, { ...newFAQ }]
+        faqs: [...prev.faqs, { 
+          question: newFAQ.question || '',
+          answer: newFAQ.answer || ''
+        }]
       }));
       setNewFAQ({ question: '', answer: '' });
       toast.success('FAQ added');
@@ -536,111 +525,118 @@ useEffect(() => {
     toast.success('FAQ removed');
   }, []);
 
-// In CreateService.jsx - Update image upload handling
-const handleImageUpload = useCallback(async (files) => {
-  if (uploadingImages) return;
-  
-  const newFiles = Array.from(files);
-  
-  // Validate file count
-  if (uploadedImages.length + newFiles.length > 10) {
-    toast.error('Maximum 10 images allowed');
-    return;
-  }
-  
-  const validFiles = [];
-  
-  // Validate each file
-  for (const file of newFiles) {
-    if (!file || !file.type) {
-      console.warn('Invalid file object:', file);
-      continue;
-    }
+  // Image Upload
+  const handleImageUpload = useCallback(async (files) => {
+    if (uploadingImages) return;
     
-    if (file.size && file.size > 5 * 1024 * 1024) {
-      toast.error(`${file.name || 'File'} exceeds 5MB limit`);
+    const newFiles = Array.from(files || []);
+    
+    // Validate file count
+    if (uploadedImages.length + newFiles.length > 10) {
+      toast.error('Maximum 10 images allowed');
       return;
     }
     
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      toast.error(`${file.name || 'File'} is not a valid image type`);
+    const validFiles = [];
+    
+    // Validate each file
+    for (const file of newFiles) {
+      if (!file || !file.type) {
+        console.warn('Invalid file object:', file);
+        continue;
+      }
+      
+      if (file.size && file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name || 'File'} exceeds 5MB limit`);
+        return;
+      }
+      
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        toast.error(`${file.name || 'File'} is not a valid image type`);
+        return;
+      }
+      
+      validFiles.push(file);
+    }
+    
+    if (validFiles.length === 0) {
+      toast.error('No valid images to upload');
       return;
     }
     
-    validFiles.push(file);
-  }
-  
-  if (validFiles.length === 0) {
-    toast.error('No valid images to upload');
-    return;
-  }
-  
-  setUploadingImages(true);
-  
-  try {
-    const previewImages = validFiles.map(file => ({
+    setUploadingImages(true);
+    
+    try {
+      const previewImages = validFiles.map(file => ({
+        file,
+        preview: URL.createObjectURL(file),
+        name: file.name || 'image',
+        size: file.size || 0,
+        type: file.type
+      }));
+      
+      setUploadedImages(prev => [...prev, ...previewImages]);
+      toast.success(`${validFiles.length} image(s) added successfully`);
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      toast.error('Failed to add images');
+    } finally {
+      setUploadingImages(false);
+    }
+  }, [uploadingImages, uploadedImages]);
+
+  // Thumbnail Upload - FIXED
+  const handleThumbnailUpload = useCallback((file) => {
+    if (uploadingThumbnail) return;
+    
+    if (!file) return;
+    
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Thumbnail exceeds 2MB limit');
+      return;
+    }
+    
+    if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
+      toast.error('Invalid image type for thumbnail');
+      return;
+    }
+    
+    const newThumbnail = {
       file,
       preview: URL.createObjectURL(file),
-      name: file.name || 'image',
+      name: file.name || 'thumbnail',
       size: file.size || 0,
       type: file.type
-    }));
+    };
     
-    setUploadedImages(prev => [...prev, ...previewImages]);
-    toast.success(`${validFiles.length} image(s) added successfully`);
-  } catch (error) {
-    console.error('Error uploading images:', error);
-    toast.error('Failed to add images');
-  } finally {
-    setUploadingImages(false);
-  }
-}, [uploadingImages, uploadedImages]);
+    setThumbnailFile(newThumbnail);
+    setCompletedFields(prev => ({ ...prev, thumbnail: true }));
+    
+    if (errors.thumbnail) {
+      setErrors(prev => ({ ...prev, thumbnail: "" }));
+    }
+    
+    toast.success('Thumbnail selected');
+  }, [uploadingThumbnail, errors.thumbnail]);
 
-  const handleThumbnailUpload = useCallback((file) => {
-  if (uploadingThumbnail) return;
-  
-  if (file.size > 2 * 1024 * 1024) {
-    toast.error('Thumbnail exceeds 2MB limit');
-    return;
-  }
-  
-  if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
-    toast.error('Invalid image type for thumbnail');
-    return;
-  }
-  
-  const newThumbnail = {
-    file,
-    preview: URL.createObjectURL(file),
-    name: file.name,
-    size: file.size,
-    type: file.type
-  };
-  
-  setThumbnailFile(newThumbnail);
-  setCompletedFields(prev => ({ ...prev, thumbnail: true }));
-  
-  // Clear thumbnail error if exists
-  if (errors.thumbnail) {
-    setErrors(prev => ({ ...prev, thumbnail: "" }));
-  }
-  
-  toast.success('Thumbnail selected');
-}, [uploadingThumbnail, errors.thumbnail]);
-
+  // Remove image
   const removeImage = useCallback((index) => {
     const image = uploadedImages[index];
-    URL.revokeObjectURL(image.preview);
+    if (image?.preview) {
+      URL.revokeObjectURL(image.preview);
+    }
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
     toast.success('Image removed');
   }, [uploadedImages]);
 
+  // Remove thumbnail
   const removeThumbnail = useCallback(() => {
-    if (thumbnailFile) {
+    if (thumbnailFile?.preview) {
       URL.revokeObjectURL(thumbnailFile.preview);
-      setThumbnailFile(null);
-      toast.success('Thumbnail removed');
     }
+    setThumbnailFile(null);
+    setCompletedFields(prev => ({ ...prev, thumbnail: false }));
+    toast.success('Thumbnail removed');
   }, [thumbnailFile]);
 
   // Helper function to handle Enter key press
@@ -654,7 +650,6 @@ const handleImageUpload = useCallback(async (files) => {
         case 'requirement': handleAddRequirement(); break;
         case 'requirementOption': handleAddRequirementOption(); break;
         case 'faq': handleAddFAQ(); break;
-      
       }
     }
   }, [
@@ -666,61 +661,68 @@ const handleImageUpload = useCallback(async (files) => {
     handleAddFAQ, 
   ]);
 
+  // Validate step
   const validateStep = useCallback((step) => {
     const newErrors = {};
 
     if (step === 1) {
-  if (!formData.title || formData.title.trim().length < 5) {
-    newErrors.title = "Service title must be at least 5 characters.";
-  } else if (formData.title.trim().length > 200) {
-    newErrors.title = "Service title cannot exceed 200 characters.";
-  }
+      const title = formData.title || '';
+      const category = formData.category || '';
+      const subcategory = formData.subcategory || '';
+      const shortDescription = formData.shortDescription || '';
+      const description = formData.description || '';
 
-  if (!formData.category) {
-    newErrors.category = "Please select a category.";
-  }
+      if (!title.trim() || title.trim().length < 5) {
+        newErrors.title = "Service title must be at least 5 characters.";
+      } else if (title.trim().length > 200) {
+        newErrors.title = "Service title cannot exceed 200 characters.";
+      }
 
-  if (!formData.subcategory) {
-    newErrors.subcategory = "Please select a subcategory.";
-  }
+      if (!category) {
+        newErrors.category = "Please select a category.";
+      }
 
-  if (!formData.shortDescription || formData.shortDescription.trim().length < 20) {
-    newErrors.shortDescription = "Short description must be at least 20 characters.";
-  } else if (formData.shortDescription.trim().length > 250) {
-    newErrors.shortDescription = "Short description cannot exceed 250 characters.";
-  }
+      if (!subcategory) {
+        newErrors.subcategory = "Please select a subcategory.";
+      }
 
-  if (!formData.description || formData.description.trim().length < 50) {
-    newErrors.description = "Description must be at least 50 characters.";
-  } else if (formData.description.trim().length > 5000) {
-    newErrors.description = "Description cannot exceed 5000 characters.";
-  }
-}
+      if (!shortDescription.trim() || shortDescription.trim().length < 20) {
+        newErrors.shortDescription = "Short description must be at least 20 characters.";
+      } else if (shortDescription.trim().length > 250) {
+        newErrors.shortDescription = "Short description cannot exceed 250 characters.";
+      }
+
+      if (!description.trim() || description.trim().length < 50) {
+        newErrors.description = "Description must be at least 50 characters.";
+      } else if (description.trim().length > 5000) {
+        newErrors.description = "Description cannot exceed 5000 characters.";
+      }
+    }
+
     if (step === 2) {
-      const priceNum = parseFloat(formData.price);
-      if (!formData.price || isNaN(priceNum) || priceNum < 1 || priceNum > 100000) {
+      const priceStr = formData.price || '';
+      const deliveryTimeStr = formData.deliveryTime || '';
+      
+      const priceNum = parseFloat(priceStr);
+      if (!priceStr || isNaN(priceNum) || priceNum < 1 || priceNum > 100000) {
         newErrors.price = "Price must be between $1 and $100,000.";
       }
 
-      const deliveryNum = parseInt(formData.deliveryTime);
-      if (!formData.deliveryTime || isNaN(deliveryNum) || deliveryNum < 1 || deliveryNum > 365) {
+      const deliveryNum = parseInt(deliveryTimeStr);
+      if (!deliveryTimeStr || isNaN(deliveryNum) || deliveryNum < 1 || deliveryNum > 365) {
         newErrors.deliveryTime = "Delivery time must be between 1 and 365 days.";
       }
     }
 
-    if (step === 3) {
-      // Additional validations can be added here
-    }
     if (step === 4) {
-    // Validate thumbnail (now required)
-    if (!thumbnailFile) {
-      newErrors.thumbnail = "Thumbnail is required";
+      if (!thumbnailFile) {
+        newErrors.thumbnail = "Thumbnail is required";
+      }
     }
-  }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData]);
+  }, [formData, thumbnailFile]);
 
   const nextStep = useCallback(() => {
     if (validateStep(activeStep)) {
@@ -732,150 +734,154 @@ const handleImageUpload = useCallback(async (files) => {
     setActiveStep(prev => Math.max(prev - 1, 1));
   }, []);
 
+  // Handle form submission
   const handleSubmit = useCallback(async (e, status = 'draft') => {
-  e.preventDefault();
-  setIsSubmitting(true);
+    e.preventDefault();
+    setIsSubmitting(true);
 
-  // Validate all steps
-  let hasError = false;
-  for (let step = 1; step <= 4; step++) {
-    if (!validateStep(step)) {
-      setActiveStep(step);
-      hasError = true;
-      break;
+    // Validate all steps
+    let hasError = false;
+    for (let step = 1; step <= 4; step++) {
+      if (!validateStep(step)) {
+        setActiveStep(step);
+        hasError = true;
+        break;
+      }
     }
-  }
-   if (!thumbnailFile) {
-    setActiveStep(4);
-    setErrors({ thumbnail: "Thumbnail is required" });
-    hasError = true;
-  }
+    
+    if (!thumbnailFile) {
+      setActiveStep(4);
+      setErrors({ thumbnail: "Thumbnail is required" });
+      hasError = true;
+    }
 
-  if (hasError) {
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    const token = localStorage.getItem('token') || localStorage.getItem('userToken');
-
-    if (!token) {
-      toast.error('Please login to create a service');
-      navigate('/login');
+    if (hasError) {
       setIsSubmitting(false);
       return;
     }
 
-    // Create FormData
-    const submitFormData = new FormData();
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('userToken');
 
-    // Append all required fields
-    submitFormData.append('title', formData.title.trim());
-    submitFormData.append('description', formData.description.trim());
-    submitFormData.append('shortDescription', formData.shortDescription.trim());
-    submitFormData.append('category', formData.category);
-    submitFormData.append('subcategory', formData.subcategory || ''); // Ensure string even if empty
-    submitFormData.append('price', formData.price);
-    submitFormData.append('currency', formData.currency);
-    submitFormData.append('deliveryTime', formData.deliveryTime);
-    submitFormData.append('deliveryTimeUnit', formData.deliveryTimeUnit);
-    submitFormData.append('revisions', formData.revisions);
-    submitFormData.append('status', status);
+      if (!token) {
+        toast.error('Please login to create a service');
+        navigate('/signin');
+        setIsSubmitting(false);
+        return;
+      }
 
-    // Append optional fields with proper formatting
-    if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
-    if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
-    
-    // Append arrays properly - each item individually
-    if (formData.tags?.length > 0) {
-      formData.tags.forEach(tag => {
-        submitFormData.append('tags[]', tag);
-      });
-    }
-    
-    if (formData.searchKeywords?.length > 0) {
-      formData.searchKeywords.forEach(keyword => {
-        submitFormData.append('searchKeywords[]', keyword);
-      });
-    }
-    
-    if (formData.features?.length > 0) {
-      formData.features.forEach((feature, index) => {
-        submitFormData.append(`features[${index}][title]`, feature.title);
-        submitFormData.append(`features[${index}][description]`, feature.description || '');
-        submitFormData.append(`features[${index}][included]`, feature.included);
-      });
-    }
-    
-    if (formData.requirements?.length > 0) {
-      formData.requirements.forEach((req, index) => {
-        submitFormData.append(`requirements[${index}][question]`, req.question);
-        submitFormData.append(`requirements[${index}][type]`, req.type);
-        submitFormData.append(`requirements[${index}][required]`, req.required);
-        if (req.options?.length > 0) {
-          req.options.forEach((opt, optIndex) => {
-            submitFormData.append(`requirements[${index}][options][${optIndex}]`, opt);
-          });
+      // Create FormData
+      const submitFormData = new FormData();
+
+      // Append all required fields
+      submitFormData.append('title', (formData.title || '').trim());
+      submitFormData.append('description', (formData.description || '').trim());
+      submitFormData.append('shortDescription', (formData.shortDescription || '').trim());
+      submitFormData.append('category', formData.category || '');
+      submitFormData.append('subcategory', formData.subcategory || '');
+      submitFormData.append('price', formData.price || '');
+      submitFormData.append('currency', formData.currency || 'USD');
+      submitFormData.append('deliveryTime', formData.deliveryTime || '');
+      submitFormData.append('deliveryTimeUnit', formData.deliveryTimeUnit || 'days');
+      submitFormData.append('revisions', formData.revisions || '1');
+      submitFormData.append('status', status);
+
+      // Append optional fields with proper formatting
+      if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
+      if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
+      
+      // Append arrays properly
+      if (formData.tags?.length > 0) {
+        formData.tags.forEach(tag => {
+          submitFormData.append('tags[]', tag);
+        });
+      }
+      
+      if (formData.searchKeywords?.length > 0) {
+        formData.searchKeywords.forEach(keyword => {
+          submitFormData.append('searchKeywords[]', keyword);
+        });
+      }
+      
+      if (formData.features?.length > 0) {
+        formData.features.forEach((feature, index) => {
+          submitFormData.append(`features[${index}][title]`, feature.title || '');
+          submitFormData.append(`features[${index}][description]`, feature.description || '');
+          submitFormData.append(`features[${index}][included]`, feature.included);
+        });
+      }
+      
+      if (formData.requirements?.length > 0) {
+        formData.requirements.forEach((req, index) => {
+          submitFormData.append(`requirements[${index}][question]`, req.question || '');
+          submitFormData.append(`requirements[${index}][type]`, req.type || 'text');
+          submitFormData.append(`requirements[${index}][required]`, req.required);
+          if (req.options?.length > 0) {
+            req.options.forEach((opt, optIndex) => {
+              submitFormData.append(`requirements[${index}][options][${optIndex}]`, opt);
+            });
+          }
+        });
+      }
+      
+      if (formData.faqs?.length > 0) {
+        formData.faqs.forEach((faq, index) => {
+          submitFormData.append(`faqs[${index}][question]`, faq.question || '');
+          submitFormData.append(`faqs[${index}][answer]`, faq.answer || '');
+        });
+      }
+
+      // Append images
+      if (thumbnailFile?.file) {
+        submitFormData.append('thumbnail', thumbnailFile.file);
+      }
+      
+      uploadedImages.forEach((img, index) => {
+        if (img?.file) {
+          submitFormData.append('images', img.file);
         }
       });
-    }
-    
-    if (formData.faqs?.length > 0) {
-      formData.faqs.forEach((faq, index) => {
-        submitFormData.append(`faqs[${index}][question]`, faq.question);
-        submitFormData.append(`faqs[${index}][answer]`, faq.answer);
+
+      // Send request
+      await createServiceMutation.mutateAsync({
+        serviceData: null,
+        files: submitFormData
       });
+      
+    } catch (error) {
+      console.error('Submit error:', error);
+      
+      if (error.message?.includes('Category not found') || error.message?.includes('Invalid category')) {
+        toast.error('Invalid category selected. Please refresh the page and select a valid category.');
+        await refetchCategories();
+      } else if (error.message?.includes('Subcategory not found')) {
+        toast.error('Invalid subcategory selected. Please select a valid subcategory.');
+      } else if (error.message?.includes('Network Error')) {
+        toast.error('Network error. Please check your connection.');
+      } else {
+        toast.error(error.message || 'Failed to create service');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
+  }, [formData, validateStep, createServiceMutation, thumbnailFile, uploadedImages, navigate, refetchCategories]);
 
-    // Append images
-    if (thumbnailFile) {
-      submitFormData.append('thumbnail', thumbnailFile.file);
-    }
-    
-    uploadedImages.forEach((img, index) => {
-      submitFormData.append('images', img.file);
-    });
-
-    // Send request
-    await createServiceMutation.mutateAsync({
-      serviceData: null, // Don't send serviceData separately
-      files: submitFormData
-    });
-    
-  } catch (error) {
-    console.error('Submit error:', error);
-    
-    if (error.message.includes('Category not found') || error.message.includes('Invalid category')) {
-      toast.error('Invalid category selected. Please refresh the page and select a valid category.');
-      await refetchCategories();
-    } else if (error.message.includes('Subcategory not found')) {
-      toast.error('Invalid subcategory selected. Please select a valid subcategory.');
-    } else if (error.message.includes('Network Error')) {
-      toast.error('Network error. Please check your connection.');
-    } else {
-      toast.error(error.message || 'Failed to create service');
-    }
-  } finally {
-    setIsSubmitting(false);
-  }
-}, [formData, validateStep, createServiceMutation, thumbnailFile, uploadedImages, navigate, refetchCategories]);
-
-  // Get category name for display - memoized
+  // Get category name for display
   const getCategoryName = useCallback(() => {
     if (!formData.category || !categoriesData || !Array.isArray(categoriesData)) return "";
     const category = categoriesData.find(c => c._id === formData.category);
     return category?.name || "";
   }, [formData.category, categoriesData]);
 
-  // Get subcategory name for display - memoized
+  // Get subcategory name for display
   const getSubcategoryName = useCallback(() => {
     if (!formData.subcategory || !subcategoriesData) return "";
-    // Access subcategories from the hook response
     const subcategories = subcategoriesData?.subcategories || subcategoriesData || [];
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
   }, [formData.subcategory, subcategoriesData]);
 
+  // Format price
   const formatPrice = useCallback((price) => {
     const num = parseFloat(price);
     return isNaN(num) ? "0" : num.toLocaleString('en-US', {
@@ -884,7 +890,13 @@ const handleImageUpload = useCallback(async (files) => {
     });
   }, []);
 
-  // Memoized progress steps
+  // Get subcategories array
+  const subcategories = useMemo(() => {
+    if (!subcategoriesData) return [];
+    return subcategoriesData?.subcategories || subcategoriesData || [];
+  }, [subcategoriesData]);
+
+  // Render progress steps
   const renderProgressSteps = useMemo(() => (
     <div className="mb-8 md:mb-10 px-2">
       <div className="flex justify-between items-center">
@@ -928,7 +940,7 @@ const handleImageUpload = useCallback(async (files) => {
     </div>
   ), [activeStep]);
 
-  // Memoized top info section
+  // Render top info section
   const renderTopInfo = useMemo(() => (
     <div className="max-w-6xl mx-auto mb-8 md:mb-12">
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 md:p-8 shadow-lg border border-blue-100">
@@ -992,14 +1004,7 @@ const handleImageUpload = useCallback(async (files) => {
     </div>
   ), []);
 
-  // Get subcategories array from hook data
-  const subcategories = useMemo(() => {
-    if (!subcategoriesData) return [];
-    // Handle different response structures
-    return subcategoriesData?.subcategories || subcategoriesData || [];
-  }, [subcategoriesData]);
-
-  // Memoized step content based on active step
+  // Render step content
   const renderStepContent = useMemo(() => {
     switch (activeStep) {
       case 1:
@@ -1032,8 +1037,8 @@ const handleImageUpload = useCallback(async (files) => {
                   <p id="title-help" className="text-xs text-gray-500">
                     Minimum 5 characters required
                   </p>
-                  <span className={`text-xs ${formData.title.length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formData.title.length}/200
+                  <span className={`text-xs ${(formData.title || '').length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(formData.title || '').length}/200
                   </span>
                 </div>
                 {errors.title && (
@@ -1051,7 +1056,7 @@ const handleImageUpload = useCallback(async (files) => {
                   <div className="relative">
                     <select
                       name="category"
-                       value={formData.category || ''}
+                      value={formData.category || ''}
                       onChange={handleInputChange}
                       className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                       required
@@ -1063,7 +1068,7 @@ const handleImageUpload = useCallback(async (files) => {
                         <option value="" disabled>Loading categories...</option>
                       ) : categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0 ? (
                         categoriesData.map(category => (
-                          <option key={category._id} value={category._id}>
+                          <option key={category._id} value={category._id || ''}>
                             {category.name}
                           </option>
                         ))
@@ -1087,29 +1092,29 @@ const handleImageUpload = useCallback(async (files) => {
                   </label>
                   <div className="relative">
                     <select
-  name="subcategory"
-  value={formData.subcategory || ''} // Ensure it's always a string
-  onChange={handleInputChange}
-  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-  required
-  aria-required="true"
-  disabled={!formData.category || subcategoryLoading || subcategories.length === 0 || createServiceMutation.isPending}
->
-  <option value="">Select a subcategory</option>
-  {!formData.category ? (
-    <option value="" disabled>Select a category first</option>
-  ) : subcategoryLoading ? (
-    <option value="" disabled>Loading subcategories...</option>
-  ) : subcategories.length === 0 ? (
-    <option value="" disabled>No subcategories available for this category</option>
-  ) : (
-    subcategories.map(subcategory => (
-      <option key={subcategory._id} value={subcategory._id || ''}>
-        {subcategory.name}
-      </option>
-    ))
-  )}
-</select>
+                      name="subcategory"
+                      value={formData.subcategory || ''}
+                      onChange={handleInputChange}
+                      className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
+                      required
+                      aria-required="true"
+                      disabled={!formData.category || subcategoryLoading || (subcategories || []).length === 0 || createServiceMutation.isPending}
+                    >
+                      <option value="">Select a subcategory</option>
+                      {!formData.category ? (
+                        <option value="" disabled>Select a category first</option>
+                      ) : subcategoryLoading ? (
+                        <option value="" disabled>Loading subcategories...</option>
+                      ) : (subcategories || []).length === 0 ? (
+                        <option value="" disabled>No subcategories available for this category</option>
+                      ) : (
+                        subcategories.map(subcategory => (
+                          <option key={subcategory._id} value={subcategory._id || ''}>
+                            {subcategory.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
                       <ChevronDown className="h-4 w-4" />
                     </div>
@@ -1121,81 +1126,80 @@ const handleImageUpload = useCallback(async (files) => {
               </div>
 
               {/* Short Description */}
-             <div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
-    Short Description <span className="text-red-500">*</span>
-  </label>
-  <textarea
-    name="shortDescription"
-    value={formData.shortDescription || ''}
-    onChange={handleInputChange}
-    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
-    rows="3"
-    placeholder="Brief description of your service (appears in listings)."
-    required
-    maxLength={250}
-    aria-required="true"
-    aria-describedby="short-desc-help short-desc-count"
-  />
-  <div className="flex justify-between mt-2">
-    <p id="short-desc-help" className="text-xs text-gray-500">
-      Minimum 20 characters, maximum 250 characters
-    </p>
-    <span 
-      id="short-desc-count"
-      className={`text-xs font-medium ${
-        !formData.shortDescription ? 'text-gray-500' :
-        formData.shortDescription.length < 20 ? 'text-red-600' : 
-        formData.shortDescription.length > 230 ? 'text-yellow-600' : 'text-green-600'
-      }`}
-    >
-      {formData.shortDescription?.length || 0}/250
-      {formData.shortDescription?.length > 230 && ' (Approaching limit)'}
-    </span>
-  </div>
-  {errors.shortDescription && (
-    <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
-  )}
-</div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Short Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  name="shortDescription"
+                  value={formData.shortDescription || ''}
+                  onChange={handleInputChange}
+                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                  rows="3"
+                  placeholder="Brief description of your service (appears in listings)."
+                  required
+                  maxLength={250}
+                  aria-required="true"
+                  aria-describedby="short-desc-help short-desc-count"
+                />
+                <div className="flex justify-between mt-2">
+                  <p id="short-desc-help" className="text-xs text-gray-500">
+                    Minimum 20 characters, maximum 250 characters
+                  </p>
+                  <span 
+                    id="short-desc-count"
+                    className={`text-xs font-medium ${
+                      !formData.shortDescription ? 'text-gray-500' :
+                      (formData.shortDescription || '').length < 20 ? 'text-red-600' : 
+                      (formData.shortDescription || '').length > 230 ? 'text-yellow-600' : 'text-green-600'
+                    }`}
+                  >
+                    {(formData.shortDescription || '').length}/250
+                    {(formData.shortDescription || '').length > 230 && ' (Approaching limit)'}
+                  </span>
+                </div>
+                {errors.shortDescription && (
+                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
+                )}
+              </div>
 
               {/* Full Description */}
-             <div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
-    Full Description <span className="text-red-500">*</span>
-  </label>
-  <textarea
-    name="description"
-    value={formData.description || ''}
-    onChange={handleInputChange}
-    className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
-    rows="6"
-    placeholder="Detailed description of your service. Include what clients will get, your process, and any important details."
-    required
-    maxLength={5000}
-    aria-required="true"
-    aria-describedby="desc-help desc-count"
-  />
-  <div className="flex justify-between mt-2">
-    <p id="desc-help" className="text-xs text-gray-500">
-      Minimum 50 characters, maximum 5000 characters
-    </p>
-    <span 
-      id="desc-count"
-      className={`text-xs font-medium ${
-        !formData.description ? 'text-gray-500' :
-        formData.description.length < 50 ? 'text-red-600' : 
-        formData.description.length > 4800 ? 'text-yellow-600' : 'text-green-600'
-      }`}
-    >
-      {formData.description?.length || 0}/5000
-      {formData.description?.length > 4800 && ' (Approaching limit)'}
-    </span>
-  </div>
-  {errors.description && (
-    <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
-  )}
-</div>
-
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description || ''}
+                  onChange={handleInputChange}
+                  className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
+                  rows="6"
+                  placeholder="Detailed description of your service. Include what clients will get, your process, and any important details."
+                  required
+                  maxLength={5000}
+                  aria-required="true"
+                  aria-describedby="desc-help desc-count"
+                />
+                <div className="flex justify-between mt-2">
+                  <p id="desc-help" className="text-xs text-gray-500">
+                    Minimum 50 characters, maximum 5000 characters
+                  </p>
+                  <span 
+                    id="desc-count"
+                    className={`text-xs font-medium ${
+                      !formData.description ? 'text-gray-500' :
+                      (formData.description || '').length < 50 ? 'text-red-600' : 
+                      (formData.description || '').length > 4800 ? 'text-yellow-600' : 'text-green-600'
+                    }`}
+                  >
+                    {(formData.description || '').length}/5000
+                    {(formData.description || '').length > 4800 && ' (Approaching limit)'}
+                  </span>
+                </div>
+                {errors.description && (
+                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -1211,7 +1215,7 @@ const handleImageUpload = useCallback(async (files) => {
             <div className="space-y-6">
               {/* Price */}
               <div>
-                <label className=" text-sm font-medium text-gray-700 mb-2 flex items-center">
+                <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <DollarSign className="mr-2" size={14} />
                   Price (USD) <span className="text-red-500">*</span>
                 </label>
@@ -1254,7 +1258,7 @@ const handleImageUpload = useCallback(async (files) => {
                 </label>
                 <select
                   name="currency"
-                   value={formData.currency || 'USD'}
+                  value={formData.currency || 'USD'}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
                   aria-label="Select currency"
@@ -1277,7 +1281,7 @@ const handleImageUpload = useCallback(async (files) => {
                   <input
                     type="number"
                     name="deliveryTime"
-                     value={formData.deliveryTime || ''}
+                    value={formData.deliveryTime || ''}
                     onChange={handleInputChange}
                     className="flex-1 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="e.g., 7"
@@ -1289,7 +1293,7 @@ const handleImageUpload = useCallback(async (files) => {
                   />
                   <select
                     name="deliveryTimeUnit"
-                    value={formData.deliveryTimeUnit}
+                    value={formData.deliveryTimeUnit || 'days'}
                     onChange={handleInputChange}
                     className="p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
                     aria-label="Select delivery time unit"
@@ -1324,7 +1328,7 @@ const handleImageUpload = useCallback(async (files) => {
                 <input
                   type="number"
                   name="revisions"
-                    value={formData.revisions || ''}
+                  value={formData.revisions || '1'}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   placeholder="Number of revisions"
@@ -1356,7 +1360,7 @@ const handleImageUpload = useCallback(async (files) => {
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      value={newTag || ''}
+                      value={newTag}
                       onChange={(e) => setNewTag(e.target.value)}
                       onKeyPress={(e) => handleKeyPress(e, 'tag')}
                       className="flex-1 p-3 border border-gray-300 rounded-lg text-sm"
@@ -1463,7 +1467,7 @@ const handleImageUpload = useCallback(async (files) => {
                         </label>
                         <input
                           type="text"
-                          value={newFeature.title || ''}
+                          value={newFeature.title}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
                           onKeyPress={(e) => handleKeyPress(e, 'feature')}
                           className="w-full p-3 border border-gray-300 rounded-lg"
@@ -1477,7 +1481,7 @@ const handleImageUpload = useCallback(async (files) => {
                         </label>
                         <input
                           type="text"
-                           value={newFeature.description || ''}
+                          value={newFeature.description}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Brief description"
@@ -1532,34 +1536,34 @@ const handleImageUpload = useCallback(async (files) => {
                 </div>
               </div>
             </div>
-            // Add this after the form tag in CreateService.jsx
-{Object.keys(errors).length > 0 && (
-  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-    <h3 className="text-red-800 font-bold mb-2 flex items-center">
-      <AlertCircle className="mr-2" size={20} />
-      Please fix the following errors:
-    </h3>
-    <ul className="text-red-600 list-disc pl-5">
-      {Object.entries(errors).map(([field, message]) => (
-        <li key={field} className="mb-1">
-          <button
-            type="button"
-            onClick={() => {
-              const element = document.querySelector(`[name="${field}"]`);
-              if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                element.focus();
-              }
-            }}
-            className="text-left hover:underline"
-          >
-            {message}
-          </button>
-        </li>
-      ))}
-    </ul>
-  </div>
-)}
+            
+            {Object.keys(errors).length > 0 && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                <h3 className="text-red-800 font-bold mb-2 flex items-center">
+                  <AlertCircle className="mr-2" size={20} />
+                  Please fix the following errors:
+                </h3>
+                <ul className="text-red-600 list-disc pl-5">
+                  {Object.entries(errors).map(([field, message]) => (
+                    <li key={field} className="mb-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const element = document.querySelector(`[name="${field}"]`);
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.focus();
+                          }
+                        }}
+                        className="text-left hover:underline"
+                      >
+                        {message}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         );
 
@@ -1610,7 +1614,11 @@ const handleImageUpload = useCallback(async (files) => {
                         <button
                           type="button"
                           onClick={() => {
-                            uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                            uploadedImages.forEach(img => {
+                              if (img?.preview) {
+                                URL.revokeObjectURL(img.preview);
+                              }
+                            });
                             setUploadedImages([]);
                           }}
                           className="text-sm text-red-600 hover:text-red-700"
@@ -1648,72 +1656,72 @@ const handleImageUpload = useCallback(async (files) => {
 
               {/* Thumbnail Upload */}
               <div>
-  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-    <ImageIcon className="w-5 h-5 mr-2" />
-    Thumbnail <span className="text-red-500 ml-1">*</span>
-  </h3>
-  <div className="space-y-4">
-    <p className="text-gray-600 text-sm flex items-center">
-      <AlertCircle className="w-4 h-4 mr-2 text-blue-500" />
-      The thumbnail is required and will be displayed as the main service image.
-    </p>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                  <ImageIcon className="w-5 h-5 mr-2" />
+                  Thumbnail <span className="text-red-500 ml-1">*</span>
+                </h3>
+                <div className="space-y-4">
+                  <p className="text-gray-600 text-sm flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-2 text-blue-500" />
+                    The thumbnail is required and will be displayed as the main service image.
+                  </p>
 
-    {thumbnailFile ? (
-      <div className="flex items-start gap-4">
-        <div className="relative">
-          <img
-            src={thumbnailFile.preview}
-            alt="Service thumbnail preview"
-            className="w-32 h-32 object-cover rounded-lg"
-            loading="lazy"
-          />
-          <button
-            type="button"
-            onClick={removeThumbnail}
-            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-            aria-label="Remove thumbnail"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div>
-          <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
-          <p className="text-gray-500 text-sm">
-            {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB
-          </p>
-        </div>
-      </div>
-    ) : (
-      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors bg-gray-50">
-        <input
-          type="file"
-          id="thumbnail-upload"
-          ref={thumbnailUploadRef}
-          accept="image/jpeg,image/jpg,image/png,image/webp"
-          onChange={(e) => handleThumbnailUpload(e.target.files[0])}
-          className="hidden"
-          disabled={uploadingThumbnail || createServiceMutation.isPending}
-          required
-        />
-        <label htmlFor="thumbnail-upload" className="cursor-pointer">
-          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-          <h4 className="text-lg font-medium text-gray-900 mb-1">
-            Upload Thumbnail (Required)
-          </h4>
-          <p className="text-gray-600 text-sm mb-2">
-            Recommended: 800×600 pixels, max 2MB
-          </p>
-          <p className="text-red-500 text-xs">
-            * Thumbnail is required for service listing
-          </p>
-        </label>
-      </div>
-    )}
-  </div>
-  {!thumbnailFile && (
-    <p className="mt-2 text-sm text-red-600">Thumbnail is required</p>
-  )}
-</div>
+                  {thumbnailFile ? (
+                    <div className="flex items-start gap-4">
+                      <div className="relative">
+                        <img
+                          src={thumbnailFile.preview}
+                          alt="Service thumbnail preview"
+                          className="w-32 h-32 object-cover rounded-lg"
+                          loading="lazy"
+                        />
+                        <button
+                          type="button"
+                          onClick={removeThumbnail}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                          aria-label="Remove thumbnail"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900">{thumbnailFile.name}</h4>
+                        <p className="text-gray-500 text-sm">
+                          {(thumbnailFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors bg-gray-50">
+                      <input
+                        type="file"
+                        id="thumbnail-upload"
+                        ref={thumbnailUploadRef}
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={(e) => handleThumbnailUpload(e.target.files[0])}
+                        className="hidden"
+                        disabled={uploadingThumbnail || createServiceMutation.isPending}
+                        required
+                      />
+                      <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                        <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                        <h4 className="text-lg font-medium text-gray-900 mb-1">
+                          Upload Thumbnail (Required)
+                        </h4>
+                        <p className="text-gray-600 text-sm mb-2">
+                          Recommended: 800×600 pixels, max 2MB
+                        </p>
+                        <p className="text-red-500 text-xs">
+                          * Thumbnail is required for service listing
+                        </p>
+                      </label>
+                    </div>
+                  )}
+                </div>
+                {errors.thumbnail && (
+                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.thumbnail}</p>
+                )}
+              </div>
 
               {/* FAQs */}
               <div>
@@ -1730,7 +1738,7 @@ const handleImageUpload = useCallback(async (files) => {
                         </label>
                         <input
                           type="text"
-                           value={newFAQ.question || ''} 
+                          value={newFAQ.question}
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Common question from clients"
@@ -1742,7 +1750,7 @@ const handleImageUpload = useCallback(async (files) => {
                           Answer
                         </label>
                         <textarea
-                           value={newFAQ.answer || ''} 
+                          value={newFAQ.answer}
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           rows="3"
@@ -1820,95 +1828,95 @@ const handleImageUpload = useCallback(async (files) => {
     handleRemoveFAQ
   ]);
 
-  /// Update the navigation buttons to show proper loading states
-const renderNavigationButtons = useMemo(() => {
-  if (activeStep === 5) return null;
+  // Navigation buttons
+  const renderNavigationButtons = useMemo(() => {
+    if (activeStep === 5) return null;
 
-  const isProcessing = createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting;
+    const isProcessing = createServiceMutation.isPending || categoryLoading || subcategoryLoading || isSubmitting;
 
-  return (
-    <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
-      {activeStep > 1 && activeStep < 5 && (
-        <button
-          type="button"
-          onClick={prevStep}
-          className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={isProcessing}
-          aria-label="Go back to previous step"
-        >
-          <ArrowLeft className="mr-2" size={20} />
-          Back
-        </button>
-      )}
-
-      {activeStep < 4 ? (
-        <button
-          type="button"
-          onClick={nextStep}
-          className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
-          disabled={isProcessing}
-          aria-label="Continue to next step"
-        >
-          Save & Continue
-          <ChevronRight className="ml-2" size={20} />
-        </button>
-      ) : activeStep === 4 ? (
-        <div className="flex flex-col sm:flex-row gap-4 w-full">
+    return (
+      <div className="flex justify-between pt-6 md:pt-8 mt-6 md:mt-8 border-t border-gray-200">
+        {activeStep > 1 && activeStep < 5 && (
           <button
             type="button"
-            onClick={(e) => handleSubmit(e, 'draft')}
+            onClick={prevStep}
+            className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isProcessing}
-            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Save service as draft"
+            aria-label="Go back to previous step"
           >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 animate-spin" size={20} />
-                {createServiceMutation.isPending ? 'Creating...' : 'Saving...'}
-              </>
-            ) : (
-              <>
-                <Save className="mr-2" size={20} />
-                Save as Draft
-              </>
-            )}
+            <ArrowLeft className="mr-2" size={20} />
+            Back
           </button>
+        )}
 
+        {activeStep < 4 ? (
           <button
             type="button"
-            onClick={(e) => handleSubmit(e, 'active')}
+            onClick={nextStep}
+            className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
             disabled={isProcessing}
-            className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Publish service"
+            aria-label="Continue to next step"
           >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 animate-spin" size={20} />
-                {createServiceMutation.isPending ? 'Publishing...' : 'Processing...'}
-              </>
-            ) : (
-              <>
-                <Zap className="mr-2" size={20} />
-                Publish Service
-              </>
-            )}
+            Save & Continue
+            <ChevronRight className="ml-2" size={20} />
           </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}, [
-  activeStep,
-  createServiceMutation.isPending,
-  categoryLoading,
-  subcategoryLoading,
-  isSubmitting,
-  prevStep,
-  nextStep,
-  handleSubmit
-]);
+        ) : activeStep === 4 ? (
+          <div className="flex flex-col sm:flex-row gap-4 w-full">
+            <button
+              type="button"
+              onClick={(e) => handleSubmit(e, 'draft')}
+              disabled={isProcessing}
+              className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Save service as draft"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 animate-spin" size={20} />
+                  {createServiceMutation.isPending ? 'Creating...' : 'Saving...'}
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2" size={20} />
+                  Save as Draft
+                </>
+              )}
+            </button>
 
-  // Memoized left panel content
+            <button
+              type="button"
+              onClick={(e) => handleSubmit(e, 'active')}
+              disabled={isProcessing}
+              className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Publish service"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 animate-spin" size={20} />
+                  {createServiceMutation.isPending ? 'Publishing...' : 'Processing...'}
+                </>
+              ) : (
+                <>
+                  <Zap className="mr-2" size={20} />
+                  Publish Service
+                </>
+              )}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }, [
+    activeStep,
+    createServiceMutation.isPending,
+    categoryLoading,
+    subcategoryLoading,
+    isSubmitting,
+    prevStep,
+    nextStep,
+    handleSubmit
+  ]);
+
+  // Left panel content
   const renderLeftPanel = useMemo(() => {
     const stepTitles = {
       1: "Define your service basics including title, category, and description.",
@@ -1981,13 +1989,13 @@ const renderNavigationButtons = useMemo(() => {
                   {activeStep >= 1 && completedFields.shortDescription && (
                     <li className="flex justify-between">
                       <span className="text-blue-100">Short Desc:</span>
-                      <span className="font-medium">{formData.shortDescription.length} chars</span>
+                      <span className="font-medium">{(formData.shortDescription || '').length} chars</span>
                     </li>
                   )}
                   {activeStep >= 1 && completedFields.description && (
                     <li className="flex justify-between">
                       <span className="text-blue-100">Description:</span>
-                      <span className="font-medium">{formData.description.length} chars</span>
+                      <span className="font-medium">{(formData.description || '').length} chars</span>
                     </li>
                   )}
                   {activeStep >= 3 && formData.tags.length > 0 && (
@@ -2008,14 +2016,14 @@ const renderNavigationButtons = useMemo(() => {
                       <span className="font-medium">{uploadedImages.length} uploaded</span>
                     </li>
                   )}
-{activeStep >= 4 && (
-  <li className="flex justify-between">
-    <span className="text-blue-100">Thumbnail:</span>
-    <span className="font-medium">
-      {thumbnailFile ? 'Uploaded' : 'Required'}
-    </span>
-  </li>
-)}
+                  {activeStep >= 4 && (
+                    <li className="flex justify-between">
+                      <span className="text-blue-100">Thumbnail:</span>
+                      <span className="font-medium">
+                        {thumbnailFile ? 'Uploaded' : 'Required'}
+                      </span>
+                    </li>
+                  )}
                 </ul>
               </div>
             </div>
@@ -2035,16 +2043,16 @@ const renderNavigationButtons = useMemo(() => {
                 )}
               </div>
               <div className="bg-white/10 rounded-xl p-4 mt-4">
-  <h4 className="font-bold mb-2">Service Details</h4>
-  <ul className="text-sm space-y-1 text-left">
-    <li>✓ Thumbnail uploaded successfully</li>
-    {uploadedImages.length > 0 && (
-      <li>✓ {uploadedImages.length} additional image{uploadedImages.length !== 1 ? 's' : ''}</li>
-    )}
-    <li>✓ Service information saved</li>
-    <li>✓ Ready for clients to discover</li>
-  </ul>
-</div>
+                <h4 className="font-bold mb-2">Service Details</h4>
+                <ul className="text-sm space-y-1 text-left">
+                  <li>✓ Thumbnail uploaded successfully</li>
+                  {uploadedImages.length > 0 && (
+                    <li>✓ {uploadedImages.length} additional image{uploadedImages.length !== 1 ? 's' : ''}</li>
+                  )}
+                  <li>✓ Service information saved</li>
+                  <li>✓ Ready for clients to discover</li>
+                </ul>
+              </div>
               <div className="bg-white/10 rounded-xl p-4">
                 <h4 className="font-bold mb-2">What happens next?</h4>
                 <ul className="text-sm space-y-1 text-left pl-4">
@@ -2116,7 +2124,7 @@ const renderNavigationButtons = useMemo(() => {
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={(e) => handleSubmit(e, 'draft')} className="p-6 md:p-8" aria-label="Service creation form">
+                  <form onSubmit={(e) => e.preventDefault()} className="p-6 md:p-8" aria-label="Service creation form">
                     {/* Display API errors */}
                     {createServiceMutation.error && (
                       <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">

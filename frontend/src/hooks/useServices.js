@@ -236,19 +236,62 @@ export const useCreateService = () => {
       const { serviceData, files = null } = formData || {};
       return servicesAPI.create(serviceData, files);
     },
+    onMutate: async (newService) => {
+      await queryClient.cancelQueries({ queryKey: ['myServices'] });
+      
+      const previousServices = queryClient.getQueryData(['myServices']);
+      
+      // Optimistically update
+      queryClient.setQueryData(['myServices'], (old) => {
+        const oldData = Array.isArray(old) ? old : (old?.data || []);
+        return {
+          ...old,
+          data: [
+            {
+              _id: 'temp_' + Date.now(),
+              ...(newService.serviceData || newService),
+              status: 'draft',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              __optimistic: true
+            },
+            ...oldData
+          ]
+        };
+      });
+      
+      return { previousServices };
+    },
     onSuccess: (data) => {
       if (data.success) {
+        // Force immediate cache update
+        queryClient.setQueryData(['myServices'], (old) => {
+          const oldData = Array.isArray(old) ? old : (old?.data || []);
+          // Replace optimistic entry with real data
+          const filtered = oldData.filter(item => !item.__optimistic);
+          return {
+            ...old,
+            data: [data.data || data.service, ...filtered]
+          };
+        });
+        
         queryClient.invalidateQueries(['myServices']);
         queryClient.invalidateQueries(['services']);
-        queryClient.invalidateQueries(['popularServices']);
-        queryClient.invalidateQueries(['popularServicesByCategory']);
+        
+        // Set refresh flag
+        sessionStorage.setItem('refreshDashboard', 'true');
+        
         navigate('/profile?tab=services');
         toast.success(data.message || 'Service created successfully!');
       } else {
         throw new Error(data.message || 'Failed to create service');
       }
     },
-    onError: (error) => {
+    onError: (error, newService, context) => {
+      // Rollback
+      if (context?.previousServices) {
+        queryClient.setQueryData(['myServices'], context.previousServices);
+      }
       toast.error(error.message || 'Failed to create service');
     },
   });
@@ -344,25 +387,6 @@ export const useDeleteService = () => {
   });
 };
 
-export const useToggleLike = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ serviceId, action = 'toggle' }) => {
-      return servicesAPI.toggleLike(serviceId, action);
-    },
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        queryClient.invalidateQueries(['service', variables.serviceId]);
-        queryClient.invalidateQueries(['services']);
-        toast.success(data.message || 'Action completed');
-      }
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to perform action');
-    },
-  });
-};
 
 export const useServiceStats = (filters = {}) => {
   return useQuery({

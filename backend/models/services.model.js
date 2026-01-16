@@ -252,27 +252,6 @@ thumbnail: {
       maxlength: [500, 'FAQ answer cannot exceed 500 characters'],
     },
   }],
-  rating: {
-    type: Number,
-    default: 0,
-    min: [0, 'Rating cannot be less than 0'],
-    max: [5, 'Rating cannot exceed 5'],
-  },
-  reviewsCount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Reviews count cannot be negative'],
-  },
-  views: {
-    type: Number,
-    default: 0,
-    min: [0, 'Views cannot be negative'],
-  },
-  likes: {
-    type: Number,
-    default: 0,
-    min: [0, 'Likes cannot be negative'],
-  },
   status: {
     type: String,
     enum: ['draft', 'pending', 'active', 'paused', 'denied', 'suspended'],
@@ -521,7 +500,6 @@ serviceSchema.index({ status: 1, publishedAt: -1 }, { name: 'status_published_de
 serviceSchema.index({ isFeatured: 1, status: 1 }, { name: 'featured_status_idx' });
 serviceSchema.index({ isRecommended: 1, status: 1 }, { name: 'recommended_status_idx' });
 serviceSchema.index({ isPopular: 1, status: 1 }, { name: 'popular_status_idx' });
-serviceSchema.index({ rating: -1, ordersCount: -1 }, { name: 'rating_orders_desc_idx' });
 serviceSchema.index({ 
   title: 'text', 
   description: 'text', 
@@ -574,53 +552,6 @@ serviceSchema.query.featured = function() {
   });
 };
 
-// Static methods
-serviceSchema.statics.incrementLikes = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { likes: 1 } },
-    { new: true }
-  );
-};
-
-serviceSchema.statics.decrementLikes = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { likes: -1 } },
-    { new: true }
-  );
-};
-
-serviceSchema.statics.incrementViews = async function(serviceId) {
-  return this.findByIdAndUpdate(
-    serviceId,
-    { $inc: { views: 1 } },
-    { new: true }
-  );
-};
-
-
-serviceSchema.statics.updateRating = async function(serviceId, newRating) {
-  const service = await this.findById(serviceId);
-  if (!service) return null;
-  
-  const currentTotal = service.rating * service.reviewsCount;
-  const newTotal = currentTotal + newRating;
-  const newReviewCount = service.reviewsCount + 1;
-  const newAverage = newTotal / newReviewCount;
-  
-  return this.findByIdAndUpdate(
-    serviceId,
-    { 
-      $inc: { reviewsCount: 1 },
-      $set: { 
-        rating: newAverage,
-        lastUpdatedAt: new Date()
-      }
-    },
-    { new: true }
-  );
-};
 
 serviceSchema.statics.findExpired = function() {
   const now = new Date();

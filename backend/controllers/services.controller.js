@@ -153,8 +153,6 @@ const buildSecureServiceQuery = (queryParams, userRole, userId) => {
     createdBy,
     minPrice,
     maxPrice,
-    minRating,
-    maxRating,
     minDeliveryTime,
     maxDeliveryTime,
     deliveryTimeUnit,
@@ -250,12 +248,6 @@ if (title) {
     if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
   }
 
-  // Rating range
-  if (minRating || maxRating) {
-    filter.rating = {};
-    if (minRating) filter.rating.$gte = parseFloat(minRating);
-    if (maxRating) filter.rating.$lte = parseFloat(maxRating);
-  }
 
   // Delivery time range
   if (minDeliveryTime || maxDeliveryTime) {
@@ -586,8 +578,6 @@ const getServices = async (req, res, next) => {
       createdBy,
       minPrice,
       maxPrice,
-      minRating,
-      maxRating,
       minDeliveryTime,
       maxDeliveryTime,
       deliveryTimeUnit,
@@ -638,8 +628,6 @@ const getServices = async (req, res, next) => {
       createdBy,
       minPrice,
       maxPrice,
-      minRating,
-      maxRating,
       minDeliveryTime,
       maxDeliveryTime,
       deliveryTimeUnit,
@@ -700,7 +688,7 @@ const injectionPatterns = [
         }
       }
     }
-    const numericParams = { page, limit, minPrice, maxPrice, minRating, maxRating };
+    const numericParams = { page, limit, minPrice, maxPrice};
     for (const [key, value] of Object.entries(numericParams)) {
       if (value && isNaN(parseFloat(value))) {
         return res.status(400).json({
@@ -716,7 +704,7 @@ const injectionPatterns = [
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
 
     // Sort configuration
-    const allowedSortFields = ['price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'views', 'likes', 'relevance'];
+    const allowedSortFields = ['price','createdAt', 'updatedAt', 'deliveryTime','relevance'];
     const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = sortField === 'relevance' ? { score: { $meta: 'textScore' } } : { [sortField]: sortOrder };
@@ -745,8 +733,6 @@ const injectionPatterns = [
         description: 1,
         price: 1,
         currency: 1,
-        rating: 1,
-        reviewsCount: 1,
         deliveryTime: 1,
         deliveryTimeUnit: 1,
         revisions: 1,
@@ -764,8 +750,6 @@ const injectionPatterns = [
         createdAt: 1,
         updatedAt: 1,
         publishedAt: 1,
-        views: 1,
-        likes: 1
       };
     }
     
@@ -1236,7 +1220,7 @@ const getServiceById = async (req, res, next) => {
         },
         {
           path: 'createdBy',
-          select: 'name email picture role createdAt isActive bio skills rating'
+          select: 'name email picture role createdAt isActive bio skills'
         },
         {
           path: 'lastUpdatedBy',
@@ -1356,8 +1340,8 @@ const processServiceDataForResponse = (service, isAdmin = false) => {
   // Ensure all fields exist even if empty
   const requiredFields = [
     'title', 'description', 'shortDescription', 'price', 'currency',
-    'deliveryTime', 'deliveryTimeUnit', 'revisions', 'rating', 'reviewsCount',
-    'views', 'likes', 'status', 'isFeatured', 'isRecommended', 'isPopular',
+    'deliveryTime', 'deliveryTimeUnit', 'revisions',
+    'status', 'isFeatured', 'isRecommended', 'isPopular',
     'tags', 'features', 'faqs', 'requirements', 'searchKeywords',
     'metaTitle', 'metaDescription', 'isActive', 'createdAt', 'updatedAt',
     'publishedAt', 'slug', 'category', 'subcategory', 'createdBy', 'thumbnail', 'images'
@@ -1373,9 +1357,6 @@ const processServiceDataForResponse = (service, isAdmin = false) => {
         processed[field] = [];
       } else if (field === 'thumbnail') {
         processed[field] = null;
-      } else if (field === 'rating' || field === 'reviewsCount' || 
-                 field === 'views' || field === 'likes') {
-        processed[field] = 0;
       } else if (field === 'price') {
         processed[field] = 0;
       } else if (field === 'deliveryTime') {
@@ -1684,7 +1665,6 @@ const getOptimizedSelect = (fields, isFastMode, skipImages, isMinimal) => {
       shortDescription: 1,
       price: 1,
       currency: 1,
-      rating: 1,
       deliveryTime: 1,
       deliveryTimeUnit: 1,
       revisions: 1,
@@ -1704,7 +1684,6 @@ const getOptimizedSelect = (fields, isFastMode, skipImages, isMinimal) => {
       slug: 1,
       price: 1,
       currency: 1,
-      rating: 1,
       thumbnail: 1,
       status: 1
     };
@@ -1813,17 +1792,6 @@ const sendServiceResponse = (res, service, requestId, startTime, cached) => {
   });
 };
 
-// Async view increment (non-blocking)
-const incrementViewCountAsync = async (serviceId) => {
-  try {
-    await Service.updateOne(
-      { _id: serviceId },
-      { $inc: { views: 1 } }
-    ).maxTimeMS(1000); // Quick update
-  } catch (error) {
-    console.error('Failed to increment view count:', error.message);
-  }
-};
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1971,10 +1939,6 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.isFeatured;
       delete sanitizedData.isRecommended;
       delete sanitizedData.isPopular;
-      delete sanitizedData.views;
-      delete sanitizedData.likes;
-      delete sanitizedData.rating;
-      delete sanitizedData.reviewsCount;
     }
 
     // Validate subcategory if changed
@@ -2367,10 +2331,7 @@ const getServiceStats = async (req, res, next) => {
                 featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
                 recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
                 popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                totalViews: { $sum: '$views' },
-                totalLikes: { $sum: '$likes' },
                 avgPrice: { $avg: '$price' },
-                avgRating: { $avg: '$rating' },
                 avgDeliveryTime: { $avg: '$deliveryTime' }
               }
             }
@@ -2381,7 +2342,6 @@ const getServiceStats = async (req, res, next) => {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
-                avgRating: { $avg: '$rating' }
               }
             },
             { $sort: { count: -1 } },
@@ -2403,7 +2363,6 @@ const getServiceStats = async (req, res, next) => {
             {
               $project: {
                 title: 1,
-                rating: 1,
                 price: 1,
                 slug: 1
               }
@@ -2430,7 +2389,6 @@ const getServiceStats = async (req, res, next) => {
                 default: "10000+",
                 output: {
                   count: { $sum: 1 },
-                  avgRating: { $avg: "$rating" },
                 }
               }
             }
@@ -2679,7 +2637,7 @@ const exportServices = async (req, res, next) => {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Category', 'Creator',
         'Price', 'Currency', 'Delivery Time', 'Delivery Unit', 'Revisions',
-        'Rating', 'Reviews Count',  'Views', 'Likes',
+       
         'Status', 'Featured', 'Recommended', 'Popular',
         'Created At', 'Updated At', 'Published At'
       ];
@@ -2696,10 +2654,6 @@ const exportServices = async (req, res, next) => {
         service.deliveryTime || 0,
         service.deliveryTimeUnit || 'days',
         service.revisions || 0,
-        service.rating || 0,
-        service.reviewsCount || 0,
-        service.views || 0,
-        service.likes || 0,
         service.status || '',
         service.isFeatured ? 'Yes' : 'No',
         service.isRecommended ? 'Yes' : 'No',
@@ -2837,10 +2791,8 @@ const searchServices = async (req, res, next) => {
         relevance: { score: { $meta: 'textScore' } },
         price_asc: { price: 1 },
         price_desc: { price: -1 },
-        rating: { rating: -1 },
         delivery: { deliveryTime: 1 },
         newest: { createdAt: -1 },
-        orders: { ordersCount: -1 }
       };
 
       const sortObj = sortOptions[sort] || sortOptions.relevance;
@@ -2856,7 +2808,7 @@ const searchServices = async (req, res, next) => {
       }
 
       const results = await findQuery
-        .select('title slug shortDescription description price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images createdBy category tags')
+        .select('title slug shortDescription description price deliveryTime deliveryTimeUnit revisions thumbnail images createdBy category tags')
         .populate('createdBy', 'name picture')
         .populate('category', 'name slug icon')
         .sort(sortObj)
@@ -2873,13 +2825,9 @@ const searchServices = async (req, res, next) => {
           description: result.description ? result.description.substring(0, 150) + '...' : '',
           price: result.price,
           currency: result.currency || 'USD',
-          rating: result.rating || 0,
-          reviewsCount: result.reviewsCount || 0,
           deliveryTime: result.deliveryTime,
           deliveryTimeUnit: result.deliveryTimeUnit,
           revisions: result.revisions || 0,
-          views: result.views || 0,
-          likes: result.likes || 0,
           thumbnail: result.thumbnail,
           images: result.images || [],
           tags: result.tags || [],
@@ -2950,118 +2898,6 @@ const searchServices = async (req, res, next) => {
   }
 };
 
-const toggleLike = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const { id } = req.params; // Define id here at the top
-  
-  try {
-    // const { id } = req.params; // Remove this line from inside try block
-    const { action = 'toggle' } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid service ID',
-        code: 'INVALID_ID',
-        requestId
-      });
-    }
-
-    const service = await Service.findOne({ 
-      _id: id, 
-      status: 'active',
-      isActive: true 
-    });
-
-    if (!service) {
-      return res.status(404).json({
-        success: false,
-        message: 'Service not found',
-        code: 'SERVICE_NOT_FOUND',
-        requestId
-      });
-    }
-
-    const userLike = await mongoose.model('UserLike').findOne({
-      user: req.user._id,
-      service: id
-    });
-
-    let result;
-    let message;
-
-    if (action === 'like' || (action === 'toggle' && !userLike)) {
-      if (!userLike) {
-        await mongoose.model('UserLike').create({
-          user: req.user._id,
-          service: id
-        });
-        
-        await Service.incrementLikes(id);
-        message = 'Service liked';
-        
-        // Invalidate cache for this service
-        await invalidateServiceCache(id);
-        
-        logAudit('LIKE', 'SERVICE', id, req.user._id);
-      } else {
-        message = 'Service already liked';
-      }
-    } else if (action === 'unlike' || (action === 'toggle' && userLike)) {
-      if (userLike) {
-        await mongoose.model('UserLike').deleteOne({
-          user: req.user._id,
-          service: id
-        });
-        
-        await Service.decrementLikes(id);
-        message = 'Service unliked';
-        
-        // Invalidate cache for this service
-        await invalidateServiceCache(id);
-        
-        logAudit('UNLIKE', 'SERVICE', id, req.user._id);
-      } else {
-        message = 'Service not liked yet';
-      }
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid action',
-        code: 'INVALID_ACTION',
-        requestId
-      });
-    }
-
-    const updatedService = await Service.findById(id)
-      .select('likes title slug')
-      .lean();
-
-    res.json({
-      success: true,
-      message,
-      likes: updatedService.likes,
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'TOGGLE_LIKE', req.user._id, { 
-      id, // Now id is defined in this scope
-      action: req.body.action,
-      error: error.message 
-    });
-    
-    // Send proper error response
-    res.status(500).json({
-      success: false,
-      message: 'Failed to toggle like',
-      error: error.message,
-      requestId,
-      timestamp: new Date().toISOString()
-    });
-  }
-};
 
 // Get Similar Services
 const getSimilarServices = async (req, res, next) => {
@@ -3127,9 +2963,8 @@ const getSimilarServices = async (req, res, next) => {
         tags: { $in: service.tags.slice(0, 3) }
       } : {})
     })
-    .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
+    .select('title slug description price  deliveryTime deliveryTimeUnit revisions thumbnail createdBy')
     .populate('createdBy', 'name picture')
-    .sort({ rating: -1 })
     .limit(similarLimit)
     .lean();
 
@@ -3140,9 +2975,8 @@ const getSimilarServices = async (req, res, next) => {
         status: 'active',
         isActive: true
       })
-      .select('title slug description price rating deliveryTime deliveryTimeUnit revisions  views thumbnail createdBy')
+      .select('title slug description price deliveryTime deliveryTimeUnit revisions thumbnail createdBy')
       .populate('createdBy', 'name picture')
-      .sort({ rating: -1,})
       .limit(similarLimit - similarServices.length)
       .lean();
 
@@ -3155,11 +2989,9 @@ const getSimilarServices = async (req, res, next) => {
       slug: s.slug,
       description: s.description ? s.description.substring(0, 100) + '...' : '',
       price: s.price,
-      rating: s.rating || 0,
       deliveryTime: s.deliveryTime,
       deliveryTimeUnit: s.deliveryTimeUnit,
       revisions: s.revisions || 0,
-      views: s.views || 0,
       thumbnail: s.thumbnail,
       createdBy: {
         _id: s.createdBy?._id,
@@ -3746,7 +3578,7 @@ const getMyServices = async (req, res, next) => {
     }
 
     if (!services || !total) {
-      const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'deliveryTime', 'ordersCount', 'views', 'likes', 'publishedAt'];
+      const allowedSortFields = ['title', 'price','createdAt', 'updatedAt', 'deliveryTime','publishedAt'];
       const sortField = allowedSortFields.includes(sort) ? sort : 'createdAt';
       const sortOrder = order === 'asc' ? 1 : -1;
       const sortObj = { [sortField]: sortOrder };
@@ -3889,8 +3721,6 @@ const getAllActiveServices = async (req, res, next) => {
       search = '',
       minPrice,
       maxPrice,
-      minRating,
-      maxRating,
       category,
       subcategory,
       includeSubcategory = true,
@@ -3928,12 +3758,7 @@ const getAllActiveServices = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Rating range
-    if (minRating || maxRating) {
-      filter.rating = {};
-      if (minRating) filter.rating.$gte = parseFloat(minRating);
-      if (maxRating) filter.rating.$lte = parseFloat(maxRating);
-    }
+    
 
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
@@ -3944,7 +3769,7 @@ const getAllActiveServices = async (req, res, next) => {
     let sortObj = {};
     
     // Define valid sort fields and create proper sort object
-    const validSortFields = ['createdAt', 'rating', 'price', 'views', 'likes', 'deliveryTime'];
+    const validSortFields = ['createdAt', 'price', 'deliveryTime'];
     
     if (validSortFields.includes(sort)) {
       sortObj[sort] = sortOrder;
@@ -3998,7 +3823,7 @@ const getAllActiveServices = async (req, res, next) => {
 
       [services, total] = await Promise.all([
         Service.find(filter)
-          .select('title slug shortDescription description price currency rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category subcategory createdBy tags status')
+          .select('title slug shortDescription description price currency  deliveryTime deliveryTimeUnit revisions   thumbnail images category subcategory createdBy tags status')
           .populate(populateOptions)
           .sort(sortObj) // Now this will work correctly
           .skip(skip)
@@ -4141,7 +3966,7 @@ const getServicesWithCategoryStats = async (req, res, next) => {
 
     // Get services with category and subcategory
     const services = await Service.find(filter)
-      .select('title slug price rating thumbnail category subcategory')
+      .select('title slug price thumbnail category subcategory')
       .populate('category', 'name slug icon')
       .populate('subcategory', 'name slug icon')
       .limit(queryLimit)
@@ -4161,7 +3986,6 @@ const getServicesWithCategoryStats = async (req, res, next) => {
           _id: '$category',
           count: { $sum: 1 },
           avgPrice: { $avg: '$price' },
-          avgRating: { $avg: '$rating' }
         }
       },
       { $sort: { count: -1 } }
@@ -4181,7 +4005,6 @@ const getServicesWithCategoryStats = async (req, res, next) => {
           _id: '$subcategory',
           count: { $sum: 1 },
           avgPrice: { $avg: '$price' },
-          avgRating: { $avg: '$rating' }
         }
       },
       { $sort: { count: -1 } }
@@ -4225,7 +4048,6 @@ const getServicesWithCategoryStats = async (req, res, next) => {
         description: category?.description || '',
         count: stat.count,
         avgPrice: stat.avgPrice || 0,
-        avgRating: stat.avgRating || 0
       };
     });
 
@@ -4245,7 +4067,6 @@ const getServicesWithCategoryStats = async (req, res, next) => {
         } : null,
         count: stat.count,
         avgPrice: stat.avgPrice || 0,
-        avgRating: stat.avgRating || 0
       };
     });
 
@@ -4255,7 +4076,6 @@ const getServicesWithCategoryStats = async (req, res, next) => {
       title: service.title,
       slug: service.slug,
       price: service.price,
-      rating: service.rating,
       thumbnail: service.thumbnail,
       category: service.category ? {
         _id: service.category._id,
@@ -4339,7 +4159,6 @@ const getAdminServices = async (req, res, next) => {
       minPrice,
       maxPrice,
       category,
-      rating,
       createdBy,
       isActive = '',
       cache: useCacheParam = 'false'
@@ -4389,11 +4208,6 @@ const getAdminServices = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Rating range
-    if (rating) {
-      filter.rating = { $gte: parseFloat(rating) };
-    }
-
     // Calculate pagination
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
@@ -4423,7 +4237,7 @@ const getAdminServices = async (req, res, next) => {
 
     if (!services || !total) {
       // Sort options
-      const allowedSortFields = ['title', 'price', 'rating', 'createdAt', 'updatedAt', 'ordersCount', 'views'];
+      const allowedSortFields = ['title', 'price','createdAt', 'updatedAt'];
       const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
       const sortDirection = sortOrder === 'asc' ? 1 : -1;
       const sortOptions = { [sortField]: sortDirection };
@@ -4456,7 +4270,6 @@ const getAdminServices = async (req, res, next) => {
             suspended: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
             featured: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
             avgPrice: { $avg: '$price' },
-            avgRating: { $avg: '$rating' }
           }
         }
       ]);
@@ -4518,7 +4331,6 @@ const getAdminServices = async (req, res, next) => {
         suspended: 0,
         featured: 0,
         avgPrice: 0,
-        avgRating: 0
       },
       requestId,
       timestamp: new Date().toISOString(),
@@ -4546,8 +4358,6 @@ const getPopularServices = async (req, res, next) => {
       limit = 12, 
       category, 
       random = 'false',
-      minRating = 4.0,
-      minReviews = 5,
       maxPrice,
       cache: useCacheParam = 'true',
       includeSubcategory = true
@@ -4563,8 +4373,6 @@ const getPopularServices = async (req, res, next) => {
       status: 'active',
       isActive: true,
       isPopular: true,
-      rating: { $gte: parseFloat(minRating) },
-      reviewsCount: { $gte: parseInt(minReviews) || 0 }
     };
 
     // Optional category filter
@@ -4642,14 +4450,11 @@ const getPopularServices = async (req, res, next) => {
       } else {
         // Normal query with populate
         const sortOptions = { 
-          rating: -1, 
-          views: -1, 
-          likes: -1,
           createdAt: -1 
         };
         
         services = await Service.find(filter)
-          .select('title slug shortDescription description price currency rating reviewsCount deliveryTime deliveryTimeUnit revisions views likes thumbnail images')
+          .select('title slug shortDescription description price currency  deliveryTime deliveryTimeUnit revisions   thumbnail images')
           .populate(populateOptions)
           .sort(sortOptions)
           .limit(queryLimit)
@@ -4664,7 +4469,6 @@ const getPopularServices = async (req, res, next) => {
             $group: {
               _id: '$category',
               count: { $sum: 1 },
-              avgRating: { $avg: '$rating' }
             }
           },
           { $sort: { count: -1 } },
@@ -4706,13 +4510,9 @@ const getPopularServices = async (req, res, next) => {
         (service.description ? service.description.substring(0, 120) + '...' : ''),
       price: service.price,
       currency: service.currency || 'USD',
-      rating: service.rating || 0,
-      reviewsCount: service.reviewsCount || 0,
       deliveryTime: service.deliveryTime,
       deliveryTimeUnit: service.deliveryTimeUnit,
       revisions: service.revisions || 0,
-      views: service.views || 0,
-      likes: service.likes || 0,
       thumbnail: service.thumbnail,
       firstImage: service.images && service.images.length > 0 ? service.images[0] : null,
       createdBy: {
@@ -4850,8 +4650,6 @@ const getPopularServicesByCategory = async (req, res, next) => {
   try {
     const { 
       limit = 12, 
-      minRating = 0,
-      minReviews = 0,
       cache: useCacheParam = 'true',
       random = 'false',
       includeSubcategory = true
@@ -4863,8 +4661,6 @@ const getPopularServicesByCategory = async (req, res, next) => {
     // Generate cache key
     const cacheKey = generateCacheKey('popular_services_by_category', {
       limit: queryLimit,
-      minRating,
-      minReviews,
       random,
       includeSubcategory
     });
@@ -4945,12 +4741,10 @@ const getPopularServicesByCategory = async (req, res, next) => {
     } else {
       // Normal query with sort
       services = await Service.find(filter)
-        .select('title slug shortDescription description price currency rating reviewsCount deliveryTime deliveryTimeUnit revisions views likes thumbnail images tags features isPopular isFeatured category subcategory createdBy')
+        .select('title slug shortDescription description price currency deliveryTime deliveryTimeUnit revisions thumbnail images tags features isPopular isFeatured category subcategory createdBy')
         .populate(populateOptions)
         .sort({ 
           createdAt: -1,
-          rating: -1,
-          views: -1
         })
         .limit(queryLimit)
         .lean();
@@ -5009,13 +4803,9 @@ const getPopularServicesByCategory = async (req, res, next) => {
         description: service.description,
         price: service.price,
         currency: service.currency || 'USD',
-        rating: service.rating || 0,
-        reviewsCount: service.reviewsCount || 0,
         deliveryTime: service.deliveryTime,
         deliveryTimeUnit: service.deliveryTimeUnit || 'days',
         revisions: service.revisions || 0,
-        views: service.views || 0,
-        likes: service.likes || 0,
         tags: service.tags || [],
         features: service.features || [],
         thumbnail: service.thumbnail,
@@ -5089,7 +4879,6 @@ const getServicesBySubcategory = async (req, res, next) => {
       order = 'desc',
       minPrice,
       maxPrice,
-      minRating
     } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(subcategoryId)) {
@@ -5130,10 +4919,6 @@ const getServicesBySubcategory = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    if (minRating) {
-      filter.rating = { $gte: parseFloat(minRating) };
-    }
-
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
@@ -5142,13 +4927,12 @@ const getServicesBySubcategory = async (req, res, next) => {
     const sortOptions = {
       createdAt: order === 'asc' ? 1 : -1,
       price: order === 'asc' ? 1 : -1,
-      rating: -1,
       deliveryTime: 1
     };
 
     const [services, total] = await Promise.all([
       Service.find(filter)
-        .select('title slug description price currency rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images category createdBy')
+        .select('title slug description price currency  deliveryTime deliveryTimeUnit revisions   thumbnail images category createdBy')
         .populate('category', 'name slug icon')
         .populate('subcategory', 'name slug icon')
         .populate('createdBy', 'name picture')
@@ -5219,7 +5003,6 @@ const getServicesByCategory = async (req, res, next) => {
       order = 'desc',
       minPrice,
       maxPrice,
-      minRating,
       includeSubcategory = true
     } = req.query;
 
@@ -5261,10 +5044,6 @@ const getServicesByCategory = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    if (minRating) {
-      filter.rating = { $gte: parseFloat(minRating) };
-    }
-
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
@@ -5273,9 +5052,6 @@ const getServicesByCategory = async (req, res, next) => {
     const sortOptions = {
       createdAt: order === 'asc' ? 1 : -1,
       price: order === 'asc' ? 1 : -1,
-      rating: -1,
-      views: -1,
-      likes: -1
     };
 
     // Build populate options
@@ -5301,7 +5077,7 @@ const getServicesByCategory = async (req, res, next) => {
 
     const [services, total] = await Promise.all([
       Service.find(filter)
-        .select('title slug shortDescription price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images')
+        .select('title slug shortDescription price  deliveryTime deliveryTimeUnit revisions   thumbnail images')
         .populate(populateOptions)
         .sort(sortOptions)
         .skip(skip)
@@ -5372,7 +5148,6 @@ const getServicesBySubcategorySlug = async (req, res, next) => {
       order = 'desc',
       minPrice,
       maxPrice,
-      minRating
     } = req.query;
 
     if (!slug || typeof slug !== 'string') {
@@ -5416,10 +5191,6 @@ const getServicesBySubcategorySlug = async (req, res, next) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    if (minRating) {
-      filter.rating = { $gte: parseFloat(minRating) };
-    }
-
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
@@ -5428,13 +5199,12 @@ const getServicesBySubcategorySlug = async (req, res, next) => {
     const sortOptions = {
       createdAt: order === 'asc' ? 1 : -1,
       price: order === 'asc' ? 1 : -1,
-      rating: -1,
       deliveryTime: 1
     };
 
     const [services, total] = await Promise.all([
       Service.find(filter)
-        .select('title slug shortDescription price rating deliveryTime deliveryTimeUnit revisions views likes thumbnail images')
+        .select('title slug shortDescription price  deliveryTime deliveryTimeUnit revisions   thumbnail images')
         .populate('category', 'name slug icon')
         .populate('subcategory', 'name slug icon')
         .populate('createdBy', 'name picture')
@@ -5513,7 +5283,6 @@ module.exports = {
   bulkUpdateServices,
   exportServices,
   searchServices,
-  toggleLike,
   getSimilarServices,
   uploadImages,
   removeImage,
