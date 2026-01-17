@@ -81,6 +81,14 @@ export const useService = (identifier) => {
     queryFn: () => servicesAPI.getById(identifier),
     enabled: !!identifier,
     retry: false,
+    onSuccess: (data) => {
+      // Ensure version field is included
+      if (data?.service) {
+        data.service.version = data.service.version || 1;
+      } else if (data?.data) {
+        data.data.version = data.data.version || 1;
+      }
+    },
     onError: (error) => {
       toast.error(error.message || 'Failed to load service');
     },
@@ -301,8 +309,17 @@ export const useUpdateService = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, data, headers }) => {
+    mutationFn: async ({ id, data, headers, version }) => {
       try {
+        // If version is provided, add it to the data
+        if (version !== undefined) {
+          if (data instanceof FormData) {
+            data.append('version', version.toString());
+          } else if (typeof data === 'object') {
+            data.version = version;
+          }
+        }
+        
         const response = await axiosInstance.put(`/api/services/${id}`, data, {
           headers: headers || {
             'Content-Type': 'multipart/form-data'
@@ -311,12 +328,32 @@ export const useUpdateService = () => {
         });
         
         if (!response.data.success) {
+          // Handle version conflict specifically
+          if (response.data.code === 'VERSION_CONFLICT') {
+            throw {
+              message: response.data.message,
+              code: 'VERSION_CONFLICT',
+              currentVersion: response.data.currentVersion,
+              status: 409
+            };
+          }
           throw new Error(response.data.message || 'Update failed');
         }
         
         return response.data;
       } catch (error) {
-        // Handle specific error cases
+        // Handle version conflict from backend
+        if (error.response?.status === 409 || error.code === 'VERSION_CONFLICT') {
+          const errorData = error.response?.data;
+          throw {
+            message: errorData?.message || 'Service was modified by another user',
+            code: 'VERSION_CONFLICT',
+            currentVersion: errorData?.currentVersion || error.currentVersion,
+            status: 409
+          };
+        }
+        
+        // Handle other errors
         if (error.response?.status === 400) {
           const errorData = error.response.data;
           const errorMessage = errorData.errors?.join(', ') || errorData.message;
@@ -342,10 +379,75 @@ export const useUpdateService = () => {
         throw error;
       }
     },
+    onMutate: async ({ id, data, version }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['service', id] });
+      
+      // Snapshot the previous value
+      const previousService = queryClient.getQueryData(['service', id]);
+      
+      // Optimistically update the service with the new version
+      if (previousService) {
+        const newVersion = version ? version + 1 : (previousService.version || 1) + 1;
+        
+        queryClient.setQueryData(['service', id], (old) => {
+          if (!old) return old;
+          
+          // Create optimistic update
+          const updatedService = {
+            ...old,
+            ...old.service,
+            ...old.data,
+            version: newVersion,
+            updatedAt: new Date().toISOString(),
+            __optimistic: true
+          };
+          
+          // If it's a service object from getServiceById response
+          if (old.service) {
+            return {
+              ...old,
+              service: updatedService,
+              data: updatedService
+            };
+          }
+          
+          return updatedService;
+        });
+      }
+      
+      return { previousService };
+    },
     onSuccess: (data, variables) => {
+      // Update the service cache with real data from server
+      if (data.service || data.data) {
+        const updatedService = data.service || data.data;
+        
+        // Remove optimistic flag
+        delete updatedService.__optimistic;
+        
+        queryClient.setQueryData(['service', variables.id], (old) => {
+          if (!old) return old;
+          
+          // If it's a service object from getServiceById response
+          if (old.service) {
+            return {
+              ...old,
+              service: updatedService,
+              data: updatedService,
+              success: true,
+              message: data.message
+            };
+          }
+          
+          return updatedService;
+        });
+      }
+      
       // Invalidate all relevant queries
       queryClient.invalidateQueries({
-        queryKey: ['service', variables.id]
+        queryKey: ['service', variables.id],
+        refetchType: 'none' // Don't refetch, we already set the data
       });
       
       queryClient.invalidateQueries({
@@ -356,13 +458,35 @@ export const useUpdateService = () => {
         queryKey: ['services']
       });
       
-      // Optionally update the service cache immediately
-      if (data.service) {
-        queryClient.setQueryData(['service', variables.id], data.service);
+      queryClient.invalidateQueries({
+        queryKey: ['popularServices']
+      });
+      
+      queryClient.invalidateQueries({
+        queryKey: ['popularServicesByCategory']
+      });
+    },
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context?.previousService) {
+        queryClient.setQueryData(['service', variables.id], context.previousService);
+      }
+      
+      // If version conflict, invalidate the query to get fresh data
+      if (error.code === 'VERSION_CONFLICT') {
+        queryClient.invalidateQueries({ 
+          queryKey: ['service', variables.id] 
+        });
       }
     },
-    onError: (error) => {
-      console.error('Update service mutation error:', error);
+    // Add onSettled to ensure fresh data
+    onSettled: (data, error, variables) => {
+      // Force a fresh fetch to ensure data consistency after settle
+      if (error?.code === 'VERSION_CONFLICT') {
+        queryClient.invalidateQueries({ 
+          queryKey: ['service', variables.id] 
+        });
+      }
     }
   });
 };

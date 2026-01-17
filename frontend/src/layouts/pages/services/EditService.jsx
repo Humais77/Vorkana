@@ -38,13 +38,16 @@ import {
   ShieldCheck,
   Timer,
   MessageCircle,
-  ExternalLink
+  ExternalLink,
+  GitBranch,
+  AlertTriangle,
+  History as HistoryIcon // Renamed import to avoid conflict
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService, useUpdateService } from '../../../hooks/useServices';
-import { useCategories ,useParentCategories} from '../../../hooks/useCategories';
+import { useCategories, useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { isProfileCompleteEnough } from '../../../utils/profileUtils';
@@ -95,7 +98,6 @@ const QUICK_TIPS = [
   "Update clear and specific service details",
   "Keep images relevant and high-quality",
   "Refresh your service to keep it visible in searches",
- 
 ];
 
 const CURRENCY_OPTIONS = [
@@ -129,7 +131,8 @@ const EditService = () => {
 
   // Zustand stores
   const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
-const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
+  
   // TanStack Query hooks
   const {
     data: serviceData,
@@ -171,7 +174,8 @@ const queryClient = useQueryClient();
     faqs: [],
     metaTitle: "",
     metaDescription: "",
-    status: "active"
+    status: "active",
+    version: 1 // Add version field
   }), []);
 
   // Local state
@@ -197,11 +201,18 @@ const queryClient = useQueryClient();
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [versionConflict, setVersionConflict] = useState(false);
+  const [conflictResolution, setConflictResolution] = useState({
+    show: false,
+    serverVersion: 1,
+    serverData: null
+  });
 
   // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
+  const hasPopulatedRef = useRef(false);
 
   // Memoized values
   const subcategoriesData = useSubcategoriesByCategory(formData.category, {
@@ -218,13 +229,23 @@ const queryClient = useQueryClient();
     form: errors.form || serviceError?.message || authError || categoryError?.message || updateError?.message
   }), [errors, serviceError, authError, categoryError, updateError]);
 
-  // Initialize form with service data
+  const currentService = useMemo(() => {
+    if (!serviceData) return null;
+    return serviceData.service || serviceData.data || serviceData;
+  }, [serviceData]);
+
+  // Get current version
+  const currentVersion = useMemo(() => {
+    return currentService?.version || formData.version || 1;
+  }, [currentService, formData.version]);
+
+  // Populate form when service data loads
   useEffect(() => {
-    if (serviceData) {
-      const service = serviceData;
+    if (currentService && !hasPopulatedRef.current) {
+      hasPopulatedRef.current = true;
       
       // Check if user is owner
-      if (currentUser && service.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
+      if (currentUser && currentService.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
         toast.error('You can only edit your own services');
         navigate(`/services/${id}`);
         return;
@@ -232,73 +253,100 @@ const queryClient = useQueryClient();
 
       // Populate form
       setFormData({
-        title: service.title || "",
-        description: service.description || "",
-        shortDescription: service.shortDescription || "",
-        category: service.category?._id || service.category || "",
-        subcategory: service.subcategory?._id || service.subcategory || "",
-        price: service.price?.toString() || "",
-        currency: service.currency || "USD",
-        deliveryTime: service.deliveryTime?.toString() || "",
-        deliveryTimeUnit: service.deliveryTimeUnit || "days",
-        revisions: service.revisions?.toString() || "1",
-        tags: service.tags || [],
-        searchKeywords: service.searchKeywords || [],
-        features: service.features || [],
-        requirements: service.requirements || [],
-        faqs: service.faqs || [],
-        metaTitle: service.metaTitle || "",
-        metaDescription: service.metaDescription || "",
-        status: service.status || "active"
+        title: currentService.title || "",
+        description: currentService.description || "",
+        shortDescription: currentService.shortDescription || "",
+        category: currentService.category?._id || currentService.category || "",
+        subcategory: currentService.subcategory?._id || currentService.subcategory || "",
+        price: currentService.price?.toString() || "",
+        currency: currentService.currency || "USD",
+        deliveryTime: currentService.deliveryTime?.toString() || "",
+        deliveryTimeUnit: currentService.deliveryTimeUnit || "days",
+        revisions: currentService.revisions?.toString() || "1",
+        tags: currentService.tags || [],
+        searchKeywords: currentService.searchKeywords || [],
+        features: currentService.features || [],
+        requirements: currentService.requirements || [],
+        faqs: currentService.faqs || [],
+        metaTitle: currentService.metaTitle || "",
+        metaDescription: currentService.metaDescription || "",
+        status: currentService.status || "active",
+        version: currentService.version || 1
       });
 
       // Set existing images
-      if (service.images && Array.isArray(service.images)) {
-        setExistingImages(service.images);
+      if (currentService.images && Array.isArray(currentService.images)) {
+        setExistingImages(currentService.images);
       }
 
       // Set existing thumbnail
-      if (service.thumbnail) {
-        setExistingThumbnail(service.thumbnail);
+      if (currentService.thumbnail) {
+        setExistingThumbnail(currentService.thumbnail);
       }
     }
-  }, [serviceData, currentUser, id, navigate]);
+  }, [currentService, currentUser, id, navigate]);
 
+  // Handle update success
   useEffect(() => {
-  if (updateSuccess && updatedServiceData) {
-    setSuccess(true);
-    toast.success(updatedServiceData.message || "Service updated successfully!");
+    if (updateSuccess && updatedServiceData && isSubmitting) {
+      setSuccess(true);
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+      
+      const message = updatedServiceData.message || "Service updated successfully!";
+      toast.success(message);
 
-    // Invalidate the service cache BEFORE redirecting
-    queryClient.invalidateQueries({
-      queryKey: ['service', id]
-    });
-    
-    // Also invalidate any service lists that might contain this service
-    queryClient.invalidateQueries({
-      queryKey: ['services']
-    });
+      // Reset populated flag to allow re-population on refresh
+      hasPopulatedRef.current = false;
 
-    // Shorter delay for redirect
-    setTimeout(() => {
-      navigate(`/services/${id}`, {
-        // Pass navigation state to trigger refresh
-        state: { refresh: true }
+      // Invalidate queries
+      queryClient.invalidateQueries({
+        queryKey: ['service', id]
       });
-    }, 500); // Reduced from 2000ms to 500ms
-  }
-}, [updateSuccess, updatedServiceData, navigate, id, queryClient]);
+      
+      queryClient.invalidateQueries({
+        queryKey: ['services']
+      });
+
+      // Redirect after delay
+      setTimeout(() => {
+        navigate(`/services/${id}`, {
+          state: { refresh: true, updated: true }
+        });
+      }, 500);
+    }
+  }, [updateSuccess, updatedServiceData, navigate, id, queryClient, isSubmitting]);
+
   // Handle update errors
   useEffect(() => {
     if (updateError) {
-       if (updateError.message?.includes('SUBCATEGORY')) {
+      setIsSubmitting(false);
+      
+      // Handle version conflict
+      if (updateError.code === 'VERSION_CONFLICT') {
+        setVersionConflict(true);
+        setConflictResolution({
+          show: true,
+          serverVersion: updateError.currentVersion || (currentVersion + 1),
+          serverData: null
+        });
+        
+        toast.error(updateError.message || 'Service was modified by another user. Please refresh.');
+        
+        // Force refresh to get latest data
+        setTimeout(() => {
+          handleRefreshService();
+        }, 1500);
+      }
+      // Handle subcategory errors
+      else if (updateError.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Please select a valid subcategory' }));
         toast.error('Subcategory validation failed');
       } else {
         toast.error(updateError.message || 'Failed to update service');
       }
     }
-  }, [updateError]);
+  }, [updateError, currentVersion]);
 
   // Cleanup
   useEffect(() => {
@@ -440,111 +488,111 @@ const queryClient = useQueryClient();
   }, []);
 
   // Create a utility function to optimize images before upload
-const optimizeImageBeforeUpload = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
-  return new Promise((resolve) => {
-    if (file.size < 500 * 1024) { // If already small (<500KB)
-      resolve(file);
-      return;
-    }
-
-    const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      
-      // Calculate new dimensions
-      if (width > maxWidth) {
-        height = Math.round(height * (maxWidth / width));
-        width = maxWidth;
-      }
-      if (height > maxHeight) {
-        width = Math.round(width * (maxHeight / height));
-        height = maxHeight;
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      canvas.toBlob(
-        (blob) => {
-          const optimizedFile = new File([blob], file.name, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
-          resolve(optimizedFile);
-        },
-        'image/jpeg',
-        quality
-      );
-    };
-    
-    img.src = URL.createObjectURL(file);
-  });
-};
-
-// Use it in your image upload handler
-const handleImageUpload = useCallback(async (files) => {
-  if (uploadingImages) return;
-  
-  const newFiles = Array.from(files);
-  
-  // Validate total image count
-  const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
-  if (totalImages > 10) {
-    toast.error('Maximum 10 images allowed');
-    return;
-  }
-  
-  setUploadingImages(true);
-  
-  try {
-    const optimizedFiles = await Promise.all(
-      newFiles.map(async (file) => {
-        // Skip optimization for already small files
-        if (file.size < 500 * 1024) {
-          return file;
-        }
-        
-        try {
-          return await optimizeImageBeforeUpload(file);
-        } catch (error) {
-          console.warn('Failed to optimize image, using original:', error);
-          return file;
-        }
-      })
-    );
-    
-    // Validate optimized files
-    for (const file of optimizedFiles) {
-      if (file.size > 2 * 1024 * 1024) { // Max 2MB after optimization
-        toast.error(`${file.name} is too large after optimization`);
-        setUploadingImages(false);
+  const optimizeImageBeforeUpload = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      if (file.size < 500 * 1024) { // If already small (<500KB)
+        resolve(file);
         return;
       }
+
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        
+        // Calculate new dimensions
+        if (width > maxWidth) {
+          height = Math.round(height * (maxWidth / width));
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round(width * (maxHeight / height));
+          height = maxHeight;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob(
+          (blob) => {
+            const optimizedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(optimizedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // Image upload handler
+  const handleImageUpload = useCallback(async (files) => {
+    if (uploadingImages) return;
+    
+    const newFiles = Array.from(files);
+    
+    // Validate total image count
+    const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
+    if (totalImages > 10) {
+      toast.error('Maximum 10 images allowed');
+      return;
     }
     
-    const previewImages = optimizedFiles.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      isNew: true
-    }));
+    setUploadingImages(true);
     
-    setUploadedImages(prev => [...prev, ...previewImages]);
-    toast.success(`${newFiles.length} image(s) added successfully`);
-  } catch (error) {
-    console.error('Error uploading images:', error);
-    toast.error('Failed to add images');
-  } finally {
-    setUploadingImages(false);
-  }
-}, [uploadingImages, existingImages, uploadedImages]);
+    try {
+      const optimizedFiles = await Promise.all(
+        newFiles.map(async (file) => {
+          // Skip optimization for already small files
+          if (file.size < 500 * 1024) {
+            return file;
+          }
+          
+          try {
+            return await optimizeImageBeforeUpload(file);
+          } catch (error) {
+            console.warn('Failed to optimize image, using original:', error);
+            return file;
+          }
+        })
+      );
+      
+      // Validate optimized files
+      for (const file of optimizedFiles) {
+        if (file.size > 2 * 1024 * 1024) { // Max 2MB after optimization
+          toast.error(`${file.name} is too large after optimization`);
+          setUploadingImages(false);
+          return;
+        }
+      }
+      
+      const previewImages = optimizedFiles.map(file => ({
+        file,
+        preview: URL.createObjectURL(file),
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        isNew: true
+      }));
+      
+      setUploadedImages(prev => [...prev, ...previewImages]);
+      toast.success(`${newFiles.length} image(s) added successfully`);
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      toast.error('Failed to add images');
+    } finally {
+      setUploadingImages(false);
+    }
+  }, [uploadingImages, existingImages, uploadedImages]);
 
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
@@ -656,113 +704,224 @@ const handleImageUpload = useCallback(async (files) => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories, thumbnailFile, existingThumbnail]);
-const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  setIsSubmitting(true);
-  setErrors({});
 
-  if (!isAuthenticated) {
-    toast.error("Please sign in to update services");
-    setIsSubmitting(false);
-    return;
-  }
-
-  if (!validateForm()) {
-    setIsSubmitting(false);
-    return;
-  }
-
-  try {
-    // Prepare update data
-    const updateData = {
-      title: (formData.title || '').trim(),
-      description: (formData.description || '').trim(),
-      shortDescription: formData.shortDescription?.trim() || 
-        (formData.description ? formData.description.substring(0, 150) + '...' : ''),
-      category: formData.category,
-      subcategory: formData.subcategory || null,
-      price: parseFloat(formData.price || 0),
-      currency: formData.currency || "USD",
-      deliveryTime: parseInt(formData.deliveryTime || 1),
-      deliveryTimeUnit: formData.deliveryTimeUnit || "days",
-      revisions: parseInt(formData.revisions || 1),
-      status: formData.status || "active",
-      tags: formData.tags || [],
-      searchKeywords: formData.searchKeywords || [],
-      features: formData.features || [],
-      requirements: formData.requirements || [],
-      faqs: formData.faqs || [],
-      metaTitle: formData.metaTitle?.trim() || '',
-      metaDescription: formData.metaDescription?.trim() || ''
-    };
-
-    console.log('Updating service with data:', {
-      title: updateData.title,
-      category: updateData.category,
-      subcategory: updateData.subcategory,
-      price: updateData.price,
-      deliveryTime: updateData.deliveryTime
-    });
-
-    // Create FormData
-    const formDataToSend = new FormData();
-    
-    // Add JSON data
-    formDataToSend.append('data', JSON.stringify(updateData));
-    
-    // Add thumbnail if new one is uploaded
-    if (thumbnailFile && thumbnailFile.file) {
-      formDataToSend.append('thumbnail', thumbnailFile.file);
-    }
-    
-    // Add new images
-    if (uploadedImages.length > 0) {
-      uploadedImages.forEach((img, index) => {
-        if (img.file) {
-          formDataToSend.append('images', img.file);
-        }
-      });
-    }
-
-    // Call updateService
-    await updateService({
-      id: id,
-      data: formDataToSend,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
-
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    
-    // Handle specific errors
-    if (error.message?.includes('SUBCATEGORY')) {
-      setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
-      toast.error('Please select a valid subcategory');
-    } else if (error.message?.includes('Category not found')) {
-      toast.error('Selected category no longer exists. Please refresh and select again.');
-    } else if (error.message?.includes('Validation failed')) {
-      toast.error('Please check your input and try again.');
-    } else {
-      toast.error(error.message || 'Failed to update service. Please try again.');
-    }
-    
-    setIsSubmitting(false);
-  }
-}, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated]);
   const handleRefreshService = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await refetchService();
-    
+      // Invalidate and refetch
+      await queryClient.invalidateQueries({ queryKey: ['service', id] });
+      const result = await refetchService();
+      
+      // Reset populated flag to allow re-population
+      hasPopulatedRef.current = false;
+      
+      // Clear version conflict if it exists
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+      
       toast.success('Service data refreshed successfully!');
+      
+      return result;
     } catch (error) {
       toast.error('Failed to refresh service data');
+      throw error;
     } finally {
       setIsRefreshing(false);
     }
-  }, [refetchService]);
+  }, [id, refetchService, queryClient]);
+
+  const handleResolveConflict = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetchService();
+      
+      // Get fresh data
+      const freshData = await queryClient.fetchQuery({
+        queryKey: ['service', id]
+      });
+      
+      const freshService = freshData.service || freshData.data || freshData;
+      
+      if (freshService) {
+        // Update conflict resolution with fresh data
+        setConflictResolution({
+          show: true,
+          serverVersion: freshService.version || 1,
+          serverData: freshService
+        });
+        
+        // Show comparison options
+        toast.success('Latest version loaded. Please review changes.');
+      }
+    } catch (error) {
+      toast.error('Failed to resolve conflict');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [id, refetchService, queryClient]);
+
+  // Add this function to handle manual conflict resolution
+  const handleManualResolve = useCallback((action) => {
+    switch(action) {
+      case 'keep_my_changes':
+        // Keep user's changes, force update with server version + 1
+        setFormData(prev => ({
+          ...prev,
+          version: conflictResolution.serverVersion
+        }));
+        setVersionConflict(false);
+        toast.success('Your changes will be applied on top of latest version');
+        break;
+        
+      case 'use_server_changes':
+        // Discard user's changes, use server version
+        if (conflictResolution.serverData) {
+          const serverService = conflictResolution.serverData;
+          
+          setFormData({
+            title: serverService.title || "",
+            description: serverService.description || "",
+            shortDescription: serverService.shortDescription || "",
+            category: serverService.category?._id || serverService.category || "",
+            subcategory: serverService.subcategory?._id || serverService.subcategory || "",
+            price: serverService.price?.toString() || "",
+            currency: serverService.currency || "USD",
+            deliveryTime: serverService.deliveryTime?.toString() || "",
+            deliveryTimeUnit: serverService.deliveryTimeUnit || "days",
+            revisions: serverService.revisions?.toString() || "1",
+            tags: serverService.tags || [],
+            searchKeywords: serverService.searchKeywords || [],
+            features: serverService.features || [],
+            requirements: serverService.requirements || [],
+            faqs: serverService.faqs || [],
+            metaTitle: serverService.metaTitle || "",
+            metaDescription: serverService.metaDescription || "",
+            status: serverService.status || "active",
+            version: serverService.version || 1
+          });
+          
+          if (serverService.images && Array.isArray(serverService.images)) {
+            setExistingImages(serverService.images);
+          }
+          
+          if (serverService.thumbnail) {
+            setExistingThumbnail(serverService.thumbnail);
+          }
+        }
+        
+        setVersionConflict(false);
+        setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+        hasPopulatedRef.current = false; // Allow re-population
+        toast.success('Loaded latest version from server');
+        break;
+        
+      case 'merge_changes':
+        // Show merge interface (simplified version)
+        toast.info('Manual merge required. Please refresh and edit again.');
+        handleRefreshService();
+        break;
+    }
+  }, [conflictResolution, handleRefreshService]);
+
+  // Update the handleSubmit function to include version
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    
+    // Prevent double submission
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    setVersionConflict(false);
+    
+    if (!isAuthenticated) {
+      toast.error("Please sign in to update services");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // Prepare update data
+      const updateData = {
+        title: (formData.title || '').trim(),
+        description: (formData.description || '').trim(),
+        shortDescription: formData.shortDescription?.trim() || 
+          (formData.description ? formData.description.substring(0, 150) + '...' : ''),
+        category: formData.category,
+        subcategory: formData.subcategory || null,
+        price: parseFloat(formData.price || 0),
+        currency: formData.currency || "USD",
+        deliveryTime: parseInt(formData.deliveryTime || 1),
+        deliveryTimeUnit: formData.deliveryTimeUnit || "days",
+        revisions: parseInt(formData.revisions || 1),
+        status: formData.status || "active",
+        tags: formData.tags || [],
+        searchKeywords: formData.searchKeywords || [],
+        features: formData.features || [],
+        requirements: formData.requirements || [],
+        faqs: formData.faqs || [],
+        metaTitle: formData.metaTitle?.trim() || '',
+        metaDescription: formData.metaDescription?.trim() || '',
+        version: formData.version || currentVersion
+      };
+
+      console.log('Updating service with version:', updateData.version);
+
+      // Create FormData
+      const formDataToSend = new FormData();
+      
+      // Add JSON data with version
+      formDataToSend.append('data', JSON.stringify(updateData));
+      
+      // Add thumbnail if new one is uploaded
+      if (thumbnailFile && thumbnailFile.file) {
+        formDataToSend.append('thumbnail', thumbnailFile.file);
+      }
+      
+      // Add new images
+      if (uploadedImages.length > 0) {
+        uploadedImages.forEach((img, index) => {
+          if (img.file) {
+            formDataToSend.append('images', img.file);
+          }
+        });
+      }
+
+      // Call updateService with version
+      await updateService({
+        id: id,
+        data: formDataToSend,
+        version: updateData.version,
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+    } catch (error) {
+      console.error("Error in handleSubmit:", error);
+      
+      // Handle specific errors
+      if (error.code === 'VERSION_CONFLICT') {
+        // This is handled in the useEffect above
+        return;
+      } else if (error.message?.includes('SUBCATEGORY')) {
+        setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
+        toast.error('Please select a valid subcategory');
+      } else if (error.message?.includes('Category not found')) {
+        toast.error('Selected category no longer exists. Please refresh and select again.');
+      } else if (error.message?.includes('Validation failed')) {
+        toast.error('Please check your input and try again.');
+      } else {
+        toast.error(error.message || 'Failed to update service. Please try again.');
+      }
+      
+      setIsSubmitting(false);
+    }
+  }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, currentVersion, isSubmitting]);
 
   useEffect(() => {
     // Refresh service data when component mounts
@@ -780,6 +939,65 @@ const handleSubmit = useCallback(async (e) => {
       maximumFractionDigits: 2
     });
   }, []);
+
+  // Version Conflict Resolution Component
+  const VersionConflictResolution = () => {
+    if (!versionConflict && !conflictResolution.show) return null;
+
+    return (
+      <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+        <div className="flex items-start">
+          <AlertTriangle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
+          <div className="flex-1">
+            <h3 className="font-semibold text-orange-800 mb-2">Version Conflict Detected</h3>
+            <p className="text-orange-700 mb-3">
+              This service was modified by another user or in another tab. Your version: {formData.version}, Server version: {conflictResolution.serverVersion}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleResolveConflict}
+                disabled={isRefreshing}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
+              >
+                <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing...' : 'Refresh & Resolve'}
+              </button>
+              
+              {conflictResolution.serverData && (
+                <>
+                  <button
+                    onClick={() => handleManualResolve('keep_my_changes')}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                  >
+                    Keep My Changes
+                  </button>
+                  <button
+                    onClick={() => handleManualResolve('use_server_changes')}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                  >
+                    Use Server Version
+                  </button>
+                </>
+              )}
+            </div>
+            
+            {conflictResolution.serverData && (
+              <div className="mt-4 p-3 bg-orange-100 rounded-lg">
+                <h4 className="font-medium text-orange-800 mb-2">Server Changes:</h4>
+                <ul className="text-sm text-orange-700 space-y-1">
+                  <li>• Updated at: {new Date(conflictResolution.serverData.updatedAt).toLocaleString()}</li>
+                  {conflictResolution.serverData.lastUpdatedBy && (
+                    <li>• Updated by: {conflictResolution.serverData.lastUpdatedBy.name || 'Another user'}</li>
+                  )}
+                  <li>• Version: {conflictResolution.serverData.version}</li>
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Loading state
   if (serviceLoading || categoryLoading) {
@@ -917,6 +1135,8 @@ const handleSubmit = useCallback(async (e) => {
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div className="p-6 md:p-8">
+                  <VersionConflictResolution />
+                  
                   {/* Error Messages */}
                   {allErrors.form && (
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
@@ -926,11 +1146,18 @@ const handleSubmit = useCallback(async (e) => {
 
                   <form onSubmit={handleSubmit}>
                     {/* Basic Information */}
+                    <input type="hidden" name="version" value={formData.version} />
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                         <Briefcase className="h-5 w-5 text-emerald-600" />
                         Basic Information
                       </h2>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <HistoryIcon className="w-4 h-4" />
+                        <span>Version: {formData.version}</span>
+                        <span className="mx-1">•</span>
+                        <span>Last saved: {currentService?.updatedAt ? new Date(currentService.updatedAt).toLocaleString() : 'Never'}</span>
+                      </div>
                       <div className="space-y-6">
                         <div>
                           <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
@@ -1705,15 +1932,20 @@ const handleSubmit = useCallback(async (e) => {
                         disabled={isSubmitting || updateLoading}
                         className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                       >
-                        {isSubmitting || updateLoading ? (
+                       {isSubmitting || updateLoading ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" />
                             Updating Service...
                           </>
+                        ) : versionConflict ? (
+                          <>
+                            <AlertTriangle className="h-4 w-4" />
+                            Version Conflict - Refresh Required
+                          </>
                         ) : (
                           <>
                             <Save className="h-4 w-4" />
-                            Update Service
+                            Update Service (v{formData.version})
                           </>
                         )}
                       </button>
@@ -1730,7 +1962,7 @@ const handleSubmit = useCallback(async (e) => {
                         ) : (
                           <>
                             <RefreshCw className="h-4 w-4" />
-                            Refresh
+                            Refresh & Check
                           </>
                         )}
                       </button>
@@ -1748,6 +1980,9 @@ const handleSubmit = useCallback(async (e) => {
                     <Eye className="mr-3" size={20} />
                     <h2 className="text-xl font-bold">Service Preview</h2>
                   </div>
+                  <div className="px-2 py-1 bg-emerald-800 text-emerald-100 text-xs rounded-full">
+                      v{currentVersion}
+                    </div>
                   <p className="text-emerald-100 text-sm">
                     Review your changes before updating. This preview shows how your service will appear to clients.
                   </p>
@@ -1839,6 +2074,39 @@ const handleSubmit = useCallback(async (e) => {
                         <span>High-quality images increase engagement</span>
                       </li>
                     </ul>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                    <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+                      <GitBranch className="h-5 w-5" />
+                      Version Information
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-emerald-100">Current Version:</span>
+                        <span className="font-medium">{formData.version}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-emerald-100">Status:</span>
+                        <span className="font-medium capitalize">{formData.status}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-emerald-100">Last Edited:</span>
+                        <span className="font-medium">
+                          {currentService?.updatedAt ? 
+                            new Date(currentService.updatedAt).toLocaleDateString() : 
+                            'Never'
+                          }
+                        </span>
+                      </div>
+                      {versionConflict && (
+                        <div className="mt-3 p-2 bg-orange-500/20 rounded border border-orange-500/30">
+                          <p className="text-orange-200 text-xs">
+                            <AlertTriangle className="inline w-3 h-3 mr-1" />
+                            Version conflict detected. Please resolve before saving.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
