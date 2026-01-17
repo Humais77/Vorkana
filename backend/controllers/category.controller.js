@@ -8,6 +8,7 @@ const createDOMPurify = require('dompurify');
 const { JSDOM } = require('jsdom');
 const window = new JSDOM('').window;
 const DOMPurify = createDOMPurify(window);
+const { v4: uuidv4 } = require('uuid');
 // Security: Request ID for tracking
 const crypto = require('crypto');
 

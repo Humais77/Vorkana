@@ -228,6 +228,7 @@ const CategoryCreateModal = ({ isOpen, onClose, onSubmit, loading = false, error
         ...formData,
         parentCategory: formData.parentCategory || null
       };
+      delete submitData.slug;
       
       await onSubmit(submitData);
     } catch (err) {

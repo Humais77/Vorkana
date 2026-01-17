@@ -30,7 +30,8 @@ import {
   FiChevronUp,
   FiFolderPlus,
   FiX,
-  FiLoader
+  FiLoader,
+  FiAlertTriangle 
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import SubcategoryCreateModal from './SubcategoryCreateModal';
@@ -53,7 +54,9 @@ const SubcategoryTableRow = memo(({
   actionMenuId,
   categoriesMap,
   isUpdatingId,
-  isDeletingId
+  isDeletingId,
+  isCreatingId,
+  hasError
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
@@ -63,49 +66,71 @@ const SubcategoryTableRow = memo(({
 
   const isUpdating = isUpdatingId === subcategory._id;
   const isDeleting = isDeletingId === subcategory._id;
+  const isCreating = isCreatingId === subcategory._id;
+  const hasItemError = hasError === subcategory._id;
 
   return (
     <React.Fragment>
       <tr className="hover:bg-gray-50">
         <td className="px-4 py-4">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => onToggleSelect(subcategory._id)}
-            disabled={isDeleting}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
-          />
-        </td>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(subcategory._id)}
+          disabled={isDeleting || isCreating || isUpdating}
+          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+        />
+      </td>
         <td className="px-4 py-4">
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => !isDeleting && onToggleExpand(subcategory._id)}
-              disabled={isDeleting}
-              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
-            >
-              {isExpanded ? (
-                <FiChevronUp className="h-4 w-4 text-gray-500" />
-              ) : (
-                <FiChevronDown className="h-4 w-4 text-gray-500" />
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => !isDeleting && !isCreating && !isUpdating && onToggleExpand(subcategory._id)}
+            disabled={isDeleting || isCreating || isUpdating}
+            className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
+          >
+            {isExpanded ? (
+              <FiChevronUp className="h-4 w-4 text-gray-500" />
+            ) : (
+              <FiChevronDown className="h-4 w-4 text-gray-500" />
+            )}
+          </button>
+          <div>
+            <div className="flex items-center space-x-2">
+              {isCreating && (
+                <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
               )}
-            </button>
-            <div>
-              <div className="flex items-center space-x-2">
-                {isUpdating && (
-                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+              {isUpdating && (
+                <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+              )}
+              {isDeleting && (
+                <FiLoader className="h-3 w-3 animate-spin text-red-500" />
+              )}
+              {hasItemError && (
+                <FiAlertTriangle className="h-3 w-3 text-red-500" />
+              )}
+              <div className={`text-sm font-medium ${hasItemError ? 'text-red-700' : isUpdating ? 'text-blue-700' : 'text-gray-900'}`}>
+                {subcategory.name}
+                {isCreating && subcategory.__isOptimistic && (
+                  <span className="ml-2 text-xs text-blue-600">(Creating...)</span>
                 )}
-                <div className="text-sm font-medium text-gray-900">{subcategory.name}</div>
-                {isDeleting && (
-                  <span className="text-xs text-red-500">Deleting...</span>
+                {isUpdating && subcategory.__isUpdating && (
+                  <span className="ml-2 text-xs text-blue-600">(Updating...)</span>
                 )}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                Slug: {subcategory.slug || 'N/A'} • 
-                Category: {subcategory.category?.name || categoriesMap[subcategory.category]?.name || 'N/A'}
               </div>
             </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Slug: {subcategory.slug || 'N/A'} • 
+              Category: {subcategory.category?.name || categoriesMap[subcategory.category]?.name || 'N/A'}
+              {isCreating && subcategory.__isOptimistic && (
+                <span className="ml-2 text-blue-500">Temporary ID</span>
+              )}
+              {subcategory.__optimisticUpdate && (
+                <span className="ml-2 text-blue-500">(Optimistic update)</span>
+              )}
+            </div>
           </div>
-        </td>
+        </div>
+      </td>
         <td className="px-4 py-4">
           <div className="flex flex-col gap-1">
             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(subcategory.isActive)}`}>
@@ -215,6 +240,9 @@ const SubcategoryTableRow = memo(({
                 </div>
               </div>
             </div>
+            {subcategory.__isOptimistic && (
+              <div className="text-xs text-blue-600 mt-1">Optimistic update</div>
+            )}
           </td>
         </tr>
       )}
@@ -245,20 +273,25 @@ const SubcategoriesManagement = () => {
   const [expandedSubcategories, setExpandedSubcategories] = useState([]);
   const [updatingSubcategoryId, setUpdatingSubcategoryId] = useState(null);
   const [deletingSubcategoryId, setDeletingSubcategoryId] = useState(null);
-
+const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [creatingSubcategoryId, setCreatingSubcategoryId] = useState(null);
+  const [errorSubcategoryId, setErrorSubcategoryId] = useState(null);
   const limit = 20;
   
   // React Query hooks
   const { 
-    data, 
+   data, 
     isLoading, 
+    isFetching,
     refetch, 
-    isRefetching 
+    isRefetching,
+    error: fetchError
   } = useAdminSubcategories({
     page,
     limit,
     search: searchTerm,
-    ...filters
+    ...filters,
+     _refresh: lastRefresh
   });
   
   const { data: categoriesData } = useCategoriesForDropdown();
@@ -351,63 +384,145 @@ const SubcategoriesManagement = () => {
     }
   }, [selectedSubcategories, bulkOperationsMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
 
+ useEffect(() => {
+    if (fetchError) {
+      console.error('Subcategories fetch error:', fetchError);
+      showSubcategoryError('Failed to load subcategories. Please refresh.');
+    }
+  }, [fetchError, showSubcategoryError]);
+
+  // Update handleCreateSubcategory
   const handleCreateSubcategory = useCallback(async (subcategoryData) => {
     const loadingToastId = showSubcategoryLoading('Creating subcategory...');
+    setCreatingSubcategoryId('temp'); // Set temporary ID
     
     try {
-      await createSubcategoryMutation.mutateAsync(subcategoryData);
+      const result = await createSubcategoryMutation.mutateAsync(subcategoryData);
       dismissSubcategoryToast(loadingToastId);
       showSubcategorySuccess('Subcategory created successfully');
       setShowCreateModal(false);
-      refetch();
+      setCreatingSubcategoryId(null);
+      
+      // Force immediate UI update
+      setLastRefresh(Date.now());
+      
+      return result;
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
+      setCreatingSubcategoryId(null);
+      setErrorSubcategoryId('temp');
+      
+      // Show specific error messages
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => showSubcategoryError(err));
+      } else {
+        showSubcategoryError(error.response?.data?.message || 'Failed to create subcategory');
+      }
+      
       throw error;
     }
-  }, [createSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
+  }, [createSubcategoryMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
-  const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
-    if (!selectedSubcategory) return;
+ useEffect(() => {
+  // When lastRefresh changes, force refetch
+  if (lastRefresh) {
+    refetch();
+  }
+}, [lastRefresh, refetch]);
+
+// Update the handleUpdateSubcategory function
+const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
+  if (!selectedSubcategory) return;
+  
+  const loadingToastId = showSubcategoryLoading('Updating subcategory...');
+  setUpdatingSubcategoryId(selectedSubcategory._id);
+  
+  try {
+    console.log('[FRONTEND UPDATE] Updating subcategory:', selectedSubcategory._id, 'with data:', subcategoryData);
     
-    const loadingToastId = showSubcategoryLoading('Updating subcategory...');
+    // Call the mutation
+    await updateSubcategoryMutation.mutateAsync({
+      id: selectedSubcategory._id,
+      data: subcategoryData
+    });
     
-    try {
-      setUpdatingSubcategoryId(selectedSubcategory._id);
-      await updateSubcategoryMutation.mutateAsync({
-        id: selectedSubcategory._id,
-        data: subcategoryData
-      });
-      dismissSubcategoryToast(loadingToastId);
-      showSubcategorySuccess('Subcategory updated successfully');
-      setShowEditModal(false);
-      setSelectedSubcategory(null);
-      setUpdatingSubcategoryId(null);
-      refetch();
-    } catch (error) {
-      dismissSubcategoryToast(loadingToastId);
-      setUpdatingSubcategoryId(null);
-      throw error;
+    dismissSubcategoryToast(loadingToastId);
+    
+    // The success toast is already shown in the mutation's onSuccess
+    // Just close the modal
+    setShowEditModal(false);
+    setSelectedSubcategory(null);
+    setUpdatingSubcategoryId(null);
+    
+    // Force immediate UI update by updating lastRefresh
+    setLastRefresh(Date.now());
+    
+  } catch (error) {
+    dismissSubcategoryToast(loadingToastId);
+    setUpdatingSubcategoryId(null);
+    setErrorSubcategoryId(selectedSubcategory._id);
+    
+    // Show specific error messages
+    if (error.response?.data?.errors) {
+      error.response.data.errors.forEach(err => showSubcategoryError(err));
+    } else {
+      const errorMessage = error.response?.data?.message || 'Failed to update subcategory';
+      showSubcategoryError(errorMessage);
     }
-  }, [selectedSubcategory, updateSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
-
+    
+    throw error;
+  }
+}, [selectedSubcategory, updateSubcategoryMutation, showSubcategoryLoading, showSubcategoryError, dismissSubcategoryToast]);
+  // Update handleDeleteSubcategory
   const handleDeleteSubcategory = useCallback(async (deleteOptions) => {
     const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
+    setDeletingSubcategoryId(deleteOptions.id);
     
     try {
-      setDeletingSubcategoryId(deleteOptions.id);
       await deleteSubcategoryMutation.mutateAsync(deleteOptions);
       dismissSubcategoryToast(loadingToastId);
       showSubcategorySuccess('Subcategory deleted successfully');
       setShowDeleteModal(false);
       setSelectedSubcategory(null);
       setDeletingSubcategoryId(null);
-      refetch();
+      
+      // Force immediate UI update
+      setLastRefresh(Date.now());
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
       setDeletingSubcategoryId(null);
+      setErrorSubcategoryId(deleteOptions.id);
+      
+      // Show specific error messages
+      const errorMessage = error.response?.data?.message || 'Failed to delete subcategory';
+      if (error.response?.data?.details) {
+        showSubcategoryError(`${errorMessage}: ${error.response.data.details}`);
+      } else {
+        showSubcategoryError(errorMessage);
+      }
+      
       throw error;
     }
-  }, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
+  }, [deleteSubcategoryMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+
+  // Update refreshData
+  const refreshData = useCallback(() => {
+    setSelectedSubcategories([]);
+    setExpandedSubcategories([]);
+    setErrorSubcategoryId(null);
+    setLastRefresh(Date.now());
+    showSubcategorySuccess('Data refreshed');
+  }, [showSubcategorySuccess]);
+
+  // Clear error after timeout
+  useEffect(() => {
+    if (errorSubcategoryId) {
+      const timer = setTimeout(() => {
+        setErrorSubcategoryId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorSubcategoryId]);
 
   const handleDuplicate = useCallback(async (subcategory) => {
     const loadingToastId = showSubcategoryLoading('Duplicating subcategory...');
@@ -503,12 +618,6 @@ const SubcategoriesManagement = () => {
     }
   }, [exportSubcategoriesMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
-  const refreshData = useCallback(() => {
-    refetch();
-    setSelectedSubcategories([]);
-    setExpandedSubcategories([]);
-    showSubcategorySuccess('Data refreshed');
-  }, [refetch, showSubcategorySuccess]);
 
   // Memoized stats calculation
   const stats = useMemo(() => {
@@ -529,7 +638,43 @@ const SubcategoriesManagement = () => {
   const isDeleting = deleteSubcategoryMutation.isLoading;
   const isBulkOperating = bulkOperationsMutation.isLoading;
   const isExporting = exportSubcategoriesMutation.isLoading;
-
+ const isTableLoading = isLoading || isFetching;
+  const showSkeleton = isTableLoading && !subcategories.length;
+if (showSkeleton) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Subcategory Management</h1> {/* FIXED: Changed from "Category Management" */}
+            <p className="text-gray-600">Organize and manage subcategories within categories</p> {/* FIXED */}
+          </div>
+          <div className="flex gap-3">
+            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> {/* FIXED: Changed from 6 to 4 columns */}
+          {[...Array(4)].map((_, i) => ( // FIXED: Changed from 6 to 4
+            <div key={i} className="bg-gray-200 rounded-lg p-4 animate-pulse">
+              <div className="h-20"></div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+        </div>
+        
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="h-64 flex items-center justify-center">
+            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (isLoading && !subcategories.length) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -830,24 +975,26 @@ const SubcategoriesManagement = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {subcategories.map((subcategory) => (
-                <SubcategoryTableRow
-                  key={subcategory._id}
-                  subcategory={subcategory}
-                  isExpanded={expandedSubcategories.includes(subcategory._id)}
-                  isSelected={selectedSubcategories.includes(subcategory._id)}
-                  onToggleExpand={toggleExpandSubcategory}
-                  onToggleSelect={toggleSelectSubcategory}
-                  onView={handleView}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  onDuplicate={handleDuplicate}
-                  onOpenActionMenu={setActionMenu}
-                  actionMenuId={actionMenu}
-                  categoriesMap={categoriesMap}
-                  isUpdatingId={updatingSubcategoryId}
-                  isDeletingId={deletingSubcategoryId}
-                />
-              ))}
+      <SubcategoryTableRow
+        key={subcategory._id}
+        subcategory={subcategory}
+        isExpanded={expandedSubcategories.includes(subcategory._id)}
+        isSelected={selectedSubcategories.includes(subcategory._id)}
+        onToggleExpand={toggleExpandSubcategory}
+        onToggleSelect={toggleSelectSubcategory}
+        onView={handleView}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onDuplicate={handleDuplicate}
+        onOpenActionMenu={setActionMenu}
+        actionMenuId={actionMenu}
+        categoriesMap={categoriesMap}
+        isUpdatingId={updatingSubcategoryId}
+        isDeletingId={deletingSubcategoryId}
+        isCreatingId={creatingSubcategoryId}
+        hasError={errorSubcategoryId}
+      />
+    ))}
             </tbody>
           </table>
         </div>

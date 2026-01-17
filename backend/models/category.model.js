@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const slugify = require('slugify');
 const Service = require('./services.model');
 const Gig = require('./gig.model');
-
+const { v4: uuidv4 } = require('uuid');
 const categorySchema = new mongoose.Schema({
  name: {
   type: String,
@@ -270,8 +270,6 @@ categorySchema.pre('save', async function () {
     }
     
     if (!isUnique) {
-      // Last resort: use UUID for uniqueness
-      const { v4: uuidv4 } = await import('uuid');
       slug = `${baseSlug}-${uuidv4().slice(0, 8)}`;
     }
     
@@ -419,7 +417,16 @@ categorySchema.index({
   featured: 1, 
   popular: 1 
 }, { name: 'active_featured_popular_idx' });
-
+categorySchema.index({ 
+  'name': 1, 
+  'slug': 1 
+}, { 
+  unique: true,
+  partialFilterExpression: { 
+    isActive: true,
+    deletedAt: null 
+  }
+});
 categorySchema.index({ 
   order: 1, 
   level: 1 

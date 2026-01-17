@@ -1,4 +1,4 @@
-// SubcategoryEditModal.jsx - UPDATED with full backend integration
+// SubcategoryEditModal.jsx - FINAL with immediate updates
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
   FiX, 
@@ -272,7 +272,7 @@ const SubcategoryEditModal = memo(({
     return newErrors;
   }, [formData, validateField]);
 
-  // Handle form submission
+  // Handle form submission - UPDATED for immediate updates
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -304,10 +304,15 @@ const SubcategoryEditModal = memo(({
       delete submitData.version;
       
       await onSubmit(submitData);
+      
+      // Immediately close modal on success
+      // The parent component will handle the optimistic update
+      onClose();
     } catch (err) {
-      // Error handled in useEffect
+      // Error handled in useEffect - don't close modal
+      console.error('Update failed:', err);
     }
-  }, [formData, subcategory, hasChanges, validateForm, onSubmit, showSubcategorySuccess]);
+  }, [formData, subcategory, hasChanges, validateForm, onSubmit, onClose, showSubcategorySuccess]);
 
   // Reset and close modal with confirmation
   const handleClose = useCallback(() => {

@@ -15,17 +15,36 @@ const generateCacheKey = (prefix, params) => {
 
 const invalidateSubcategoryCache = async (subcategoryId = null) => {
   try {
+    // Clear all subcategory-related cache
     await cache.del('subcategories:*');
     await cache.del('subcategory:*');
     if (subcategoryId) {
       await cache.del(`subcategory:${subcategoryId}:*`);
     }
-    console.log('Subcategory cache invalidated');
+    // Also clear admin subcategory cache
+    await cache.del('admin:subcategories:*');
+    console.log('Subcategory cache invalidated globally');
   } catch (err) {
     console.warn('Error invalidating subcategory cache:', err.message);
   }
 };
 
+// Add cache control headers to all responses
+const setCacheHeaders = (res, cached = false) => {
+  if (cached) {
+    res.set({
+      'Cache-Control': 'public, max-age=300',
+      'X-Cache': 'HIT'
+    });
+  } else {
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Cache': 'MISS'
+    });
+  }
+};
 // Create Subcategory
 const createSubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
@@ -99,13 +118,22 @@ const createSubcategory = async (req, res, next) => {
 
     await invalidateSubcategoryCache();
 
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
+
     res.status(201).json({
       success: true,
       data: subcategory,
       message: 'Subcategory created successfully',
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cacheInvalidated: true
     });
 
   } catch (error) {
@@ -494,60 +522,41 @@ const updateSubcategory = async (req, res, next) => {
         requestId
       });
     }
+if (updateData.category && updateData.category !== subcategory.category.toString()) {
+  const newCategory = await Category.findOne({
+    _id: updateData.category,
+    isActive: true,
+    deletedAt: null
+  });
 
-    // If changing category, validate new category
-    if (updateData.category && updateData.category !== subcategory.category.toString()) {
-      const newCategory = await Category.findOne({
-        _id: updateData.category,
-        isActive: true,
-        deletedAt: null
+  if (!newCategory) {
+    return res.status(400).json({
+      success: false,
+      message: 'New parent category not found or inactive',
+      code: 'PARENT_CATEGORY_NOT_FOUND',
+      requestId
+    });
+  }
+
+  // Check for duplicate name in the NEW category (if name is also being changed)
+  if (updateData.name) {
+    const duplicateInNewCategory = await Subcategory.findOne({
+      name: updateData.name.trim(),
+      category: updateData.category,
+      _id: { $ne: id },
+      deletedAt: null
+    });
+
+    if (duplicateInNewCategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory with this name already exists in the new category',
+        code: 'DUPLICATE_IN_NEW_CATEGORY',
+        requestId
       });
-
-      if (!newCategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'New parent category not found or inactive',
-          code: 'PARENT_CATEGORY_NOT_FOUND',
-          requestId
-        });
-      }
-
-      // Check for duplicate name in new category
-      const duplicate = await Subcategory.findOne({
-        name: updateData.name || subcategory.name,
-        category: updateData.category,
-        _id: { $ne: id },
-        deletedAt: null
-      });
-
-      if (duplicate) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory with this name already exists in the new category',
-          code: 'DUPLICATE_IN_NEW_CATEGORY',
-          requestId
-        });
-      }
     }
-
-    // If changing name, check for duplicates in same category
-    if (updateData.name && updateData.name !== subcategory.name) {
-      const duplicate = await Subcategory.findOne({
-        name: updateData.name,
-        category: updateData.category || subcategory.category,
-        _id: { $ne: id },
-        deletedAt: null
-      });
-
-      if (duplicate) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subcategory with this name already exists',
-          code: 'DUPLICATE_NAME',
-          requestId
-        });
-      }
-    }
+  }
+}
 
     updateData.lastUpdatedBy = req.user._id; // From cookies
 
@@ -559,13 +568,22 @@ const updateSubcategory = async (req, res, next) => {
 
     await invalidateSubcategoryCache(id);
 
+  res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
+
     res.json({
       success: true,
       data: updatedSubcategory,
       message: 'Subcategory updated successfully',
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cacheInvalidated: true
     });
 
   } catch (error) {
@@ -686,12 +704,21 @@ const deleteSubcategory = async (req, res, next) => {
 
     await invalidateSubcategoryCache(id);
 
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
+
     res.json({
       success: true,
       message: 'Subcategory deleted successfully',
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cacheInvalidated: true
     });
 
   } catch (error) {
@@ -890,6 +917,13 @@ const bulkUpdateSubcategories = async (req, res, next) => {
     );
 
     await invalidateSubcategoryCache();
+res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
 
     res.json({
       success: true,
@@ -901,9 +935,9 @@ const bulkUpdateSubcategories = async (req, res, next) => {
       },
       requestId,
       timestamp: now.toISOString(),
-      responseTime: `${Date.now() - startTime}ms`
+      responseTime: `${Date.now() - startTime}ms`,
+      cacheInvalidated: true
     });
-
   } catch (error) {
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
