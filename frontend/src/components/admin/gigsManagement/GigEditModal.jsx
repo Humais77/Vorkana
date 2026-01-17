@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiXCircle, FiPlus, FiTrash2, FiAlertCircle, FiSave, FiLoader } from 'react-icons/fi';
+import { FiXCircle, FiPlus, FiTrash2, FiAlertCircle, FiSave, FiLoader, FiRefreshCw } from 'react-icons/fi';
 import { useSubcategoriesByCategory } from '../../../hooks/useAdminDashboard';
 
 const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users, loading, error }) => {
@@ -8,7 +8,7 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users, loading
     description: '',
     budget: '',
     currency: 'USD',
-    timeline: '',
+    timeline: '', // Changed to string to match validation
     timelineUnit: 'days',
     projectCategory: '',
     subcategory: '',
@@ -21,7 +21,7 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users, loading
     deadline: '',
     paymentStatus: 'pending',
     communication: 'Email',
-     version: 1
+    version: 1
   });
 
   const [errors, setErrors] = useState({});
@@ -38,19 +38,27 @@ const GigEditModal = ({ gig, isOpen, onClose, onSave, categories, users, loading
     formData.projectCategory,
     { activeOnly: true }
   );
-useEffect(() => {
+
+  useEffect(() => {
     if (gig && isOpen) {
       // Set original version
       setOriginalVersion(gig.version || 1);
       
-      // Parse timeline value
+      // Parse timeline value - KEEP IT AS STRING
       let timelineValue = gig.timeline || '';
+      
+      // If timeline is a number, convert to string
+      if (typeof timelineValue === 'number') {
+        timelineValue = timelineValue.toString();
+      }
+      
       let timelineUnit = gig.timelineUnit || 'days';
       
+      // If timeline contains unit info, extract it
       if (typeof timelineValue === 'string') {
         const match = timelineValue.match(/^(\d+)\s*(days|weeks|months)$/i);
         if (match) {
-          timelineValue = match[1];
+          timelineValue = match[1]; // Keep as string
           timelineUnit = match[2].toLowerCase();
         }
       }
@@ -68,13 +76,19 @@ useEffect(() => {
         }
       }
       
+      // Parse budget - keep as string for form input
+      let budgetValue = '';
+      if (gig.budget) {
+        budgetValue = typeof gig.budget === 'number' ? gig.budget.toString() : gig.budget;
+      }
+      
       // Set form data
       setFormData({
         title: gig.title || '',
         description: gig.description || '',
-        budget: gig.budget || '',
+        budget: budgetValue,
         currency: gig.currency || 'USD',
-        timeline: timelineValue,
+        timeline: timelineValue, // Keep as string
         timelineUnit: timelineUnit,
         projectCategory: gig.projectCategory?._id || gig.projectCategory || '',
         subcategory: gig.subcategory?._id || gig.subcategory || '',
@@ -131,7 +145,18 @@ useEffect(() => {
         currentVersion: error.response?.data?.currentVersion || 'unknown'
       });
     } else if (error) {
-      setErrors({ general: error.response?.data?.message || error.message || 'Failed to update gig' });
+      // Handle validation errors
+      if (error.response?.data?.errors) {
+        const validationErrors = {};
+        error.response.data.errors.forEach(err => {
+          if (err.field) {
+            validationErrors[err.field] = err.message;
+          }
+        });
+        setErrors(validationErrors);
+      } else {
+        setErrors({ general: error.response?.data?.message || error.message || 'Failed to update gig' });
+      }
     }
   }, [error]);
 
@@ -155,8 +180,12 @@ useEffect(() => {
       newErrors.budget = 'Minimum budget is $5';
     }
     
-    const timelineNum = Number(formData.timeline);
-    if (isNaN(timelineNum) || timelineNum < 1) {
+    // Timeline validation - it's a string field
+    if (!formData.timeline || formData.timeline.trim() === '') {
+      newErrors.timeline = 'Timeline is required';
+    } else if (isNaN(Number(formData.timeline))) {
+      newErrors.timeline = 'Timeline must be a number';
+    } else if (Number(formData.timeline) < 1) {
       newErrors.timeline = 'Timeline must be at least 1';
     }
     
@@ -193,7 +222,8 @@ useEffect(() => {
     }
     return true;
   };
-const handleSubmit = async (e) => {
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -209,7 +239,8 @@ const handleSubmit = async (e) => {
       const dataToSubmit = {
         ...formData,
         budget: Number(formData.budget),
-        timeline: Number(formData.timeline),
+        // Keep timeline as string for API validation
+        timeline: formData.timeline.trim(),
         skillsRequired: Array.isArray(formData.skillsRequired) ? 
           formData.skillsRequired.filter(skill => skill.trim()) : [],
         deliverables: Array.isArray(formData.deliverables) ? 
@@ -225,6 +256,15 @@ const handleSubmit = async (e) => {
       await onSave(dataToSubmit);
     } catch (error) {
       console.error('Save error:', error);
+      if (error.response?.data?.errors) {
+        const validationErrors = {};
+        error.response.data.errors.forEach(err => {
+          if (err.field) {
+            validationErrors[err.field] = err.message;
+          }
+        });
+        setErrors(validationErrors);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -254,7 +294,12 @@ const handleSubmit = async (e) => {
     // This would trigger a refetch of the gig data
     if (onClose) onClose();
     // In real implementation, you'd have a refresh function
+    // For now, just close and let parent refresh
+    if (window.confirm('Refresh gig data? Any unsaved changes will be lost.')) {
+      onClose();
+    }
   };
+
   const addSkill = () => {
     const trimmedSkill = newSkill.trim();
     if (trimmedSkill && !formData.skillsRequired.includes(trimmedSkill)) {
@@ -505,15 +550,13 @@ const handleSubmit = async (e) => {
                     </label>
                     <div className="flex space-x-2">
                       <input
-                        type="number"
-                        min="1"
-                        max="365"
+                        type="text" // Changed to text to accept string input
                         value={formData.timeline}
                         onChange={(e) => handleChange('timeline', e.target.value)}
                         className={`flex-1 px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
                           errors.timeline ? 'border-red-300' : 'border-gray-300'
                         }`}
-                        placeholder="Timeline"
+                        placeholder="Timeline (e.g., 7, 14, 30)"
                         disabled={submitting || loading}
                       />
                       <select

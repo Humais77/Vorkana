@@ -1,15 +1,13 @@
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
-  useAdminGigs, 
-  useCreateGig, 
-  useUpdateGig, 
+  useGigs,
+  useUpdateGig,
   useDeleteGig,
-  useBulkGigOperations,
-  useCategoriesForDropdown,
-  useUsersForDropdown, 
-  useExportGigs, 
-  useGigStats
-} from '../../../hooks/useAdminDashboard';
+  useDeleteMultipleGigs,
+  useUpdateMultipleGigsStatus,
+  useGigStats,
+} from '../../../hooks/useGigs';
+import { useCategoriesForDropdown, useUsersForDropdown,useExportGigs } from '../../../hooks/useAdminDashboard';
 import { useGigToast } from '../../../hooks/useGigToast';
 import {
   FiBriefcase,
@@ -33,7 +31,8 @@ import {
   FiChevronUp,
   FiUnlock,
   FiX,
-  FiLoader
+  FiLoader,
+  FiLock
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import GigViewModal from './GigViewModal';
@@ -285,27 +284,35 @@ const GigsManagement = () => {
 
   const limit = 20;
   
-  // Use React Query with proper caching
+  // Use Gigs hook with admin-specific parameters
   const { 
     data, 
     isLoading, 
     refetch, 
     isRefetching 
-  } = useAdminGigs({
+  } = useGigs({
     page,
     limit,
     search: searchTerm,
     ...filters,
+    admin: true, // Add admin flag
+    showAll: true, // Show all gigs including deleted
+    includeDeleted: true,
+    includeFullDetails: true,
     populateSubcategories: true
   });
   
+  // Use Gig hooks
   const updateGigMutation = useUpdateGig();
   const deleteGigMutation = useDeleteGig();
-  const bulkOperationsMutation = useBulkGigOperations();
-  const { data: categoriesData } = useCategoriesForDropdown();
-  const { data: usersData } = useUsersForDropdown();
+  const deleteMultipleMutation = useDeleteMultipleGigs();
+  const updateStatusMutation = useUpdateMultipleGigsStatus();
   const exportGigsMutation = useExportGigs();
   const { data: gigStatsData } = useGigStats();
+  
+  // Use admin-specific hooks for dropdowns
+  const { data: categoriesData } = useCategoriesForDropdown();
+  const { data: usersData } = useUsersForDropdown();
   
   // Use custom toast hook
   const {
@@ -313,7 +320,6 @@ const GigsManagement = () => {
     showGigSuccess,
     showGigError,
     showGigWarning,
-    showGigInfo,
     dismissGigToast
   } = useGigToast();
 
@@ -370,15 +376,24 @@ const GigsManagement = () => {
     const loadingToastId = showGigLoading(`Processing ${selectedGigs.length} gigs...`);
 
     try {
-      await bulkOperationsMutation.mutateAsync({
-        ids: selectedGigs,
-        operation: action
-      });
+      if (action === 'delete') {
+        await deleteMultipleMutation.mutateAsync(selectedGigs);
+      } else if (action === 'activate') {
+        await updateStatusMutation.mutateAsync({
+          ids: selectedGigs,
+          status: 'active'
+        });
+      } else if (action === 'pause') {
+        await updateStatusMutation.mutateAsync({
+          ids: selectedGigs,
+          status: 'closed'
+        });
+      }
       
       setSelectedGigs([]);
       refetch();
       dismissGigToast(loadingToastId);
-      showGigSuccess(`${selectedGigs.length} gigs ${action}ed successfully`);
+      showGigSuccess(`${selectedGigs.length} gigs updated successfully`);
     } catch (error) {
       dismissGigToast(loadingToastId);
       const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
@@ -390,7 +405,7 @@ const GigsManagement = () => {
         showGigError(errorMessage);
       }
     }
-  }, [selectedGigs, bulkOperationsMutation, refetch, showGigLoading, showGigSuccess, showGigError, showGigWarning, dismissGigToast]);
+  }, [selectedGigs, deleteMultipleMutation, updateStatusMutation, refetch, showGigLoading, showGigSuccess, showGigError, showGigWarning, dismissGigToast]);
 
   const handleSaveGig = useCallback(async (gigData) => {
     if (!selectedGig) return;
@@ -422,7 +437,13 @@ const GigsManagement = () => {
     
     try {
       setDeletingGigId(deleteOptions.id);
-      await deleteGigMutation.mutateAsync(deleteOptions);
+      await deleteGigMutation.mutateAsync({
+        id: deleteOptions.id,
+        options: {
+          permanent: deleteOptions.permanent || false,
+          force: deleteOptions.force || false
+        }
+      });
       
       dismissGigToast(loadingToastId);
       showGigSuccess('Gig deleted successfully');
@@ -480,8 +501,13 @@ const GigsManagement = () => {
     const loadingToastId = showGigLoading('Exporting gigs...');
     
     try {
-      const response = await exportGigsMutation.mutateAsync('csv');
+      const response = await exportGigsMutation.mutateAsync({
+        format: 'csv',
+        filters: filters,
+        search: searchTerm
+      });
       
+      // Handle file download
       const blob = new Blob([response.data], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -498,7 +524,7 @@ const GigsManagement = () => {
       dismissGigToast(loadingToastId);
       showGigError('Failed to export gigs');
     }
-  }, [exportGigsMutation, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
+  }, [exportGigsMutation, filters, searchTerm, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const refreshData = useCallback(() => {
     refetch();
@@ -526,8 +552,10 @@ const GigsManagement = () => {
   // Loading states
   const isUpdating = updateGigMutation.isLoading;
   const isDeleting = deleteGigMutation.isLoading;
-  const isBulkOperating = bulkOperationsMutation.isLoading;
+  const isDeletingMultiple = deleteMultipleMutation.isLoading;
+  const isUpdatingStatus = updateStatusMutation.isLoading;
   const isExporting = exportGigsMutation.isLoading;
+  const isBulkOperating = isDeletingMultiple || isUpdatingStatus;
 
   if (isLoading && !gigs.length) {
     return (

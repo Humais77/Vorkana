@@ -799,58 +799,13 @@ export const adminAPI = {
     'stats'
   ),
   
-  // Gigs
-  getGigs: createCachedApiCall(
-    (params) => adminApi.get('/api/admin/gigs', { params }),
-    'admin:gigs:list',
-    'list'
-  ),
-  
-  getGigById: createCachedApiCall(
-    (id) => adminApi.get(`/api/admin/gigs/${id}`, {
-      params: { includeCommunication: true }
-    }),
-    (id) => `admin:gigs:item:${id}`,
-    'item'
-  ),
-  
-  createGig: (data) => {
-    invalidateCache('admin:gigs:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.post('/api/admin/gigs', data);
-  },
-  
-  updateGig: (id, data) => {
-    invalidateCache(`admin:gigs:item:${id}`);
-    invalidateCache('admin:gigs:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.put(`/api/admin/gigs/${id}`, data);
-  },
-  
-  deleteGig: (id, params = {}) => {
-    invalidateCache(`admin:gigs:item:${id}`);
-    invalidateCache('admin:gigs:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.delete(`/api/admin/gigs/${id}`, { params });
-  },
-  
-  bulkUpdateGigs: (data) => {
-    invalidateCache('admin:gigs:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.post('/api/admin/gigs/bulk', data);
-  },
-  
+ 
   exportGigs: (format = 'csv') => 
     adminApi.get('/api/admin/gigs/export', { 
       params: { format },
       responseType: 'blob'
     }),
-  
-  getGigStats: createCachedApiCall(
-    () => adminApi.get('/api/admin/gigs/stats'),
-    'admin:gigs:stats',
-    'stats'
-  ),
+ 
   
   // Dropdowns
   getCategoriesForDropdown: createCachedApiCall(
@@ -862,7 +817,7 @@ export const adminAPI = {
   ),
   
 
-  getSubcategoriesForDropdown: createCachedApiCall(
+  getSubcategoriesDropdown: createCachedApiCall(
     (categoryId = null) => {
       const params = { active: true, limit: 100 };
       if (categoryId) params.categoryId = categoryId;
