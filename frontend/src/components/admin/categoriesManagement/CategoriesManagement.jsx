@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useCallback, memo } from 'react';
+// CategoriesManagement.jsx - UPDATED with real-time updates
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
@@ -32,7 +33,8 @@ import {
   FiFolderPlus,
   FiX,
   FiClock,
-  FiLoader
+  FiLoader,
+  FiAlertTriangle
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
@@ -54,7 +56,9 @@ const CategoryTableRow = memo(({
   onOpenActionMenu,
   actionMenuId,
   isUpdatingId,
-  isDeletingId
+  isDeletingId,
+  isCreatingId,
+  hasError
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
@@ -70,16 +74,18 @@ const CategoryTableRow = memo(({
 
   const isUpdating = isUpdatingId === category._id;
   const isDeleting = isDeletingId === category._id;
+  const isCreating = isCreatingId === category._id;
+  const hasItemError = hasError === category._id;
 
   return (
     <React.Fragment>
-      <tr className="hover:bg-gray-50">
+      <tr className={`hover:bg-gray-50 ${hasItemError ? 'bg-red-50' : ''} ${isCreating ? 'bg-blue-50' : ''}`}>
         <td className="px-4 py-4">
           <input
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(category._id)}
-            disabled={isDeleting}
+            disabled={isDeleting || isCreating}
             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
           />
         </td>
@@ -87,7 +93,7 @@ const CategoryTableRow = memo(({
           <div className="flex items-center space-x-3">
             <button
               onClick={() => !isDeleting && onToggleExpand(category._id)}
-              disabled={isDeleting}
+              disabled={isDeleting || isCreating}
               className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
             >
               {isExpanded ? (
@@ -98,16 +104,27 @@ const CategoryTableRow = memo(({
             </button>
             <div>
               <div className="flex items-center space-x-2">
-                {isUpdating && (
+                {(isUpdating || isCreating) && (
                   <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
                 )}
-                <div className="text-sm font-medium text-gray-900">{category.name}</div>
                 {isDeleting && (
-                  <span className="text-xs text-red-500">Deleting...</span>
+                  <FiLoader className="h-3 w-3 animate-spin text-red-500" />
                 )}
+                {hasItemError && (
+                  <FiAlertTriangle className="h-3 w-3 text-red-500" />
+                )}
+                <div className={`text-sm font-medium ${hasItemError ? 'text-red-700' : 'text-gray-900'}`}>
+                  {category.name}
+                  {isCreating && category.__isOptimistic && (
+                    <span className="ml-2 text-xs text-blue-600">(Creating...)</span>
+                  )}
+                </div>
               </div>
               <div className="text-xs text-gray-500 mt-1">
                 Slug: {category.slug || 'N/A'}
+                {isCreating && category.__isOptimistic && (
+                  <span className="ml-2 text-blue-500">Temporary ID</span>
+                )}
               </div>
             </div>
           </div>
@@ -130,21 +147,21 @@ const CategoryTableRow = memo(({
           </div>
         </td>
         <td className="px-4 py-4 text-sm text-gray-500">
-          {format(new Date(category.createdAt), 'MMM d, yyyy')}
+          {category.createdAt ? format(new Date(category.createdAt), 'MMM d, yyyy') : 'Just now'}
         </td>
         <td className="px-4 py-4">
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => !isDeleting && onView(category)}
-              disabled={isDeleting}
+              onClick={() => !isDeleting && !isCreating && onView(category)}
+              disabled={isDeleting || isCreating}
               className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
             </button>
             <button
-              onClick={() => !isDeleting && onEdit(category)}
-              disabled={isDeleting || isUpdating}
+              onClick={() => !isDeleting && !isCreating && onEdit(category)}
+              disabled={isDeleting || isCreating || isUpdating}
               className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
               title="Edit Category"
             >
@@ -156,14 +173,14 @@ const CategoryTableRow = memo(({
             </button>
             <div className="relative">
               <button
-                onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
-                disabled={isDeleting}
+                onClick={() => !isDeleting && !isCreating && onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
+                disabled={isDeleting || isCreating}
                 className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
               
-              {actionMenuId === category._id && !isDeleting && (
+              {actionMenuId === category._id && !isDeleting && !isCreating && (
                 <>
                   <div 
                     className="fixed inset-0 z-10"
@@ -176,7 +193,8 @@ const CategoryTableRow = memo(({
                           onDuplicate(category);
                           onOpenActionMenu(null);
                         }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        disabled={isDeleting || isCreating}
+                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                       >
                         <span className="mr-2">📋</span>
                         Duplicate
@@ -186,7 +204,7 @@ const CategoryTableRow = memo(({
                           onDelete(category);
                           onOpenActionMenu(null);
                         }}
-                        disabled={isDeleting}
+                        disabled={isDeleting || isCreating}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
                         {isDeleting ? (
@@ -227,12 +245,16 @@ const CategoryTableRow = memo(({
                 <div className="text-sm">
                   <div><span className="text-gray-500">Order:</span> {category.order || 0}</div>
                   <div><span className="text-gray-500">Level:</span> {category.level || 0}</div>
+                  <div><span className="text-gray-500">Version:</span> {category.version || 1}</div>
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Last Updated</div>
                 <div className="text-sm text-gray-700">
-                  {format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm')}
+                  {category.updatedAt ? format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm') : 'N/A'}
+                  {category.__isOptimistic && (
+                    <div className="text-xs text-blue-600 mt-1">Optimistic update</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -245,7 +267,7 @@ const CategoryTableRow = memo(({
 
 CategoryTableRow.displayName = 'CategoryTableRow';
 
-// Main Component
+// Main Component with improved state management
 const CategoriesManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
@@ -266,20 +288,26 @@ const CategoriesManagement = () => {
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [updatingCategoryId, setUpdatingCategoryId] = useState(null);
   const [deletingCategoryId, setDeletingCategoryId] = useState(null);
+  const [creatingCategoryId, setCreatingCategoryId] = useState(null);
+  const [errorCategoryId, setErrorCategoryId] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
 
   const limit = 20;
   
-  // React Query hooks
+  // React Query hooks with proper error handling
   const { 
     data, 
     isLoading, 
+    isFetching,
     refetch, 
-    isRefetching 
+    isRefetching,
+    error: fetchError
   } = useAdminCategories({
     page,
     limit,
     search: searchTerm,
-    ...filters
+    ...filters,
+    _refresh: lastRefresh // Force refresh when needed
   });
   
   const createCategoryMutation = useCreateCategory();
@@ -303,10 +331,20 @@ const CategoriesManagement = () => {
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
+  // Handle fetch errors
+  useEffect(() => {
+    if (fetchError) {
+      console.error('Categories fetch error:', fetchError);
+      showCategoryError('Failed to load categories. Please refresh.');
+    }
+  }, [fetchError, showCategoryError]);
+
   // Memoized handlers
   const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
+    setSelectedCategories([]);
+    setExpandedCategories([]);
     refetch();
   }, [refetch]);
 
@@ -317,6 +355,7 @@ const CategoriesManagement = () => {
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
+    setSelectedCategories([]);
   }, []);
 
   const handleBulkAction = useCallback(async (action) => {
@@ -335,7 +374,6 @@ const CategoriesManagement = () => {
 
       await bulkOperationsMutation.mutateAsync(bulkData);
       setSelectedCategories([]);
-      refetch();
       dismissCategoryToast(loadingToastId);
       showCategorySuccess(`${selectedCategories.length} categories ${action}ed successfully`);
     } catch (error) {
@@ -349,30 +387,46 @@ const CategoriesManagement = () => {
         showCategoryError(errorMessage);
       }
     }
-  }, [selectedCategories, bulkOperationsMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, showCategoryWarning, dismissCategoryToast]);
+  }, [selectedCategories, bulkOperationsMutation, showCategoryLoading, showCategorySuccess, showCategoryError, showCategoryWarning, dismissCategoryToast]);
 
   const handleCreateCategory = useCallback(async (categoryData) => {
     const loadingToastId = showCategoryLoading('Creating category...');
+    setCreatingCategoryId('temp'); // Set temporary ID
     
     try {
-      await createCategoryMutation.mutateAsync(categoryData);
+      const result = await createCategoryMutation.mutateAsync(categoryData);
       dismissCategoryToast(loadingToastId);
       showCategorySuccess('Category created successfully');
       setShowCreateModal(false);
-      refetch();
+      setCreatingCategoryId(null);
+      
+      // Force immediate UI update
+      setLastRefresh(Date.now());
+      
+      return result;
     } catch (error) {
       dismissCategoryToast(loadingToastId);
+      setCreatingCategoryId(null);
+      setErrorCategoryId('temp');
+      
+      // Show specific error messages
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => showCategoryError(err));
+      } else {
+        showCategoryError(error.response?.data?.message || 'Failed to create category');
+      }
+      
       throw error;
     }
-  }, [createCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
+  }, [createCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleUpdateCategory = useCallback(async (categoryData) => {
     if (!selectedCategory) return;
     
     const loadingToastId = showCategoryLoading('Updating category...');
+    setUpdatingCategoryId(selectedCategory._id);
     
     try {
-      setUpdatingCategoryId(selectedCategory._id);
       await updateCategoryMutation.mutateAsync({
         id: selectedCategory._id,
         data: categoryData
@@ -382,32 +436,55 @@ const CategoriesManagement = () => {
       setShowEditModal(false);
       setSelectedCategory(null);
       setUpdatingCategoryId(null);
-      refetch();
+      
+      // Force immediate UI update
+      setLastRefresh(Date.now());
     } catch (error) {
       dismissCategoryToast(loadingToastId);
       setUpdatingCategoryId(null);
+      setErrorCategoryId(selectedCategory._id);
+      
+      // Show specific error messages
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => showCategoryError(err));
+      } else {
+        showCategoryError(error.response?.data?.message || 'Failed to update category');
+      }
+      
       throw error;
     }
-  }, [selectedCategory, updateCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
+  }, [selectedCategory, updateCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
     const loadingToastId = showCategoryLoading('Deleting category...');
+    setDeletingCategoryId(deleteOptions.id);
     
     try {
-      setDeletingCategoryId(deleteOptions.id);
       await deleteCategoryMutation.mutateAsync(deleteOptions);
       dismissCategoryToast(loadingToastId);
       showCategorySuccess('Category deleted successfully');
       setShowDeleteModal(false);
       setSelectedCategory(null);
       setDeletingCategoryId(null);
-      refetch();
+      
+      // Force immediate UI update
+      setLastRefresh(Date.now());
     } catch (error) {
       dismissCategoryToast(loadingToastId);
       setDeletingCategoryId(null);
+      setErrorCategoryId(deleteOptions.id);
+      
+      // Show specific error messages
+      const errorMessage = error.response?.data?.message || 'Failed to delete category';
+      if (error.response?.data?.details) {
+        showCategoryError(`${errorMessage}: ${error.response.data.details}`);
+      } else {
+        showCategoryError(errorMessage);
+      }
+      
       throw error;
     }
-  }, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, dismissCategoryToast]);
+  }, [deleteCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleDuplicate = useCallback(async (category) => {
     const loadingToastId = showCategoryLoading('Duplicating category...');
@@ -420,16 +497,15 @@ const CategoriesManagement = () => {
         featured: category.featured,
         popular: category.popular,
         isActive: category.isActive,
-        order: category.order + 1,
+        order: (category.order || 0) + 1,
         metaTitle: category.metaTitle,
         metaDescription: category.metaDescription,
-        slug: `${category.slug}-copy`
+        slug: `${category.slug}-copy-${Date.now()}`
       };
       
       await createCategoryMutation.mutateAsync(duplicateData);
       dismissCategoryToast(loadingToastId);
       showCategorySuccess('Category duplicated successfully');
-      refetch();
     } catch (error) {
       dismissCategoryToast(loadingToastId);
       const errorMessage = error.response?.data?.message || 'Failed to duplicate category';
@@ -441,7 +517,7 @@ const CategoriesManagement = () => {
         showCategoryError(errorMessage);
       }
     }
-  }, [createCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+  }, [createCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const exportCategories = useCallback(async () => {
     const loadingToastId = showCategoryLoading('Exporting categories...');
@@ -507,11 +583,12 @@ const CategoriesManagement = () => {
   }, []);
 
   const refreshData = useCallback(() => {
-    refetch();
     setSelectedCategories([]);
     setExpandedCategories([]);
+    setErrorCategoryId(null);
+    setLastRefresh(Date.now());
     showCategorySuccess('Data refreshed');
-  }, [refetch, showCategorySuccess]);
+  }, [showCategorySuccess]);
 
   // Memoized stats calculation
   const stats = useMemo(() => {
@@ -531,6 +608,16 @@ const CategoriesManagement = () => {
     };
   }, [categories, pagination.total]);
 
+  // Clear error after timeout
+  useEffect(() => {
+    if (errorCategoryId) {
+      const timer = setTimeout(() => {
+        setErrorCategoryId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorCategoryId]);
+
   // Loading states
   const isCreating = createCategoryMutation.isLoading;
   const isUpdating = updateCategoryMutation.isLoading;
@@ -538,10 +625,41 @@ const CategoriesManagement = () => {
   const isBulkOperating = bulkOperationsMutation.isLoading;
   const isExporting = exportCategoriesMutation.isLoading;
 
-  if (isLoading && !categories.length) {
+  const isTableLoading = isLoading || isFetching;
+  const showSkeleton = isTableLoading && !categories.length;
+
+  if (showSkeleton) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Category Management</h1>
+            <p className="text-gray-600">Organize and manage content categories</p>
+          </div>
+          <div className="flex gap-3">
+            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-gray-200 rounded-lg p-4 animate-pulse">
+              <div className="h-20"></div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+        </div>
+        
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="h-64 flex items-center justify-center">
+            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -557,7 +675,7 @@ const CategoriesManagement = () => {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={exportCategories}
-            disabled={isExporting}
+            disabled={isExporting || isTableLoading}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
           >
             {isExporting ? (
@@ -574,7 +692,7 @@ const CategoriesManagement = () => {
           </button>
           <button
             onClick={refreshData}
-            disabled={isRefetching || isBulkOperating}
+            disabled={isRefetching || isBulkOperating || isTableLoading}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
@@ -582,7 +700,7 @@ const CategoriesManagement = () => {
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            disabled={isCreating}
+            disabled={isCreating || isTableLoading}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
           >
             {isCreating ? (
@@ -659,7 +777,7 @@ const CategoriesManagement = () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                disabled={isBulkOperating}
+                disabled={isBulkOperating || isTableLoading}
                 className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
                 {isBulkOperating ? (
@@ -676,7 +794,7 @@ const CategoriesManagement = () => {
               </button>
               <button
                 onClick={() => handleBulkAction('deactivate')}
-                disabled={isBulkOperating}
+                disabled={isBulkOperating || isTableLoading}
                 className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
               >
                 {isBulkOperating ? (
@@ -693,7 +811,7 @@ const CategoriesManagement = () => {
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
-                disabled={isBulkOperating}
+                disabled={isBulkOperating || isTableLoading}
                 className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
               >
                 {isBulkOperating ? (
@@ -724,7 +842,8 @@ const CategoriesManagement = () => {
                 placeholder="Search categories by name, slug, or description..."
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                disabled={isTableLoading}
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
               />
               {searchTerm && (
                 <button
@@ -732,9 +851,12 @@ const CategoriesManagement = () => {
                   onClick={() => {
                     setSearchTerm('');
                     setPage(1);
-                    refetch();
+                    if (!isTableLoading) {
+                      refetch();
+                    }
                   }}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  disabled={isTableLoading}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
                 >
                   <FiX className="h-4 w-4" />
                 </button>
@@ -744,7 +866,7 @@ const CategoriesManagement = () => {
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            disabled={isBulkOperating}
+            disabled={isBulkOperating || isTableLoading}
             className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
@@ -760,7 +882,8 @@ const CategoriesManagement = () => {
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
               >
                 <option value="">All Status</option>
                 <option value="true">Active</option>
@@ -773,7 +896,8 @@ const CategoriesManagement = () => {
               <select
                 value={filters.featured}
                 onChange={(e) => handleFilterChange('featured', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
               >
                 <option value="">All</option>
                 <option value="true">Featured</option>
@@ -786,7 +910,8 @@ const CategoriesManagement = () => {
               <select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
               >
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
@@ -800,7 +925,8 @@ const CategoriesManagement = () => {
               <select
                 value={filters.sortOrder}
                 onChange={(e) => handleFilterChange('sortOrder', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
               >
                 <option value="desc">Descending</option>
                 <option value="asc">Ascending</option>
@@ -821,7 +947,7 @@ const CategoriesManagement = () => {
                     type="checkbox"
                     checked={selectedCategories.length === categories.length && categories.length > 0}
                     onChange={toggleSelectAll}
-                    disabled={isBulkOperating}
+                    disabled={isBulkOperating || isTableLoading || categories.length === 0}
                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                   />
                 </th>
@@ -856,6 +982,8 @@ const CategoriesManagement = () => {
                   actionMenuId={actionMenu}
                   isUpdatingId={updatingCategoryId}
                   isDeletingId={deletingCategoryId}
+                  isCreatingId={creatingCategoryId}
+                  hasError={errorCategoryId}
                 />
               ))}
             </tbody>
@@ -863,11 +991,17 @@ const CategoriesManagement = () => {
         </div>
 
         {/* Empty State */}
-        {categories.length === 0 && !isLoading && (
+        {categories.length === 0 && !isTableLoading && (
           <div className="text-center py-12">
             <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
             <h3 className="mt-4 text-lg font-medium text-gray-900">No categories found</h3>
             <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              Create your first category
+            </button>
           </div>
         )}
 
@@ -883,7 +1017,7 @@ const CategoriesManagement = () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1 || isBulkOperating}
+                  disabled={page === 1 || isBulkOperating || isTableLoading}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronLeft className="h-4 w-4" />
@@ -906,7 +1040,7 @@ const CategoriesManagement = () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
-                        disabled={isBulkOperating}
+                        disabled={isBulkOperating || isTableLoading}
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
@@ -923,7 +1057,7 @@ const CategoriesManagement = () => {
                       <span className="px-2 text-gray-400">...</span>
                       <button
                         onClick={() => setPage(pagination.totalPages)}
-                        disabled={isBulkOperating}
+                        disabled={isBulkOperating || isTableLoading}
                         className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
                       >
                         {pagination.totalPages}
@@ -934,7 +1068,7 @@ const CategoriesManagement = () => {
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages || isBulkOperating}
+                  disabled={page === pagination.totalPages || isBulkOperating || isTableLoading}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronRight className="h-4 w-4" />

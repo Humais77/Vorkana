@@ -119,30 +119,49 @@ export const useAdminCategories = (params = {}) => {
   const setCategories = useAdminStore((state) => state.setCategories);
 
   return useQuery({
-    queryKey: ['admin', 'categories', params],
+    queryKey: generateCategoryQueryKey(params),
     queryFn: async () => {
+      console.log('[FETCH CATEGORIES] Params:', params);
+      
       try {
-        const response = await adminAPI.getCategories(params);
+        // Add default admin parameters
+        const queryParams = {
+          ...params,
+          showAll: true,
+          isAdmin: true,
+          populate: true
+        };
+        
+        const response = await adminAPI.getCategories(queryParams);
+        console.log('[FETCH CATEGORIES] Response success:', response.data?.success);
+        
         if (response.data.success) {
           setCategories(response.data);
           return response.data;
         }
+        
         throw new Error(response.data.message || 'Failed to fetch categories');
       } catch (error) {
-        console.error('Categories error:', error);
+        console.error('[FETCH CATEGORIES ERROR]', error);
         throw error;
       }
     },
-    staleTime: 60000,
+    staleTime: 30000, // 30 seconds
+    gcTime: 60000, // 1 minute cache time
     retry: 2,
+    retryDelay: 1000,
     keepPreviousData: true,
+    refetchOnWindowFocus: false, // Prevent unwanted refetches
     onError: (error) => {
-      if (error.response?.status !== 401) {
+      console.error('Categories fetch error:', error);
+      
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
         toast.error('Failed to load categories');
       }
     }
   });
 };
+
 
 export const useCreateUser = () => {
   const queryClient = useQueryClient();
@@ -344,204 +363,327 @@ export const useUpdateUser = () => {
   });
 };
 
-export const useUpdateCategory = () => {
+export const useCreateCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, data }) => {
-      console.log('[USE UPDATE CATEGORY] Updating category:', { id, data });
-      
-      try {
-        const response = await adminAPI.updateCategory(id, data);
-        console.log('[USE UPDATE CATEGORY] Update response:', response.data);
-        return response;
-      } catch (error) {
-        console.error('[USE UPDATE CATEGORY] Error:', error);
-        
-        // Handle version conflict specifically
-        if (error.response?.status === 409 && error.response?.data?.code === 'VERSION_CONFLICT') {
-          throw new Error('This category was modified by another user. Please refresh and try again.');
-        }
-        
-        throw error;
-      }
+    mutationFn: async (categoryData) => {
+      console.log('[CREATE CATEGORY] Sending data:', categoryData);
+      const response = await adminAPI.createCategory(categoryData);
+      console.log('[CREATE CATEGORY] Response:', response.data);
+      return response;
     },
-    onMutate: async ({ id, data }) => {
-      console.log('[USE UPDATE CATEGORY] Optimistic update for category:', id);
-      
+    onMutate: async (categoryData) => {
+      // Cancel outgoing queries
       await queryClient.cancelQueries(['admin', 'categories']);
       
+      // Store previous data for rollback
       const previousCategories = queryClient.getQueryData(['admin', 'categories']);
       
-      // Optimistically update the category in cache
+      // Generate optimistic category with temporary ID
+      const tempId = `temp-${Date.now()}`;
+      const optimisticCategory = {
+        _id: tempId,
+        ...categoryData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        servicesCount: 0,
+        gigsCount: 0,
+        __isOptimistic: true
+      };
+      
+      // Update cache optimistically
       queryClient.setQueryData(['admin', 'categories'], (old) => {
         if (!old || !old.data) return old;
         
         return {
           ...old,
-          data: old.data.map(category => 
-            category._id === id ? { 
-              ...category, 
-              ...data, 
-              updatedAt: new Date().toISOString(),
-              // Increment version for optimistic update
-              version: (category.version || 1) + 1
-            } : category
-          )
+          data: [optimisticCategory, ...old.data],
+          pagination: {
+            ...old.pagination,
+            total: old.pagination.total + 1
+          }
         };
       });
       
-      return { previousCategories };
+      // Return context for rollback
+      return { 
+        previousCategories, 
+        tempId,
+        optimisticCategory 
+      };
     },
-    onSuccess: (response) => {
-      console.log('[USE UPDATE CATEGORY] Success:', response.data);
+    onSuccess: (response, variables, context) => {
+      console.log('[CREATE CATEGORY] Success:', response.data);
       
       if (response.data.success) {
-        toast.success(response.data.message || 'Category updated successfully');
+        toast.success('Category created successfully');
         
-        // Invalidate and refetch all relevant queries
-        queryClient.invalidateQueries(['admin', 'categories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
-        
-        // Also update category in single category query if it exists
-        if (response.data.data?._id) {
-          queryClient.setQueryData(['admin', 'categories', response.data.data._id], response.data.data);
+        // Replace optimistic entry with real data
+        if (context?.tempId) {
+          queryClient.setQueryData(['admin', 'categories'], (old) => {
+            if (!old || !old.data) return old;
+            
+            const newData = old.data.map(item => 
+              item._id === context.tempId ? response.data.data : item
+            ).filter(item => !item.__isOptimistic); // Remove any remaining optimistic items
+            
+            return {
+              ...old,
+              data: newData
+            };
+          });
         }
+        
+        // Invalidate and refetch after a short delay
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'categories']);
+          queryClient.invalidateQueries(['admin', 'dashboard']);
+        }, 500);
       } else {
-        toast.error(response.data.message || 'Update failed');
+        toast.error(response.data.message || 'Creation failed');
       }
     },
     onError: (error, variables, context) => {
-      console.error('[USE UPDATE CATEGORY] Mutation error:', error);
+      console.error('[CREATE CATEGORY ERROR]', error);
       
-      // Revert optimistic update on error
+      // Rollback optimistic update
       if (context?.previousCategories) {
         queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
       }
       
-      // Show specific error message for version conflict
-      if (error.message.includes('modified by another user')) {
-        toast.error(error.message);
-      } else {
-        // Show other errors
-        const errorMessage = error.response?.data?.message || 
-                            error.response?.data?.error || 
-                            error.message || 
-                            'Failed to update category';
-        
-        toast.error(errorMessage);
-      }
+      // Show error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to create category';
       
       // Show validation errors if they exist
       if (error.response?.data?.errors) {
         error.response.data.errors.forEach(err => {
           toast.error(err);
         });
+      } else {
+        toast.error(errorMessage);
       }
-    },
-    retry: 0, // Don't retry on version conflicts
-    retryDelay: 1000
+    }
   });
 };
 
-export const useCreateCategory = () => {
+// Fix: Update Category Hook with version conflict handling
+export const useUpdateCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (categoryData) => adminAPI.createCategory(categoryData),
-    onMutate: async (categoryData) => {
+    mutationFn: async ({ id, data }) => {
+      console.log('[UPDATE CATEGORY] Updating:', { id, data });
+      
+      // Remove any __isOptimistic flags from data
+      const cleanData = { ...data };
+      delete cleanData.__isOptimistic;
+      
+      const response = await adminAPI.updateCategory(id, cleanData);
+      console.log('[UPDATE CATEGORY] Response:', response.data);
+      return response;
+    },
+    onMutate: async ({ id, data }) => {
+      console.log('[UPDATE CATEGORY] Optimistic update for:', id);
+      
+      // Cancel outgoing queries
       await queryClient.cancelQueries(['admin', 'categories']);
       
+      // Store previous data for rollback
       const previousCategories = queryClient.getQueryData(['admin', 'categories']);
       
-      // Generate a temporary ID for optimistic update
-      const tempId = `temp-${Date.now()}`;
-      const tempCategory = {
-        _id: tempId,
-        ...categoryData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        __isOptimistic: true
-      };
-      
+      // Update cache optimistically
       queryClient.setQueryData(['admin', 'categories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
         return {
           ...old,
-          data: [tempCategory, ...old.data]
+          data: old.data.map(category => 
+            category._id === id 
+              ? { 
+                  ...category, 
+                  ...data,
+                  updatedAt: new Date().toISOString(),
+                  __isUpdating: true // Mark as updating
+                } 
+              : category
+          )
         };
       });
       
-      return { previousCategories, tempId };
+      // Update specific category cache if it exists
+      queryClient.setQueryData(['admin', 'categories', id], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          ...data,
+          updatedAt: new Date().toISOString()
+        };
+      });
+      
+      return { previousCategories };
     },
     onSuccess: (response, variables, context) => {
-      if (context?.tempId) {
-        // Remove the optimistic entry and add the real one
-        queryClient.setQueryData(['admin', 'categories'], (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            data: old.data
-              .filter(cat => cat._id !== context.tempId)
-              .concat(response.data?.data || response.data)
-          };
-        });
+      console.log('[UPDATE CATEGORY] Success:', response.data);
+      
+      if (response.data.success) {
+        toast.success('Category updated successfully');
+        
+        // Update the specific category in cache
+        if (response.data.data) {
+          queryClient.setQueryData(['admin', 'categories', variables.id], response.data.data);
+        }
+        
+        // Invalidate and refetch after a short delay
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'categories']);
+          queryClient.invalidateQueries(['admin', 'categories', variables.id]);
+        }, 300);
+      } else {
+        toast.error(response.data.message || 'Update failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[UPDATE CATEGORY ERROR]', error);
+      
+      // Rollback optimistic update
       if (context?.previousCategories) {
         queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
       }
-      toast.error(error.response?.data?.message || 'Failed to create category');
-    },
-    retry: 2,
-    retryDelay: 1000
+      
+      // Handle version conflict
+      if (error.response?.status === 409) {
+        toast.error('Category was modified by another user. Please refresh and try again.');
+        // Force refetch
+        queryClient.invalidateQueries(['admin', 'categories']);
+      } else {
+        const errorMessage = error.response?.data?.message || 
+                            error.response?.data?.error || 
+                            'Failed to update category';
+        
+        toast.error(errorMessage);
+      }
+    }
   });
 };
 
+// Fix: Delete Category Hook with immediate UI update
 export const useDeleteCategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, options = {} }) => {
-      console.log('[USE DELETE CATEGORY] Mutation called with:', { id, options });
+    mutationFn: async (deleteOptions) => {
+      console.log('[DELETE CATEGORY] Options:', deleteOptions);
       
-      // Handle different ID formats
-      let categoryId;
+      // Handle different parameter formats
+      const { id, permanent = false, force = false } = deleteOptions;
       
-      if (typeof id === 'object') {
-        // If an object is passed, extract the _id
-        categoryId = id._id || id.id;
-        console.log('[USE DELETE CATEGORY] Extracted ID from object:', categoryId);
-      } else {
-        categoryId = id;
+      if (!id) {
+        throw new Error('Category ID is required');
       }
       
-      // Ensure it's a string
-      categoryId = String(categoryId).trim();
+      const params = {
+        permanent: String(permanent).toLowerCase(),
+        force: String(force).toLowerCase()
+      };
       
-      if (!categoryId || categoryId === 'undefined' || categoryId === 'null') {
-        throw new Error('Invalid category ID');
-      }
-      
-      console.log('[USE DELETE CATEGORY] Calling API with ID:', categoryId);
-      
-      return await adminAPI.deleteCategory(categoryId, options);
+      return await adminAPI.deleteCategory(id, params);
     },
-    onSuccess: (response) => {
+    onMutate: async (deleteOptions) => {
+      const { id } = deleteOptions;
+      
+      console.log('[DELETE CATEGORY] Optimistic delete for:', id);
+      
+      // Cancel outgoing queries
+      await queryClient.cancelQueries(['admin', 'categories']);
+      
+      // Store previous data for rollback
+      const previousCategories = queryClient.getQueryData(['admin', 'categories']);
+      
+      // Remove from cache immediately
+      queryClient.setQueryData(['admin', 'categories'], (old) => {
+        if (!old || !old.data) return old;
+        
+        const newData = old.data.filter(category => category._id !== id);
+        
+        return {
+          ...old,
+          data: newData,
+          pagination: {
+            ...old.pagination,
+            total: old.pagination.total - 1
+          }
+        };
+      });
+      
+      // Remove specific category cache
+      queryClient.removeQueries(['admin', 'categories', id]);
+      
+      return { previousCategories, deletedId: id };
+    },
+    onSuccess: (response, variables, context) => {
+      console.log('[DELETE CATEGORY] Success:', response.data);
+      
       if (response.data.success) {
-        toast.success('Category deleted successfully');
-        queryClient.invalidateQueries(['admin', 'categories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
+        const message = variables.permanent 
+          ? 'Category permanently deleted' 
+          : 'Category soft deleted successfully';
+        toast.success(message);
+        
+        // Invalidate related queries after a delay
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'categories']);
+          queryClient.invalidateQueries(['admin', 'dashboard']);
+          queryClient.invalidateQueries(['admin', 'categories', 'stats']);
+        }, 500);
       } else {
         toast.error(response.data.message || 'Delete failed');
       }
     },
-    onError: (error) => {
-      console.error('[USE DELETE CATEGORY] Error:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete category');
+    onError: (error, variables, context) => {
+      console.error('[DELETE CATEGORY ERROR]', error);
+      
+      // Rollback on error
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
+      }
+      
+      // Show appropriate error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to delete category';
+      
+      toast.error(errorMessage);
     }
   });
+};
+
+// Fix: Add cache key generator for consistent queries
+const generateCategoryQueryKey = (params = {}) => {
+  const baseKey = ['admin', 'categories'];
+  
+  // Only include non-empty, non-null params
+  const filteredParams = {};
+  Object.keys(params).forEach(key => {
+    if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+      filteredParams[key] = params[key];
+    }
+  });
+  
+  // Sort params for consistent cache keys
+  const sortedKeys = Object.keys(filteredParams).sort();
+  const sortedParams = {};
+  sortedKeys.forEach(key => {
+    sortedParams[key] = filteredParams[key];
+  });
+  
+  if (Object.keys(sortedParams).length > 0) {
+    return [...baseKey, sortedParams];
+  }
+  
+  return baseKey;
 };
 
 export const useRestoreCategory = () => {
@@ -1257,20 +1399,25 @@ export const useUsersForDropdown = (role = '') => {
     staleTime: 300000,
   });
 };
-
 export const useBulkCategoryOperations = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ ids, operation, data = {} }) => 
-      adminAPI.bulkUpdateCategories({ ids, operation, data }),
+    mutationFn: async ({ ids, operation, data = {} }) => {
+      console.log('[BULK CATEGORY] Operation:', operation, 'IDs:', ids);
+      return await adminAPI.bulkUpdateCategories({ ids, operation, data });
+    },
     onMutate: async ({ ids, operation, data }) => {
+      console.log('[BULK CATEGORY] Optimistic update for:', ids);
+      
       await queryClient.cancelQueries(['admin', 'categories']);
       
       const previousCategories = queryClient.getQueryData(['admin', 'categories']);
       
+      // Optimistic update
       queryClient.setQueryData(['admin', 'categories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
         return {
           ...old,
           data: old.data.map(category => 
@@ -1284,6 +1431,7 @@ export const useBulkCategoryOperations = () => {
                   ...(operation === 'unfeature' ? { featured: false } : {}),
                   ...(operation === 'popular' ? { popular: true } : {}),
                   ...(operation === 'unpopular' ? { popular: false } : {}),
+                  updatedAt: new Date().toISOString()
                 } 
               : category
           )
@@ -1292,20 +1440,33 @@ export const useBulkCategoryOperations = () => {
       
       return { previousCategories };
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables, context) => {
+      console.log('[BULK CATEGORY] Success:', response.data);
+      
       if (response.data.success) {
-        toast.success(response.data.message || 'Bulk operation completed');
-        queryClient.invalidateQueries(['admin', 'categories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
+        toast.success(`Successfully ${variables.operation}d ${variables.ids.length} categories`);
+        
+        // Force refetch after successful bulk operation
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'categories']);
+        }, 500);
       } else {
         toast.error(response.data.message || 'Bulk operation failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[BULK CATEGORY ERROR]', error);
+      
+      // Rollback on error
       if (context?.previousCategories) {
         queryClient.setQueryData(['admin', 'categories'], context.previousCategories);
       }
-      toast.error(error.response?.data?.message || 'Bulk operation failed');
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Bulk operation failed';
+      
+      toast.error(errorMessage);
     }
   });
 };

@@ -395,9 +395,6 @@ const createCategory = async (req, res, next) => {
           requestId
         });
       }
-      
-      // Check for circular reference (category cannot be its own parent)
-      // This check is mostly for updates, but kept here for safety
     }
 
     // Additional manual validation for XSS
@@ -458,14 +455,18 @@ const createCategory = async (req, res, next) => {
 
     const category = await Category.create({
       ...sanitizedData,
-      // Ensure parentCategory is null if empty, not empty string
       parentCategory: sanitizedData.parentCategory || null,
       createdBy: req.user._id,
       version: 1
     });
 
-    // Invalidate cache after creating new category
+    // **CRITICAL: Force clear cache before sending response**
     await invalidateCategoryCache();
+    
+    // Clear parent category cache if exists
+    if (category.parentCategory) {
+      await invalidateSpecificCategoryCache(category.parentCategory);
+    }
 
     // Security: Audit log
     logAudit('CREATE', 'CATEGORY', category._id, req.user._id, {
@@ -481,6 +482,15 @@ const createCategory = async (req, res, next) => {
     delete safeCategory.deletedBy;
 
     const responseTime = Date.now() - startTime;
+    
+    // **IMPORTANT: Add cache control headers**
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
     
     res.status(201).json({
       success: true,
@@ -551,7 +561,7 @@ const getCategories = async (req, res, next) => {
   const startTime = Date.now();
 
   try {
-    const {
+   const {
       search, q, name, slug, parentCategory, featured, popular, isActive, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
@@ -559,17 +569,17 @@ const getCategories = async (req, res, next) => {
       sort = 'createdAt', order = 'desc', page = 1, limit = 10, offset,
       fields, excludeFields, populate = true, populateFields = 'name',
       showAll = false, includeCounts = false,
-      includeServicesCount = false, includeGigsCount = false, // Add these
-      cache: useCacheParam = false
+      includeServicesCount = false, includeGigsCount = false,
+      cache: useCacheParam = false,
+      _refresh // Add refresh parameter to bypass cache
     } = req.query;
-
+    
     const showAllFlag = showAll === 'true' && req.user?.role === 'admin';
-    const useCache = useCacheParam === 'true';
+    const useCache = useCacheParam === 'true' && !_refresh;
 
-    // Build secure query with subcategory support
     const filter = buildSecureCategoryQuery({
       search: search || q, name, slug, parentCategory,
-       featured, popular,
+      featured, popular,
       isActive: showAllFlag ? isActive : undefined, level,
       minServicesCount, maxServicesCount, minGigsCount, maxGigsCount,
       createdAfter, createdBefore, updatedAfter, updatedBefore, createdBy,
@@ -586,9 +596,8 @@ const getCategories = async (req, res, next) => {
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortObj = { [sortField]: sortOrder };
 
-    // Generate cache key with all relevant parameters
     const cacheKey = generateCacheKey('categories', {
-      filter: JSON.stringify(filter), // Stringify for consistent key
+      filter: JSON.stringify(filter),
       page: pageNum, 
       limit: limitNum, 
       sort: sortField, 
@@ -599,11 +608,11 @@ const getCategories = async (req, res, next) => {
       includeGigsCount: includeGigsCount === 'true',
       showAll: showAllFlag,
       userRole: req.user?.role,
-      timestamp: Math.floor(Date.now() / 60000) // Cache key changes every minute
+      timestamp: Math.floor(Date.now() / 60000)
     });
 
-    // Cache handling
-    if (useCache) {
+    // Cache handling - skip if refresh requested
+    if (useCache && !_refresh) {
       const cachedResult = await cache.get(cacheKey);
       if (cachedResult) {
         console.log('Cache HIT:', cacheKey);
@@ -992,8 +1001,6 @@ const getCategoryById = async (req, res, next) => {
     next(error);
   }
 };
-
-// Update Category with Security (Admin Only) - FIXED VERSION
 const updateCategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1114,13 +1121,13 @@ const updateCategory = async (req, res, next) => {
     }
 
     // *** CRITICAL FIX: Remove version from sanitizedData if present ***
-    // MongoDB cannot have both direct version update and $inc version update
     delete sanitizedData.version;
     
     // Prepare update data - only increment version using $inc operator
     const updateData = {
       ...sanitizedData,
       lastUpdatedBy: req.user._id,
+      updatedAt: new Date(),
       $inc: { version: 1 } // Use only $inc operator for version
     };
 
@@ -1144,6 +1151,15 @@ const updateCategory = async (req, res, next) => {
       });
     }
 
+    // **CRITICAL FIX: Force clear cache before sending response**
+    await invalidateCategoryCache();
+    await invalidateSpecificCategoryCache(id);
+    
+    // Also clear parent category cache if parent changed
+    if (sanitizedData.parentCategory && sanitizedData.parentCategory !== existingCategory.parentCategory?.toString()) {
+      await invalidateSpecificCategoryCache(sanitizedData.parentCategory);
+    }
+
     // Security: Remove sensitive data from response
     const safeCategory = updatedCategory.toObject();
     delete safeCategory.__v;
@@ -1161,11 +1177,16 @@ const updateCategory = async (req, res, next) => {
       newVersion: updatedCategory.version
     });
 
-    // Invalidate cache after update
-    await invalidateCategoryCache();
-    await invalidateSpecificCategoryCache(id);
-
     const responseTime = Date.now() - startTime;
+    
+    // **IMPORTANT: Add cache control headers to prevent caching**
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Request-ID': requestId,
+      'X-Cache-Invalidated': 'true'
+    });
     
     res.json({
       success: true,
@@ -1173,7 +1194,8 @@ const updateCategory = async (req, res, next) => {
       data: safeCategory,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
+      responseTime: `${responseTime}ms`,
+      cacheInvalidated: true
     });
 
   } catch (error) {
@@ -1236,7 +1258,6 @@ const updateCategory = async (req, res, next) => {
   }
 };
 
-// Delete Category with Security (Admin Only)
 const deleteCategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1313,9 +1334,23 @@ const deleteCategory = async (req, res, next) => {
       
       const responseTime = Date.now() - startTime;
       
-      // Invalidate cache after permanent delete
+      // **CRITICAL: Force clear all cache**
       await invalidateCategoryCache();
       await invalidateSpecificCategoryCache(id);
+      
+      // Clear parent category cache if exists
+      if (category.parentCategory) {
+        await invalidateSpecificCategoryCache(category.parentCategory);
+      }
+      
+      // **IMPORTANT: Add cache control headers**
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Request-ID': requestId,
+        'X-Cache-Invalidated': 'true'
+      });
       
       res.json({
         success: true,
@@ -1339,9 +1374,23 @@ const deleteCategory = async (req, res, next) => {
       
       const responseTime = Date.now() - startTime;
       
-      // Invalidate cache after soft delete
+      // **CRITICAL: Force clear all cache**
       await invalidateCategoryCache();
       await invalidateSpecificCategoryCache(id);
+      
+      // Clear parent category cache if exists
+      if (category.parentCategory) {
+        await invalidateSpecificCategoryCache(category.parentCategory);
+      }
+      
+      // **IMPORTANT: Add cache control headers**
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Request-ID': requestId,
+        'X-Cache-Invalidated': 'true'
+      });
       
       res.json({
         success: true,

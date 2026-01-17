@@ -13,21 +13,30 @@ const adminApi = axios.create({
   withCredentials: true,
 });
 
-// Cache control for frontend
 const cache = {
   memoryCache: new Map(),
   
   ttl: {
-    list: 5 * 60 * 1000,
-    item: 10 * 60 * 1000,
-    dropdown: 10 * 60 * 1000,
-    stats: 5 * 60 * 1000,
-    export: 60 * 60 * 1000,
+    list: 5 * 60 * 1000,    // 5 minutes for lists
+    item: 10 * 60 * 1000,   // 10 minutes for single items
+    dropdown: 10 * 60 * 1000, // 10 minutes for dropdowns
+    stats: 5 * 60 * 1000,   // 5 minutes for stats
+    export: 60 * 60 * 1000, // 1 hour for exports
   },
   
   generateKey: (endpoint, params = {}) => {
-    const key = `${endpoint}:${JSON.stringify(params)}`;
-    return btoa(key).substring(0, 64);
+    // Remove undefined/null/empty params
+    const cleanParams = {};
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+        cleanParams[key] = params[key];
+      }
+    });
+    
+    const keyStr = `${endpoint}:${JSON.stringify(cleanParams)}`;
+    // Create consistent hash
+    const hash = btoa(keyStr).replace(/[^a-zA-Z0-9]/g, '').substring(0, 64);
+    return hash;
   },
   
   get: (key) => {
@@ -43,44 +52,52 @@ const cache = {
   },
   
   set: (key, data, ttl = cache.ttl.list) => {
+    // Don't cache empty results
+    if (!data || (data.data && data.data.length === 0)) {
+      return;
+    }
+    
     cache.memoryCache.set(key, {
       data,
       expiry: Date.now() + ttl,
       timestamp: new Date().toISOString()
     });
     
-    if (cache.memoryCache.size > 100) {
+    // Limit cache size
+    if (cache.memoryCache.size > 200) {
       const firstKey = cache.memoryCache.keys().next().value;
       cache.memoryCache.delete(firstKey);
     }
   },
   
   delete: (pattern) => {
-    if (pattern.includes('*')) {
-      const prefix = pattern.replace('*', '');
-      for (const key of cache.memoryCache.keys()) {
-        if (key.startsWith(prefix)) {
-          cache.memoryCache.delete(key);
-        }
+    const keysToDelete = [];
+    
+    for (const key of cache.memoryCache.keys()) {
+      if (pattern === 'all' || key.startsWith(pattern.replace('*', ''))) {
+        keysToDelete.push(key);
       }
-    } else {
-      cache.memoryCache.delete(pattern);
     }
+    
+    keysToDelete.forEach(key => cache.memoryCache.delete(key));
   },
   
-  clear: () => {
-    cache.memoryCache.clear();
+  clearAllCategoryCache: () => {
+    cache.delete('admin:categories');
+    cache.delete('admin:dashboard');
+    console.log('[CACHE] Cleared all category-related cache');
   },
   
-  stats: () => ({
-    size: cache.memoryCache.size,
-    keys: Array.from(cache.memoryCache.keys()),
-    entries: Array.from(cache.memoryCache.entries()).map(([key, value]) => ({
-      key: key.substring(0, 50) + '...',
-      expiry: new Date(value.expiry).toLocaleTimeString(),
-      size: JSON.stringify(value.data).length
-    }))
-  })
+  clearCategoryListCache: () => {
+    cache.delete('admin:categories:list');
+    console.log('[CACHE] Cleared category list cache');
+  },
+  
+  clearSpecificCategoryCache: (categoryId) => {
+    const pattern = `admin:categories:${categoryId}`;
+    cache.delete(pattern);
+    console.log(`[CACHE] Cleared cache for category: ${categoryId}`);
+  }
 };
 
 // Request interceptor
@@ -189,25 +206,28 @@ const getCsrfToken = () => {
   return null;
 };
 
-// Cache-aware API calls
 const createCachedApiCall = (apiCall, cacheKey, ttlType = 'list') => {
   return async (...args) => {
     const params = args[0] || {};
-    if (params.cache === false) {
+    
+    // Skip cache if explicitly requested
+    if (params.cache === false || params._refresh) {
       delete params.cache;
+      delete params._refresh;
       return apiCall(...args);
     }
     
     const key = cache.generateKey(cacheKey, params);
-    
     const cachedData = cache.get(key);
+    
     if (cachedData) {
-      console.log('[ADMIN API] Frontend cache HIT for:', cacheKey);
-      return { data: { ...cachedData, _cached: true, _cacheKey: key } };
+      console.log('[CACHE HIT]', cacheKey);
+      return { data: { ...cachedData, _cached: true } };
     }
     
     const response = await apiCall(...args);
     
+    // Only cache successful responses
     if (response.data && response.data.success !== false) {
       cache.set(key, response.data, cache.ttl[ttlType]);
     }
@@ -217,16 +237,21 @@ const createCachedApiCall = (apiCall, cacheKey, ttlType = 'list') => {
 };
 
 // Cache invalidation helpers
+const invalidateCategoryCache = () => {
+  cache.clearAllCategoryCache();
+};
+
+const invalidateSpecificCategoryCache = (categoryId) => {
+  cache.clearSpecificCategoryCache(categoryId);
+};
+
+
+// Cache invalidation helpers
 const invalidateCache = (pattern) => {
   cache.delete(pattern);
   console.log('[ADMIN API] Invalidated cache pattern:', pattern);
 };
 
-// Export the cache object for manual control
-export const adminCache = {
-  ...cache,
-  invalidate: invalidateCache
-};
 
 export const adminAPI = {
   // Dashboard
@@ -320,46 +345,108 @@ export const adminAPI = {
       params: { format },
       responseType: 'blob'
     }),
-  
-  // Categories (NO SUB-CATEGORIES HERE)
-  getCategories: createCachedApiCall(
-    (params) => adminApi.get('/api/admin/categories', { params }),
-    'admin:categories:list',
-    'list'
-  ),
+   getCategories: (params) => {
+    // Add a timestamp or random parameter to bypass cache when refresh is needed
+    const queryParams = { ...params };
+    if (params._refresh) {
+      queryParams._t = Date.now();
+    }
+    return adminApi.get('/api/admin/categories', { params: queryParams });
+  },
   
   getCategoryById: createCachedApiCall(
     (id) => adminApi.get(`/api/admin/categories/${id}`),
-    (id) => `admin:categories:item:${id}`,
+    (id) => `admin:categories:${id}`,
     'item'
   ),
   
-  createCategory: (data) => {
-    // Categories and subcategories are now separate, so only invalidate category cache
-    invalidateCache('admin:categories:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.post('/api/admin/categories', data);
+ createCategory: async (data) => {
+    try {
+      const response = await adminApi.post('/api/admin/categories', data);
+      
+      // Force clear frontend cache
+      invalidateCategoryCache();
+      cache.clearAllCategoryCache();
+      
+      // Show success message
+      if (response.data.success) {
+        toast.success('Category created successfully');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[CREATE CATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  updateCategory: (id, data) => {
-    invalidateCache(`admin:categories:item:${id}`);
-    invalidateCache('admin:categories:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.put(`/api/admin/categories/${id}`, data);
+  updateCategory: async (id, data) => {
+    try {
+      const response = await adminApi.put(`/api/admin/categories/${id}`, data);
+      
+      // Force clear frontend cache
+      invalidateSpecificCategoryCache(id);
+      cache.clearCategoryListCache();
+      invalidateCategoryCache();
+      
+      // Show success message
+      if (response.data.success) {
+        toast.success('Category updated successfully');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[UPDATE CATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  deleteCategory: (id, params = {}) => {
-    invalidateCache(`admin:categories:item:${id}`);
-    invalidateCache('admin:categories:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.delete(`/api/admin/categories/${id}`, { params });
+  deleteCategory: async (id, params = {}) => {
+    try {
+      const response = await adminApi.delete(`/api/admin/categories/${id}`, { params });
+      
+      // Force clear all cache
+      invalidateSpecificCategoryCache(id);
+      cache.clearCategoryListCache();
+      invalidateCategoryCache();
+      cache.delete('admin:dashboard:*');
+      
+      // Show success message based on deletion type
+      if (response.data.success) {
+        const message = params.permanent === 'true' 
+          ? 'Category permanently deleted' 
+          : 'Category soft deleted successfully';
+        toast.success(message);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[DELETE CATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  getCategoryStats: createCachedApiCall(
-    () => adminApi.get('/api/admin/categories/analytics'),
-    'admin:categories:stats',
-    'stats'
-  ),
+  bulkUpdateCategories: async ({ ids, operation, data = {} }) => {
+    try {
+      // Clear all category cache before bulk operation
+      invalidateCategoryCache();
+      
+      const response = await adminApi.post('/api/admin/categories/bulk-action', { 
+        ids, 
+        operation, 
+        data 
+      });
+      
+      if (response.data.success) {
+        toast.success(`Successfully ${operation}d ${ids.length} categories`);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[BULK UPDATE CATEGORIES ERROR]', error);
+      throw error;
+    }
+  },
   
   exportCategories: (format = 'csv') => 
     adminApi.get('/api/admin/categories/export', { 
@@ -367,10 +454,42 @@ export const adminAPI = {
       responseType: 'blob'
     }),
   
-  bulkUpdateCategories: ({ ids, operation, data = {} }) => {
-    invalidateCache('admin:categories:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.post('/api/admin/categories/bulk-action', { ids, operation, data });
+  getCategoryStats: createCachedApiCall(
+    () => adminApi.get('/api/admin/categories/analytics'),
+    'admin:categories:stats',
+    'stats'
+  ),
+  
+  // Restore category
+  restoreCategory: async (id) => {
+    try {
+      invalidateCategoryCache();
+      invalidateSpecificCategoryCache(id);
+      
+      const response = await adminApi.post(`/api/admin/categories/${id}/restore`);
+      
+      if (response.data.success) {
+        toast.success('Category restored successfully');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[RESTORE CATEGORY ERROR]', error);
+      throw error;
+    }
+  },
+  
+  // Export the cache object for manual control
+  cache,
+  
+  // Cache management
+  invalidateCache: (pattern = 'admin:*') => {
+    cache.delete(pattern);
+  },
+  
+  clearAllCache: () => {
+    cache.delete('all');
+    console.log('[CACHE] Cleared all cache');
   },
   
   // Subcategories (SEPARATE FROM CATEGORIES)
@@ -659,13 +778,17 @@ export const adminAPI = {
     return cache.stats();
   }
 };
-
-export const clearAdminCache = (pattern = 'admin:*') => {
-  invalidateCache(pattern);
+export const adminCache = {
+  invalidateCategoryCache,
+  invalidateSpecificCategoryCache,
+  clearAll: () => cache.delete('all')
 };
 
+// Add event listeners for cache clearing
 window.addEventListener('beforeunload', () => {
+  // Keep cache for page reloads
 });
+
 
 if (process.env.NODE_ENV === 'development') {
   window.adminCache = cache;
