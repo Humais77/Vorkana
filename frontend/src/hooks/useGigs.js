@@ -504,6 +504,30 @@ export const useUpdateMultipleGigsStatus = () => {
   
   return useMutation({
     mutationFn: async ({ ids, status }) => {
+      // Validate status
+      const validStatuses = ['active', 'paused', 'closed', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Invalid status: ${status}`);
+      }
+      
+      // Check if trying to activate already active gigs
+      if (status === 'active') {
+        // Fetch current status of selected gigs
+        const gigs = await Promise.all(
+          ids.map(id => gigsAPI.getById(id).catch(() => null))
+        );
+        
+        const alreadyActive = gigs.filter(g => g?.status === 'active');
+        if (alreadyActive.length > 0) {
+          toast.error(`${alreadyActive.length} gig(s) are already active`);
+          // Remove already active gigs from the update list
+          ids = ids.filter((id, index) => gigs[index]?.status !== 'active');
+          if (ids.length === 0) {
+            throw new Error('No gigs need status update');
+          }
+        }
+      }
+      
       const results = await Promise.all(
         ids.map(id => gigsAPI.update(id, { status }))
       );
@@ -511,23 +535,14 @@ export const useUpdateMultipleGigsStatus = () => {
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+      queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       
-      variables.ids.forEach(id => {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(id) });
-      });
-      
-      toast.success(`${variables.ids.length} gig(s) marked as ${variables.status}`);
+      toast.success(`Updated ${variables.ids.length} gig(s) to ${variables.status}`);
     },
     onError: (error) => {
-      let errorMessage = error.message || 'Failed to update gigs status';
-      
-      if (error.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to update gig status';
-      } else if (error.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
+      if (!error.message.includes('already active')) {
+        toast.error(error.message || 'Failed to update gigs');
       }
-      
-      toast.error(errorMessage);
     },
   });
 };

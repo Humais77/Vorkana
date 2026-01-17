@@ -6,9 +6,11 @@ import {
   useDeleteGig,
   useBulkGigOperations,
   useCategoriesForDropdown,
-  useUsersForDropdown, useExportGigs, useGigStats
+  useUsersForDropdown, 
+  useExportGigs, 
+  useGigStats
 } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useGigToast } from '../../../hooks/useGigToast';
 import {
   FiBriefcase,
   FiDownload,
@@ -29,7 +31,9 @@ import {
   FiMoreVertical,
   FiChevronDown,
   FiChevronUp,
-  FiUnlock,FiX
+  FiUnlock,
+  FiX,
+  FiLoader
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import GigViewModal from './GigViewModal';
@@ -47,7 +51,9 @@ const GigTableRow = memo(({
   onEdit, 
   onDelete,
   onOpenActionMenu,
-  actionMenuId
+  actionMenuId,
+  isUpdatingId,
+  isDeletingId
 }) => {
   const getStatusColor = (status) => {
     const colors = {
@@ -71,6 +77,9 @@ const GigTableRow = memo(({
     return colors[urgency] || 'bg-gray-100 text-gray-800';
   };
 
+  const isUpdating = isUpdatingId === gig._id;
+  const isDeleting = isDeletingId === gig._id;
+
   return (
     <React.Fragment>
       <tr className="hover:bg-gray-50">
@@ -79,14 +88,16 @@ const GigTableRow = memo(({
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(gig._id)}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            disabled={isDeleting}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
           />
         </td>
         <td className="px-4 py-4">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => onToggleExpand(gig._id)}
-              className="p-1 hover:bg-gray-100 rounded"
+              onClick={() => !isDeleting && onToggleExpand(gig._id)}
+              disabled={isDeleting}
+              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
             >
               {isExpanded ? (
                 <FiChevronUp className="h-4 w-4 text-gray-500" />
@@ -95,7 +106,15 @@ const GigTableRow = memo(({
               )}
             </button>
             <div>
-              <div className="text-sm font-medium text-gray-900">{gig.title}</div>
+              <div className="flex items-center space-x-2">
+                {isUpdating && (
+                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+                )}
+                <div className="text-sm font-medium text-gray-900">{gig.title}</div>
+                {isDeleting && (
+                  <span className="text-xs text-red-500">Deleting...</span>
+                )}
+              </div>
               <div className="text-xs text-gray-500 mt-1">
                 {gig.projectCategory?.name || 'No category'}
               </div>
@@ -137,30 +156,37 @@ const GigTableRow = memo(({
         <td className="px-4 py-4">
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => onView(gig)}
-              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded"
+              onClick={() => !isDeleting && onView(gig)}
+              disabled={isDeleting}
+              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
             </button>
             <button
-              onClick={() => onEdit(gig)}
-              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+              onClick={() => !isDeleting && onEdit(gig)}
+              disabled={isDeleting || isUpdating}
+              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
               title="Edit Gig"
             >
-              <FiEdit2 className="h-4 w-4" />
+              {isUpdating ? (
+                <FiLoader className="h-4 w-4 animate-spin text-blue-500" />
+              ) : (
+                <FiEdit2 className="h-4 w-4" />
+              )}
             </button>
             
             {/* 3-dot menu */}
             <div className="relative">
               <button
-                onClick={() => onOpenActionMenu(actionMenuId === gig._id ? null : gig._id)}
-                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+                onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === gig._id ? null : gig._id)}
+                disabled={isDeleting}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
               
-              {actionMenuId === gig._id && (
+              {actionMenuId === gig._id && !isDeleting && (
                 <>
                   <div 
                     className="fixed inset-0 z-10"
@@ -173,10 +199,15 @@ const GigTableRow = memo(({
                           onDelete(gig);
                           onOpenActionMenu(null);
                         }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        disabled={isDeleting}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        <FiTrash2 className="h-4 w-4 mr-2" />
-                        Delete Gig
+                        {isDeleting ? (
+                          <FiLoader className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FiTrash2 className="h-4 w-4 mr-2" />
+                        )}
+                        {isDeleting ? 'Deleting...' : 'Delete Gig'}
                       </button>
                     </div>
                   </div>
@@ -249,66 +280,78 @@ const GigsManagement = () => {
   const [selectedGig, setSelectedGig] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [expandedGigs, setExpandedGigs] = useState([]);
+  const [updatingGigId, setUpdatingGigId] = useState(null);
+  const [deletingGigId, setDeletingGigId] = useState(null);
 
   const limit = 20;
   
-  // Search with debounce
-  
-
   // Use React Query with proper caching
- const { 
-  data, 
-  isLoading, 
-  refetch, 
-  isRefetching 
-} = useAdminGigs({
-  page,
-  limit,
-  search: searchTerm,
-  ...filters,
-  // Ensure subcategories are populated
-  populateSubcategories: true
-});
+  const { 
+    data, 
+    isLoading, 
+    refetch, 
+    isRefetching 
+  } = useAdminGigs({
+    page,
+    limit,
+    search: searchTerm,
+    ...filters,
+    populateSubcategories: true
+  });
+  
   const updateGigMutation = useUpdateGig();
   const deleteGigMutation = useDeleteGig();
   const bulkOperationsMutation = useBulkGigOperations();
   const { data: categoriesData } = useCategoriesForDropdown();
   const { data: usersData } = useUsersForDropdown();
   const exportGigsMutation = useExportGigs();
-const { data: gigStatsData } = useGigStats();
-  const gigs = useMemo(() => {
-  if (!data?.data) return [];
+  const { data: gigStatsData } = useGigStats();
   
-  return data.data.map(gig => ({
-    ...gig,
-    // Ensure subcategory is properly structured
-    subcategory: gig.subcategory?._id ? {
-      _id: gig.subcategory._id,
-      name: gig.subcategory.name,
-      description: gig.subcategory.description
-    } : null
-  }));
-}, [data]);
+  // Use custom toast hook
+  const {
+    showGigLoading,
+    showGigSuccess,
+    showGigError,
+    showGigWarning,
+    showGigInfo,
+    dismissGigToast
+  } = useGigToast();
+
+  const gigs = useMemo(() => {
+    if (!data?.data) return [];
+    
+    return data.data.map(gig => ({
+      ...gig,
+      subcategory: gig.subcategory?._id ? {
+        _id: gig.subcategory._id,
+        name: gig.subcategory.name,
+        description: gig.subcategory.description
+      } : null
+    }));
+  }, [data]);
+  
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
   const categories = categoriesData?.data || [];
   const users = usersData?.data || [];
 
-  // Memoized handlers
-  const handleSearch = useCallback((e) => {
-    e.preventDefault();
-    setPage(1);
-    refetch();
-  }, [refetch]);
-useEffect(() => {
+  // Search with debounce
+  useEffect(() => {
     const timer = setTimeout(() => {
       if (searchTerm !== '') {
         setPage(1);
         refetch();
       }
-    }, 500); // 500ms delay
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [searchTerm, refetch]);
+
+  const handleSearch = useCallback((e) => {
+    e.preventDefault();
+    setPage(1);
+    refetch();
+  }, [refetch]);
+
   const handleSearchChange = useCallback((value) => {
     setSearchTerm(value);
   }, []);
@@ -320,9 +363,11 @@ useEffect(() => {
 
   const handleBulkAction = useCallback(async (action) => {
     if (selectedGigs.length === 0) {
-      toast.error('Please select gigs first');
+      showGigWarning('Please select gigs first');
       return;
     }
+
+    const loadingToastId = showGigLoading(`Processing ${selectedGigs.length} gigs...`);
 
     try {
       await bulkOperationsMutation.mutateAsync({
@@ -332,51 +377,65 @@ useEffect(() => {
       
       setSelectedGigs([]);
       refetch();
-      toast.success(`Gigs ${action === 'activate' ? 'activated' : 'deleted'} successfully`);
+      dismissGigToast(loadingToastId);
+      showGigSuccess(`${selectedGigs.length} gigs ${action}ed successfully`);
     } catch (error) {
-      toast.error('Failed to perform bulk action');
+      dismissGigToast(loadingToastId);
+      const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
+      const validationErrors = error.response?.data?.errors;
+      
+      if (validationErrors) {
+        validationErrors.forEach(err => showGigError(err));
+      } else {
+        showGigError(errorMessage);
+      }
     }
-  }, [selectedGigs, bulkOperationsMutation, refetch]);
+  }, [selectedGigs, bulkOperationsMutation, refetch, showGigLoading, showGigSuccess, showGigError, showGigWarning, dismissGigToast]);
 
   const handleSaveGig = useCallback(async (gigData) => {
     if (!selectedGig) return;
     
+    const loadingToastId = showGigLoading('Updating gig...');
+
     try {
+      setUpdatingGigId(selectedGig._id);
       await updateGigMutation.mutateAsync({
         id: selectedGig._id,
         data: gigData
       });
-      toast.success('Gig updated successfully');
+      
+      dismissGigToast(loadingToastId);
+      showGigSuccess('Gig updated successfully');
       setShowEditModal(false);
       setSelectedGig(null);
+      setUpdatingGigId(null);
       refetch();
     } catch (error) {
-      console.error('Update error:', error);
-      toast.error(error.message || 'Failed to update gig');
+      dismissGigToast(loadingToastId);
+      setUpdatingGigId(null);
       throw error;
     }
-  }, [selectedGig, updateGigMutation, refetch]);
+  }, [selectedGig, updateGigMutation, refetch, showGigLoading, showGigSuccess, dismissGigToast]);
 
   const handleDeleteGig = useCallback(async (deleteOptions) => {
-    console.log('Delete options:', deleteOptions);
+    const loadingToastId = showGigLoading('Deleting gig...');
     
     try {
-      await deleteGigMutation.mutateAsync({
-        id: deleteOptions.id,
-        options: {
-          permanent: deleteOptions.permanent || false,
-          force: deleteOptions.force || false
-        }
-      });
+      setDeletingGigId(deleteOptions.id);
+      await deleteGigMutation.mutateAsync(deleteOptions);
       
-      // The mutation should handle cache invalidation automatically
-      // via the onSuccess callback in the hook
+      dismissGigToast(loadingToastId);
+      showGigSuccess('Gig deleted successfully');
+      setShowDeleteModal(false);
+      setSelectedGig(null);
+      setDeletingGigId(null);
+      refetch();
     } catch (error) {
-      console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete gig');
+      dismissGigToast(loadingToastId);
+      setDeletingGigId(null);
       throw error;
     }
-  }, [deleteGigMutation]);
+  }, [deleteGigMutation, refetch, showGigLoading, showGigSuccess, dismissGigToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -416,47 +475,60 @@ useEffect(() => {
     setSelectedGig(gig);
     setShowDeleteModal(true);
   }, []);
-const exportGigs = useCallback(async () => {
-  try {
-    const response = await exportGigsMutation.mutateAsync('csv');
+
+  const exportGigs = useCallback(async () => {
+    const loadingToastId = showGigLoading('Exporting gigs...');
     
-    const blob = new Blob([response.data], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gigs_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    
-    toast.success('Gigs exported successfully');
-  } catch (error) {
-    toast.error('Failed to export gigs');
-  }
-}, [exportGigsMutation]);
+    try {
+      const response = await exportGigsMutation.mutateAsync('csv');
+      
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gigs_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      dismissGigToast(loadingToastId);
+      showGigSuccess('Gigs exported successfully');
+    } catch (error) {
+      dismissGigToast(loadingToastId);
+      showGigError('Failed to export gigs');
+    }
+  }, [exportGigsMutation, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
+
   const refreshData = useCallback(() => {
     refetch();
     setSelectedGigs([]);
     setExpandedGigs([]);
-    toast.success('Data refreshed');
-  }, [refetch]);
+    showGigSuccess('Data refreshed');
+  }, [refetch, showGigSuccess]);
 
   // Memoized stats calculation
   const stats = useMemo(() => {
-  const gigStats = gigStatsData?.data?.overview?.[0] || {};
-  
-  return {
-    total: gigStats.totalGigs || pagination.total || gigs.length,
-    open: gigStats.openGigs || gigs.filter(g => g.status === 'open').length,
-    inProgress: gigStats.inProgressGigs || gigs.filter(g => g.status === 'in_progress').length,
-    completed: gigStats.completedGigs || gigs.filter(g => g.status === 'completed').length,
-    totalBudget: gigStats.totalBudget || gigs.reduce((sum, g) => sum + (g.budget || 0), 0),
-    avgBudget: gigStats.avgBudget || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0),
-    totalBids: gigStats.totalBids || gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0),
-    avgBidsPerGig: gigStats.avgBidsPerGig || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0) / gigs.length : 0)
-  };
-}, [gigs, pagination.total, gigStatsData]);
+    const gigStats = gigStatsData?.data?.overview?.[0] || {};
+    
+    return {
+      total: gigStats.totalGigs || pagination.total || gigs.length,
+      open: gigStats.openGigs || gigs.filter(g => g.status === 'open').length,
+      inProgress: gigStats.inProgressGigs || gigs.filter(g => g.status === 'in_progress').length,
+      completed: gigStats.completedGigs || gigs.filter(g => g.status === 'completed').length,
+      totalBudget: gigStats.totalBudget || gigs.reduce((sum, g) => sum + (g.budget || 0), 0),
+      avgBudget: gigStats.avgBudget || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0),
+      totalBids: gigStats.totalBids || gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0),
+      avgBidsPerGig: gigStats.avgBidsPerGig || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0) / gigs.length : 0)
+    };
+  }, [gigs, pagination.total, gigStatsData]);
+
+  // Loading states
+  const isUpdating = updateGigMutation.isLoading;
+  const isDeleting = deleteGigMutation.isLoading;
+  const isBulkOperating = bulkOperationsMutation.isLoading;
+  const isExporting = exportGigsMutation.isLoading;
+
   if (isLoading && !gigs.length) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -475,16 +547,26 @@ const exportGigs = useCallback(async () => {
         </div>
         <div className="flex flex-wrap gap-3">
           <button
-  onClick={exportGigs}
-  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
->
-  <FiDownload className="h-4 w-4" />
-  <span>Export</span>
-</button>
+            onClick={exportGigs}
+            disabled={isExporting}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
+          >
+            {isExporting ? (
+              <>
+                <FiLoader className="h-4 w-4 animate-spin" />
+                <span>Exporting...</span>
+              </>
+            ) : (
+              <>
+                <FiDownload className="h-4 w-4" />
+                <span>Export</span>
+              </>
+            )}
+          </button>
 
           <button
             onClick={refreshData}
-            disabled={isRefetching}
+            disabled={isRefetching || isBulkOperating}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
@@ -554,24 +636,54 @@ const exportGigs = useCallback(async () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiCheckCircle className="h-4 w-4" />
-                <span>Open</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCheckCircle className="h-4 w-4" />
+                    <span>Open</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('pause')}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiXCircle className="h-4 w-4" />
-                <span>Close</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiXCircle className="h-4 w-4" />
+                    <span>Close</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiTrash2 className="h-4 w-4" />
-                <span>Delete</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 className="h-4 w-4" />
+                    <span>Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -609,7 +721,8 @@ const exportGigs = useCallback(async () => {
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+            disabled={isBulkOperating}
+            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
             <span className="hidden md:inline">Filters</span>
@@ -698,7 +811,8 @@ const exportGigs = useCallback(async () => {
                     type="checkbox"
                     checked={selectedGigs.length === gigs.length && gigs.length > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={isBulkOperating}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -735,6 +849,8 @@ const exportGigs = useCallback(async () => {
                   onDelete={handleDelete}
                   onOpenActionMenu={setActionMenu}
                   actionMenuId={actionMenu}
+                  isUpdatingId={updatingGigId}
+                  isDeletingId={deletingGigId}
                 />
               ))}
             </tbody>
@@ -762,7 +878,7 @@ const exportGigs = useCallback(async () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  disabled={page === 1 || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronLeft className="h-4 w-4" />
@@ -785,11 +901,12 @@ const exportGigs = useCallback(async () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
+                        disabled={isBulkOperating}
                         className={`px-3 py-1.5 rounded-md text-sm ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
                             : 'border border-gray-300 hover:bg-gray-50'
-                        }`}
+                        } disabled:opacity-50`}
                       >
                         {pageNum}
                       </button>
@@ -801,7 +918,8 @@ const exportGigs = useCallback(async () => {
                       <span className="px-2 text-gray-400">...</span>
                       <button
                         onClick={() => setPage(pagination.totalPages)}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50`}
+                        disabled={isBulkOperating}
+                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
                       >
                         {pagination.totalPages}
                       </button>
@@ -811,7 +929,7 @@ const exportGigs = useCallback(async () => {
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages}
+                  disabled={page === pagination.totalPages || isBulkOperating}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   <FiChevronRight className="h-4 w-4" />
@@ -834,6 +952,8 @@ const exportGigs = useCallback(async () => {
           onSave={handleSaveGig}
           categories={categories}
           users={users}
+          loading={isUpdating}
+          error={updateGigMutation.error}
         />
       )}
       
@@ -856,6 +976,8 @@ const exportGigs = useCallback(async () => {
             setSelectedGig(null);
           }}
           onDelete={handleDeleteGig}
+          loading={isDeleting}
+          error={deleteGigMutation.error}
         />
       )}
     </div>

@@ -1292,17 +1292,53 @@ export const useUpdateGig = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateGig(id, data),
-    onSuccess: (response) => {
-      if (response.data.success) {
-        toast.success('Gig updated successfully');
-        queryClient.invalidateQueries(['admin', 'gigs']);
-      } else {
-        toast.error(response.data.message || 'Update failed');
+    mutationFn: async ({ id, data }) => {
+      console.log('[USE UPDATE GIG] Updating with version:', data.version);
+      
+      try {
+        const response = await adminAPI.updateGig(id, data);
+        
+        // Check for version conflict
+        if (response.status === 409) {
+          throw {
+            response: {
+              status: 409,
+              data: response.data
+            }
+          };
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('[USE UPDATE GIG] Error:', error);
+        throw error;
       }
     },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Update failed');
+    onMutate: async ({ id, data }) => {
+      // Store current data for rollback
+      const previousData = queryClient.getQueryData(['admin', 'gigs', id]);
+      
+      // Optimistically update
+      queryClient.setQueryData(['admin', 'gigs', id], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          ...data,
+          version: old.version + 1
+        };
+      });
+      
+      return { previousData };
+    },
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        queryClient.setQueryData(['admin', 'gigs', variables.id], context.previousData);
+      }
+    },
+    onSettled: (data, error, variables) => {
+      // Invalidate query to fetch fresh data
+      queryClient.invalidateQueries(['admin', 'gigs', variables.id]);
     }
   });
 };
@@ -1546,60 +1582,132 @@ export const useCreateSubcategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (subcategoryData) => adminAPI.createSubcategory(subcategoryData),
+    mutationFn: async (subcategoryData) => {
+      console.log('[CREATE SUBCATEGORY] Sending data:', subcategoryData);
+      const response = await adminAPI.createSubcategory(subcategoryData);
+      console.log('[CREATE SUBCATEGORY] Response:', response.data);
+      return response;
+    },
     onMutate: async (subcategoryData) => {
+      console.log('[CREATE SUBCATEGORY] Optimistic update started');
+      
+      // Cancel outgoing queries
       await queryClient.cancelQueries(['admin', 'subcategories']);
       
+      // Store previous data for rollback
       const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
       
-      // Generate a temporary ID for optimistic update
+      // Generate optimistic subcategory with temporary ID
       const tempId = `temp-${Date.now()}`;
-      const tempSubcategory = {
+      const optimisticSubcategory = {
         _id: tempId,
         ...subcategoryData,
+        name: subcategoryData.name,
+        slug: subcategoryData.slug || subcategoryData.name.toLowerCase().replace(/\s+/g, '-'),
+        description: subcategoryData.description || '',
+        category: subcategoryData.category,
+        order: subcategoryData.order || 0,
+        isActive: subcategoryData.isActive !== undefined ? subcategoryData.isActive : true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        __isOptimistic: true
+        servicesCount: 0,
+        gigsCount: 0,
+        __isOptimistic: true,
+        __tempId: tempId
       };
       
+      console.log('[CREATE SUBCATEGORY] Optimistic subcategory:', optimisticSubcategory);
+      
+      // Update cache optimistically
       queryClient.setQueryData(['admin', 'subcategories'], (old) => {
-        if (!old) return old;
+        console.log('[CREATE SUBCATEGORY] Old data:', old);
+        if (!old || !old.data) {
+          return {
+            data: [optimisticSubcategory],
+            pagination: {
+              total: 1,
+              totalPages: 1,
+              page: 1,
+              limit: 20,
+              hasNext: false,
+              hasPrev: false
+            },
+            success: true
+          };
+        }
+        
         return {
           ...old,
-          data: [tempSubcategory, ...old.data]
+          data: [optimisticSubcategory, ...old.data],
+          pagination: {
+            ...old.pagination,
+            total: old.pagination.total + 1
+          }
         };
       });
       
-      return { previousSubcategories, tempId };
+      // Return context for rollback
+      return { 
+        previousSubcategories, 
+        tempId,
+        optimisticSubcategory 
+      };
     },
     onSuccess: (response, variables, context) => {
+      console.log('[CREATE SUBCATEGORY] Success:', response.data);
+      
       if (response.data.success) {
         toast.success('Subcategory created successfully');
         
-        // Remove optimistic entry and add the real one
-        if (context?.tempId) {
+        // Replace optimistic entry with real data
+        if (context?.tempId && response.data.data) {
           queryClient.setQueryData(['admin', 'subcategories'], (old) => {
-            if (!old) return old;
+            if (!old || !old.data) return old;
+            
+            const newData = old.data.map(item => 
+              item._id === context.tempId || item.__tempId === context.tempId 
+                ? { ...response.data.data, __isOptimistic: false } 
+                : item
+            ).filter(item => !item.__isOptimistic || item._id === response.data.data._id);
+            
             return {
               ...old,
-              data: old.data
-                .filter(sub => sub._id !== context.tempId)
-                .concat(response.data?.data || response.data)
+              data: newData
             };
           });
         }
         
-        queryClient.invalidateQueries(['admin', 'subcategories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
+        // Invalidate and refetch after a short delay
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'subcategories']);
+          queryClient.invalidateQueries(['admin', 'dashboard']);
+        }, 100);
       } else {
         toast.error(response.data.message || 'Creation failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[CREATE SUBCATEGORY ERROR]', error);
+      
+      // Rollback optimistic update
       if (context?.previousSubcategories) {
         queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
+        console.log('[CREATE SUBCATEGORY] Rolled back optimistic update');
       }
-      toast.error(error.response?.data?.message || 'Failed to create subcategory');
+      
+      // Show error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to create subcategory';
+      
+      // Show validation errors if they exist
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          toast.error(err);
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     }
   });
 };
@@ -1608,94 +1716,269 @@ export const useUpdateSubcategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => adminAPI.updateSubcategory(id, data),
+    mutationFn: async ({ id, data }) => {
+      console.log('[USE UPDATE SUBCATEGORY] Updating:', { id, data });
+      
+      // Remove any __isOptimistic flags from data
+      const cleanData = { ...data };
+      delete cleanData.__isOptimistic;
+      delete cleanData.__tempId;
+      
+      try {
+        const response = await adminAPI.updateSubcategory(id, cleanData);
+        console.log('[USE UPDATE SUBCATEGORY] Response:', response.data);
+        return response;
+      } catch (error) {
+        console.error('[USE UPDATE SUBCATEGORY] Error:', error);
+        throw error;
+      }
+    },
     onMutate: async ({ id, data }) => {
+      console.log('[USE UPDATE SUBCATEGORY] Optimistic update for:', id);
+      console.log('[USE UPDATE SUBCATEGORY] New data:', data);
+      
+      // Cancel outgoing queries
       await queryClient.cancelQueries(['admin', 'subcategories']);
+      await queryClient.cancelQueries(['admin', 'subcategories', id]);
       
+      // Store previous data for rollback
       const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      const previousSubcategory = queryClient.getQueryData(['admin', 'subcategories', id]);
       
+      console.log('[USE UPDATE SUBCATEGORY] Previous data in cache:', previousSubcategories?.data?.find(s => s._id === id));
+      
+      // Get current timestamp for optimistic update
+      const now = new Date().toISOString();
+      
+      // Update cache optimistically - THIS IS WHERE THE UI SHOULD UPDATE
       queryClient.setQueryData(['admin', 'subcategories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
+        console.log('[USE UPDATE SUBCATEGORY] Updating cache with data:', data);
+        
         return {
           ...old,
           data: old.data.map(subcategory => 
             subcategory._id === id 
-              ? { ...subcategory, ...data, updatedAt: new Date().toISOString() }
+              ? { 
+                  ...subcategory, 
+                  ...data,
+                  updatedAt: now,
+                  __isUpdating: true, // Mark as updating for UI feedback
+                  __optimisticUpdate: true
+                } 
               : subcategory
           )
         };
       });
       
-      return { previousSubcategories };
+      // Also update the specific subcategory cache
+      queryClient.setQueryData(['admin', 'subcategories', id], (old) => {
+        if (!old) return { ...data, updatedAt: now, __optimisticUpdate: true };
+        return {
+          ...old,
+          ...data,
+          updatedAt: now,
+          __optimisticUpdate: true
+        };
+      });
+      
+      return { 
+        previousSubcategories, 
+        previousSubcategory,
+        optimisticId: id 
+      };
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables, context) => {
+      console.log('[USE UPDATE SUBCATEGORY] Success:', response.data);
+      console.log('[USE UPDATE SUBCATEGORY] Response data:', response.data.data);
+      
       if (response.data.success) {
         toast.success('Subcategory updated successfully');
-        queryClient.invalidateQueries(['admin', 'subcategories']);
+        
+        // Update cache with server response
+        if (response.data.data) {
+          console.log('[USE UPDATE SUBCATEGORY] Updating cache with server response');
+          
+          // Update the specific subcategory
+          queryClient.setQueryData(['admin', 'subcategories', variables.id], {
+            ...response.data.data,
+            __isUpdating: false
+          });
+          
+          // Update in the list
+          queryClient.setQueryData(['admin', 'subcategories'], (old) => {
+            if (!old || !old.data) return old;
+            
+            return {
+              ...old,
+              data: old.data.map(subcategory => 
+                subcategory._id === variables.id 
+                  ? { 
+                      ...response.data.data,
+                      __isUpdating: false,
+                      __optimisticUpdate: false
+                    } 
+                  : subcategory
+              )
+            };
+          });
+        }
+        
+        // Force refresh the specific query to ensure consistency
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'subcategories', variables.id]);
+          queryClient.invalidateQueries(['admin', 'subcategories']);
+        }, 100);
       } else {
         toast.error(response.data.message || 'Update failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[USE UPDATE SUBCATEGORY] Mutation error:', error);
+      console.error('[USE UPDATE SUBCATEGORY] Error response:', error.response?.data);
+      
+      // Rollback optimistic update on error
       if (context?.previousSubcategories) {
+        console.log('[USE UPDATE SUBCATEGORY] Rolling back list cache');
         queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
       }
-      toast.error(error.response?.data?.message || 'Failed to update subcategory');
+      
+      if (context?.previousSubcategory) {
+        console.log('[USE UPDATE SUBCATEGORY] Rolling back item cache');
+        queryClient.setQueryData(['admin', 'subcategories', variables.id], context.previousSubcategory);
+      }
+      
+      // Show error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to update subcategory';
+      
+      toast.error(errorMessage);
     }
   });
 };
 
+// Update the deleteSubcategory hook
 export const useDeleteSubcategory = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, options = {} }) => adminAPI.deleteSubcategory(id, options),
-    onMutate: async ({ id }) => {
+    mutationFn: async (deleteOptions) => {
+      console.log('[DELETE SUBCATEGORY] Options:', deleteOptions);
+      
+      // Handle different parameter formats
+      const { id, permanent = false, force = false } = deleteOptions;
+      
+      if (!id) {
+        throw new Error('Subcategory ID is required');
+      }
+      
+      const params = {
+        permanent: String(permanent).toLowerCase(),
+        force: String(force).toLowerCase()
+      };
+      
+      return await adminAPI.deleteSubcategory(id, params);
+    },
+    onMutate: async (deleteOptions) => {
+      const { id } = deleteOptions;
+      
+      console.log('[DELETE SUBCATEGORY] Optimistic delete for:', id);
+      
+      // Cancel outgoing queries
       await queryClient.cancelQueries(['admin', 'subcategories']);
+      await queryClient.cancelQueries(['admin', 'subcategories', id]);
       
+      // Store previous data for rollback
       const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
+      const previousSubcategory = queryClient.getQueryData(['admin', 'subcategories', id]);
       
+      // Remove from cache immediately - THIS IS KEY FOR INSTANT UI UPDATE
       queryClient.setQueryData(['admin', 'subcategories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
+        const newData = old.data.filter(subcategory => subcategory._id !== id);
+        
         return {
           ...old,
-          data: old.data.filter(subcategory => subcategory._id !== id)
+          data: newData,
+          pagination: {
+            ...old.pagination,
+            total: Math.max(0, old.pagination.total - 1)
+          }
         };
       });
       
-      return { previousSubcategories };
+      // Remove specific subcategory cache
+      queryClient.removeQueries(['admin', 'subcategories', id]);
+      
+      return { 
+        previousSubcategories, 
+        previousSubcategory,
+        deletedId: id 
+      };
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables, context) => {
+      console.log('[DELETE SUBCATEGORY] Success:', response.data);
+      
       if (response.data.success) {
-        toast.success('Subcategory deleted successfully');
-        queryClient.invalidateQueries(['admin', 'subcategories']);
-        queryClient.invalidateQueries(['admin', 'dashboard']);
+        const message = variables.permanent 
+          ? 'Subcategory permanently deleted' 
+          : 'Subcategory soft deleted successfully';
+        toast.success(message);
+        
+        // The optimistic update already removed it, just invalidate for consistency
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'subcategories']);
+          queryClient.invalidateQueries(['admin', 'dashboard']);
+        }, 100);
       } else {
         toast.error(response.data.message || 'Delete failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[DELETE SUBCATEGORY ERROR]', error);
+      
+      // Rollback on error - PUT IT BACK
       if (context?.previousSubcategories) {
         queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
       }
-      toast.error(error.response?.data?.message || 'Failed to delete subcategory');
+      if (context?.previousSubcategory) {
+        queryClient.setQueryData(['admin', 'subcategories', context.deletedId], context.previousSubcategory);
+      }
+      
+      // Show appropriate error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Failed to delete subcategory';
+      
+      toast.error(errorMessage);
     }
   });
 };
 
+// Fix the bulk operations hook too
 export const useBulkSubcategoryOperations = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ ids, operation, data = {} }) => 
-      adminAPI.bulkUpdateSubcategories({ ids, operation, data }),
+    mutationFn: async ({ ids, operation, data = {} }) => {
+      console.log('[BULK SUBCATEGORY] Operation:', operation, 'IDs:', ids);
+      return await adminAPI.bulkUpdateSubcategories({ ids, operation, data });
+    },
     onMutate: async ({ ids, operation, data }) => {
+      console.log('[BULK SUBCATEGORY] Optimistic update for:', ids);
+      
       await queryClient.cancelQueries(['admin', 'subcategories']);
       
       const previousSubcategories = queryClient.getQueryData(['admin', 'subcategories']);
       
+      // Optimistic update
       queryClient.setQueryData(['admin', 'subcategories'], (old) => {
-        if (!old) return old;
+        if (!old || !old.data) return old;
+        
+        const now = new Date().toISOString();
         return {
           ...old,
           data: old.data.map(subcategory => 
@@ -1705,6 +1988,8 @@ export const useBulkSubcategoryOperations = () => {
                   ...data,
                   ...(operation === 'activate' ? { isActive: true } : {}),
                   ...(operation === 'deactivate' ? { isActive: false } : {}),
+                  updatedAt: now,
+                  __bulkOperation: true
                 } 
               : subcategory
           )
@@ -1713,23 +1998,36 @@ export const useBulkSubcategoryOperations = () => {
       
       return { previousSubcategories };
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables, context) => {
+      console.log('[BULK SUBCATEGORY] Success:', response.data);
+      
       if (response.data.success) {
-        toast.success(response.data.message || 'Bulk operation completed');
-        queryClient.invalidateQueries(['admin', 'subcategories']);
+        toast.success(`Successfully ${variables.operation}d ${variables.ids.length} subcategories`);
+        
+        // Force refetch after successful bulk operation to get accurate data
+        setTimeout(() => {
+          queryClient.invalidateQueries(['admin', 'subcategories']);
+        }, 100);
       } else {
         toast.error(response.data.message || 'Bulk operation failed');
       }
     },
     onError: (error, variables, context) => {
+      console.error('[BULK SUBCATEGORY ERROR]', error);
+      
+      // Rollback on error
       if (context?.previousSubcategories) {
         queryClient.setQueryData(['admin', 'subcategories'], context.previousSubcategories);
       }
-      toast.error(error.response?.data?.message || 'Bulk operation failed');
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          'Bulk operation failed';
+      
+      toast.error(errorMessage);
     }
   });
 };
-
 export const useBulkUserOperations = () => {
   const queryClient = useQueryClient();
 

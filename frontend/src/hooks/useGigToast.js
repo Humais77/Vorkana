@@ -24,7 +24,7 @@ export const useGigToast = () => {
   };
 
   // Show loading toast
-  const showGigLoading = useCallback((message = 'Updating gig...') => {
+  const showGigLoading = useCallback((message = 'Processing gig...') => {
     if (loadingToastIdRef.current) {
       dismissToast(loadingToastIdRef.current);
     }
@@ -72,7 +72,7 @@ export const useGigToast = () => {
     return showWarningToast(safeMessage, options);
   }, []);
 
-  // Show error toast
+  // Show error toast - handles backend validation errors
   const showGigError = useCallback((message, options = {}) => {
     if (loadingToastIdRef.current) {
       dismissToast(loadingToastIdRef.current);
@@ -80,6 +80,14 @@ export const useGigToast = () => {
     }
     
     const safeMessage = ensureString(message);
+    
+    // Check if it's an error object with validation errors
+    if (typeof message === 'object' && message.response?.data?.errors) {
+      // Return the first validation error
+      const firstError = message.response.data.errors[0];
+      return showErrorToast(firstError, options);
+    }
+    
     return showErrorToast(safeMessage, options);
   }, []);
 
@@ -97,6 +105,21 @@ export const useGigToast = () => {
     }
   }, []);
 
+  // Show multiple validation errors
+  const showGigValidationErrors = useCallback((errors = []) => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    if (errors.length === 1) {
+      showGigError(errors[0]);
+    } else if (errors.length > 1) {
+      // Show first error and mention there are more
+      showGigError(`${errors[0]} (and ${errors.length - 1} more errors)`);
+    }
+  }, [showGigError]);
+
   return {
     showGigLoading,
     showGigUpdateSuccess,
@@ -104,6 +127,7 @@ export const useGigToast = () => {
     showGigWarning,
     showGigError,
     showGigInfo,
+    showGigValidationErrors,
     dismissGigToast,
     loadingToastIdRef
   };

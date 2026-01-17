@@ -1,54 +1,55 @@
-import React, { useState } from 'react';
-import { FiXCircle, FiTrash2, FiAlertTriangle, FiInfo, FiDatabase, FiHardDrive } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiXCircle, FiTrash2, FiAlertTriangle, FiInfo, FiDatabase, FiHardDrive, FiLoader, FiAlertCircle } from 'react-icons/fi';
 
-const GigDeleteModal = ({ gig, isOpen, onClose, onDelete, permanent = false }) => {
+const GigDeleteModal = ({ gig, isOpen, onClose, onDelete, loading, error, permanent = false }) => {
   const [deleteType, setDeleteType] = useState(permanent ? 'permanent' : 'soft');
   const [forceDelete, setForceDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (error) {
+      const message = error.response?.data?.message || error.message || 'Failed to delete gig';
+      setErrorMessage(message);
+    } else {
+      setErrorMessage('');
+    }
+  }, [error]);
 
-  // In GigDeleteModal.jsx - Fix the handleDelete function
-const handleDelete = async () => {
-  setDeleting(true);
-  setError('');
-  
-  try {
-    console.log('Deleting gig with data:', {
-      gig: gig,
-      id: gig._id,
-      type: typeof gig._id
-    });
+  useEffect(() => {
+    if (loading) {
+      setDeleting(true);
+    } else {
+      setDeleting(false);
+    }
+  }, [loading]);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setErrorMessage('');
     
-    // Ensure we're passing only the string ID
-    const gigId = gig._id.toString(); // Explicitly convert to string
-    
-    // Pass the ID string, not the object
-    await onDelete({
-      id: gigId, // Pass the string ID
-      permanent: deleteType === 'permanent',
-      force: forceDelete
-    });
-    
-    onClose();
-  } catch (err) {
-    console.error('Delete error details:', {
-      error: err,
-      message: err.message,
-      response: err.response?.data
-    });
-    setError(err.response?.data?.message || err.message || 'Failed to delete gig');
-  } finally {
-    setDeleting(false);
-  }
-};
+    try {
+      const gigId = gig._id.toString();
+      
+      await onDelete({
+        id: gigId,
+        permanent: deleteType === 'permanent',
+        force: forceDelete
+      });
+      
+      onClose();
+    } catch (err) {
+      const message = err.response?.data?.message || err.message || 'Failed to delete gig';
+      setErrorMessage(message);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const getDependencyCounts = () => {
-    // In a real app, you would fetch these counts from your API
     return {
       bids: gig.bids?.length || 0,
-      messages: 0, // You would need to fetch this from your API
+      messages: 0,
       reviews: 0,
       files: gig.attachments?.length || 0
     };
@@ -56,6 +57,8 @@ const handleDelete = async () => {
 
   const dependencies = getDependencyCounts();
   const hasDependencies = Object.values(dependencies).some(count => count > 0);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -71,6 +74,21 @@ const handleDelete = async () => {
               <p className="text-sm text-gray-500">{gig.title}</p>
             </div>
           </div>
+
+          {/* Error Message */}
+          {errorMessage && (
+            <div className="mb-6">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <FiAlertCircle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm text-red-800 font-medium">Error</p>
+                    <p className="text-sm text-red-700 mt-1">{errorMessage}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Warning Message */}
           <div className="mb-6">
@@ -100,11 +118,12 @@ const handleDelete = async () => {
               <button
                 type="button"
                 onClick={() => setDeleteType('soft')}
+                disabled={deleting}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'soft'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } disabled:opacity-50`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -126,11 +145,12 @@ const handleDelete = async () => {
               <button
                 type="button"
                 onClick={() => setDeleteType('permanent')}
+                disabled={deleting}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'permanent'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } disabled:opacity-50`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -184,22 +204,14 @@ const handleDelete = async () => {
                       type="checkbox"
                       checked={forceDelete}
                       onChange={(e) => setForceDelete(e.target.checked)}
-                      className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                      disabled={deleting}
+                      className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500 disabled:opacity-50"
                     />
                     <span className="ml-2 text-sm text-amber-700 font-medium">
                       Force delete despite dependencies
                     </span>
                   </label>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-700">{error}</p>
               </div>
             </div>
           )}
@@ -226,7 +238,7 @@ const handleDelete = async () => {
             >
               {deleting ? (
                 <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <FiLoader className="h-4 w-4 animate-spin" />
                   <span>Deleting...</span>
                 </>
               ) : (

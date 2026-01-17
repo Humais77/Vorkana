@@ -11,6 +11,7 @@ const {
 } = require('../middleware/admin.middleware.js');
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
+const gigController = require('../controllers/gig.controller.js');
 const mongoose = require('mongoose');
 // IMPORT MODELS
 const Category = require('../models/category.model.js');
@@ -937,10 +938,6 @@ router.put('/services/:id',
   serviceController.updateService
 );
 
-
-// ============================================
-// GIG MANAGEMENT ROUTES
-// ============================================
 router.get('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -948,9 +945,15 @@ router.get('/gigs',
   auditLog('VIEW_GIGS', 'gigs'),
   cacheMiddleware(300, 'admin:gigs'), // Cache for 5 minutes
   async (req, res, next) => {
-    req.query.isAdmin = true;
+    // Set admin flags for gig controller
+    req.user = { 
+      role: 'admin', 
+      _id: req.admin._id,
+      ...req.admin 
+    };
     req.query.showAll = true;
     req.query.includeInactive = true;
+    req.query.isAdmin = true;
     
     if (req.query.page) req.query.page = parseInt(req.query.page);
     if (req.query.limit) req.query.limit = parseInt(req.query.limit);
@@ -963,26 +966,10 @@ router.get('/gigs',
     
     next();
   },
-  adminController.getGigs
+  gigController.getGigs // Use main gig controller
 );
 
-router.get('/gigs/stats', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_GIG_STATS', 'gigs'),
-  cacheMiddleware(300, 'admin:gigs:stats'), // Cache for 5 minutes
-  adminController.getGigStats
-);
-
-router.get('/gigs/export', 
-  verifyAdmin, 
-  requirePermission('manage_gigs'),
-  auditLog('EXPORT_GIGS', 'gigs'),
-  cacheMiddleware(3600, 'admin:gigs:export'), // Cache exports for 1 hour
-  adminController.exportGigs
-);
-
-// Ensure the GET /api/admin/gigs/:id route includes proper population
+// Get gig by ID (admin view)
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -990,36 +977,80 @@ router.get('/gigs/:id',
   auditLog('VIEW_GIG', 'gigs'),
   cacheMiddleware(600, 'admin:gig'), // Cache single item for 10 minutes
   async (req, res, next) => {
-    try {
-      // Add query parameters for population
-      req.query.populateSubcategory = true;
-      req.query.populateCategory = true;
-      next();
-    } catch (error) {
-      next(error);
-    }
+    // Set admin flags
+    req.user = { 
+      role: 'admin', 
+      _id: req.admin._id,
+      ...req.admin 
+    };
+    req.query.populateSubcategory = true;
+    req.query.populateCategory = true;
+    req.query.includeCommunication = true;
+    next();
   },
-  adminController.getGigById
+  gigController.getGigById // Use main gig controller
 );
 
+// Create gig (admin)
 router.post('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('CREATE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
-  adminController.createGig
+  // Use upload middleware if needed
+  // upload.array('images', 10),
+  async (req, res, next) => {
+    // Set admin as creator
+    req.user = { 
+      role: 'admin', 
+      _id: req.admin._id,
+      ...req.admin 
+    };
+    
+    // If client ID provided, set as createdBy
+    if (req.body.clientId) {
+      req.body.createdBy = req.body.clientId;
+    } else {
+      req.body.createdBy = req.admin._id;
+    }
+    
+    delete req.body.clientId;
+    next();
+  },
+  gigController.createGig // Use main gig controller
 );
 
+// Update gig (admin)
 router.put('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('UPDATE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
-  adminController.updateGig
+  // Add JSON body parser with version handling
+  express.json({ limit: '10mb' }),
+  async (req, res, next) => {
+    // Set admin user
+    req.user = { 
+      role: 'admin', 
+      _id: req.admin._id,
+      ...req.admin 
+    };
+    
+    // Log for debugging
+    console.log('[ADMIN UPDATE GIG] Request:', {
+      id: req.params.id,
+      body: req.body,
+      admin: req.admin.email
+    });
+    
+    next();
+  },
+  gigController.updateGig // Use main gig controller
 );
 
+// Delete gig (admin)
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -1028,42 +1059,156 @@ router.delete('/gigs/:id',
   clearCacheMiddleware('gigs'),
   express.json(),
   async (req, res, next) => {
-    try {
-      console.log('[ADMIN GIG DELETE] Request received:', {
-        params: req.params,
-        body: req.body,
-        query: req.query,
-        admin: req.admin?.email
-      });
-      
-      if (req.params.id === '[object Object]') {
-        console.log('[ADMIN GIG DELETE] Detected object ID, attempting to fix...');
-        
-        if (req.body && req.body.id) {
-          req.params.id = req.body.id;
-          console.log('[ADMIN GIG DELETE] Fixed ID from body:', req.params.id);
-        } else if (req.query && req.query.id) {
-          req.params.id = req.query.id;
-          console.log('[ADMIN GIG DELETE] Fixed ID from query:', req.params.id);
-        }
+    // Set admin user
+    req.user = { 
+      role: 'admin', 
+      _id: req.admin._id,
+      ...req.admin 
+    };
+    
+    // Fix ID if needed
+    if (req.params.id === '[object Object]') {
+      if (req.body && req.body.id) {
+        req.params.id = req.body.id;
+      } else if (req.query && req.query.id) {
+        req.params.id = req.query.id;
       }
-      
-      next();
-    } catch (error) {
-      console.error('[ADMIN GIG DELETE MIDDLEWARE ERROR]', error);
-      next(error);
     }
+    
+    // Parse query parameters
+    if (req.query.permanent) {
+      req.query.permanent = String(req.query.permanent).toLowerCase();
+    }
+    
+    if (req.query.force) {
+      req.query.force = String(req.query.force).toLowerCase();
+    }
+    
+    next();
   },
-  adminController.deleteGig
+  gigController.deleteGig // Use main gig controller
 );
 
+// Bulk operations (admin) - Keep this in admin controller or create new endpoint
 router.post('/gigs/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('BULK_GIG_ACTION', 'gigs'),
   clearCacheMiddleware('gigs'),
-  adminController.bulkUpdateGigs
+  async (req, res) => {
+    // For bulk operations, keep using admin controller or create new endpoint
+    try {
+      const { ids, operation, data = {} } = req.body;
+      
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No gigs selected',
+          code: 'NO_GIGS_SELECTED'
+        });
+      }
+      
+      let updateData = {};
+      let message = 'Gigs updated successfully';
+      
+      switch (operation) {
+        case 'activate':
+          updateData = { status: 'open', isActive: true };
+          message = 'Gigs activated successfully';
+          break;
+        case 'pause':
+          updateData = { status: 'closed', isActive: false };
+          message = 'Gigs closed successfully';
+          break;
+        case 'delete':
+          // Use gig controller's delete function for each
+          const results = await Promise.all(
+            ids.map(id => 
+              Gig.findByIdAndUpdate(id, {
+                isActive: false,
+                deletedAt: new Date(),
+                deletedBy: req.admin._id
+              })
+            )
+          );
+          
+          // Invalidate cache
+          await adminController.invalidateAdminCache('gigs');
+          
+          return res.json({
+            success: true,
+            message: 'Gigs deleted successfully',
+            modifiedCount: results.filter(r => r).length
+          });
+        default:
+          updateData = data;
+      }
+      
+      updateData.lastUpdatedBy = req.admin._id;
+      
+      const result = await Gig.updateMany(
+        { _id: { $in: ids } },
+        { $set: updateData }
+      );
+      
+      // Invalidate cache
+      await adminController.invalidateAdminCache('gigs');
+      
+      res.json({
+        success: true,
+        message,
+        modifiedCount: result.modifiedCount
+      });
+      
+    } catch (error) {
+      console.error('[BULK UPDATE GIGS ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to perform bulk operation'
+      });
+    }
+  }
+);
+
+// Export gigs
+router.get('/gigs/export', 
+  verifyAdmin, 
+  requirePermission('manage_gigs'),
+  auditLog('EXPORT_GIGS', 'gigs'),
+  cacheMiddleware(3600, 'admin:gigs:export'), // Cache exports for 1 hour
+  async (req, res, next) => {
+    req.user = { role: 'admin', _id: req.admin._id };
+    next();
+  },
+  gigController.exportGigs // Use main gig controller
+);
+
+// Gig statistics
+router.get('/gigs/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_GIG_STATS', 'gigs'),
+  cacheMiddleware(300, 'admin:gigs:stats'), // Cache for 5 minutes
+  async (req, res, next) => {
+    req.user = { role: 'admin', _id: req.admin._id };
+    next();
+  },
+  gigController.getGigStats // Use main gig controller
+);
+
+// Restore gig (admin only)
+router.post('/gigs/:id/restore', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_gigs'),
+  auditLog('RESTORE_GIG', 'gigs'),
+  clearCacheMiddleware('gigs'),
+  async (req, res, next) => {
+    req.user = { role: 'admin', _id: req.admin._id };
+    next();
+  },
+  gigController.restoreGig // Use main gig controller
 );
 
 // ============================================

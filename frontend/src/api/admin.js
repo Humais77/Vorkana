@@ -15,13 +15,13 @@ const adminApi = axios.create({
 
 const cache = {
   memoryCache: new Map(),
-  
-  ttl: {
-    list: 5 * 60 * 1000,    // 5 minutes for lists
-    item: 10 * 60 * 1000,   // 10 minutes for single items
-    dropdown: 10 * 60 * 1000, // 10 minutes for dropdowns
-    stats: 5 * 60 * 1000,   // 5 minutes for stats
-    export: 60 * 60 * 1000, // 1 hour for exports
+  maxSize: 100,
+ ttl: {
+    list: 2 * 60 * 1000,    
+    item: 5 * 60 * 1000,   
+    dropdown: 5 * 60 * 1000,
+    stats: 2 * 60 * 1000,   
+    export: 30 * 60 * 1000,
   },
   
   generateKey: (endpoint, params = {}) => {
@@ -50,25 +50,93 @@ const cache = {
     
     return cached.data;
   },
-  
   set: (key, data, ttl = cache.ttl.list) => {
-    // Don't cache empty results
-    if (!data || (data.data && data.data.length === 0)) {
+    // Don't cache empty results or errors
+    if (!data || data.success === false || (data.data && data.data.length === 0)) {
       return;
     }
     
+    // Prevent circular references by creating a clean copy
+    const cleanData = JSON.parse(JSON.stringify(data));
+    
     cache.memoryCache.set(key, {
-      data,
+      data: cleanData,
       expiry: Date.now() + ttl,
       timestamp: new Date().toISOString()
     });
     
-    // Limit cache size
-    if (cache.memoryCache.size > 200) {
-      const firstKey = cache.memoryCache.keys().next().value;
-      cache.memoryCache.delete(firstKey);
+    // ENFORCE cache size limit aggressively
+    if (cache.memoryCache.size > cache.maxSize) {
+      // Remove oldest entries first
+      const keys = Array.from(cache.memoryCache.keys());
+      const keysToDelete = keys.slice(0, keys.length - cache.maxSize);
+      
+      keysToDelete.forEach(key => {
+        cache.memoryCache.delete(key);
+      });
+      
+      console.log(`[CACHE] Trimmed ${keysToDelete.length} entries, current size: ${cache.memoryCache.size}`);
+    }
+    
+    // Schedule automatic cleanup for this entry
+    setTimeout(() => {
+      if (cache.memoryCache.has(key)) {
+        cache.memoryCache.delete(key);
+      }
+    }, ttl + 10000); // 10 seconds grace period
+  },
+  
+  clearExpired: () => {
+    const now = Date.now();
+    let deletedCount = 0;
+    
+    for (const [key, entry] of cache.memoryCache.entries()) {
+      if (now > entry.expiry) {
+        cache.memoryCache.delete(key);
+        deletedCount++;
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`[CACHE CLEANUP] Removed ${deletedCount} expired entries`);
     }
   },
+  
+  // Add memory usage monitoring
+  getMemoryUsage: () => {
+    const entries = Array.from(cache.memoryCache.entries());
+    let totalSize = 0;
+    
+    entries.forEach(([key, value]) => {
+      try {
+        const keySize = new Blob([key]).size;
+        const valueSize = new Blob([JSON.stringify(value)]).size;
+        totalSize += keySize + valueSize;
+      } catch (e) {
+        // Ignore serialization errors
+      }
+    });
+    
+    return {
+      entries: cache.memoryCache.size,
+      approximateSize: `${Math.round(totalSize / 1024)} KB`,
+      maxSize: cache.maxSize,
+      hitRate: 'N/A' // Would need to track hits/misses
+    };
+  },
+  
+  // Add periodic cleanup
+  startCleanupInterval: () => {
+    // Clean expired entries every minute
+    setInterval(() => {
+      cache.clearExpired();
+      
+      // Log memory usage periodically
+      const usage = cache.getMemoryUsage();
+      console.log(`[CACHE MEMORY] ${usage.entries} entries, ${usage.approximateSize}`);
+    }, 60000); // Every minute
+  },
+  
   
   delete: (pattern) => {
     const keysToDelete = [];
@@ -97,6 +165,22 @@ const cache = {
     const pattern = `admin:categories:${categoryId}`;
     cache.delete(pattern);
     console.log(`[CACHE] Cleared cache for category: ${categoryId}`);
+  },
+  clearAllSubcategoryCache: () => {
+    cache.delete('admin:subcategories');
+    cache.delete('admin:dashboard');
+    console.log('[CACHE] Cleared all subcategory-related cache');
+  },
+  
+  clearSubcategoryListCache: () => {
+    cache.delete('admin:subcategories:list');
+    console.log('[CACHE] Cleared subcategory list cache');
+  },
+  
+  clearSpecificSubcategoryCache: (subcategoryId) => {
+    const pattern = `admin:subcategories:${subcategoryId}`;
+    cache.delete(pattern);
+    console.log(`[CACHE] Cleared cache for subcategory: ${subcategoryId}`);
   }
 };
 
@@ -244,7 +328,13 @@ const invalidateCategoryCache = () => {
 const invalidateSpecificCategoryCache = (categoryId) => {
   cache.clearSpecificCategoryCache(categoryId);
 };
+const invalidateSubcategoryCache = () => {
+  cache.clearAllSubcategoryCache();
+};
 
+const invalidateSpecificSubcategoryCache = (subcategoryId) => {
+  cache.clearSpecificSubcategoryCache(subcategoryId);
+};
 
 // Cache invalidation helpers
 const invalidateCache = (pattern) => {
@@ -491,8 +581,6 @@ export const adminAPI = {
     cache.delete('all');
     console.log('[CACHE] Cleared all cache');
   },
-  
-  // Subcategories (SEPARATE FROM CATEGORIES)
   getSubcategories: createCachedApiCall(
     (params) => adminApi.get('/api/admin/subcategories', { params }),
     'admin:subcategories:list',
@@ -505,30 +593,118 @@ export const adminAPI = {
     'item'
   ),
   
-  createSubcategory: (data) => {
-    invalidateCache('admin:subcategories:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.post('/api/admin/subcategories', data);
+  createSubcategory: async (data) => {
+    try {
+      console.log('[API CREATE SUBCATEGORY] Sending data:', data);
+      const response = await adminApi.post('/api/admin/subcategories', data);
+      console.log('[API CREATE SUBCATEGORY] Response:', response.data);
+      
+      // Force clear frontend cache
+      invalidateSubcategoryCache();
+      cache.clearAllSubcategoryCache();
+      
+      // Clear related categories cache since subcategories are linked
+      cache.delete('admin:categories:*');
+      
+      // Show success message
+      if (response.data.success) {
+        toast.success('Subcategory created successfully');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[API CREATE SUBCATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  updateSubcategory: (id, data) => {
-    invalidateCache(`admin:subcategories:item:${id}`);
-    invalidateCache('admin:subcategories:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.put(`/api/admin/subcategories/${id}`, data);
+  updateSubcategory: async (id, data) => {
+    try {
+      console.log('[API UPDATE SUBCATEGORY] Updating:', id, data);
+      const response = await adminApi.put(`/api/admin/subcategories/${id}`, data);
+      console.log('[API UPDATE SUBCATEGORY] Response:', response.data);
+      
+      // Force clear frontend cache
+      invalidateSpecificSubcategoryCache(id);
+      cache.clearSubcategoryListCache();
+      invalidateSubcategoryCache();
+      
+      // Clear related categories cache
+      if (data.category) {
+        cache.delete(`admin:categories:${data.category}:*`);
+      }
+      
+      // Show success message
+      if (response.data.success) {
+        toast.success('Subcategory updated successfully');
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[API UPDATE SUBCATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  deleteSubcategory: (id, params = {}) => {
-    invalidateCache(`admin:subcategories:item:${id}`);
-    invalidateCache('admin:subcategories:list:*');
-    invalidateCache('admin:dashboard:*');
-    return adminApi.delete(`/api/admin/subcategories/${id}`, { params });
+  deleteSubcategory: async (id, params = {}) => {
+    try {
+      console.log('[API DELETE SUBCATEGORY] Deleting:', id, params);
+      const response = await adminApi.delete(`/api/admin/subcategories/${id}`, { params });
+      console.log('[API DELETE SUBCATEGORY] Response:', response.data);
+      
+      // Force clear all cache
+      invalidateSpecificSubcategoryCache(id);
+      cache.clearSubcategoryListCache();
+      invalidateSubcategoryCache();
+      cache.delete('admin:dashboard:*');
+      
+      // Clear related categories cache
+      cache.delete('admin:categories:*');
+      
+      // Show success message based on deletion type
+      if (response.data.success) {
+        const message = params.permanent === 'true' 
+          ? 'Subcategory permanently deleted' 
+          : 'Subcategory soft deleted successfully';
+        toast.success(message);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('[API DELETE SUBCATEGORY ERROR]', error);
+      throw error;
+    }
   },
   
-  bulkUpdateSubcategories: ({ ids, operation, data = {} }) => {
-    invalidateCache('admin:subcategories:*');
-    return adminApi.post('/api/admin/subcategories/bulk', { ids, operation, data });
+  bulkUpdateSubcategories: async ({ ids, operation, data = {} }) => {
+    try {
+      console.log('[API BULK UPDATE SUBCATEGORIES] Operation:', operation, 'IDs:', ids);
+      // Clear all subcategory cache before bulk operation
+      invalidateSubcategoryCache();
+      
+      const response = await adminApi.post('/api/admin/subcategories/bulk-action', { 
+        ids, 
+        operation, 
+        data 
+      });
+      
+      console.log('[API BULK UPDATE SUBCATEGORIES] Response:', response.data);
+      
+      if (response.data.success) {
+        toast.success(`Successfully ${operation}d ${ids.length} subcategories`);
+      }
+      
+      // Clear categories cache since subcategories are linked
+      cache.delete('admin:categories:*');
+      
+      return response;
+    } catch (error) {
+      console.error('[API BULK UPDATE SUBCATEGORIES ERROR]', error);
+      throw error;
+    }
   },
+  
+  
   
   getSubcategoryStats: createCachedApiCall(
     () => adminApi.get('/api/admin/subcategories/stats'),
@@ -781,6 +957,8 @@ export const adminAPI = {
 export const adminCache = {
   invalidateCategoryCache,
   invalidateSpecificCategoryCache,
+  invalidateSubcategoryCache,
+  invalidateSpecificSubcategoryCache,
   clearAll: () => cache.delete('all')
 };
 
@@ -789,7 +967,9 @@ window.addEventListener('beforeunload', () => {
   // Keep cache for page reloads
 });
 
-
+if (typeof window !== 'undefined') {
+  cache.startCleanupInterval();
+}
 if (process.env.NODE_ENV === 'development') {
   window.adminCache = cache;
 }
