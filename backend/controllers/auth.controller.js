@@ -413,7 +413,7 @@ const session = await SessionService.createSession(user._id, req, {
       message: 'Login successful',
       user: userResponse,
       session: {
-        id: session.sessionId,
+       
         expiresAt: session.expiresAt,
         idleTimeout: 3 * 60 * 60 * 1000, // 3 hours in ms
         timeoutMinutes: 180

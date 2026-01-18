@@ -113,21 +113,38 @@ class EmailService {
   }
 
   // Specific email templates
-  async sendVerificationEmail(user, token) {
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${token}`;
-    
-    return this.sendEmail(
-      user.email,
-      'Verify Your Email Address - Vorkanna',
-      'verify-email',
-      {
-        name: user.name,
-        verificationUrl,
-        expiresIn: '24 hours',
-        buttonText: 'Verify Email Address'
-      }
-    );
+  async sendVerificationEmail(email, name, token, sessionId = null) {
+  // Determine verification URL with sessionId
+  let verificationUrl;
+  
+  if (sessionId) {
+    // Mobile-friendly URL with sessionId for cross-device
+    verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${token}?sessionId=${sessionId}`;
+  } else {
+    // Regular verification
+    verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email/${token}`;
   }
+
+  // Also create a direct verification link for mobile
+  const mobileVerificationUrl = `${process.env.API_URL || 'http://localhost:5000'}/api/auth/verify-email/${token}?sessionId=${sessionId}`;
+  
+  return this.sendEmail(
+    email,
+    'Verify Your Email Address - Vorkanna',
+    'verify-email',
+    {
+      name: name || 'User',
+      verificationUrl,
+      mobileVerificationUrl,
+      sessionId,
+      expiresIn: '24 hours',
+      buttonText: 'Verify Email Address',
+      instructions: sessionId 
+        ? 'You can verify on any device. This verification is linked to your active session.'
+        : 'Click the link to verify your email address.'
+    }
+  );
+}
 
   async sendPasswordResetEmail(user, token) {
   // Use frontend reset password page directly

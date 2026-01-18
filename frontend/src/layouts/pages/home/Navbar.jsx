@@ -8,13 +8,14 @@ import default_pp from '../../../assets/default_pp-modified.png'
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
-
+import { useSessionWatcher } from '../../../hooks/useAuth';
 const LOGO_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
 });
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
+   useSessionWatcher();
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
@@ -210,6 +211,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               >
                 <img
   src={LOGO_URL}
+  alt="Vorkanna"
   className="h-10 lg:h-10 w-auto object-contain"
  />
 
@@ -237,7 +239,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               >
                 <img
                   src={LOGO_URL}
-                  alt="Vorkanna Logo"
+                  alt="Vorkanna"
                   className="h-10 w-auto pointer-events-none"
                   loading="eager"
                   draggable="false"
@@ -584,7 +586,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-1">
-                        <img src={LOGO_URL} alt="Vorkanna Logo" className="h-10 w-auto" loading="eager" />
+                        <img src={LOGO_URL} alt="Vorkanna" className="h-10 w-auto" loading="eager" />
                       </div>
                       <button
                         onClick={() => setMobileMenuOpen(false)}

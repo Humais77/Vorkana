@@ -22,6 +22,7 @@ const signupStructuredData = {
 const Signup = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
   const loading = useAuthStore((state) => state.loading);
   const error = useAuthStore((state) => state.error);
   const clearError = useAuthStore((state) => state.clearError);
@@ -44,25 +45,48 @@ const Signup = () => {
 
   // Handle URL parameters
   useEffect(() => {
-    const error = searchParams.get('error');
-    const message = searchParams.get('message');
-    const email = searchParams.get('email');
-
-    if (error === 'email_exists') {
-      toast.error(`Email ${email || ''} is already registered. Please use a different email.`);
-      setShowEmailForm(true);
-      if (email) {
-        setSignupData(prev => ({ ...prev, email }));
+    const checkOAuthResult = async () => {
+      const oauthSuccess = searchParams.get('oauth_success');
+      const error = searchParams.get('error');
+      const data = searchParams.get('data');
+      
+      if (oauthSuccess === 'true' && data) {
+        try {
+          const userData = JSON.parse(decodeURIComponent(data));
+          
+          // Store user data in auth store
+          useAuthStore.setState({
+            user: userData.user,
+            isAuthenticated: true,
+            loading: false,
+            error: null
+          });
+          
+          // Clear URL params
+          navigate('/dashboard', { replace: true });
+          
+          toast.success('Successfully signed in with Google!');
+          
+        } catch (err) {
+          console.error('Error parsing OAuth data:', err);
+          toast.error('Failed to process authentication');
+        }
       }
-    } else if (message) {
-      toast(message);
-    }
-
-    // Clear URL parameters
-    if (error || message) {
-      navigate('/signup', { replace: true });
-    }
+      
+      if (error === 'email_exists') {
+        toast.error('Email already exists. Please sign in instead.');
+        navigate('/signin', { replace: true });
+      } else if (error === 'user_exists') {
+        toast.error('User already exists. Please sign in.');
+        navigate('/signin', { replace: true });
+      } else if (error === 'auth_failed') {
+        toast.error('Authentication failed. Please try again.');
+      }
+    };
+    
+    checkOAuthResult();
   }, [searchParams, navigate]);
+
 
   // Clear errors when component unmounts
   useEffect(() => {
@@ -142,11 +166,15 @@ const Signup = () => {
       setIsSubmitting(false);
     }
   };
-
-  const handleGoogleAuth = () => {
+const handleGoogleAuth = () => {
+    // Store where user came from
+    const currentPath = window.location.pathname;
+    document.cookie = `return_to=${currentPath}; path=/; max-age=300; samesite=strict`;
+    
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
     window.location.href = `${backendUrl}/api/auth/google`;
   };
+
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
@@ -179,21 +207,21 @@ const Signup = () => {
   const renderSocialButtons = () => (
     <div className="space-y-4">
       <button
-        onClick={handleGoogleAuth}
-        disabled={loading || isSubmitting}
-        className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-base"
-        aria-label="Continue with Google"
-      >
-        <img
-          src="https://www.google.com/favicon.ico"
-          alt="Google logo"
-          className="w-5 h-5 mr-3"
-          loading="lazy"
-          width="20"
-          height="20"
-        />
-        Continue with Google
-      </button>
+      onClick={handleGoogleAuth}
+      disabled={loading || isSubmitting}
+      className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed text-base"
+      aria-label="Continue with Google"
+    >
+      <img
+        src="https://www.google.com/favicon.ico"
+        alt="Google logo"
+        className="w-5 h-5 mr-3"
+        loading="lazy"
+        width="20"
+        height="20"
+      />
+      Continue with Google
+    </button>
 
       <button
         onClick={() => setShowEmailForm(true)}

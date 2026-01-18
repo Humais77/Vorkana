@@ -289,7 +289,6 @@ router.get("/google",
   }
 );
 
-// In the Google callback route
 router.get("/google/callback",
   (req, res, next) => {
     const state = req.query.state;
@@ -300,11 +299,7 @@ router.get("/google/callback",
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_state`);
     }
     
-    res.clearCookie('oauth_state', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-    });
+    res.clearCookie('oauth_state');
     
     passport.authenticate("google", {
       failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
@@ -313,12 +308,15 @@ router.get("/google/callback",
       if (err || !user) {
         console.error('Google OAuth error:', err || info);
         
-        // Check if error is duplicate email (email/password user trying Google)
-        if (err?.message?.includes('duplicate') || err?.message?.includes('already exists')) {
-          return res.redirect(`${process.env.FRONTEND_URL}/login?error=email_exists&email=${encodeURIComponent(err.email || '')}`);
+        // Handle specific errors
+        let errorParam = 'auth_failed';
+        if (err?.message?.includes('already exists') || err?.message?.includes('already registered')) {
+          errorParam = 'user_exists';
+        } else if (err?.message?.includes('Email already exists')) {
+          errorParam = 'email_exists';
         }
         
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL}/signin?error=${errorParam}`);
       }
       
       try {
@@ -331,7 +329,7 @@ router.get("/google/callback",
         // Set auth cookies
         SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken);
         
-        // Redirect to success page with user data
+        // Prepare user data for frontend
         const userData = encodeURIComponent(JSON.stringify({
           sessionId: session.sessionId,
           expiresAt: session.expiresAt,
@@ -341,15 +339,21 @@ router.get("/google/callback",
             email: user.email,
             picture: user.picture,
             role: user.role,
-            emailVerified: true, // Google users are always verified
-            registrationStatus: 'verified'
+            emailVerified: user.emailVerified,
+            registrationStatus: user.registrationStatus,
+            isOnline: user.isOnline
           }
         }));
         
-        res.redirect(`${process.env.FRONTEND_URL}/oauth-success?data=${userData}`);
+        // Redirect based on where user came from
+        const returnTo = req.cookies?.return_to || `${process.env.FRONTEND_URL}/dashboard`;
+        res.clearCookie('return_to');
+        
+        res.redirect(`${returnTo}?oauth_success=true&data=${userData}`);
+        
       } catch (error) {
         console.error('Google session creation error:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/login?error=session_failed`);
+        res.redirect(`${process.env.FRONTEND_URL}/signin?error=session_failed`);
       }
     })(req, res, next);
   }

@@ -9,7 +9,7 @@ import {
 import { SeoWrapper } from '../../components/SeoWrapper';
 import { useSearchResults } from '../../hooks/useSearch';
 import toast from 'react-hot-toast';
-import SearchComponent from '../../components/search/SearchComponent';
+import SearchComponent from '../../components/Search/SearchComponent';
 
 const SearchResults = () => {
   const [searchParams, setSearchParams] = useSearchParams();

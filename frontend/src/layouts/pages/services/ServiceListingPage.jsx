@@ -19,7 +19,6 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { useServices, useSearchServices, useCategories } from "../../../hooks/useServices";
-import { useToggleLike } from "../../../hooks/useServices";
 import { toast } from "react-hot-toast";
 import { SeoWrapper } from "../../../components/SeoWrapper";
 
@@ -96,8 +95,6 @@ const ServiceListingPage = () => {
       maxPrice: priceRange[1] < 10000 ? priceRange[1] : undefined,
     })
   );
-
-  const { mutate: toggleLike } = useToggleLike();
 
   // Handle API errors
   useEffect(() => {
@@ -216,20 +213,7 @@ const ServiceListingPage = () => {
     });
   }, [setSearchParams]);
 
-  // Handle like
-  const handleLike = useCallback(async (serviceId, e) => {
-    e.stopPropagation();
-    try {
-      await toggleLike({ serviceId, action: 'toggle' });
-      setFavorites(prev => 
-        prev.includes(serviceId) 
-          ? prev.filter(id => id !== serviceId)
-          : [...prev, serviceId]
-      );
-    } catch (error) {
-      toast.error('Failed to update favorites');
-    }
-  }, [toggleLike]);
+
 
   // Handle view details
   const handleViewDetails = useCallback((serviceId, slug) => {
@@ -671,20 +655,6 @@ const ServiceListingPage = () => {
                             <span className="text-sm">No image</span>
                           </div>
                         )}
-                        
-                        {/* Favorite Button */}
-                        <button
-                          onClick={(e) => handleLike(service._id, e)}
-                          className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white transition-colors"
-                        >
-                          <Heart
-                            className={`w-4 h-4 transition-colors ${
-                              favorites.includes(service._id)
-                                ? "fill-red-500 text-red-500"
-                                : "text-gray-600 hover:text-red-500"
-                            }`}
-                          />
-                        </button>
                         
                         {/* Featured Badge */}
                         {service.isFeatured && (

@@ -1,4 +1,3 @@
-// utils/profileUtils.js
 export const calculateProfileCompletion = (user) => {
   if (!user) return 0;
 
@@ -71,5 +70,5 @@ export const getProfileSuggestions = (user) => {
     suggestions.push("Add languages you speak");
   }
 
-  return suggestions.slice(0, 3); // Return top 3 suggestions
+  return suggestions.slice(0, 3);
 };

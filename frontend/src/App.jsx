@@ -108,6 +108,7 @@ useEffect(() => {
   return (
     <BrowserRouter>
       <SecurityProvider>
+        
         <Toaster/>
         <ScrollToTop />
          <CookieChecker />
@@ -172,7 +173,6 @@ useEffect(() => {
               <Route path="/verification/handler" element={<EmailVerificationHandler />} />
               <Route path="/oauth-success" element={<OAuthSuccess />} />
               <Route path="/search" element={<SearchResults />} />
-              <Route path='/session-monitor' element={<SessionMonitor/>}/>
               <Route path="*" element={<NotFound />} />
             </Route>
 

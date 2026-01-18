@@ -35,99 +35,109 @@ passport.use(
           name: profile.displayName
         });
 
-        // Check if user exists by googleId (existing Google user)
+        // 1. First, check by googleId (existing Google user)
         let user = await User.findOne({ googleId: profile.id });
 
         if (user) {
           console.log('Found existing Google user:', user.email);
           
-          // Ensure user is verified and active (Google accounts are always verified)
-          user.emailVerified = true;
-          user.registrationStatus = 'verified';
-          user.isActive = true;
+          // Update user info and set online status
           user.picture = profile.photos?.[0]?.value || user.picture;
           user.lastLoginAt = new Date();
+          user.isOnline = true;
           await user.save({ validateBeforeSave: false });
           
           console.log('Updated existing Google user');
-        } else {
-          // Check if user exists by email (email/password user trying to use Google)
-          user = await User.findOne({ email: email });
+          return done(null, user);
+        }
+
+        // 2. Check if user exists by email (email/password user)
+        user = await User.findOne({ email: email.toLowerCase() });
+        
+        if (user) {
+          console.log('Found existing user with same email:', user.email);
           
-          if (user) {
-            console.log('Found existing email user:', user.email);
+          // Case 1: User already has Google linked
+          if (user.googleId) {
+            // This shouldn't happen as we already checked, but just in case
+            console.log('User already has Google linked');
+            user.lastLoginAt = new Date();
+            user.isOnline = true;
+            await user.save({ validateBeforeSave: false });
+            return done(null, user);
+          }
+          
+          // Case 2: Email/password user - link Google account
+          if (user.emailVerified && user.registrationStatus === 'verified') {
+            console.log('Linking Google account to existing verified user');
+            user.googleId = profile.id;
+            user.picture = profile.photos?.[0]?.value || user.picture;
+            user.lastLoginAt = new Date();
+            user.isOnline = true;
+            await user.save({ validateBeforeSave: false });
+            return done(null, user);
+          }
+          
+          // Case 3: Pending registration - complete with Google
+          if (user.registrationStatus === 'pending') {
+            console.log('Completing pending registration with Google');
+            user.googleId = profile.id;
+            user.name = profile.displayName || user.registrationData?.name || user.name;
+            user.picture = profile.photos?.[0]?.value;
+            user.emailVerified = true;
+            user.registrationStatus = 'verified';
+            user.isActive = true;
+            user.lastLoginAt = new Date();
+            user.isOnline = true;
             
-            if (user.googleId) {
-              // User already has Google linked, shouldn't happen but just in case
-              console.log('User already has Google linked');
-            } else if (user.emailVerified && user.registrationStatus === 'verified') {
-              // Verified email/password user - link Google account
-              user.googleId = profile.id;
-              user.picture = profile.photos?.[0]?.value || user.picture;
-              user.lastLoginAt = new Date();
-              await user.save({ validateBeforeSave: false });
-              
-              console.log('Linked Google to existing verified user');
-            } else {
-              // Pending registration with same email - delete and create new with Google
-              console.log('Deleting pending registration and creating Google user');
-              await User.deleteOne({ _id: user._id });
-              
-              // Create new user with Google
-              user = new User({
-                googleId: profile.id,
-                name: profile.displayName,
-                email: email,
-                picture: profile.photos?.[0]?.value,
-                emailVerified: true, // Google accounts are automatically verified
-                registrationStatus: 'verified',
-                isActive: true,
-                lastLoginAt: new Date()
-              });
-              
-              await user.save({ validateBeforeSave: false });
-              console.log('Created new Google user from deleted pending registration');
+            // Move registration data to user fields
+            if (user.registrationData) {
+              user.phoneNumber = user.registrationData.phoneNumber || user.phoneNumber;
+              user.dateOfBirth = user.registrationData.dateOfBirth || user.dateOfBirth;
+              user.gender = user.registrationData.gender || user.gender;
+              user.country = user.registrationData.country || user.country;
+              user.city = user.registrationData.city || user.city;
+              user.registrationData = undefined;
             }
-          } else {
-            // No user exists - create new Google user
-            console.log('Creating new Google user');
-            user = new User({
-              googleId: profile.id,
-              name: profile.displayName,
-              email: email,
-              picture: profile.photos?.[0]?.value,
-              emailVerified: true, // Google accounts are automatically verified
-              registrationStatus: 'verified',
-              isActive: true,
-              lastLoginAt: new Date()
-            });
             
             await user.save({ validateBeforeSave: false });
-            console.log('Created new Google user successfully');
+            console.log('Completed registration with Google');
+            return done(null, user);
           }
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-          { id: user._id },
-          process.env.JWT_SECRET,
-          { expiresIn: "7d" }
-        );
+        // 3. Create new user (no existing user found)
+        console.log('Creating new Google user');
+        user = new User({
+          googleId: profile.id,
+          name: profile.displayName,
+          email: email.toLowerCase(),
+          picture: profile.photos?.[0]?.value,
+          emailVerified: true,
+          registrationStatus: 'verified',
+          isActive: true,
+          lastLoginAt: new Date(),
+          isOnline: true
+        });
+        
+        await user.save({ validateBeforeSave: false });
+        console.log('Created new Google user successfully');
+        
+        return done(null, user);
 
-        // Generate refresh token
-        const refreshToken = crypto.randomBytes(64).toString('hex');
-
-        // Return user with tokens
-        const userWithTokens = {
-          ...user.toObject(),
-          token,
-          refreshToken
-        };
-
-        console.log('Google OAuth successful for:', user.email);
-        return done(null, userWithTokens);
       } catch (error) {
         console.error('Google OAuth error:', error);
+        
+        // Handle duplicate key error (shouldn't happen with proper checks)
+        if (error.code === 11000) {
+          const duplicateField = Object.keys(error.keyPattern)[0];
+          const errorMsg = duplicateField === 'email' 
+            ? 'Email already exists. Please use login instead.'
+            : 'User already exists with this Google account.';
+          
+          return done(new Error(errorMsg), null);
+        }
+        
         return done(error, null);
       }
     }
