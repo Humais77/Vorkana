@@ -23,7 +23,10 @@ const toggleApi = async (email) => {
 };
 
 const getStatusApi = async (email) => {
-  const response = await axios.get(`${API_URL}/api/subscribe-email/status/${email}`);
+  if (!email || !email.includes('@')) {
+    throw new Error('Invalid email address');
+  }
+  const response = await axios.get(`${API_URL}/api/subscribe-email/status/${encodeURIComponent(email)}`);
   return response.data;
 };
 
@@ -32,11 +35,13 @@ export const useSubscribe = () => {
     mutationFn: subscribeApi,
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(data.message);
+        toast.success(data.message || 'Successfully subscribed!');
+      } else {
+        toast.error(data.message || 'Subscription failed');
       }
     },
     onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to subscribe';
+      const message = error.response?.data?.message || 'Failed to subscribe. Please try again.';
       toast.error(message);
     },
   });
@@ -47,11 +52,13 @@ export const useUnsubscribe = () => {
     mutationFn: unsubscribeApi,
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(data.message);
+        toast.success(data.message || 'Successfully unsubscribed!');
+      } else {
+        toast.error(data.message || 'Unsubscribe failed');
       }
     },
     onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to unsubscribe';
+      const message = error.response?.data?.message || 'Failed to unsubscribe. Please try again.';
       toast.error(message);
     },
   });
@@ -62,11 +69,16 @@ export const useToggleSubscription = () => {
     mutationFn: toggleApi,
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(data.message);
+        const message = data.data?.action === 'unsubscribed' 
+          ? 'Successfully unsubscribed!' 
+          : 'Successfully subscribed!';
+        toast.success(data.message || message);
+      } else {
+        toast.error(data.message || 'Operation failed');
       }
     },
     onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to update subscription';
+      const message = error.response?.data?.message || 'Failed to update subscription. Please try again.';
       toast.error(message);
     },
   });
@@ -79,5 +91,10 @@ export const useSubscriptionStatus = (email) => {
     enabled: !!email && email.includes('@'),
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+    onError: (error) => {
+      // Don't show toast for status check errors
+      console.error('Subscription status error:', error.message);
+    },
   });
 };

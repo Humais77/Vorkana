@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   FaFacebook,
   FaInstagram,
@@ -10,6 +10,7 @@ import {
 import TrackedLink from '../../../components/TrackedLink';
 import { useParentCategories } from "../../../hooks/useCategories";
 import { useSubscribe, useSubscriptionStatus, useToggleSubscription } from "../../../hooks/useSubscribe";
+import { toast } from 'react-hot-toast';
 
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -17,10 +18,12 @@ const Footer = () => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [localStatus, setLocalStatus] = useState(null);
-  const [preferences, setPreferences] = useState({
+  const [isChecking, setIsChecking] = useState(false);
+  const [typingTimeout, setTypingTimeout] = useState(null);
+  const preferences = useState({
     frequency: "weekly",
     categories: ["tech", "design"]
-  });
+  })[0];
 
   // Fetch categories from database
   const { data: categoriesData = [], isLoading: categoriesLoading } = useParentCategories();
@@ -28,8 +31,7 @@ const Footer = () => {
   // Use subscription hook
   const { 
     mutateAsync: subscribe,
-    isLoading: subscribeLoading, 
-    isSuccess: subscribeSuccess,
+    isLoading: subscribeLoading,
     error: subscribeError,
     reset: resetSubscription
   } = useSubscribe();
@@ -37,17 +39,23 @@ const Footer = () => {
   // Limit to 10 categories for initial display
   const initialCategories = categoriesData.slice(0, 10);
   const remainingCategories = categoriesData.slice(10);
-  const { data: statusData, refetch } = useSubscriptionStatus(email);
+  
+  // Use subscription status query
+  const { 
+    data: statusData, 
+    refetch: refetchStatus,
+    isLoading: statusLoading
+  } = useSubscriptionStatus(email);
   
   // Toggle subscription
-  const { mutate: toggleSubscription, isLoading } = useToggleSubscription();
+  const { mutate: toggleSubscription, isLoading: toggleLoading } = useToggleSubscription();
   
   // Fix: Add proper validation when mapping categories
   const footerLinks = {
     categories: {
       title: "Categories",
       links: initialCategories
-        .filter(category => category && category.name) // Filter out invalid categories
+        .filter(category => category && category.name)
         .map(category => ({
           label: category.name,
           path: `/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -76,7 +84,7 @@ const Footer = () => {
         { label: "Contact Us", path: "/contact", source: "footer", section: "support" },
         { label: "Trust & Safety", path: "/trust", source: "footer", section: "support" },
         { label: "FAQ", path: "/faq", source: "footer", section: "support" },
-        { label :"Help", path: "/help", source: "footer", section: "support"}
+        { label: "Help", path: "/help", source: "footer", section: "support"}
       ]
     },
   };
@@ -85,71 +93,191 @@ const Footer = () => {
     setOpenDropdown(openDropdown === section ? null : section);
   };
 
+  // Validate email format
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
+
+  // Check subscription status in real-time when user types
+  const checkSubscriptionStatus = useCallback(async (emailToCheck) => {
+    if (!emailToCheck || !validateEmail(emailToCheck)) {
+      setLocalStatus(null);
+      return;
+    }
+
+    setIsChecking(true);
+    try {
+      // Use the query hook's refetch instead of manual API call
+      await refetchStatus();
+    } catch (error) {
+      console.error("Error checking subscription:", error);
+    } finally {
+      setIsChecking(false);
+    }
+  }, [refetchStatus]);
+
+  // Handle email change with debouncing
+  const handleEmailChange = (e) => {
+    const value = e.target.value.trim();
+    setEmail(value);
+    
+    // Clear previous timeout
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+    }
+    
+    // Validate format
+    if (value && !validateEmail(value)) {
+      setEmailError("Please enter a valid email address");
+      setLocalStatus(null);
+      return;
+    }
+    
+    setEmailError("");
+    
+    // Clear local status if email is empty
+    if (!value) {
+      setLocalStatus(null);
+      return;
+    }
+    
+    // Debounce subscription status check (500ms)
+    const timeout = setTimeout(() => {
+      checkSubscriptionStatus(value);
+    }, 500);
+    
+    setTypingTimeout(timeout);
+  };
+
+  // Update local status when statusData changes
   useEffect(() => {
     if (statusData?.success && email) {
-      setLocalStatus(statusData.data);
+      if (statusData.data?.exists === false) {
+        // Email not found in database
+        setLocalStatus({
+          email,
+          isSubscribed: false,
+          exists: false
+        });
+      } else {
+        // Email found with subscription status
+        setLocalStatus({
+          email: statusData.data?.email || email,
+          isSubscribed: statusData.data?.isSubscribed || false,
+          exists: true
+        });
+      }
     } else {
       setLocalStatus(null);
     }
   }, [statusData, email]);
 
-  const handleEmailChange = (e) => {
-    const value = e.target.value;
-    setEmail(value);
-    
-    if (value && !validateEmail(value)) {
-      setEmailError("Please enter a valid email");
-    } else {
-      setEmailError("");
-    }
-    
-    // Clear local status if email changes
-    if (value !== email) {
-      setLocalStatus(null);
-    }
-  };
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+    };
+  }, [typingTimeout]);
 
-  const handleSubmit = (e) => {
+  // Handle subscription form submission
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Validate email
     if (!email) {
       setEmailError("Email is required");
       return;
     }
     
     if (!validateEmail(email)) {
-      setEmailError("Please enter a valid email");
+      setEmailError("Please enter a valid email address");
       return;
     }
     
-    // Check current status before toggling
+    // Prevent duplicate subscription attempts
     if (localStatus?.isSubscribed) {
-      // If already subscribed, just show message
-      toast("You're already subscribed!", {
-        icon: "📧"
+      toast.error("You're already subscribed!", {
+        icon: "📧",
+        duration: 3000
       });
       return;
     }
     
-    toggleSubscription(email, {
-      onSuccess: (data) => {
-        if (data.success) {
-          setLocalStatus(data.data);
-          refetch(); // Refresh status
+    // Show loading state
+    const loadingToast = toast.loading("Processing subscription...");
+    
+    try {
+      // Use the toggle subscription mutation
+      toggleSubscription(email, {
+        onSuccess: (data) => {
+          if (data.success) {
+            // Update local status
+            setLocalStatus(data.data);
+            
+            // Show success message
+            toast.success(data.message || "Successfully subscribed!", {
+              id: loadingToast,
+              duration: 3000
+            });
+            
+            // Refresh status
+            refetchStatus();
+          } else {
+            toast.error(data.message || "Subscription failed", {
+              id: loadingToast,
+              duration: 3000
+            });
+          }
+        },
+        onError: (error) => {
+          console.error("Toggle subscription error:", error);
+          toast.error("Failed to subscribe. Please try again.", {
+            id: loadingToast,
+            duration: 3000
+          });
         }
-      }
-    });
+      });
+    } catch (error) {
+      console.error("Subscription error:", error);
+      toast.error("An unexpected error occurred", {
+        id: loadingToast,
+        duration: 3000
+      });
+    }
   };
 
+  // Handle unsubscribe
   const handleUnsubscribe = () => {
     if (!email || !localStatus?.isSubscribed) return;
+    
+    const loadingToast = toast.loading("Processing unsubscribe...");
     
     toggleSubscription(email, {
       onSuccess: (data) => {
         if (data.success) {
           setLocalStatus(data.data);
-          refetch(); // Refresh status
+          refetchStatus();
+          
+          toast.success(data.message || "Successfully unsubscribed!", {
+            id: loadingToast,
+            duration: 3000
+          });
+        } else {
+          toast.error(data.message || "Unsubscribe failed", {
+            id: loadingToast,
+            duration: 3000
+          });
         }
+      },
+      onError: (error) => {
+        console.error("Unsubscribe error:", error);
+        toast.error("Failed to unsubscribe. Please try again.", {
+          id: loadingToast,
+          duration: 3000
+        });
       }
     });
   };
@@ -157,39 +285,40 @@ const Footer = () => {
   // Check if we should show unsubscribe button
   const showUnsubscribe = localStatus?.isSubscribed && email === localStatus.email;
 
-  // Handle subscription
-  const handleSubscribe = async (e) => {
-    e.preventDefault();
-    
-    if (!email || !validateEmail(email)) {
-      return;
+  // Determine button text and state
+  const getButtonState = () => {
+    if (toggleLoading || isChecking) {
+      return {
+        text: "Processing...",
+        disabled: true,
+        className: "bg-gray-400 cursor-not-allowed"
+      };
     }
     
-    try {
-      // Use mutateAsync if your hook returns it
-      await subscribe({ 
-        email, 
-        preferences,
-        source: "footer" 
-      });
-      
-      // Reset form on success
-      if (subscribeSuccess) {
-        setTimeout(() => {
-          setEmail("");
-          resetSubscription();
-        }, 3000);
-      }
-    } catch (error) {
-      console.error("Subscription error:", error);
+    if (showUnsubscribe) {
+      return {
+        text: "Unsubscribe",
+        disabled: false,
+        className: "bg-gray-600 hover:bg-gray-700"
+      };
     }
+    
+    if (localStatus?.exists && !localStatus?.isSubscribed) {
+      return {
+        text: "Resubscribe",
+        disabled: false,
+        className: "bg-blue-600 hover:bg-blue-700"
+      };
+    }
+    
+    return {
+      text: "Subscribe",
+      disabled: false,
+      className: "bg-black hover:bg-gray-900"
+    };
   };
 
-  // Validate email
-  const validateEmail = (email) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
+  const buttonState = getButtonState();
 
   return (
     <footer className="bg-white text-black border-t border-gray-100">
@@ -279,7 +408,7 @@ const Footer = () => {
                   </li>
                 ))}
                 
-                {/* View All Categories link (only for categories section) */}
+                {/* View All Categories link */}
                 {key === 'categories' && !showAllCategories && categoriesData.length > 10 && (
                   <li>
                     <button
@@ -332,27 +461,38 @@ const Footer = () => {
                     className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-black placeholder-gray-500 transition-all ${
                       emailError 
                         ? "border-red-500 focus:border-red-500 focus:ring-red-200" 
+                        : localStatus?.isSubscribed
+                        ? "border-green-500 focus:border-green-500 focus:ring-green-200"
                         : "border-gray-300 focus:border-black focus:ring-gray-200"
                     }`}
-                    disabled={isLoading}
+                    disabled={toggleLoading}
                   />
                   {emailError && (
                     <p className="text-red-500 text-sm mt-1">{emailError}</p>
+                  )}
+                  
+                  {/* Real-time subscription status */}
+                  {!emailError && email && validateEmail(email) && (
+                    <div className="mt-1">
+                      {isChecking ? (
+                        <p className="text-gray-500 text-sm">Checking subscription status...</p>
+                      ) : localStatus?.exists === false ? (
+                        <p className="text-blue-600 text-sm">✓ New email - ready to subscribe</p>
+                      ) : localStatus?.isSubscribed ? (
+                        <p className="text-green-600 text-sm">✓ Already subscribed to newsletter</p>
+                      ) : localStatus?.exists === true && !localStatus?.isSubscribed ? (
+                        <p className="text-yellow-600 text-sm">Previously unsubscribed - click to resubscribe</p>
+                      ) : null}
+                    </div>
                   )}
                 </div>
                 
                 <button
                   type="submit"
-                  disabled={isLoading || !email || emailError}
-                  className={`px-6 py-3 text-white font-medium rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                    isLoading 
-                      ? "bg-gray-400 cursor-not-allowed" 
-                      : showUnsubscribe
-                        ? "bg-gray-600 hover:bg-gray-700"
-                        : "bg-black hover:bg-gray-900"
-                  }`}
+                  disabled={toggleLoading || isChecking || !email || emailError || buttonState.disabled}
+                  className={`px-6 py-3 text-white font-medium rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed ${buttonState.className}`}
                 >
-                  {isLoading ? (
+                  {toggleLoading || isChecking ? (
                     <span className="flex items-center justify-center gap-2">
                       <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -360,37 +500,25 @@ const Footer = () => {
                       </svg>
                       Processing...
                     </span>
-                  ) : showUnsubscribe ? (
-                    "Unsubscribe"
                   ) : (
-                    "Subscribe"
+                    buttonState.text
                   )}
                 </button>
               </div>
               
               {/* Status Messages */}
-              {localStatus && (
-                <div className={`p-3 border rounded-lg ${
-                  localStatus.isSubscribed 
-                    ? "bg-green-50 border-green-200" 
-                    : "bg-blue-50 border-blue-200"
-                }`}>
-                  <p className={`text-sm ${
-                    localStatus.isSubscribed ? "text-green-700" : "text-blue-700"
-                  }`}>
-                    {localStatus.isSubscribed
-                      ? `✓ Subscribed to newsletter as ${localStatus.email}`
-                      : `✓ Unsubscribed from newsletter`}
+              {localStatus?.isSubscribed && (
+                <div className="p-3 border rounded-lg bg-green-50 border-green-200">
+                  <p className="text-green-700 text-sm">
+                    ✓ Subscribed to newsletter as {localStatus.email}
                   </p>
-                  {localStatus.isSubscribed && (
-                    <button
-                      onClick={handleUnsubscribe}
-                      className="text-sm text-gray-600 hover:text-black mt-2 underline"
-                      disabled={isLoading}
-                    >
-                      Click here to unsubscribe
-                    </button>
-                  )}
+                  <button
+                    onClick={handleUnsubscribe}
+                    className="text-sm text-gray-600 hover:text-black mt-2 underline"
+                    disabled={toggleLoading}
+                  >
+                    Click here to unsubscribe
+                  </button>
                 </div>
               )}
               
@@ -416,8 +544,9 @@ const Footer = () => {
                     <label className="block mb-2">Frequency:</label>
                     <select 
                       value={preferences.frequency}
-                      onChange={(e) => setPreferences({...preferences, frequency: e.target.value})}
+                      onChange={(e) => {}}
                       className="w-full p-2 border border-gray-300 rounded bg-white"
+                      disabled
                     >
                       <option value="weekly">Weekly</option>
                       <option value="bi-weekly">Bi-weekly</option>
