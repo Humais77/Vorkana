@@ -581,14 +581,25 @@ export const adminAPI = {
     cache.delete('all');
     console.log('[CACHE] Cleared all cache');
   },
-  getSubcategories: createCachedApiCall(
-    (params) => adminApi.get('/api/admin/subcategories', { params }),
+   getSubcategories: createCachedApiCall(
+    (params) => adminApi.get('/api/admin/subcategories', { 
+      params: {
+        ...params,
+        populateCategory: true, // Add this
+        includeCategoryDetails: true // Add this
+      }
+    }),
     'admin:subcategories:list',
     'list'
   ),
   
   getSubcategoryById: createCachedApiCall(
-    (id) => adminApi.get(`/api/admin/subcategories/${id}`),
+    (id) => adminApi.get(`/api/admin/subcategories/${id}`, {
+      params: { 
+        populateCategory: true, // Add this
+        includeCategoryDetails: true // Add this
+      }
+    }),
     (id) => `admin:subcategories:item:${id}`,
     'item'
   ),
@@ -819,15 +830,30 @@ export const adminAPI = {
   ),
   
 
-  getSubcategoriesDropdown: createCachedApiCall(
-    (categoryId = null) => {
-      const params = { active: true, limit: 100 };
-      if (categoryId) params.categoryId = categoryId;
-      return adminApi.get('/api/admin/subcategories/dropdown', { params });
-    },
-    (categoryId) => `admin:subcategories:dropdown:${categoryId || 'all'}`,
-    'dropdown'
-  ),
+  // In admin.js - Update the getSubcategoriesDropdown function
+getSubcategoriesDropdown: createCachedApiCall(
+  (categoryId = null, params = {}) => {
+    console.log('[API DEBUG] getSubcategoriesDropdown called with:', {
+      categoryId,
+      params,
+      fullUrl: categoryId 
+        ? `/api/admin/categories/${categoryId}/subcategories/dropdown`
+        : '/api/admin/subcategories/dropdown'
+    });
+    
+    if (!categoryId) {
+      return adminApi.get('/api/admin/subcategories/dropdown', { 
+        params: { active: true, limit: 100, ...params } 
+      });
+    }
+    
+    return adminApi.get(`/api/admin/categories/${categoryId}/subcategories/dropdown`, { 
+      params: { active: true, limit: 100, ...params } 
+    });
+  },
+  (categoryId) => `admin:subcategories:dropdown:${categoryId || 'all'}`,
+  'dropdown'
+),
   
   getUsersForDropdown: createCachedApiCall(
     (role = '') => 

@@ -1,3 +1,4 @@
+// ServiceDetails.jsx - Updated with proper error handling
 import React from 'react';
 import { 
   FiX, FiPackage, FiInfo, FiCalendar, FiBarChart2, FiEye,
@@ -18,7 +19,9 @@ const ServiceDetailsModal = ({
   onDuplicate,
   categoriesMap = {},
   usersMap = {},
-  formatPrice
+  formatPrice,
+  onError, // Add these props for error handling
+  onSuccess
 }) => {
   if (!isOpen || !service) return null;
 
@@ -45,22 +48,23 @@ const ServiceDetailsModal = ({
 
   const handleEdit = () => {
     onEdit(service);
-    onClose();
   };
 
   const handleDelete = () => {
     onDelete(service);
-    onClose();
   };
 
-  const handleDuplicate = () => {
-    onDuplicate(service);
-    onClose();
+  const handleDuplicate = async () => {
+    try {
+      await onDuplicate(service);
+    } catch (error) {
+      if (onError) onError(error);
+    }
   };
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    // You could add a toast notification here
+    if (onSuccess) onSuccess('ID copied to clipboard');
   };
 
   // Get category and subcategory with fallbacks

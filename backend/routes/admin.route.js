@@ -200,6 +200,115 @@ router.get('/session',
 // ============================================
 // SUBCATEGORY MANAGEMENT ROUTES
 // ============================================
+
+
+router.get('/categories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  cacheMiddleware(600, 'admin:categories:dropdown'),
+  async (req, res) => {
+    try {
+      console.log('[CATEGORIES DROPDOWN] Fetching categories...');
+      console.log('[CATEGORIES DROPDOWN] Query params:', req.query);
+      
+      const { 
+        includeSubcategories = false, 
+        showAll = false,
+        onlyWithSubcategories = false 
+      } = req.query;
+      
+      // Build filter
+      const filter = { 
+        isActive: true,
+        deletedAt: null
+      };
+      
+      // DEBUG: Log the filter being used
+      console.log('[CATEGORIES DROPDOWN] Filter before allowSubcategories:', filter);
+      
+      // Only filter by allowSubcategories if explicitly requested
+      if (onlyWithSubcategories === 'true') {
+        filter.allowSubcategories = true;
+      }
+      // Remove allowSubcategories filter if showAll is true
+      else if (showAll === 'true') {
+        // Don't filter by allowSubcategories
+        console.log('[CATEGORIES DROPDOWN] showAll=true, removing allowSubcategories filter');
+      } else {
+        // Default: show all active categories
+        console.log('[CATEGORIES DROPDOWN] Using default filter (no allowSubcategories)');
+      }
+      
+      console.log('[CATEGORIES DROPDOWN] Final filter:', filter);
+      
+      const categories = await Category.find(filter)
+        .select('name slug icon parentCategory order isActive featured popular servicesCount gigsCount allowSubcategories')
+        .sort({ order: 1, name: 1 })
+        .lean();
+      
+      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
+      console.log('[CATEGORIES DROPDOWN] Categories found:', categories.map(c => ({
+        name: c.name,
+        allowSubcategories: c.allowSubcategories,
+        id: c._id
+      })));
+      
+      // If includeSubcategories is true, fetch subcategories
+      if (includeSubcategories === 'true') {
+        const categoryIds = categories.map(cat => cat._id);
+        
+        const subcategories = await Subcategory.find({
+          category: { $in: categoryIds },
+          isActive: true,
+          deletedAt: null
+        })
+        .select('name slug icon category order isActive description servicesCount gigsCount')
+        .sort({ order: 1, name: 1 })
+        .lean();
+        
+        const subcategoriesByCategory = {};
+        subcategories.forEach(sub => {
+          const catId = sub.category.toString();
+          if (!subcategoriesByCategory[catId]) {
+            subcategoriesByCategory[catId] = [];
+          }
+          subcategoriesByCategory[catId].push(sub);
+        });
+        
+        categories.forEach(category => {
+          const catId = category._id.toString();
+          category.subcategories = subcategoriesByCategory[catId] || [];
+          category.subcategoriesCount = category.subcategories.length;
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: categories,
+        count: categories.length,
+        filterUsed: filter,
+        queryParams: req.query
+      });
+    } catch (error) {
+      console.error('[CATEGORIES DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch categories',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+    }
+  }
+);
+router.get('/categories/:categoryId/subcategories/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('manage_categories'),
+  auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
+  cacheMiddleware(600, 'admin:subcategories:dropdown:bycategory'), // Cache for 10 minutes
+  adminController.getSubcategoriesDropdown
+);
+
 router.get('/subcategories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -248,7 +357,7 @@ router.get('/subcategories',
   adminApiLimiter,
   requirePermission('manage_categories'),
   auditLog('VIEW_SUBCATEGORIES', 'categories'),
-  cacheMiddleware(300, 'admin:subcategories'), // Cache for 5 minutes
+  cacheMiddleware(300, 'admin:subcategories'),
   async (req, res, next) => {
     try {
       // Create a clean query object for subcategories
@@ -256,16 +365,11 @@ router.get('/subcategories',
       
       // Copy only non-empty parameters
       for (const [key, value] of Object.entries(req.query)) {
-        // Skip empty strings
-        if (value === '') {
-          continue;
-        }
+        if (value === '') continue;
         
-        // Parse numeric values
         if (['page', 'limit', 'order'].includes(key)) {
           cleanQuery[key] = parseInt(value) || (key === 'page' ? 1 : key === 'limit' ? 20 : 0);
         }
-        // Parse boolean values
         else if (['isActive'].includes(key)) {
           if (value === 'true' || value === true || value === '1') {
             cleanQuery[key] = true;
@@ -273,7 +377,6 @@ router.get('/subcategories',
             cleanQuery[key] = false;
           }
         }
-        // Keep other values as-is
         else {
           cleanQuery[key] = value;
         }
@@ -282,6 +385,10 @@ router.get('/subcategories',
       // Ensure pagination defaults
       if (!cleanQuery.page) cleanQuery.page = 1;
       if (!cleanQuery.limit) cleanQuery.limit = 20;
+      
+      // ADD DEFAULT PARAMETERS FOR CATEGORY POPULATION
+      cleanQuery.populateCategory = 'true'; // Force category population
+      cleanQuery.includeCategoryDetails = 'true';
       
       // Replace the req.query with clean version
       req.query = cleanQuery;
@@ -295,6 +402,7 @@ router.get('/subcategories',
   },
   adminController.getSubcategories
 );
+
 
 router.get('/subcategories/export', 
   verifyAdmin, 
@@ -321,17 +429,6 @@ router.post('/subcategories/bulk',
   adminController.bulkUpdateSubcategories
 );
 
-
-
-router.get('/categories/:categoryId/subcategories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  requirePermission('manage_categories'),
-  auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
-  cacheMiddleware(600, 'admin:subcategories:dropdown:bycategory'), // Cache for 10 minutes
-  adminController.getSubcategoriesDropdown
-);
-
 router.get('/categories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
@@ -340,13 +437,12 @@ router.get('/categories/export',
   adminController.exportCategories
 );
 
-// Get subcategory by ID - FIXED ROUTE
 router.get('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter,
   requirePermission('manage_categories'),
   auditLog('VIEW_SUBCATEGORY', 'categories'),
-  cacheMiddleware(600, 'admin:subcategory'), // Cache single item for 10 minutes
+  cacheMiddleware(600, 'admin:subcategory'),
   async (req, res, next) => {
     try {
       console.log('[GET SUBCATEGORY BY ID] Request:', {
@@ -357,8 +453,12 @@ router.get('/subcategories/:id',
       // Fix the ID if it's wrapped in quotes
       if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
         req.params.id = req.params.id.slice(1, -1);
-        console.log('[GET SUBCATEGORY BY ID] Fixed ID:', req.params.id);
       }
+      
+      // Set population parameters
+      req.query.populateCategory = true;
+      req.query.includeCategoryDetails = true;
+      req.query.populate = 'true';
       
       next();
     } catch (error) {
@@ -368,7 +468,6 @@ router.get('/subcategories/:id',
   },
   adminController.getSubcategoryById
 );
-
 // Create subcategory
 router.post('/subcategories', 
   verifyAdmin, 
@@ -531,71 +630,7 @@ router.delete('/users/:id',
   adminController.deleteUser
 );
 
-// ============================================
-// CATEGORY MANAGEMENT ROUTES
-// ============================================
-router.get('/categories/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  cacheMiddleware(600, 'admin:categories:dropdown'), // Cache for 10 minutes
-  async (req, res) => {
-    try {
-      console.log('[CATEGORIES DROPDOWN] Fetching categories...');
-      console.log('[CATEGORIES DROPDOWN] Admin user:', req.admin?.email);
-      
-      const { includeSubcategories = false } = req.query;
-      
-      const categories = await Category.find({ 
-        isActive: true,
-        deletedAt: null,
-        isSubcategory: false
-      })
-      .select('name slug icon parentCategory')
-      .sort({ name: 1 })
-      .lean();
-      
-      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
-      
-      if (includeSubcategories === 'true') {
-        const categoryIds = categories.map(cat => cat._id);
-        
-        const subcategories = await Subcategory.find({
-          category: { $in: categoryIds },
-          isActive: true,
-          deletedAt: null
-        })
-        .select('name slug icon category order')
-        .sort({ order: 1, name: 1 })
-        .lean();
-        
-        const subcategoriesByCategory = {};
-        subcategories.forEach(sub => {
-          const catId = sub.category.toString();
-          if (!subcategoriesByCategory[catId]) {
-            subcategoriesByCategory[catId] = [];
-          }
-          subcategoriesByCategory[catId].push(sub);
-        });
-        
-        categories.forEach(category => {
-          category.subcategories = subcategoriesByCategory[category._id.toString()] || [];
-        });
-      }
-      
-      res.json({
-        success: true,
-        data: categories
-      });
-    } catch (error) {
-      console.error('[CATEGORIES DROPDOWN ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch categories',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
+
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 

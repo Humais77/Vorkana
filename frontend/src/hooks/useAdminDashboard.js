@@ -1362,20 +1362,42 @@ export const useBulkServiceOperations = () => {
 };
 
 
-
-export const useCategoriesForDropdown = () => {
+export const useCategoriesForDropdown = (includeSubcategories = true) => {
   return useQuery({
-    queryKey: ['admin', 'categories', 'dropdown'],
+    queryKey: ['admin', 'categories', 'dropdown', includeSubcategories],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getCategoriesForDropdown();
-        return response.data;
+        const response = await adminAPI.getCategoriesForDropdown(includeSubcategories);
+        console.log('[CATEGORIES DROPDOWN] Response:', response.data);
+        
+        // Ensure data structure is consistent
+        if (response.data.success && response.data.data) {
+          return {
+            success: true,
+            data: response.data.data,
+            count: response.data.count || 0
+          };
+        }
+        
+        return { 
+          success: false, 
+          data: [], 
+          count: 0,
+          message: 'No data returned'
+        };
       } catch (error) {
         console.error('Categories dropdown error:', error);
-        return { data: [] };
+        return { 
+          success: false, 
+          data: [], 
+          count: 0,
+          error: error.message 
+        };
       }
     },
     staleTime: 300000,
+    // Force refresh when includeSubcategories changes
+    enabled: true,
   });
 };
 
@@ -2432,17 +2454,40 @@ export const useChartData = (chartType, timeRange = '7d') => {
   });
 };
 
-// Subcategories by category hook (for separate subcategory system)
 export const useSubcategoriesByCategory = (categoryId, params = {}) => {
   return useQuery({
-    queryKey: ['admin', 'subcategories', 'by-category', categoryId, params],
+    queryKey: ['admin', 'subcategories', 'dropdown', categoryId, params],
     queryFn: async () => {
       try {
+        console.log('[HOOK DEBUG] Fetching subcategories for category:', categoryId);
+        
+        if (!categoryId) {
+          console.log('[HOOK DEBUG] No category ID provided, returning empty');
+          return { success: true, data: [], count: 0 };
+        }
+        
         const response = await adminAPI.getSubcategoriesDropdown(categoryId, params);
+        console.log('[HOOK DEBUG] API Response:', response);
+        
+        // Check response structure
+        if (response.data) {
+          console.log('[HOOK DEBUG] Response data structure:', {
+            hasData: !!response.data.data,
+            isArray: Array.isArray(response.data.data),
+            data: response.data.data
+          });
+        }
+        
         return response.data;
       } catch (error) {
-        console.error('Subcategories by category error:', error);
-        return { data: [] };
+        console.error('[HOOK DEBUG] Subcategories by category error:', error);
+        console.error('[HOOK DEBUG] Error response:', error.response?.data);
+        return { 
+          success: false, 
+          data: [], 
+          count: 0,
+          error: error.message 
+        };
       }
     },
     enabled: !!categoryId,

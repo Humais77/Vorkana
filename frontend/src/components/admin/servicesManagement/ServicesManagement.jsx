@@ -1,16 +1,14 @@
+// ServiceManagement.jsx - Updated with consistent toast handling
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminServices, 
-  useUpdateService, 
-  useDeleteService, 
   useBulkServiceOperations,
-  useCreateService,
   useCategoriesForDropdown,
   useUsersForDropdown,
-  useRestoreService,
   useBulkRestoreServices
 } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useUpdateService, useDeleteService, useCreateService } from '../../../hooks/useServices';
+import { useServiceToast } from '../../../hooks/useServiceToast';
 import {
   FiPackage,
   FiSearch,
@@ -43,13 +41,14 @@ import {
   FiDownload,
   FiUpload,
   FiExternalLink,
-  FiCopy
+  FiCopy,
+  FiUnlock,
+  FiLock
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import ServiceEditModal from './ServiceEditModal';
 import ServiceDetailsModal from './ServiceDetailsModal';
 import ServiceDeleteModal from './ServiceDeleteModal';
-import RestoreServiceModal from './RestoreServiceModal';
 import StatsCard from './StatsCard';
 
 // Enhanced Service Table Row Component
@@ -70,7 +69,8 @@ const ServiceTableRow = memo(({
   onDuplicate,
   formatPrice,
   loading,
-  loadingServiceId
+  loadingServiceId,
+  showToast
 }) => {
   const getStatusColor = (status) => {
     const colors = {
@@ -276,7 +276,7 @@ const ServiceTableRow = memo(({
                               }}
                               className="flex items-center w-full px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
                             >
-                              <FiXCircle className="h-4 w-4 mr-2" />
+                              <FiLock className="h-4 w-4 mr-2" />
                               Pause Service
                             </button>
                           ) : (
@@ -287,7 +287,7 @@ const ServiceTableRow = memo(({
                               }}
                               className="flex items-center w-full px-4 py-2 text-sm text-green-600 hover:bg-green-50"
                             >
-                              <FiCheckCircle className="h-4 w-4 mr-2" />
+                              <FiUnlock className="h-4 w-4 mr-2" />
                               Activate Service
                             </button>
                           )}
@@ -412,24 +412,25 @@ const ServicesManagement = () => {
   const [expandedServices, setExpandedServices] = useState([]);
   const [loadingServiceId, setLoadingServiceId] = useState(null);
   const [searchInput, setSearchInput] = useState('');
-  const [stats, setStats] = useState({
-    total: 0,
-    active: 0,
-    inactive: 0,
-    featured: 0,
-    draft: 0,
-    pending: 0,
-    suspended: 0
-  });
 
   const limit = 12;
+  
+  // Use the service toast hook
+  const {
+    showServiceLoading,
+    showServiceSuccess,
+    showServiceError,
+    showServiceWarning,
+    dismissServiceToast
+  } = useServiceToast();
   
   // Fetch data
   const { 
     data, 
     isLoading, 
     refetch, 
-    isRefetching 
+    isRefetching,
+    error: fetchError
   } = useAdminServices({
     page,
     limit,
@@ -453,26 +454,15 @@ const ServicesManagement = () => {
   const updateServiceMutation = useUpdateService();
   const deleteServiceMutation = useDeleteService();
   const createServiceMutation = useCreateService();
-  const restoreServiceMutation = useRestoreService();
   const bulkServiceMutation = useBulkServiceOperations();
   const bulkRestoreMutation = useBulkRestoreServices();
   
-  // Calculate stats from data
+  // Show fetch error if exists
   useEffect(() => {
-    if (data?.data) {
-      const services = data.data;
-      const statsData = {
-        total: services.length,
-        active: services.filter(s => s.isActive && s.status === 'active').length,
-        inactive: services.filter(s => !s.isActive || s.status !== 'active').length,
-        featured: services.filter(s => s.isFeatured).length,
-        draft: services.filter(s => s.status === 'draft').length,
-        pending: services.filter(s => s.status === 'pending').length,
-        suspended: services.filter(s => s.status === 'suspended').length
-      };
-      setStats(statsData);
+    if (fetchError) {
+      showServiceError(fetchError);
     }
-  }, [data]);
+  }, [fetchError, showServiceError]);
 
   // Memoized derived data
   const services = useMemo(() => {
@@ -480,7 +470,6 @@ const ServicesManagement = () => {
     
     return data.data.map(service => ({
       ...service,
-      // Ensure category is properly structured
       category: service.category?._id ? {
         _id: service.category._id,
         name: service.category.name,
@@ -492,6 +481,21 @@ const ServicesManagement = () => {
   const categories = useMemo(() => categoriesData?.data || [], [categoriesData]);
   const users = useMemo(() => usersData?.data || [], [usersData]);
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
+
+  // Memoized stats calculation
+  const stats = useMemo(() => {
+    const servicesList = services || [];
+    
+    return {
+      total: servicesList.length,
+      active: servicesList.filter(s => s.isActive && s.status === 'active').length,
+      inactive: servicesList.filter(s => !s.isActive || s.status !== 'active').length,
+      featured: servicesList.filter(s => s.isFeatured).length,
+      draft: servicesList.filter(s => s.status === 'draft').length,
+      pending: servicesList.filter(s => s.status === 'pending').length,
+      suspended: servicesList.filter(s => s.status === 'suspended').length
+    };
+  }, [services]);
 
   const formatPrice = useCallback((price, currency = 'USD') => {
     return new Intl.NumberFormat('en-US', {
@@ -543,23 +547,19 @@ const ServicesManagement = () => {
     setShowDeleteModal(true);
   }, []);
 
-  const handleRestoreService = useCallback((service) => {
-    setSelectedService(service);
-    setShowRestoreModal(true);
-  }, []);
 
   const handleBulkDeleteClick = useCallback(() => {
     if (selectedServices.length === 0) {
-      toast.error('Please select services first');
+      showServiceWarning('Please select services first');
       return;
     }
     
     setShowDeleteModal(true);
-  }, [selectedServices]);
+  }, [selectedServices, showServiceWarning]);
 
-  const handleBulkRestoreClick = useCallback(() => {
+  const handleBulkRestoreClick = useCallback(async () => {
     if (selectedServices.length === 0) {
-      toast.error('Please select services first');
+      showServiceWarning('Please select services first');
       return;
     }
     
@@ -569,37 +569,58 @@ const ServicesManagement = () => {
     );
     
     if (inactiveServices.length === 0) {
-      toast.error('No inactive services selected');
+      showServiceWarning('No inactive services selected');
       return;
     }
     
-    // Bulk restore
-    const serviceIds = inactiveServices.map(s => s._id);
-    bulkRestoreMutation.mutate(serviceIds);
-    setSelectedServices([]);
-  }, [selectedServices, services, bulkRestoreMutation]);
+    // Show loading toast
+    const loadingToastId = showServiceLoading(`Restoring ${inactiveServices.length} services...`);
+    
+    try {
+      // Bulk restore
+      const serviceIds = inactiveServices.map(s => s._id);
+      await bulkRestoreMutation.mutateAsync(serviceIds);
+      
+      dismissServiceToast();
+      showServiceSuccess(`${inactiveServices.length} services restored successfully`);
+      setSelectedServices([]);
+      refetch();
+    } catch (error) {
+      dismissServiceToast();
+      showServiceError(error);
+    }
+  }, [selectedServices, services, bulkRestoreMutation, showServiceLoading, showServiceSuccess, showServiceError, showServiceWarning, dismissServiceToast, refetch]);
 
   const handleSubmitEdit = useCallback(async (formData) => {
     if (!selectedService) return;
     
     setLoadingServiceId(selectedService._id);
+    const loadingToastId = showServiceLoading('Updating service...');
     
     try {
       await updateServiceMutation.mutateAsync({
         id: selectedService._id,
         data: formData
       });
-      toast.success('Service updated successfully');
+      
+      dismissServiceToast();
+      showServiceSuccess('Service updated successfully');
       setShowEditModal(false);
       setSelectedService(null);
+      refetch();
     } catch (error) {
-      toast.error(error.message || 'Failed to update service');
+      dismissServiceToast();
+      showServiceError(error);
+      // Re-throw error to be handled by modal
+      throw error;
     } finally {
       setLoadingServiceId(null);
     }
-  }, [selectedService, updateServiceMutation]);
+  }, [selectedService, updateServiceMutation, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast, refetch]);
 
   const handleSubmitDelete = useCallback(async (deleteOptions) => {
+    const loadingToastId = showServiceLoading('Deleting service...');
+    
     try {
       setLoadingServiceId(deleteOptions.id);
       
@@ -614,47 +635,36 @@ const ServicesManagement = () => {
         );
         
         await Promise.all(deletePromises);
-        toast.success(`${selectedServices.length} services deleted successfully`);
+        dismissServiceToast();
+        showServiceSuccess(`${selectedServices.length} services deleted successfully`);
         setSelectedServices([]);
       } else {
         // Handle single deletion
         await deleteServiceMutation.mutateAsync(deleteOptions);
-        toast.success('Service deleted successfully');
+        dismissServiceToast();
+        showServiceSuccess('Service deleted successfully');
       }
       
       setShowDeleteModal(false);
       setSelectedService(null);
+      refetch();
     } catch (error) {
-      toast.error(error.message || 'Failed to delete service');
+      dismissServiceToast();
+      showServiceError(error);
+      throw error;
     } finally {
       setLoadingServiceId(null);
     }
-  }, [selectedServices, deleteServiceMutation]);
+  }, [selectedServices, deleteServiceMutation, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast, refetch]);
 
-  const handleSubmitRestore = useCallback(async (service) => {
-    if (!service) return;
-    
-    setLoadingServiceId(service._id);
-    
-    try {
-      await restoreServiceMutation.mutateAsync({
-        id: service._id
-      });
-      toast.success('Service restored successfully');
-      setShowRestoreModal(false);
-      setSelectedService(null);
-    } catch (error) {
-      toast.error(error.message || 'Failed to restore service');
-    } finally {
-      setLoadingServiceId(null);
-    }
-  }, [restoreServiceMutation]);
-
+  
   const handleBulkAction = useCallback(async (action) => {
     if (selectedServices.length === 0) {
-      toast.error('Please select services first');
+      showServiceWarning('Please select services first');
       return;
     }
+
+    const loadingToastId = showServiceLoading(`Processing ${selectedServices.length} services...`);
 
     try {
       const operationMap = {
@@ -670,11 +680,13 @@ const ServicesManagement = () => {
       
       if (action === 'delete') {
         handleBulkDeleteClick();
+        dismissServiceToast();
         return;
       }
       
       if (action === 'restore') {
         handleBulkRestoreClick();
+        dismissServiceToast();
         return;
       }
 
@@ -685,14 +697,19 @@ const ServicesManagement = () => {
               action === 'pause' ? { status: 'paused' } : {}
       });
 
+      dismissServiceToast();
+      showServiceSuccess(`${selectedServices.length} services ${action}d successfully`);
       setSelectedServices([]);
-      toast.success(`${selectedServices.length} services ${action}d`);
+      refetch();
     } catch (error) {
-      toast.error('Failed to perform bulk action');
+      dismissServiceToast();
+      showServiceError(error);
     }
-  }, [selectedServices, bulkServiceMutation, handleBulkDeleteClick, handleBulkRestoreClick]);
+  }, [selectedServices, bulkServiceMutation, handleBulkDeleteClick, handleBulkRestoreClick, showServiceLoading, showServiceSuccess, showServiceError, showServiceWarning, dismissServiceToast, refetch]);
 
   const duplicateService = useCallback(async (service) => {
+    const loadingToastId = showServiceLoading('Duplicating service...');
+    
     try {
       setLoadingServiceId(service._id);
       
@@ -715,15 +732,23 @@ const ServicesManagement = () => {
       };
 
       await createServiceMutation.mutateAsync(duplicateData);
-      toast.success('Service duplicated successfully');
+      
+      dismissServiceToast();
+      showServiceSuccess('Service duplicated successfully');
+      refetch();
     } catch (error) {
-      toast.error('Failed to duplicate service');
+      dismissServiceToast();
+      showServiceError(error);
     } finally {
       setLoadingServiceId(null);
     }
-  }, [createServiceMutation]);
+  }, [createServiceMutation, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast, refetch]);
 
   const toggleFeature = useCallback(async (service) => {
+    const loadingToastId = showServiceLoading(
+      service.isFeatured ? 'Removing featured status...' : 'Setting as featured...'
+    );
+    
     try {
       setLoadingServiceId(service._id);
       
@@ -731,15 +756,23 @@ const ServicesManagement = () => {
         id: service._id,
         data: { isFeatured: !service.isFeatured }
       });
-      toast.success(`Service ${!service.isFeatured ? 'featured' : 'unfeatured'} successfully`);
+      
+      dismissServiceToast();
+      showServiceSuccess(
+        `Service ${!service.isFeatured ? 'marked as featured' : 'removed from featured'} successfully`
+      );
+      refetch();
     } catch (error) {
-      toast.error('Failed to update feature status');
+      dismissServiceToast();
+      showServiceError(error);
     } finally {
       setLoadingServiceId(null);
     }
-  }, [updateServiceMutation]);
+  }, [updateServiceMutation, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast, refetch]);
 
   const toggleStatus = useCallback(async (service, newStatus) => {
+    const loadingToastId = showServiceLoading(`Updating status to ${newStatus}...`);
+    
     try {
       setLoadingServiceId(service._id);
       
@@ -747,19 +780,23 @@ const ServicesManagement = () => {
         id: service._id,
         data: { status: newStatus }
       });
-      toast.success(`Service status updated to ${newStatus}`);
+      
+      dismissServiceToast();
+      showServiceSuccess(`Service status updated to ${newStatus}`);
+      refetch();
     } catch (error) {
-      toast.error('Failed to update service status');
+      dismissServiceToast();
+      showServiceError(error);
     } finally {
       setLoadingServiceId(null);
     }
-  }, [updateServiceMutation]);
+  }, [updateServiceMutation, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast, refetch]);
 
   const applyFilters = useCallback(() => {
     setPage(1);
     refetch();
-    toast.success('Filters applied');
-  }, [refetch]);
+    showServiceSuccess('Filters applied');
+  }, [refetch, showServiceSuccess]);
 
   const clearFilters = useCallback(() => {
     setFilters({
@@ -775,13 +812,20 @@ const ServicesManagement = () => {
     setSearchInput('');
     setSearchTerm('');
     setPage(1);
-    toast.success('Filters cleared');
-  }, []);
+    showServiceSuccess('Filters cleared');
+  }, [showServiceSuccess]);
 
   const refreshData = useCallback(() => {
-    refetch();
-    toast.success('Data refreshed');
-  }, [refetch]);
+    const loadingToastId = showServiceLoading('Refreshing data...');
+    
+    refetch().then(() => {
+      dismissServiceToast();
+      showServiceSuccess('Data refreshed');
+    }).catch((error) => {
+      dismissServiceToast();
+      showServiceError(error);
+    });
+  }, [refetch, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -834,6 +878,13 @@ const ServicesManagement = () => {
     return map;
   }, [users]);
 
+  // Loading states
+  const isUpdating = updateServiceMutation.isLoading;
+  const isDeleting = deleteServiceMutation.isLoading;
+  const isCreating = createServiceMutation.isLoading;
+  const isBulkOperating = bulkServiceMutation.isLoading || bulkRestoreMutation.isLoading;
+  const isAnyLoading = isUpdating || isDeleting || isCreating || isBulkOperating;
+
   if (isLoading && !services.length) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -863,7 +914,7 @@ const ServicesManagement = () => {
           </button>
           <button
             onClick={refreshData}
-            disabled={isRefetching}
+            disabled={isRefetching || isAnyLoading}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
@@ -876,7 +927,7 @@ const ServicesManagement = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <StatsCard
           title="Total Services"
-          value={pagination.total || 0}
+          value={stats.total}
           icon={FiPackage}
           color="blue"
           description="All services"
@@ -943,38 +994,88 @@ const ServicesManagement = () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiCheckCircle className="h-4 w-4" />
-                <span>Activate</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCheckCircle className="h-4 w-4" />
+                    <span>Activate</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('pause')}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiXCircle className="h-4 w-4" />
-                <span>Pause</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiXCircle className="h-4 w-4" />
+                    <span>Pause</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('feature')}
-                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-purple-100 text-purple-700 rounded-md text-sm hover:bg-purple-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiStar className="h-4 w-4" />
-                <span>Feature</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiStar className="h-4 w-4" />
+                    <span>Feature</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleBulkAction('restore')}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiRotateCcw className="h-4 w-4" />
-                <span>Restore</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiRotateCcw className="h-4 w-4" />
+                    <span>Restore</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={handleBulkDeleteClick}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
               >
-                <FiTrash2 className="h-4 w-4" />
-                <span>Delete</span>
+                {isBulkOperating ? (
+                  <>
+                    <FiLoader className="h-4 w-4 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiTrash2 className="h-4 w-4" />
+                    <span>Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1013,14 +1114,16 @@ const ServicesManagement = () => {
           <div className="flex gap-2">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+              disabled={isAnyLoading}
+              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
             >
               <FiFilter className="h-4 w-4" />
               <span className="hidden md:inline">Filters</span>
             </button>
             <button
               onClick={clearFilters}
-              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50"
+              disabled={isAnyLoading}
+              className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
             >
               <FiX className="h-4 w-4" />
               <span className="hidden md:inline">Clear</span>
@@ -1037,7 +1140,8 @@ const ServicesManagement = () => {
                 <select
                   value={filters.status}
                   onChange={(e) => handleFilterChange('status', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={isAnyLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                 >
                   <option value="">All Status</option>
                   <option value="active">Active</option>
@@ -1053,7 +1157,8 @@ const ServicesManagement = () => {
                 <select
                   value={filters.featured}
                   onChange={(e) => handleFilterChange('featured', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={isAnyLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                 >
                   <option value="">All</option>
                   <option value="true">Featured</option>
@@ -1066,7 +1171,8 @@ const ServicesManagement = () => {
                 <select
                   value={filters.category}
                   onChange={(e) => handleFilterChange('category', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={isAnyLoading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                 >
                   <option value="">All Categories</option>
                   {categories.map(category => (
@@ -1085,14 +1191,16 @@ const ServicesManagement = () => {
                     placeholder="Min"
                     value={filters.minPrice}
                     onChange={(e) => handleFilterChange('minPrice', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    disabled={isAnyLoading}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                   />
                   <input
                     type="number"
                     placeholder="Max"
                     value={filters.maxPrice}
                     onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    disabled={isAnyLoading}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -1101,7 +1209,8 @@ const ServicesManagement = () => {
             <div className="flex justify-end">
               <button
                 onClick={applyFilters}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                disabled={isAnyLoading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               >
                 Apply Filters
               </button>
@@ -1121,7 +1230,8 @@ const ServicesManagement = () => {
                     type="checkbox"
                     checked={selectedServices.length === services.length && services.length > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    disabled={isAnyLoading}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1156,15 +1266,15 @@ const ServicesManagement = () => {
                   onView={handleViewService}
                   onEdit={handleEditService}
                   onDelete={handleDeleteServiceClick}
-                  onRestore={handleRestoreService}
                   onOpenActionMenu={setActionMenu}
                   actionMenuId={actionMenu}
                   onFeatureToggle={toggleFeature}
                   onStatusToggle={toggleStatus}
                   onDuplicate={duplicateService}
                   formatPrice={formatPrice}
-                  loading={updateServiceMutation.isLoading || deleteServiceMutation.isLoading || restoreServiceMutation.isLoading}
+                  loading={isUpdating || isDeleting|| isCreating}
                   loadingServiceId={loadingServiceId}
+                  showToast={showServiceSuccess}
                 />
               ))}
             </tbody>
@@ -1191,7 +1301,7 @@ const ServicesManagement = () => {
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="px-4 py-4 border-t border-gray-200 bg-gray-50">
+          <div className="px-4 py-4 border-t border-gray-200">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="text-sm text-gray-700">
                 Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
@@ -1201,7 +1311,7 @@ const ServicesManagement = () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  disabled={page === 1 || isAnyLoading}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center"
                 >
                   <FiChevronLeft className="h-4 w-4" />
@@ -1224,11 +1334,12 @@ const ServicesManagement = () => {
                         <button
                           key={i}
                           onClick={() => setPage(i)}
+                          disabled={isAnyLoading}
                           className={`px-3 py-1.5 rounded-md text-sm font-medium ${
                             page === i
                               ? 'bg-indigo-600 text-white'
                               : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
+                          } disabled:opacity-50`}
                         >
                           {i}
                         </button>
@@ -1240,7 +1351,7 @@ const ServicesManagement = () => {
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages}
+                  disabled={page === pagination.totalPages || isAnyLoading}
                   className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center"
                 >
                   <span className="mr-1 hidden sm:inline">Next</span>
@@ -1262,9 +1373,10 @@ const ServicesManagement = () => {
             setSelectedService(null);
           }}
           onSubmit={handleSubmitEdit}
-          loading={updateServiceMutation.isLoading}
+          loading={isUpdating}
           categories={categories}
           users={users}
+          onError={showServiceError}
         />
       )}
 
@@ -1289,6 +1401,8 @@ const ServicesManagement = () => {
           categoriesMap={categoriesMap}
           usersMap={usersMap}
           formatPrice={formatPrice}
+          onError={showServiceError}
+          onSuccess={showServiceSuccess}
         />
       )}
 
@@ -1303,23 +1417,12 @@ const ServicesManagement = () => {
           }}
           onDelete={handleSubmitDelete}
           permanent={false}
-          loading={deleteServiceMutation.isLoading || loadingServiceId === selectedService._id}
+          loading={isDeleting || loadingServiceId === selectedService._id}
+          onError={showServiceError}
         />
       )}
 
-      {/* Restore Service Modal */}
-      {showRestoreModal && selectedService && (
-        <RestoreServiceModal
-          service={selectedService}
-          isOpen={showRestoreModal}
-          onClose={() => {
-            setShowRestoreModal(false);
-            setSelectedService(null);
-          }}
-          onRestore={handleSubmitRestore}
-          loading={restoreServiceMutation.isLoading || loadingServiceId === selectedService._id}
-        />
-      )}
+      
     </div>
   );
 };

@@ -6,9 +6,10 @@ import {
   FiChevronUp, FiChevronRight, FiGrid, FiLayers
 } from 'react-icons/fi';
 import { 
-  useUpdateService,
   useSubcategoriesByCategory
 } from '../../../hooks/useAdminDashboard';
+import {useUpdateService} from '../../../hooks/useServices'
+
 import { toast } from 'react-hot-toast';
 import { adminAPI } from '../../../api/admin';
 
@@ -146,24 +147,39 @@ const parseServiceData = (service) => {
     slug: service.slug || ''
   };
 };
-
-// Function to fetch subcategories for a category
 const fetchSubcategoriesForCategory = async (categoryId) => {
   if (!categoryId) return [];
   
   try {
-    const response = await adminAPI.getSubcategoriesByCategory(categoryId, {
-      active: true,
-      limit: 100
-    });
+    console.log('Fetching subcategories for category:', categoryId);
     
-    if (response.data.success) {
+    // Option 1: Use the existing subcategories dropdown endpoint
+    const response = await adminAPI.getSubcategoriesForDropdown(categoryId);
+    
+    if (response.data && response.data.success) {
       return response.data.data || [];
     }
     return [];
   } catch (error) {
     console.error('Error fetching subcategories:', error);
-    return [];
+    
+    // Fallback: Try the regular subcategories endpoint with filter
+    try {
+      const fallbackResponse = await adminAPI.getSubcategories({
+        category: categoryId,
+        active: true,
+        limit: 100
+      });
+      
+      if (fallbackResponse.data && fallbackResponse.data.success) {
+        return fallbackResponse.data.data || [];
+      }
+      return [];
+    } catch (fallbackError) {
+      console.error('Fallback subcategories fetch error:', fallbackError);
+      toast.error('Failed to load subcategories');
+      return [];
+    }
   }
 };
 
@@ -861,101 +877,86 @@ const ServiceEditModal = memo(({
                   )}
                 </div>
 
-                <div>
-                  <label htmlFor="subcategory" className="block text-sm font-medium text-gray-700 mb-2">
-                    Subcategory *
-                    {formData.category && !isLoadingSubcategories && (
-                      <span className="ml-2 text-xs text-gray-500">
-                        ({subcategories.length} available)
-                      </span>
-                    )}
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="subcategory"
-                      name="subcategory"
-                      value={formData.subcategory}
-                      onChange={handleSubcategoryChange}
-                      disabled={loading || !formData.category || isLoadingSubcategories}
-                      className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
-                        errors.subcategory ? 'border-red-300' : 'border-gray-300'
-                      } ${loading || !formData.category || isLoadingSubcategories ? 'bg-gray-50 cursor-not-allowed' : ''}`}
-                    >
-                      <option value="">{
-                        !formData.category 
-                          ? 'Select a category first'
-                          : isLoadingSubcategories
-                            ? 'Loading subcategories...'
-                            : 'Select a subcategory'
-                      }</option>
-                      
-                      {!isLoadingSubcategories && subcategories.map(subcategory => (
-                        <option 
-                          key={subcategory._id} 
-                          value={subcategory._id}
-                          selected={formData.subcategory === subcategory._id}
-                        >
-                          {subcategory.name}
-                          {subcategory.description && ` - ${subcategory.description.substring(0, 30)}...`}
-                        </option>
-                      ))}
-                      
-                      {!isLoadingSubcategories && subcategories.length === 0 && formData.category && (
-                        <option value="" disabled>
-                          No subcategories available for this category
-                        </option>
-                      )}
-                    </select>
-                    
-                    {isLoadingSubcategories ? (
-                      <FiLoader className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 h-5 w-5 animate-spin" />
-                    ) : (
-                      <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
-                    )}
-                    
-                    {formData.category && !isLoadingSubcategories && (
-                      <button
-                        type="button"
-                        onClick={() => loadSubcategories(formData.category)}
-                        className="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        title="Refresh subcategories"
-                      >
-                        <FiRefreshCw className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  
-                  {isLoadingSubcategories && formData.category && (
-                    <div className="mt-1.5 text-sm text-blue-600 flex items-center">
-                      <FiLoader className="h-4 w-4 mr-1 animate-spin" />
-                      Loading subcategories...
-                    </div>
-                  )}
-                  
-                  {errors.subcategory && (
-                    <p className="mt-1.5 text-sm text-red-600 flex items-center">
-                      <FiAlertCircle className="h-4 w-4 mr-1" />
-                      {errors.subcategory}
-                    </p>
-                  )}
-                  
-                  {!isLoadingSubcategories && formData.category && subcategories.length === 0 && (
-                    <p className="mt-1.5 text-sm text-yellow-600 flex items-center">
-                      <FiAlertCircle className="h-4 w-4 mr-1" />
-                      No subcategories available for this category
-                    </p>
-                  )}
-                  
-                  {formData.subcategory && !isLoadingSubcategories && (
-                    <p className="mt-1.5 text-sm text-green-600 flex items-center">
-                      <FiCheck className="h-4 w-4 mr-1" />
-                      Subcategory selected: {
-                        subcategories.find(s => s._id === formData.subcategory)?.name || 
-                        'Unknown subcategory'
-                      }
-                    </p>
-                  )}
-                </div>
+              <div>
+  <label htmlFor="subcategory" className="block text-sm font-medium text-gray-700 mb-2">
+    Subcategory *
+    {formData.category && !isLoadingSubcategories && (
+      <span className="ml-2 text-xs text-gray-500">
+        ({subcategories.length} available)
+      </span>
+    )}
+  </label>
+  <div className="relative">
+    <select
+      id="subcategory"
+      name="subcategory"
+      value={formData.subcategory}
+      onChange={handleSubcategoryChange}
+      disabled={loading || !formData.category || isLoadingSubcategories}
+      className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
+        errors.subcategory ? 'border-red-300' : 'border-gray-300'
+      } ${loading || !formData.category || isLoadingSubcategories ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+    >
+      <option value="">
+        {!formData.category 
+          ? 'Select a category first'
+          : isLoadingSubcategories
+            ? 'Loading subcategories...'
+            : 'Select a subcategory'
+        }
+      </option>
+      
+      {/* Always show subcategories if they exist */}
+      {!isLoadingSubcategories && subcategories.length > 0 && (
+        subcategories.map(subcategory => (
+          <option 
+            key={subcategory._id} 
+            value={subcategory._id}
+          >
+            {subcategory.name}
+
+          </option>
+        ))
+      )}
+      
+      {/* Show message if no subcategories */}
+      {!isLoadingSubcategories && formData.category && subcategories.length === 0 && (
+        <option value="" disabled>
+          No subcategories available for this category
+        </option>
+      )}
+    </select>
+    
+    {isLoadingSubcategories && formData.category ? (
+      <FiLoader className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 h-5 w-5 animate-spin" />
+    ) : (
+      <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
+    )}
+  </div>
+  
+  {/* Status Messages */}
+  {isLoadingSubcategories && formData.category && (
+    <div className="mt-1.5 text-sm text-blue-600 flex items-center">
+      <FiLoader className="h-4 w-4 mr-1 animate-spin" />
+      Loading subcategories...
+    </div>
+  )}
+  
+  {errors.subcategory && (
+    <p className="mt-1.5 text-sm text-red-600 flex items-center">
+      <FiAlertCircle className="h-4 w-4 mr-1" />
+      {errors.subcategory}
+    </p>
+  )}
+  
+  {!isLoadingSubcategories && formData.category && subcategories.length === 0 && (
+    <p className="mt-1.5 text-sm text-yellow-600 flex items-center">
+      <FiAlertCircle className="h-4 w-4 mr-1" />
+      No subcategories available for this category
+    </p>
+  )}
+
+</div>
               </div>
 
               {/* Short Description */}

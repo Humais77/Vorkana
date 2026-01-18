@@ -4605,8 +4605,14 @@ const getSubcategoriesDropdown = async (req, res) => {
   const requestId = uuidv4();
   
   try {
-    const { categoryId } = req.params;
+    const { categoryId } = req.params; // Changed from req.query to req.params
     const { activeOnly = true, cache: useCacheParam = 'false' } = req.query;
+
+    console.log('[GET SUBCATEGORIES DROPDOWN] Request:', {
+      categoryId,
+      activeOnly,
+      admin: req.admin?.email
+    });
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({
@@ -4648,11 +4654,14 @@ const getSubcategoriesDropdown = async (req, res) => {
       filter.isActive = true;
     }
 
-    // Get subcategories
+    // Get subcategories WITH category population
     const subcategories = await Subcategory.find(filter)
+      .populate('category', 'name slug description') // ADD THIS
       .select('name slug description icon order servicesCount gigsCount')
       .sort({ order: 1, name: 1 })
       .lean();
+
+    console.log(`[GET SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories for category ${categoryId}`);
 
     const response = {
       success: true,

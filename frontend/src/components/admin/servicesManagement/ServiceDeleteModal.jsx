@@ -1,10 +1,11 @@
-// components/admin/modals/ServiceDeleteModal.jsx
+// ServiceDeleteModal.jsx - Updated with proper error handling
 import React, { useState } from 'react';
 import { 
   FiX, 
   FiTrash2, 
   FiAlertTriangle, 
   FiInfo, 
+  FiLoader
 } from 'react-icons/fi';
 
 const ServiceDeleteModal = ({ 
@@ -13,11 +14,13 @@ const ServiceDeleteModal = ({
   onClose, 
   onDelete, 
   permanent = false,
-  loading = false 
+  loading = false,
+  onError // Add this prop for error handling
 }) => {
   const [deleteType, setDeleteType] = useState(permanent ? 'permanent' : 'soft');
   const [forceDelete, setForceDelete] = useState(false);
   const [error, setError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   if (!isOpen || !service) return null;
 
@@ -34,10 +37,14 @@ const ServiceDeleteModal = ({
   const hasDependencies = dependencies.orders > 0 || dependencies.reviews > 0;
 
   const handleDelete = async () => {
+    if (isDeleting) return;
+    
     setError('');
+    setIsDeleting(true);
     
     if (!forceDelete && hasDependencies && deleteType === 'permanent') {
       setError('Service has active orders or reviews. Check "Force delete" to proceed.');
+      setIsDeleting(false);
       return;
     }
 
@@ -51,7 +58,15 @@ const ServiceDeleteModal = ({
       await onDelete(deleteOptions);
       handleClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete service');
+      console.error('Delete service error:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to delete service');
+      
+      // Propagate error to parent component for toast notification
+      if (onError) {
+        onError(err);
+      }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -59,8 +74,11 @@ const ServiceDeleteModal = ({
     setDeleteType(permanent ? 'permanent' : 'soft');
     setForceDelete(false);
     setError('');
+    setIsDeleting(false);
     onClose();
   };
+
+  const isLoading = loading || isDeleting;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -107,11 +125,12 @@ const ServiceDeleteModal = ({
               <button
                 type="button"
                 onClick={() => setDeleteType('soft')}
+                disabled={isLoading}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'soft'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -133,11 +152,12 @@ const ServiceDeleteModal = ({
               <button
                 type="button"
                 onClick={() => setDeleteType('permanent')}
+                disabled={isLoading}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   deleteType === 'permanent'
                     ? 'border-red-300 bg-red-50 ring-2 ring-red-200'
                     : 'border-gray-300 hover:border-red-200 hover:bg-red-50'
-                }`}
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className="flex items-center mb-2">
                   <div className={`h-5 w-5 rounded-full border-2 mr-2 flex items-center justify-center ${
@@ -182,7 +202,8 @@ const ServiceDeleteModal = ({
                             type="checkbox"
                             checked={forceDelete}
                             onChange={(e) => setForceDelete(e.target.checked)}
-                            className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                            disabled={isLoading}
+                            className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500 disabled:opacity-50"
                           />
                           <span className="ml-2 text-sm font-medium text-amber-800">
                             Force delete despite dependencies
@@ -209,7 +230,10 @@ const ServiceDeleteModal = ({
           {error && (
             <div className="mb-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-700">{error}</p>
+                <div className="flex items-start">
+                  <FiAlertTriangle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
               </div>
             </div>
           )}
@@ -219,7 +243,7 @@ const ServiceDeleteModal = ({
             <button
               type="button"
               onClick={handleClose}
-              disabled={loading}
+              disabled={isLoading}
               className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium disabled:opacity-50 transition-colors"
             >
               Cancel
@@ -227,16 +251,16 @@ const ServiceDeleteModal = ({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={loading}
+              disabled={isLoading}
               className={`px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
                 deleteType === 'permanent'
                   ? 'bg-red-600 text-white hover:bg-red-700'
                   : 'bg-orange-600 text-white hover:bg-orange-700'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              {loading ? (
+              {isLoading ? (
                 <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <FiLoader className="h-4 w-4 animate-spin" />
                   <span>Deleting...</span>
                 </>
               ) : (
