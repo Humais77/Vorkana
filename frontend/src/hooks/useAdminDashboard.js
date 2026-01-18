@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 
 export const useAdminDashboard = () => {
   const queryClient = useQueryClient();
-  const { setDashboardStats } = useAdminStore();
+  const { setDashboardStats, setSystemHealth } = useAdminStore();
 
   return useQuery({
     queryKey: ['admin', 'dashboard'],
@@ -18,33 +18,97 @@ export const useAdminDashboard = () => {
         }
 
         const stats = response.data.data;
-
         console.log('[DASHBOARD STATS] Raw data:', stats);
 
-        // Extract safely with fallbacks
+        // Extract safely with fallbacks using the new structure
         const overview = stats.overview || {};
-        const categories = stats.categories || {};
-        const services = stats.services || {};
-        const gigs = stats.gigs || {};
+        const performance = stats.performance || {};
+        const calculated = stats.calculated || {};
+        const recentActivity = stats.recentActivity || [];
+        
+        // Extract users data
+        const usersData = overview.users || {};
+        const userRoles = usersData.roles || {};
+        
+        // Extract categories data
+        const categoriesData = overview.categories || {};
+        
+        // Extract subcategories data
+        const subcategoriesData = overview.subcategories || {};
+        
+        // Extract services data
+        const servicesData = overview.services || {};
+        const servicePerformance = performance.services || {};
+        
+        // Extract gigs data
+        const gigsData = overview.gigs || {};
+        const gigPerformance = performance.gigs || {};
+        
+        // Platform performance
+        const platformPerformance = performance.platform || {};
 
         const dashboardData = {
-          totalUsers: overview.totalUsers || 0,
-          activeUsers: overview.activeUsers || 0,
+          // Users stats
+          totalUsers: usersData.total || 0,
+          activeUsers: usersData.active || 0,
+          verifiedUsers: usersData.verified || 0,
+          pendingUsers: usersData.pending || 0,
+          newLast7d: usersData.newLast7d || 0,
+          adminCount: userRoles.admins || 0,
+          sellerCount: userRoles.sellers || 0,
           
-          totalCategories: categories.totalCategories || 0,
-          activeCategories: categories.activeCategories || 0,
+          // Categories stats
+          totalCategories: categoriesData.total || 0,
+          activeCategories: categoriesData.active || 0,
+          featuredCategories: categoriesData.featured || 0,
+          popularCategories: categoriesData.popular || 0,
           
-          // Note: Subcategories are now separate, these might come from different endpoint
-          totalSubcategories: categories.totalSubcategories || 0,
-          activeSubcategories: categories.activeSubcategories || 0,
+          // Subcategories stats
+          totalSubcategories: subcategoriesData.total || 0,
+          activeSubcategories: subcategoriesData.active || 0,
           
-          totalServices: services.totalServices || 0,
-          activeServices: services.activeServices || 0,
+          // Services stats
+          totalServices: servicesData.total || 0,
+          activeServices: servicesData.active || 0,
+          draftServices: servicesData.draft || 0,
+          pendingServices: servicesData.pending || 0,
+          suspendedServices: servicesData.suspended || 0,
+          featuredServices: servicesData.featured || 0,
+          recommendedServices: servicesData.recommended || 0,
+          avgServicePrice: servicePerformance.avgPrice || 0,
+          avgServiceRating: servicePerformance.avgRating || 0,
+          avgDeliveryTime: servicePerformance.avgDeliveryTime || 0,
+          serviceViews: servicePerformance.totalViews || 0,
+          serviceLikes: servicePerformance.totalLikes || 0,
           
-          totalGigs: gigs.totalGigs || 0,
-          activeGigs: gigs.activeGigs || 0,
+          // Gigs stats
+          totalGigs: gigsData.total || 0,
+          openGigs: gigsData.open || 0,
+          inProgressGigs: gigsData.inProgress || 0,
+          assignedGigs: gigsData.assigned || 0,
+          completedGigs: gigsData.completed || 0,
+          cancelledGigs: gigsData.cancelled || 0,
+          avgTimeline: gigPerformance.avgTimeline || 0,
           
-          lastUpdated: new Date().toISOString()
+          // Platform stats
+          activeUsers30d: platformPerformance.activeUsers30d || 0,
+          newServices30d: platformPerformance.newServices30d || 0,
+          newGigs30d: platformPerformance.newGigs30d || 0,
+          avgServiceRatingPlatform: platformPerformance.avgServiceRating || 0,
+          
+          // Calculated metrics
+          conversionRate: calculated.conversionRate || 0,
+          serviceCompletionRate: calculated.serviceCompletionRate || 0,
+          gigCompletionRate: calculated.gigCompletionRate || 0,
+          contentDensity: calculated.contentDensity || 0,
+          
+          // Raw data for other components
+          insights: stats.insights || {},
+          trends: stats.trends || {},
+          geography: stats.geography || {},
+          recentActivity: recentActivity,
+          
+          lastUpdated: stats.meta?.timestamp || new Date().toISOString()
         };
 
         console.log('[DASHBOARD STATS] Processed for store:', dashboardData);
@@ -52,7 +116,12 @@ export const useAdminDashboard = () => {
         // Update Zustand store
         setDashboardStats(dashboardData);
 
-        return stats; // Return full stats if needed elsewhere
+        // Return full stats for components that need it
+        return {
+          success: true,
+          data: dashboardData,
+          fullStats: stats // Keep full stats for other components
+        };
       } catch (error) {
         console.error('Dashboard fetch error:', error);
 
@@ -60,25 +129,72 @@ export const useAdminDashboard = () => {
         const fallback = {
           totalUsers: 0,
           activeUsers: 0,
+          verifiedUsers: 0,
+          pendingUsers: 0,
+          newLast7d: 0,
+          adminCount: 0,
+          sellerCount: 0,
+          
           totalCategories: 0,
           activeCategories: 0,
+          featuredCategories: 0,
+          popularCategories: 0,
+          
           totalSubcategories: 0,
           activeSubcategories: 0,
+          
           totalServices: 0,
           activeServices: 0,
+          draftServices: 0,
+          pendingServices: 0,
+          suspendedServices: 0,
+          featuredServices: 0,
+          recommendedServices: 0,
+          avgServicePrice: 0,
+          avgServiceRating: 0,
+          avgDeliveryTime: 0,
+          serviceViews: 0,
+          serviceLikes: 0,
+          
           totalGigs: 0,
-          activeGigs: 0,
+          openGigs: 0,
+          inProgressGigs: 0,
+          assignedGigs: 0,
+          completedGigs: 0,
+          cancelledGigs: 0,
+          avgTimeline: 0,
+          
+          activeUsers30d: 0,
+          newServices30d: 0,
+          newGigs30d: 0,
+          avgServiceRatingPlatform: 0,
+          
+          conversionRate: 0,
+          serviceCompletionRate: 0,
+          gigCompletionRate: 0,
+          contentDensity: 0,
+          
+          insights: {},
+          trends: {},
+          geography: {},
+          recentActivity: [],
+          
           lastUpdated: new Date().toISOString()
         };
 
         setDashboardStats(fallback);
 
         toast.error('Failed to load dashboard stats');
-        return fallback;
+        return {
+          success: false,
+          data: fallback,
+          error: error.message
+        };
       }
     },
-    staleTime: 60000,
+    staleTime: 60000, // 1 minute
     retry: 3,
+    retryDelay: 1000,
     refetchOnWindowFocus: true,
     onError: (error) => {
       toast.error('Dashboard loading failed');
@@ -2018,51 +2134,287 @@ export const useSubcategoryStats = () => {
   });
 };
 
-
 export const useSystemHealth = () => {
+  const { setSystemHealth } = useAdminStore();
+
   return useQuery({
     queryKey: ['admin', 'system', 'health'],
     queryFn: async () => {
       try {
         const response = await adminAPI.getSystemHealth();
-        return response.data;
+        
+        if (response.data.success) {
+          const healthData = response.data.data || {};
+          
+          // Update store
+          setSystemHealth({
+            status: healthData.status || 'unknown',
+            timestamp: healthData.timestamp,
+            uptime: healthData.uptime || 0,
+            database: healthData.database || 'unknown',
+            responseTime: healthData.responseTime || '0ms',
+            memory: healthData.memory || {},
+            version: healthData.version || 'unknown',
+            platform: healthData.platform || 'unknown'
+          });
+          
+          return response.data;
+        }
+        throw new Error(response.data.message || 'Failed to fetch system health');
       } catch (error) {
         console.error('System health error:', error);
-        throw error;
+        
+        // Set fallback
+        setSystemHealth({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          uptime: 0,
+          database: 'disconnected',
+          responseTime: 'error',
+          memory: {},
+          version: 'unknown',
+          platform: 'unknown'
+        });
+        
+        return {
+          success: false,
+          data: {
+            status: 'unhealthy',
+            timestamp: new Date().toISOString(),
+            error: error.message
+          }
+        };
       }
     },
     staleTime: 10000, // 10 seconds for system health
-    retry: 1
+    retry: 1,
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchOnWindowFocus: true,
+    onError: (error) => {
+      console.error('Failed to fetch system health:', error);
+    }
   });
 };
 
 export const useRecentActivities = (limit = 10) => {
+  const { dashboardStats } = useAdminStore();
+
   return useQuery({
     queryKey: ['admin', 'dashboard', 'activities', limit],
     queryFn: async () => {
       try {
         const response = await adminAPI.getRecentActivity(limit);
-        return response;
+        
+        if (response.data.success) {
+          const activities = response.data.data || [];
+          
+          // Process activities for display
+          const processedActivities = activities.map(activity => {
+            const baseActivity = {
+              id: activity.id,
+              type: activity.type,
+              title: activity.title,
+              description: activity.description,
+              timestamp: activity.timestamp,
+              isoTimestamp: activity.isoTimestamp
+            };
+            
+            // Format for UI display
+            if (activity.type === 'USER') {
+              return {
+                ...baseActivity,
+                name: activity.user?.name || 'User',
+                email: activity.user?.email || 'No email',
+                picture: activity.user?.picture || null,
+                role: activity.user?.role || 'user',
+                status: activity.status || 'active',
+                isActive: activity.status === 'active',
+                joined: activity.timestamp
+              };
+            }
+            
+            return baseActivity;
+          });
+          
+          return {
+            success: true,
+            data: processedActivities,
+            count: activities.length
+          };
+        }
+        
+        // Fallback to store data if API fails
+        const fallbackActivities = dashboardStats.recentActivity || [];
+        return {
+          success: false,
+          data: fallbackActivities.slice(0, limit),
+          count: fallbackActivities.length,
+          message: 'Using cached data'
+        };
       } catch (error) {
         console.error('Recent activities error:', error);
-        // Return empty array on error
-        return { 
-          data: [],
+        
+        // Use store data as fallback
+        const fallbackActivities = dashboardStats.recentActivity || [];
+        return {
           success: false,
-          message: error.message 
+          data: fallbackActivities.slice(0, limit),
+          count: fallbackActivities.length,
+          error: error.message
         };
       }
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
-    refetchInterval: 60000, // Refetch every minute for real-time updates
+    refetchInterval: 60000, // Refetch every minute
     refetchOnWindowFocus: true,
+    enabled: true, // Always enabled
     onError: (error) => {
       console.error('Failed to fetch recent activities:', error);
     }
   });
 };
+export const usePlatformMetrics = () => {
+  return useQuery({
+    queryKey: ['admin', 'platform', 'metrics'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getDashboardStats();
+        
+        if (response.data.success) {
+          const stats = response.data.data;
+          const performance = stats.performance || {};
+          const calculated = stats.calculated || {};
+          
+          return {
+            success: true,
+            data: {
+              // Performance metrics
+              avgServiceRating: performance.services?.avgRating || 0,
+              avgDeliveryTime: performance.services?.avgDeliveryTime || 0,
+              serviceViews: performance.services?.totalViews || 0,
+              serviceLikes: performance.services?.totalLikes || 0,
+              
+              // Platform metrics
+              activeUsers30d: performance.platform?.activeUsers30d || 0,
+              newServices30d: performance.platform?.newServices30d || 0,
+              newGigs30d: performance.platform?.newGigs30d || 0,
+              
+              // Calculated metrics
+              conversionRate: calculated.conversionRate || 0,
+              serviceCompletionRate: calculated.serviceCompletionRate || 0,
+              gigCompletionRate: calculated.gigCompletionRate || 0,
+              contentDensity: calculated.contentDensity || 0,
+              
+              // Growth metrics (from trends)
+              userGrowth: stats.trends?.userGrowth?.length || 0,
+              serviceGrowth: stats.trends?.serviceGrowth?.length || 0,
+              gigGrowth: stats.trends?.gigGrowth?.length || 0
+            }
+          };
+        }
+        throw new Error('Failed to fetch platform metrics');
+      } catch (error) {
+        console.error('Platform metrics error:', error);
+        return {
+          success: false,
+          data: {
+            avgServiceRating: 0,
+            avgDeliveryTime: 0,
+            serviceViews: 0,
+            serviceLikes: 0,
+            activeUsers30d: 0,
+            newServices30d: 0,
+            newGigs30d: 0,
+            conversionRate: 0,
+            serviceCompletionRate: 0,
+            gigCompletionRate: 0,
+            contentDensity: 0,
+            userGrowth: 0,
+            serviceGrowth: 0,
+            gigGrowth: 0
+          }
+        };
+      }
+    },
+    staleTime: 60000,
+    retry: 2
+  });
+};
 
+export const useCategoryDistribution = () => {
+  const { dashboardStats } = useAdminStore();
+
+  return useQuery({
+    queryKey: ['admin', 'categories', 'distribution'],
+    queryFn: async () => {
+      try {
+        const response = await adminAPI.getCategoryStats();
+        
+        if (response.data.success) {
+          const stats = response.data.data;
+          
+          // Calculate percentages for pie chart
+          const topCategories = stats.overview?.topCategories || [];
+          const total = topCategories.reduce((sum, cat) => sum + (cat.count || 0), 0);
+          
+          const distribution = topCategories.map(cat => ({
+            name: cat.category?.name || 'Unknown',
+            value: cat.count || 0,
+            percentage: total > 0 ? Math.round((cat.count / total) * 100) : 0
+          }));
+          
+          return {
+            success: true,
+            data: distribution,
+            totalCategories: stats.overview?.totalCategories || 0
+          };
+        }
+        
+        // Fallback using dashboard stats
+        return {
+          success: false,
+          data: [
+            { name: 'Categories', value: dashboardStats.totalCategories || 0, percentage: 100 },
+            { name: 'Subcategories', value: dashboardStats.totalSubcategories || 0, percentage: 100 }
+          ],
+          totalCategories: dashboardStats.totalCategories || 0
+        };
+      } catch (error) {
+        console.error('Category distribution error:', error);
+        return {
+          success: false,
+          data: [],
+          totalCategories: 0
+        };
+      }
+    },
+    staleTime: 120000, // 2 minutes
+    retry: 1
+  });
+};
+
+// Refresh dashboard manually
+export const useRefreshDashboard = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => {
+      return queryClient.invalidateQueries(['admin', 'dashboard']);
+    },
+    onMutate: () => {
+      toast.loading('Refreshing dashboard...', { id: 'refresh-dashboard' });
+    },
+    onSuccess: () => {
+      toast.dismiss('refresh-dashboard');
+      toast.success('Dashboard refreshed successfully');
+    },
+    onError: (error) => {
+      toast.dismiss('refresh-dashboard');
+      toast.error('Failed to refresh dashboard');
+    }
+  });
+};
 export const useChartData = (chartType, timeRange = '7d') => {
   return useQuery({
     queryKey: ['admin', 'dashboard', 'charts', chartType, timeRange],

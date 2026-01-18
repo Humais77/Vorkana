@@ -157,6 +157,14 @@ const clearCacheMiddleware = (resourceType) => {
     next();
   };
 };
+router.get('/dashboard', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('view_dashboard'),
+  auditLog('VIEW_DASHBOARD', 'dashboard'),
+  cacheMiddleware(300, 'admin:dashboard'), // Cache for 5 minutes
+  adminController.getDashboardStats
+);
 
 router.post('/logout',
   verifyAdmin,
@@ -454,14 +462,6 @@ router.delete('/subcategories/:id',
 // ============================================
 // DASHBOARD ROUTES
 // ============================================
-router.get('/dashboard', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  requirePermission('view_dashboard'),
-  auditLog('VIEW_DASHBOARD', 'dashboard'),
-  cacheMiddleware(300, 'admin:dashboard'), // Cache for 5 minutes
-  adminController.getDashboardStats
-);
 
 // ============================================
 // USER MANAGEMENT ROUTES

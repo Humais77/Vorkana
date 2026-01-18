@@ -497,7 +497,6 @@ const bulkUpdateUsers = async (req, res) => {
     });
   }
 };
-
 const getDashboardStats = async (req, res) => {
   const requestId = uuidv4();
   const startTime = Date.now();
@@ -523,195 +522,660 @@ const getDashboardStats = async (req, res) => {
       });
     }
 
-    // Run all queries in parallel for better performance
+    // Run all aggregation queries in parallel for maximum performance
     const [
       userStats,
       categoryStats,
       subcategoryStats,
       serviceStats,
       gigStats,
-      recentActivity
+      userGrowth,
+      platformMetrics
     ] = await Promise.all([
-      // User stats
+      // 1. User Statistics (enhanced with role breakdown - REMOVED SELLERS)
       User.aggregate([
         {
           $facet: {
-            totalUsers: [{ $count: "count" }],
-            activeUsers: [{ $match: { isActive: true } }, { $count: "count" }]
+            totals: [
+              { $match: { deletedAt: null } },
+              {
+                $group: {
+                  _id: null,
+                  totalUsers: { $sum: 1 },
+                  activeUsers: { $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] } },
+                  verifiedUsers: { $sum: { $cond: [{ $eq: ["$emailVerified", true] }, 1, 0] } },
+                  pendingUsers: { 
+                    $sum: { 
+                      $cond: [{ $eq: ["$registrationStatus", "pending"] }, 1, 0] 
+                    } 
+                  },
+                  // User role breakdown - ONLY ADMINS REMAIN
+                  adminCount: { 
+                    $sum: { $cond: [{ $eq: ["$role", "admin"] }, 1, 0] } 
+                  },
+                  // New users in last 7 days
+                  newUsers7d: {
+                    $sum: {
+                      $cond: [
+                        { 
+                          $gte: [
+                            "$createdAt",
+                            new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+                          ]
+                        },
+                        1,
+                        0
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            // Daily signups for the last 30 days
+            dailySignups: [
+              { 
+                $match: { 
+                  createdAt: { 
+                    $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+                  } 
+                } 
+              },
+              {
+                $group: {
+                  _id: {
+                    date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }
+                  },
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { "_id.date": 1 } },
+              { $limit: 30 }
+            ],
+            // User geography
+            byCountry: [
+              { $match: { country: { $exists: true, $ne: "" } } },
+              { $group: { _id: "$country", count: { $sum: 1 } } },
+              { $sort: { count: -1 } },
+              { $limit: 10 }
+            ]
           }
         }
       ]),
       
-      // Category stats - FIXED: Simplified query
+      // 2. Category Statistics (enhanced)
       Category.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $facet: {
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  totalCategories: { $sum: 1 },
+                  activeCategories: { 
+                    $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] } 
+                  },
+                  featuredCategories: { 
+                    $sum: { $cond: [{ $eq: ["$featured", true] }, 1, 0] } 
+                  },
+                  popularCategories: { 
+                    $sum: { $cond: [{ $eq: ["$popular", true] }, 1, 0] } 
+                  },
+                  // Top categories by content
+                  totalServices: { $sum: { $ifNull: ["$servicesCount", 0] } },
+                  totalGigs: { $sum: { $ifNull: ["$gigsCount", 0] } }
+                }
+              }
+            ],
+            topByServices: [
+              { $sort: { servicesCount: -1 } },
+              { $limit: 5 },
+              { $project: { name: 1, servicesCount: 1, gigsCount: 1, featured: 1 } }
+            ],
+            topByGigs: [
+              { $sort: { gigsCount: -1 } },
+              { $limit: 5 },
+              { $project: { name: 1, gigsCount: 1, servicesCount: 1 } }
+            ]
+          }
+        }
+      ]),
+      
+      // 3. Subcategory Statistics (enhanced)
+      Subcategory.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $facet: {
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  totalSubcategories: { $sum: 1 },
+                  activeSubcategories: { 
+                    $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] } 
+                  },
+                  totalServices: { $sum: { $ifNull: ["$servicesCount", 0] } },
+                  totalGigs: { $sum: { $ifNull: ["$gigsCount", 0] } }
+                }
+              }
+            ],
+            topByServices: [
+              { $sort: { servicesCount: -1 } },
+              { $limit: 10 },
+              { $project: { name: 1, servicesCount: 1, category: 1 } }
+            ],
+            byCategory: [
+              {
+                $group: {
+                  _id: "$category",
+                  count: { $sum: 1 },
+                  totalServices: { $sum: "$servicesCount" },
+                  totalGigs: { $sum: "$gigsCount" }
+                }
+              },
+              { $sort: { count: -1 } },
+              { $limit: 10 }
+            ]
+          }
+        }
+      ]),
+      
+      // 4. Service Statistics (REMOVED FINANCIAL METRICS)
+      Service.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $facet: {
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  totalServices: { $sum: 1 },
+                  activeServices: { 
+                    $sum: { 
+                      $cond: [
+                        { $in: ["$status", ["active", "published"]] },
+                        1,
+                        0
+                      ]
+                    } 
+                  },
+                  draftServices: { 
+                    $sum: { $cond: [{ $eq: ["$status", "draft"] }, 1, 0] } 
+                  },
+                  pendingServices: { 
+                    $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } 
+                  },
+                  suspendedServices: { 
+                    $sum: { $cond: [{ $eq: ["$status", "suspended"] }, 1, 0] } 
+                  },
+                  featuredServices: { 
+                    $sum: { $cond: [{ $eq: ["$isFeatured", true] }, 1, 0] } 
+                  },
+                  recommendedServices: { 
+                    $sum: { $cond: [{ $eq: ["$isRecommended", true] }, 1, 0] } 
+                  },
+                  // Performance metrics (NO REVENUE)
+                  avgPrice: { $avg: { $ifNull: ["$price", 0] } },
+                  minPrice: { $min: { $ifNull: ["$price", 0] } },
+                  maxPrice: { $max: { $ifNull: ["$price", 0] } },
+                  avgDeliveryTime: { $avg: { $ifNull: ["$deliveryTime", 0] } },
+                  avgRating: { $avg: { $ifNull: ["$rating", 0] } },
+                  totalViews: { $sum: { $ifNull: ["$views", 0] } },
+                  totalLikes: { $sum: { $ifNull: ["$likes", 0] } }
+                }
+              }
+            ],
+            // Growth over time (NO REVENUE)
+            growth: [
+              { 
+                $match: { 
+                  createdAt: { 
+                    $gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Last 90 days
+                  } 
+                } 
+              },
+              {
+                $group: {
+                  _id: {
+                    year: { $year: "$createdAt" },
+                    month: { $month: "$createdAt" },
+                    week: { $week: "$createdAt" }
+                  },
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { "_id.year": 1, "_id.month": 1, "_id.week": 1 } },
+              { $limit: 12 }
+            ],
+            // Status breakdown (NO REVENUE)
+            byStatus: [
+              {
+                $group: {
+                  _id: "$status",
+                  count: { $sum: 1 },
+                  avgPrice: { $avg: { $ifNull: ["$price", 0] } }
+                }
+              },
+              { $sort: { count: -1 } }
+            ],
+            // Top performing services (NO REVENUE)
+            topPerforming: [
+              { $match: { status: "active" } },
+              { 
+                $addFields: { 
+                  performanceScore: { 
+                    $multiply: [
+                      { $ifNull: ["$rating", 0] },
+                      { $ifNull: ["$views", 1] }
+                    ]
+                  }
+                } 
+              },
+              { $sort: { performanceScore: -1 } },
+              { $limit: 10 },
+              { 
+                $project: { 
+                  title: 1, 
+                  price: 1, 
+                  rating: 1, 
+                  views: 1,
+                  createdBy: 1,
+                  category: 1,
+                  performanceScore: 1
+                } 
+              }
+            ]
+          }
+        }
+      ]),
+      
+      // 5. Gig Statistics (REMOVED BUDGET, BIDS, AND FINANCIAL METRICS)
+      Gig.aggregate([
+        { $match: { deletedAt: null } },
+        {
+          $facet: {
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  totalGigs: { $sum: 1 },
+                  openGigs: { $sum: { $cond: [{ $eq: ["$status", "open"] }, 1, 0] } },
+                  inProgressGigs: { $sum: { $cond: [{ $eq: ["$status", "in_progress"] }, 1, 0] } },
+                  assignedGigs: { $sum: { $cond: [{ $eq: ["$status", "assigned"] }, 1, 0] } },
+                  completedGigs: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+                  cancelledGigs: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+                  // Timeline metrics (NO BUDGET)
+                  avgTimeline: { $avg: { $ifNull: ["$timeline", 0] } }
+                }
+              }
+            ],
+            // Urgency breakdown (NO BUDGET, NO BIDS)
+            byUrgency: [
+              {
+                $group: {
+                  _id: "$urgency",
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { count: -1 } }
+            ],
+            // Growth over time (NO BUDGET)
+            growth: [
+              { 
+                $match: { 
+                  createdAt: { 
+                    $gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+                  } 
+                } 
+              },
+              {
+                $group: {
+                  _id: {
+                    year: { $year: "$createdAt" },
+                    month: { $month: "$createdAt" }
+                  },
+                  count: { $sum: 1 }
+                }
+              },
+              { $sort: { "_id.year": 1, "_id.month": 1 } },
+              { $limit: 12 }
+            ]
+          }
+        }
+      ]),
+      
+      // 6. User Growth Timeline (last 12 months)
+      User.aggregate([
         { 
           $match: { 
-            deletedAt: null,
-            isSubcategory: false
+            createdAt: { 
+              $gte: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) // Last year
+            } 
           } 
         },
         {
           $group: {
-            _id: null,
-            totalCategories: { $sum: 1 },
-            activeCategories: {
-              $sum: { 
-                $cond: [
-                  { $and: [{ $eq: ["$isActive", true] }, { $ifNull: ["$isActive", true] }] },
-                  1,
-                  0
-                ]
-              }
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" }
+            },
+            newUsers: { $sum: 1 },
+            verifiedUsers: { 
+              $sum: { $cond: [{ $eq: ["$emailVerified", true] }, 1, 0] } 
+            },
+            activeUsers: { 
+              $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] } 
             }
           }
-        }
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+        { $limit: 12 }
       ]),
       
-      // Subcategory stats - FIXED: Use Subcategory model
-      Subcategory.aggregate([
-        { $match: { deletedAt: null } },
-        {
-          $group: {
-            _id: null,
-            totalSubcategories: { $sum: 1 },
-            activeSubcategories: {
-              $sum: {
-                $cond: [
-                  { $and: [{ $eq: ["$isActive", true] }, { $ifNull: ["$isActive", true] }] },
-                  1,
-                  0
-                ]
-              }
-            }
+      // 7. Platform Performance Metrics
+      Promise.all([
+        // Active users in last 30 days
+        User.countDocuments({
+          lastSeenAt: { 
+            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          },
+          isActive: true
+        }),
+        // Services created in last 30 days
+        Service.countDocuments({
+          createdAt: { 
+            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
           }
-        }
-      ]),
-      
-      // Service stats
-      Service.aggregate([
-        { $match: { deletedAt: null } },
-        {
-          $group: {
-            _id: null,
-            totalServices: { $sum: 1 },
-            activeServices: {
-              $sum: {
-                $cond: [
-                  { 
-                    $or: [
-                      { $eq: ["$status", "active"] },
-                      { $eq: ["$isActive", true] }
-                    ]
-                  },
-                  1,
-                  0
-                ]
-              }
-            }
+        }),
+        // Gigs created in last 30 days
+        Gig.countDocuments({
+          createdAt: { 
+            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
           }
-        }
-      ]),
-      
-      // Gig stats
-      Gig.aggregate([
-        { $match: { deletedAt: null } },
-        {
-          $group: {
-            _id: null,
-            totalGigs: { $sum: 1 },
-            activeGigs: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: [
-                      "$status",
-                      ["open", "in_progress", "assigned"]
-                    ]
-                  },
-                  1,
-                  0
-                ]
-              }
-            }
-          }
-        }
-      ]),
-      
-      // Recent activity
-      User.find({ 
-        deletedAt: null
-      }, { 
-        name: 1, 
-        email: 1, 
-        role: 1, 
-        picture: 1, 
-        createdAt: 1,
-        lastLoginAt: 1,
-        isActive: 1
-      })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean()
+        }),
+        // Average rating across services
+        Service.aggregate([
+          { $match: { rating: { $exists: true, $ne: null } } },
+          { $group: { _id: null, avgRating: { $avg: "$rating" } } }
+        ])
+      ])
     ]);
 
     // Process and format the results
     const stats = {
       overview: {
-        totalUsers: userStats[0]?.totalUsers?.[0]?.count || 0,
-        activeUsers: userStats[0]?.activeUsers?.[0]?.count || 0
+        // User statistics
+        users: {
+          total: userStats[0]?.totals[0]?.totalUsers || 0,
+          active: userStats[0]?.totals[0]?.activeUsers || 0,
+          verified: userStats[0]?.totals[0]?.verifiedUsers || 0,
+          pending: userStats[0]?.totals[0]?.pendingUsers || 0,
+          newLast7d: userStats[0]?.totals[0]?.newUsers7d || 0,
+          roles: {
+            admins: userStats[0]?.totals[0]?.adminCount || 0,
+            // Removed sellers count
+            sellers: 0
+          }
+        },
+        
+        // Content statistics
+        categories: {
+          total: categoryStats[0]?.totals[0]?.totalCategories || 0,
+          active: categoryStats[0]?.totals[0]?.activeCategories || 0,
+          featured: categoryStats[0]?.totals[0]?.featuredCategories || 0,
+          popular: categoryStats[0]?.totals[0]?.popularCategories || 0
+        },
+        
+        subcategories: {
+          total: subcategoryStats[0]?.totals[0]?.totalSubcategories || 0,
+          active: subcategoryStats[0]?.totals[0]?.activeSubcategories || 0
+        },
+        
+        services: {
+          total: serviceStats[0]?.totals[0]?.totalServices || 0,
+          active: serviceStats[0]?.totals[0]?.activeServices || 0,
+          draft: serviceStats[0]?.totals[0]?.draftServices || 0,
+          pending: serviceStats[0]?.totals[0]?.pendingServices || 0,
+          suspended: serviceStats[0]?.totals[0]?.suspendedServices || 0,
+          featured: serviceStats[0]?.totals[0]?.featuredServices || 0,
+          recommended: serviceStats[0]?.totals[0]?.recommendedServices || 0
+        },
+        
+        gigs: {
+          total: gigStats[0]?.totals[0]?.totalGigs || 0,
+          open: gigStats[0]?.totals[0]?.openGigs || 0,
+          inProgress: gigStats[0]?.totals[0]?.inProgressGigs || 0,
+          assigned: gigStats[0]?.totals[0]?.assignedGigs || 0,
+          completed: gigStats[0]?.totals[0]?.completedGigs || 0,
+          cancelled: gigStats[0]?.totals[0]?.cancelledGigs || 0
+        }
       },
-      categories: {
-        totalCategories: categoryStats[0]?.totalCategories || 0,
-        activeCategories: categoryStats[0]?.activeCategories || 0,
-        totalSubcategories: subcategoryStats[0]?.totalSubcategories || 0,
-        activeSubcategories: subcategoryStats[0]?.activeSubcategories || 0
+      
+      // Financial metrics section removed entirely
+      // performance: {
+      //   services: {
+      //     avgDeliveryTime: Math.round(serviceStats[0]?.totals[0]?.avgDeliveryTime || 0),
+      //     avgRating: parseFloat((serviceStats[0]?.totals[0]?.avgRating || 0).toFixed(2)),
+      //     totalViews: serviceStats[0]?.totals[0]?.totalViews || 0,
+      //     totalLikes: serviceStats[0]?.totals[0]?.totalLikes || 0
+      //   },
+      //   gigs: {
+      //     avgTimeline: Math.round(gigStats[0]?.totals[0]?.avgTimeline || 0),
+      //     // Removed bids-related metrics
+      //   },
+      //   platform: {
+      //     activeUsers30d: platformMetrics[0] || 0,
+      //     newServices30d: platformMetrics[1] || 0,
+      //     newGigs30d: platformMetrics[2] || 0,
+      //     avgServiceRating: parseFloat((platformMetrics[3]?.[0]?.avgRating || 0).toFixed(2))
+      //   }
+      // },
+      
+      // Performance metrics (without financial data)
+      performance: {
+        services: {
+          avgDeliveryTime: Math.round(serviceStats[0]?.totals[0]?.avgDeliveryTime || 0),
+          avgRating: parseFloat((serviceStats[0]?.totals[0]?.avgRating || 0).toFixed(2)),
+          totalViews: serviceStats[0]?.totals[0]?.totalViews || 0,
+          totalLikes: serviceStats[0]?.totals[0]?.totalLikes || 0,
+          // Service price metrics (without revenue)
+          avgPrice: Math.round(serviceStats[0]?.totals[0]?.avgPrice || 0),
+          minPrice: serviceStats[0]?.totals[0]?.minPrice || 0,
+          maxPrice: serviceStats[0]?.totals[0]?.maxPrice || 0
+        },
+        gigs: {
+          avgTimeline: Math.round(gigStats[0]?.totals[0]?.avgTimeline || 0)
+          // Removed totalBids and avgBidsPerGig
+        },
+        platform: {
+          activeUsers30d: platformMetrics[0] || 0,
+          newServices30d: platformMetrics[1] || 0,
+          newGigs30d: platformMetrics[2] || 0,
+          avgServiceRating: parseFloat((platformMetrics[3]?.[0]?.avgRating || 0).toFixed(2))
+        }
       },
-      services: {
-        totalServices: serviceStats[0]?.totalServices || 0,
-        activeServices: serviceStats[0]?.activeServices || 0
+      
+      // Top lists and insights
+      insights: {
+        topCategoriesByServices: categoryStats[0]?.topByServices || [],
+        topCategoriesByGigs: categoryStats[0]?.topByGigs || [],
+        topSubcategoriesByServices: subcategoryStats[0]?.topByServices || [],
+        topPerformingServices: serviceStats[0]?.topPerforming || [],
+        serviceStatusBreakdown: serviceStats[0]?.byStatus || [],
+        gigUrgencyBreakdown: gigStats[0]?.byUrgency || [],
+        // Removed gigBudgetDistribution
+        gigBudgetDistribution: [] // Empty array since we removed budget distribution
       },
-      gigs: {
-        totalGigs: gigStats[0]?.totalGigs || 0,
-        activeGigs: gigStats[0]?.activeGigs || 0
+      
+      // Growth trends
+      trends: {
+        userGrowth: userGrowth.map(item => ({
+          period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
+          newUsers: item.newUsers,
+          verifiedUsers: item.verifiedUsers,
+          activeUsers: item.activeUsers
+        })),
+        serviceGrowth: serviceStats[0]?.growth?.map(item => ({
+          period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}-${item._id.week}`,
+          count: item.count
+          // Removed revenue
+        })) || [],
+        gigGrowth: gigStats[0]?.growth?.map(item => ({
+          period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
+          count: item.count
+          // Removed totalBudget
+        })) || [],
+        dailySignups: userStats[0]?.dailySignups?.map(item => ({
+          date: item._id.date,
+          count: item.count
+        })) || []
       },
-      recentActivity: recentActivity.map(user => ({
-        id: user._id,
-        name: user.name || 'Unknown User',
-        email: user.email || 'No email',
-        role: user.role || 'user',
-        avatar: user.picture || null,
-        joined: user.createdAt ? new Date(user.createdAt).toISOString() : null,
-        lastSeen: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
-        isActive: user.isActive || false,
-        isNew: !user.lastLoginAt && user.createdAt > new Date(Date.now() - 24 * 60 * 60 * 1000)
-      }))
+      
+      // Geography
+      geography: {
+        usersByCountry: userStats[0]?.byCountry || []
+      },
+      
+      // Calculated metrics (updated to remove financial calculations)
+      calculated: {
+        conversionRate: userStats[0]?.totals[0]?.totalUsers > 0 
+          ? parseFloat(((userStats[0]?.totals[0]?.verifiedUsers / userStats[0]?.totals[0]?.totalUsers) * 100).toFixed(2))
+          : 0,
+        
+        serviceCompletionRate: serviceStats[0]?.totals[0]?.totalServices > 0
+          ? parseFloat(((serviceStats[0]?.totals[0]?.activeServices / serviceStats[0]?.totals[0]?.totalServices) * 100).toFixed(2))
+          : 0,
+        
+        gigCompletionRate: gigStats[0]?.totals[0]?.totalGigs > 0
+          ? parseFloat(((gigStats[0]?.totals[0]?.completedGigs / gigStats[0]?.totals[0]?.totalGigs) * 100).toFixed(2))
+          : 0,
+        
+        contentDensity: categoryStats[0]?.totals[0]?.totalCategories > 0
+          ? parseFloat(((serviceStats[0]?.totals[0]?.totalServices + gigStats[0]?.totals[0]?.totalGigs) / categoryStats[0]?.totals[0]?.totalCategories).toFixed(2))
+          : 0
+      }
     };
+
+    // Add recent activity (limit to 10 most recent items)
+    const recentActivity = await Promise.all([
+      // Recent users
+      User.find({ deletedAt: null })
+        .select('name email role picture createdAt lastLoginAt isActive')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean(),
+      
+      // Recent services
+      Service.find({ deletedAt: null })
+        .select('title slug category createdBy createdAt status price')
+        .populate('createdBy', 'name email picture')
+        .populate('category', 'name')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      
+      // Recent gigs
+      Gig.find({ deletedAt: null })
+        .select('title slug projectCategory createdBy createdAt status')
+        .populate('createdBy', 'name email picture')
+        .populate('projectCategory', 'name')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean()
+    ]);
+
+    // Format recent activity
+    stats.recentActivity = [
+      ...recentActivity[0].map(user => ({
+        id: user._id,
+        type: 'USER',
+        action: 'joined',
+        title: `${user.name || 'User'} joined`,
+        user: {
+          name: user.name,
+          email: user.email,
+          picture: user.picture,
+          role: user.role
+        },
+        timestamp: user.createdAt,
+        status: user.isActive ? 'active' : 'inactive'
+      })),
+      ...recentActivity[1].map(service => ({
+        id: service._id,
+        type: 'SERVICE',
+        action: service.status === 'active' ? 'published' : 'created',
+        title: `Service: ${service.title}`,
+        user: service.createdBy ? {
+          name: service.createdBy.name,
+          email: service.createdBy.email,
+          picture: service.createdBy.picture
+        } : null,
+        details: {
+          price: service.price,
+          category: service.category?.name
+        },
+        timestamp: service.createdAt,
+        status: service.status
+      })),
+      ...recentActivity[2].map(gig => ({
+        id: gig._id,
+        type: 'GIG',
+        action: gig.status === 'open' ? 'posted' : 'updated',
+        title: `Gig: ${gig.title}`,
+        user: gig.createdBy ? {
+          name: gig.createdBy.name,
+          email: gig.createdBy.email,
+          picture: gig.createdBy.picture
+        } : null,
+        details: {
+          // Removed budget from details
+          category: gig.projectCategory?.name
+        },
+        timestamp: gig.createdAt,
+        status: gig.status
+      }))
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+     .slice(0, 15); // Keep only 15 most recent
 
     const endTime = Date.now();
     const executionTime = endTime - startTime;
     
     console.log(`[DASHBOARD STATS] Completed in ${executionTime}ms for request: ${requestId}`);
     console.log(`[DASHBOARD STATS] Results:`, {
-      users: stats.overview.totalUsers,
-      categories: stats.categories.totalCategories,
-      subcategories: stats.categories.totalSubcategories,
-      services: stats.services.totalServices,
-      gigs: stats.gigs.totalGigs
+      users: stats.overview.users.total,
+      categories: stats.overview.categories.total,
+      subcategories: stats.overview.subcategories.total,
+      services: stats.overview.services.total,
+      gigs: stats.overview.gigs.total
     });
 
-    // Cache the result
-    await cache.set(cacheKey, {
-      success: true,
-      data: stats
-    }, 300); // Cache for 5 minutes
-
-    res.json({
+    // Prepare the final response
+    const response = {
       success: true,
       data: stats,
-      requestId,
-      executionTime: `${executionTime}ms`,
-      timestamp: new Date().toISOString()
+      meta: {
+        requestId,
+        executionTime: `${executionTime}ms`,
+        cacheExpiry: '5 minutes',
+        dataSource: 'aggregated',
+        timestamp: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      }
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    // Log the aggregation for monitoring
+    await logAdminAction(req.admin._id, 'VIEW_DASHBOARD_STATS', 'dashboard', {
+      executionTime,
+      cacheKey,
+      userCount: stats.overview.users.total,
+      serviceCount: stats.overview.services.total,
+      gigCount: stats.overview.gigs.total
     });
+
+    res.json(response);
 
   } catch (error) {
     console.error('[DASHBOARD STATS ERROR]', error);
@@ -720,103 +1184,126 @@ const getDashboardStats = async (req, res) => {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
     
-    // Return simplified but accurate stats even on error
+    // Return graceful fallback with minimal essential stats
     try {
-      // Fallback to individual counts if aggregation fails
-      const [
-        totalUsers,
-        activeUsers,
-        totalCategories,
-        activeCategories,
-        totalSubcategories,
-        activeSubcategories,
-        totalServices,
-        activeServices,
-        totalGigs,
-        activeGigs
-      ] = await Promise.all([
-        User.countDocuments({ deletedAt: null }),
-        User.countDocuments({ deletedAt: null, isActive: true }),
-        Category.countDocuments({ deletedAt: null, isSubcategory: false }),
-        Category.countDocuments({ deletedAt: null, isSubcategory: false, isActive: true }),
-        Subcategory.countDocuments({ deletedAt: null }),
-        Subcategory.countDocuments({ deletedAt: null, isActive: true }),
-        Service.countDocuments({ deletedAt: null }),
-        Service.countDocuments({ deletedAt: null, $or: [{ status: 'active' }, { isActive: true }] }),
-        Gig.countDocuments({ deletedAt: null }),
-        Gig.countDocuments({ 
-          deletedAt: null, 
-          status: { $in: ['open', 'in_progress', 'assigned'] } 
-        })
-      ]);
-
-      const fallbackStats = {
-        overview: {
-          totalUsers,
-          activeUsers
-        },
-        categories: {
-          totalCategories,
-          activeCategories,
-          totalSubcategories,
-          activeSubcategories
-        },
-        services: {
-          totalServices,
-          activeServices
-        },
-        gigs: {
-          totalGigs,
-          activeGigs
-        },
-        recentActivity: []
-      };
-
-      console.log(`[DASHBOARD STATS] Fallback stats after error:`, fallbackStats);
+      const fallbackStats = await getFallbackStats();
       
-      res.json({
+      res.status(200).json({
         success: true,
-        message: 'Dashboard statistics loaded with fallback method',
-        code: 'DASHBOARD_FALLBACK',
-        requestId,
-        executionTime: `${executionTime}ms`,
-        data: fallbackStats
+        message: 'Dashboard statistics loaded with fallback method due to aggregation complexity',
+        code: 'DASHBOARD_FALLBACK_ACTIVATED',
+        data: fallbackStats,
+        meta: {
+          requestId,
+          executionTime: `${executionTime}ms`,
+          error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+          note: 'Aggregation failed, using fallback counts'
+        }
       });
     } catch (fallbackError) {
       console.error('[DASHBOARD STATS FALLBACK ERROR]', fallbackError);
       
-      // Return minimal stats
       res.status(200).json({
         success: true,
-        message: 'Dashboard statistics loaded with minimal data',
-        code: 'DASHBOARD_MINIMAL',
-        requestId,
-        executionTime: `${executionTime}ms`,
-        data: {
-          overview: {
-            totalUsers: 0,
-            activeUsers: 0
-          },
-          categories: {
-            totalCategories: 0,
-            activeCategories: 0,
-            totalSubcategories: 0,
-            activeSubcategories: 0
-          },
-          services: {
-            totalServices: 0,
-            activeServices: 0
-          },
-          gigs: {
-            totalGigs: 0,
-            activeGigs: 0
-          },
-          recentActivity: []
+        message: 'Dashboard statistics unavailable',
+        code: 'DASHBOARD_UNAVAILABLE',
+        data: getMinimalStats(),
+        meta: {
+          requestId,
+          executionTime: `${executionTime}ms`,
+          error: 'All data fetching methods failed'
         }
       });
     }
   }
 };
+
+// Helper function for fallback statistics
+async function getFallbackStats() {
+  const [
+    totalUsers,
+    activeUsers,
+    totalCategories,
+    totalSubcategories,
+    totalServices,
+    activeServices,
+    totalGigs,
+    openGigs
+  ] = await Promise.all([
+    User.countDocuments({ deletedAt: null }),
+    User.countDocuments({ deletedAt: null, isActive: true }),
+    Category.countDocuments({ deletedAt: null }),
+    Subcategory.countDocuments({ deletedAt: null }),
+    Service.countDocuments({ deletedAt: null }),
+    Service.countDocuments({ deletedAt: null, status: 'active' }),
+    Gig.countDocuments({ deletedAt: null }),
+    Gig.countDocuments({ deletedAt: null, status: 'open' })
+  ]);
+
+  return {
+    overview: {
+      users: {
+        total: totalUsers,
+        active: activeUsers
+      },
+      categories: {
+        total: totalCategories
+      },
+      subcategories: {
+        total: totalSubcategories
+      },
+      services: {
+        total: totalServices,
+        active: activeServices
+      },
+      gigs: {
+        total: totalGigs,
+        open: openGigs
+      }
+    },
+    performance: {
+      services: {
+        avgRating: 0
+      },
+      platform: {
+        activeUsers30d: activeUsers
+      }
+    },
+    insights: [],
+    trends: [],
+    recentActivity: [],
+    calculated: {
+      conversionRate: 0,
+      serviceCompletionRate: 0,
+      gigCompletionRate: 0
+    }
+  };
+}
+
+// Minimal stats when everything fails
+function getMinimalStats() {
+  return {
+    overview: {
+      users: { total: 0, active: 0 },
+      categories: { total: 0 },
+      subcategories: { total: 0 },
+      services: { total: 0, active: 0 },
+      gigs: { total: 0, open: 0 }
+    },
+    performance: {
+      services: { avgRating: 0 },
+      platform: { activeUsers30d: 0 }
+    },
+    insights: [],
+    trends: [],
+    recentActivity: [],
+    calculated: {
+      conversionRate: 0,
+      serviceCompletionRate: 0,
+      gigCompletionRate: 0
+    }
+  };
+}
 
 const getUsers = async (req, res) => {
   const requestId = uuidv4();
