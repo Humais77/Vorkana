@@ -1,5 +1,6 @@
+// AdminSidebar.jsx - Update the logout function
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FiHome,
   FiUsers,
@@ -10,8 +11,64 @@ import {
   FiX,
   FiFolderMinus
 } from 'react-icons/fi';
+import { useAuthStore } from '../../store/useAuthStore'; // Add this import
 
 const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
+  const navigate = useNavigate();
+  const logout = useAuthStore((state) => state.logout); // Get logout from auth store
+
+  const handleLogout = async () => {
+    try {
+      // Call the admin logout API
+      const response = await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'include', // Important for cookies
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Clear admin-specific local storage
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminRefreshToken');
+        sessionStorage.removeItem('adminInfo');
+        
+        // Clear regular auth store
+        logout();
+        
+        // Clear all cookies by calling main logout
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'include',
+        });
+        
+        // Navigate to home
+        navigate('/');
+      } else {
+        // Fallback to main logout if admin logout fails
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'include',
+        });
+        localStorage.clear();
+        sessionStorage.clear();
+        logout();
+        navigate('/');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Fallback cleanup
+      localStorage.clear();
+      sessionStorage.clear();
+      logout();
+      navigate('/');
+    }
+    
+    // Close mobile sidebar if open
+    setIsMobileOpen(false);
+  };
+
   const navItems = [
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },
@@ -20,12 +77,6 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
     { name: 'Services', path: '/admin/services', icon: <FiBriefcase className="h-5 w-5" /> },
     { name: 'Gigs', path: '/admin/gigs', icon: <FiGrid className="h-5 w-5" /> },
   ];
-
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminRefreshToken');
-    window.location.href = '/';
-  };
 
   return (
     <>
@@ -99,7 +150,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
           </ul>
         </nav>
 
-        {/* Logout */}
+        {/* Logout - Updated to use async function */}
         <div className="p-4 border-t border-gray-100">
           <button
             onClick={handleLogout}

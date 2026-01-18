@@ -12,6 +12,7 @@ const {
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
 const gigController = require('../controllers/gig.controller.js');
+const {logout} = require('../controllers/auth.controller.js');
 const mongoose = require('mongoose');
 // IMPORT MODELS
 const Category = require('../models/category.model.js');
@@ -168,13 +169,8 @@ router.get('/dashboard',
 
 router.post('/logout',
   verifyAdmin,
+  // Clear admin-specific cookies first
   (req, res, next) => {
-    // Pass control to auth controller logout
-    // The auth controller will handle cookie clearing
-    next();
-  },
-  (req, res) => {
-    // Clear admin-specific cookies if any
     res.clearCookie('adminToken', {
       path: '/',
       domain: process.env.COOKIE_DOMAIN || 'localhost'
@@ -184,12 +180,15 @@ router.post('/logout',
       path: '/api/auth/refresh',
       domain: process.env.COOKIE_DOMAIN || 'localhost'
     });
-    
-    res.json({
-      success: true,
-      message: 'Admin logged out successfully'
-    });
-  }
+    next();
+  },
+  // Call the main logout controller
+  (req, res, next) => {
+    // Pass control to auth controller logout
+    req.isAdmin = true; // Flag for admin logout
+    next();
+  },
+  logout // This is the main logout function from auth.controller.js
 );
 
 router.get('/session',

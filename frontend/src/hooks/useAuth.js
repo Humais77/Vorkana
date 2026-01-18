@@ -123,7 +123,7 @@ export const useLogin = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Invalid email or password');
+      const { errorMessage } = handleAuthError(error, 'Invalid credentials');
       setError(errorMessage);
       toast.error(errorMessage);
     },

@@ -2,6 +2,72 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+// Unified logout utility function
+const comprehensiveLogout = async () => {
+  try {
+    // Array of logout endpoints to call
+    const logoutEndpoints = [
+      '/api/admin/logout',
+      '/api/auth/logout'
+    ];
+
+    // Call all logout endpoints concurrently
+    const logoutPromises = logoutEndpoints.map(endpoint => 
+      fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include', // Important for cookies
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }).catch(err => {
+        console.error(`Logout failed for ${endpoint}:`, err);
+        return null;
+      })
+    );
+
+    await Promise.all(logoutPromises);
+
+    return true;
+  } catch (error) {
+    console.error('Comprehensive logout error:', error);
+    return false;
+  }
+};
+
+// Clear all browser storage
+const clearAllStorage = () => {
+  // Clear localStorage
+  const localStorageKeys = [
+    'userInfo',
+    'adminToken',
+    'adminRefreshToken',
+    'adminInfo',
+    'token',
+    'refreshToken',
+    'auth-storage',
+    'admin-storage'
+  ];
+
+  localStorageKeys.forEach(key => {
+    localStorage.removeItem(key);
+  });
+
+  // Clear sessionStorage
+  sessionStorage.clear();
+
+  // Clear cookies (by setting expiration)
+  if (typeof document !== 'undefined') {
+    document.cookie.split(';').forEach(cookie => {
+      const [name] = cookie.trim().split('=');
+      if (name) {
+        // Clear for all paths and domains
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+      }
+    });
+  }
+};
+
 const getUserFromStorage = () => {
   try {
     const userInfo = localStorage.getItem('userInfo');
@@ -25,7 +91,7 @@ const getUserFromStorage = () => {
 };
 
 const AUTH_STORAGE_KEY = 'auth-storage';
-const AUTH_VERSION = 3;
+const AUTH_VERSION = 4; // Increment version for logout changes
 
 export const useAuthStore = create(
   persist(
@@ -97,22 +163,69 @@ export const useAuthStore = create(
         localStorage.setItem('userInfo', JSON.stringify(updatedUser));
       },
       
-      logout: () => {
+      // Enhanced logout function
+      logout: async (isAdmin = false) => {
+        set({ loading: true });
+        
+        try {
+          // Call comprehensive logout utility
+          await comprehensiveLogout();
+          
+          // Clear all storage
+          clearAllStorage();
+          
+          // Clear state
+          set({ 
+            user: null,
+            isAuthenticated: false,
+            loading: false,
+            error: null,
+            lastActivity: Date.now()
+          });
+          
+          // Dispatch logout event for other components
+          const logoutEvent = new CustomEvent('auth-logout', { 
+            detail: { isAdmin } 
+          });
+          window.dispatchEvent(logoutEvent);
+          
+          // If admin logout, also clear admin-specific state
+          if (isAdmin) {
+            window.dispatchEvent(new Event('admin-logout'));
+          }
+          
+          console.log(`${isAdmin ? 'Admin' : 'User'} logout successful`);
+          
+        } catch (error) {
+          console.error('Logout error:', error);
+          set({ error: error.message, loading: false });
+          
+          // Fallback: clear everything locally even if server logout fails
+          clearAllStorage();
+          set({ 
+            user: null,
+            isAuthenticated: false,
+            loading: false
+          });
+        }
+      },
+      
+      // Admin-specific logout
+      adminLogout: async () => {
+        return get().logout(true);
+      },
+      
+      // Force logout (for security breaches, session timeout, etc.)
+      forceLogout: () => {
+        clearAllStorage();
         set({ 
           user: null,
           isAuthenticated: false,
           loading: false,
-          error: null
+          error: 'Session terminated for security reasons'
         });
         
-        // Clear all auth-related storage
-        localStorage.removeItem('userInfo');
-        
-        // Clear session storage
-        sessionStorage.clear();
-        
-        // Dispatch logout event for other components
-        window.dispatchEvent(new Event('auth-logout'));
+        window.dispatchEvent(new Event('force-logout'));
       },
       
       syncFromStorage: () => {
@@ -129,13 +242,25 @@ export const useAuthStore = create(
         // No user = no session
         if (!state.user) return false;
         
-        // Check inactivity timeout (30 minutes)
-        const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+        // Check inactivity timeout (30 minutes for users, 1 hour for admins)
+        const isAdmin = state.user?.role === 'admin';
+        const INACTIVITY_TIMEOUT = isAdmin 
+          ? 60 * 60 * 1000 // 1 hour for admins
+          : 30 * 60 * 1000; // 30 minutes for regular users
+        
         const timeSinceLastActivity = Date.now() - state.lastActivity;
         
         if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
-          console.log('Session expired due to inactivity');
-          get().logout();
+          console.log(`Session expired due to inactivity (${isAdmin ? 'admin' : 'user'})`);
+          
+          // Auto-logout with appropriate message
+          const message = isAdmin 
+            ? 'Admin session timed out due to 1 hour of inactivity'
+            : 'Session timed out due to 30 minutes of inactivity';
+          
+          set({ error: message });
+          get().logout(isAdmin);
+          
           return false;
         }
         
@@ -145,7 +270,17 @@ export const useAuthStore = create(
       // Computed getters
       isAdmin: () => {
         const user = get().user;
+        return user?.role === 'admin' || user?.isAdmin === true;
+      },
+      
+      isAdminUser: () => {
+        const user = get().user;
         return user?.role === 'admin';
+      },
+      
+      isSuperAdmin: () => {
+        const user = get().user;
+        return user?.role === 'admin' && user?.permissions?.includes('super_admin');
       },
       
       isEmailVerified: () => {
@@ -186,6 +321,7 @@ export const useAuthStore = create(
         const user = get().user;
         if (!user) return false;
         
+        // Admins have all permissions
         if (user.role === 'admin') return true;
         
         const permissions = {
@@ -198,10 +334,21 @@ export const useAuthStore = create(
         return permissions[accountType]?.includes(permission) || false;
       },
       
+      hasAdminPermission: (permission) => {
+        const user = get().user;
+        if (!user || user.role !== 'admin') return false;
+        
+        const adminPermissions = user.permissions || ['manage_users', 'manage_content', 'view_analytics'];
+        return adminPermissions.includes(permission) || user.isSuperAdmin === true;
+      },
+      
       // Feature flags
       canAccessFeature: (feature) => {
         const user = get().user;
         if (!user) return false;
+        
+        // Admins can access all features
+        if (user.role === 'admin') return true;
         
         const features = {
           basic: ['basic_messaging', 'profile_view', 'service_creation', 'order_management'],
@@ -227,6 +374,32 @@ export const useAuthStore = create(
         set({ user: updatedUser, lastActivity: Date.now() });
         localStorage.setItem('userInfo', JSON.stringify(updatedUser));
       },
+      
+      // Quick check for admin panel access
+      canAccessAdminPanel: () => {
+        const user = get().user;
+        if (!user) return false;
+        
+        // Check if user is admin and has admin permissions
+        if (user.role === 'admin') {
+          const hasAdminPerms = user.permissions?.length > 0 || user.isSuperAdmin === true;
+          return hasAdminPerms;
+        }
+        
+        return false;
+      },
+      
+      // Clear state without server call (for testing/dev)
+      clearAuthState: () => {
+        clearAllStorage();
+        set({
+          user: null,
+          isAuthenticated: false,
+          loading: false,
+          error: null,
+          lastActivity: Date.now()
+        });
+      }
     }),
     {
       name: AUTH_STORAGE_KEY,
@@ -238,8 +411,8 @@ export const useAuthStore = create(
         lastActivity: state.lastActivity,
       }),
       migrate: (persistedState, version) => {
-        if (version === 1 || version === 2) {
-          // Migration from version 1 or 2 to 3
+        if (version < 4) {
+          // Migration to version 4
           const oldState = persistedState;
           return {
             user: oldState.user,
@@ -251,6 +424,19 @@ export const useAuthStore = create(
         }
         return persistedState;
       },
+      onRehydrateStorage: () => {
+        // Called after rehydration
+        return (state, error) => {
+          if (error) {
+            console.error('Auth store rehydration error:', error);
+          } else if (state) {
+            // Check session validity on rehydration
+            setTimeout(() => {
+              state.checkSessionValidity();
+            }, 1000);
+          }
+        };
+      },
     }
   )
 );
@@ -259,7 +445,11 @@ export const useAuthStore = create(
 export const getCurrentUser = () => useAuthStore.getState().user;
 export const isUserAuthenticated = () => useAuthStore.getState().isAuthenticated;
 export const isUserAdmin = () => useAuthStore.getState().isAdmin();
+export const isUserSuperAdmin = () => useAuthStore.getState().isSuperAdmin();
 export const isUserEmailVerified = () => useAuthStore.getState().isEmailVerified();
+
+// Export logout utilities
+export { comprehensiveLogout, clearAllStorage };
 
 // Activity tracker setup
 if (typeof window !== 'undefined') {
@@ -278,4 +468,28 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     useAuthStore.getState().checkSessionValidity();
   }, 60000); // Check every minute
+  
+  // Listen for storage events (for multi-tab sync)
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'userInfo' || event.key === AUTH_STORAGE_KEY) {
+      console.log('Auth storage changed, syncing...');
+      useAuthStore.getState().syncFromStorage();
+    }
+  });
+  
+  // Listen for logout events
+  window.addEventListener('auth-logout', () => {
+    console.log('Auth logout event received');
+    useAuthStore.getState().clearAuthState();
+  });
+  
+  window.addEventListener('force-logout', () => {
+    console.log('Force logout event received');
+    useAuthStore.getState().clearAuthState();
+  });
+  
+  window.addEventListener('admin-logout', () => {
+    console.log('Admin logout event received');
+    // Additional admin-specific cleanup if needed
+  });
 }
