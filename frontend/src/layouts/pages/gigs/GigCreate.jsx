@@ -43,7 +43,7 @@ import { useCreateGig } from "../../../hooks/useGigs";
 import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from "../../../components/SeoWrapper";
-import { isProfileCompleteEnough } from '../../../utils/profileUtils';
+import { isProfileCompleteEnough ,calculateProfileCompletion} from '../../../utils/profileUtils';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
@@ -366,14 +366,41 @@ const GigCreate = () => {
     }
   }, [isAuthenticated, activeStep]);
 
-  // Profile completion check
-  useEffect(() => {
+ useEffect(() => {
+  if (currentUser) {
+    // Check profile completion but don't redirect immediately
     if (!isProfileCompleteEnough(currentUser, 70)) {
-      toast.error('Please complete your profile before creating a service');
-      navigate('/dashboard');
+      // Show a warning toast that doesn't block navigation
+      toast.error(
+        <div>
+          <div className="font-semibold mb-1">Profile Incomplete</div>
+          <div className="text-sm mb-2">
+            Your profile is {calculateProfileCompletion(currentUser)}% complete. 
+            You need at least 70% completion to publish gigs.
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate('/profile')}
+              className="flex-1 bg-gray-900 text-white py-1.5 rounded text-xs font-medium hover:bg-black transition-colors"
+            >
+              Complete Profile
+            </button>
+            <button
+              onClick={() => toast.dismiss()}
+              className="flex-1 bg-gray-200 text-gray-800 py-1.5 rounded text-xs font-medium hover:bg-gray-300 transition-colors"
+            >
+              Continue Anyway
+            </button>
+          </div>
+        </div>,
+        {
+          duration: 8000, // Longer duration
+          id: 'profile-incomplete-warning', // Unique ID to prevent multiple toasts
+        }
+      );
     }
-  }, [currentUser, navigate]);
-
+  }
+}, [currentUser, navigate]);
   // Memoized handlers
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;

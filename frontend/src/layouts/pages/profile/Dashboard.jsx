@@ -1584,33 +1584,63 @@ const Dashboard = () => {
             </div>
             
             <div className="flex gap-3">
-              <button
-                onClick={handleCreateGig}
-                disabled={!canCreateContent || isLoading}
-                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                  canCreateContent 
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                title={!canCreateContent ? "Complete your profile to create gigs" : ""}
-              >
-                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-                Create Gig
-              </button>
-              <button
-                onClick={handleCreateService}
-                disabled={!canCreateContent || isLoading}
-                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                  canCreateContent 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                title={!canCreateContent ? "Complete your profile to create services" : ""}
-              >
-                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-                Create Service
-              </button>
-            </div>
+  <button
+    onClick={handleCreateGig}
+    disabled={!canCreateContent || isLoading}
+    className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+      canCreateContent 
+        ? 'bg-green-600 text-white hover:bg-green-700'
+        : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+    } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+    title={!canCreateContent ? "Complete your profile to create gigs" : ""}
+  >
+    <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+    Create Gig
+    {!canCreateContent && (
+      <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertCircle className="w-4 h-4" />
+          <span className="font-medium">Profile Incomplete</span>
+        </div>
+        <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs.</p>
+        <button
+          onClick={handleCompleteProfile}
+          className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+        >
+          Complete Profile Now
+        </button>
+      </div>
+    )}
+  </button>
+  <button
+    onClick={handleCreateService}
+    disabled={!canCreateContent || isLoading}
+    className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+      canCreateContent 
+        ? 'bg-blue-600 text-white hover:bg-blue-700'
+        : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+    } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+    title={!canCreateContent ? "Complete your profile to create services" : ""}
+  >
+    <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+    Create Service
+    {!canCreateContent && (
+      <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertCircle className="w-4 h-4" />
+          <span className="font-medium">Profile Incomplete</span>
+        </div>
+        <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create services.</p>
+        <button
+          onClick={handleCompleteProfile}
+          className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+        >
+          Complete Profile Now
+        </button>
+      </div>
+    )}
+  </button>
+</div>
           </div>
 
           {/* Info message */}
