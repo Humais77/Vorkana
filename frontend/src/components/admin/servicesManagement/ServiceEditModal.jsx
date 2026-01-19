@@ -9,7 +9,7 @@ import {
   useSubcategoriesByCategory
 } from '../../../hooks/useAdminDashboard';
 import {useUpdateService} from '../../../hooks/useServices'
-
+import { useServiceToast } from '../../../hooks/useServiceToast';
 import { toast } from 'react-hot-toast';
 import { adminAPI } from '../../../api/admin';
 
@@ -190,6 +190,13 @@ const ServiceEditModal = memo(({
   categories = [],
   users = []
 }) => {
+  const { 
+    showServiceLoading, 
+    showServiceSuccess, 
+    showServiceError, 
+    showServiceWarning,
+    dismissServiceToast 
+  } = useServiceToast();
   // Use the update service hook
   const updateServiceMutation = useUpdateService();
   
@@ -583,16 +590,17 @@ const ServiceEditModal = memo(({
         element.focus();
       }
       
-      toast.error('Please fix the errors in the form');
+      showServiceError('Please fix the errors in the form');
       return;
     }
     
     if (!service?._id) {
-      toast.error('Service ID is required');
+      showServiceError('Service ID is required');
       return;
     }
     
     setIsLoading(true);
+    const loadingToastId = showServiceLoading('Updating service...');
     
     try {
       const formDataToSubmit = prepareFormData();
@@ -604,21 +612,24 @@ const ServiceEditModal = memo(({
       }, {
         onSuccess: (response) => {
           console.log('Update successful:', response.data);
-          toast.success('Service updated successfully');
+          dismissServiceToast(loadingToastId);
+          showServiceSuccess('Service updated successfully');
           onClose();
         },
         onError: (error) => {
           console.error('Update error:', error);
-          toast.error(error.response?.data?.message || 'Failed to update service');
+          dismissServiceToast(loadingToastId);
+          showServiceError(error.response?.data?.message || 'Failed to update service');
         }
       });
     } catch (error) {
       console.error('Form submission error:', error);
-      toast.error(error.message || 'Failed to update service');
+      dismissServiceToast(loadingToastId);
+      showServiceError(error.message || 'Failed to update service');
     } finally {
       setIsLoading(false);
     }
-  }, [formData, validateForm, prepareFormData, service, updateServiceMutation, onClose]);
+  }, [formData, validateForm, prepareFormData, service, updateServiceMutation, onClose, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast]);
 
   // Reset and close modal
   const handleClose = useCallback(() => {

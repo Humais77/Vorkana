@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect ,useCallback} from 'react';
 import { FiX, FiCheck, FiAlertCircle, FiEye, FiEyeOff, FiPlus, FiTrash2 } from 'react-icons/fi';
-import { toast } from 'react-hot-toast';
+import { useUserToast } from '../../../hooks/useUserToast';
 
 // Reusable Form Field Components
 const FormInput = ({ label, name, type = 'text', placeholder = '', value, onChange, onBlur, error, touched, required = false, options = [], disabled = false }) => {
@@ -246,6 +246,14 @@ const PrivacySettings = ({ settings, onChange }) => (
 );
 
 const EditUserModal = ({ user, onClose, onSave }) => {
+  const { 
+    showUserLoading, 
+    showUserSuccess, 
+    showUserError, 
+    showUserInfo,
+    dismissUserToast 
+  } = useUserToast();
+  
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -350,14 +358,12 @@ const EditUserModal = ({ user, onClose, onSave }) => {
   }, [user]);
 
   // Check if form has changes
-  const hasChanges = () => {
+  const hasChanges = useCallback(() => {
     if (!initialData) return false;
-    
-    // Deep comparison (simplified version)
     return JSON.stringify(formData) !== JSON.stringify(initialData);
-  };
+  }, [formData, initialData]);
 
-  // SIMPLIFIED VALIDATION - only validate required fields
+  // Validation functions
   const validateEmail = (email) => {
     if (!email || email.trim() === '') {
       return 'Email is required';
@@ -368,13 +374,11 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     return '';
   };
 
-  // SIMPLIFIED PHONE VALIDATION - accept more formats
   const validatePhone = (phone) => {
     if (!phone || phone.trim() === '') {
       return ''; // Phone is optional
     }
     
-    // More permissive phone validation
     const phoneStr = phone.trim();
     const phoneRegex = /^[\+]?[0-9\s\-\(\)\.]{8,16}$/;
     
@@ -385,8 +389,8 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     return '';
   };
 
-  // SIMPLIFIED HANDLERS
-  const handleChange = (e) => {
+  // Handlers
+  const handleChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     
     // Clear error for this field when user starts typing
@@ -417,12 +421,11 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     
     // Mark field as touched
     setTouched(prev => ({ ...prev, [name]: true }));
-  };
+  }, []);
 
-  const handleBlur = (field, value) => {
+  const handleBlur = useCallback((field, value) => {
     setTouched(prev => ({ ...prev, [field]: true }));
     
-    // Only validate if field is touched and has value
     let error = '';
     
     switch (field) {
@@ -451,16 +454,15 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     if (error) {
       setErrors(prev => ({ ...prev, [field]: error }));
     } else {
-      // Clear error if validation passes
       setErrors(prev => {
         const newErrors = { ...prev };
         delete newErrors[field];
         return newErrors;
       });
     }
-  };
+  }, [formData.email, formData.phoneNumber, formData.dateOfBirth]);
 
-  const handleAddLanguage = () => {
+  const handleAddLanguage = useCallback(() => {
     if (newLanguage.trim() && !formData.languages.includes(newLanguage.trim())) {
       setFormData(prev => ({
         ...prev,
@@ -468,19 +470,18 @@ const EditUserModal = ({ user, onClose, onSave }) => {
       }));
       setNewLanguage('');
     }
-  };
+  }, [newLanguage, formData.languages]);
 
-  const handleRemoveLanguage = (index) => {
+  const handleRemoveLanguage = useCallback((index) => {
     const newLanguages = [...formData.languages];
     newLanguages.splice(index, 1);
     setFormData(prev => ({
       ...prev,
       languages: newLanguages
     }));
-  };
+  }, [formData.languages]);
 
-  // SIMPLIFIED FORM VALIDATION
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const validationErrors = {};
     
     // Email validation (required)
@@ -509,24 +510,26 @@ const EditUserModal = ({ user, onClose, onSave }) => {
     
     setErrors(validationErrors);
     return Object.keys(validationErrors).length === 0;
-  };
+  }, [formData.email, formData.phoneNumber, formData.dateOfBirth]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
-      toast.error('Please fix validation errors');
+      showUserError('Please fix validation errors');
       return;
     }
     
     // Check if there are any changes
     if (!hasChanges()) {
-      toast.info('No changes detected');
+      showUserInfo('No changes detected');
       onClose();
       return;
     }
     
     setLoading(true);
+    const loadingToastId = showUserLoading('Updating user...');
+    
     try {
       // Clean up data before sending
       const cleanData = { ...formData };
@@ -545,22 +548,24 @@ const EditUserModal = ({ user, onClose, onSave }) => {
       }
       
       await onSave(cleanData);
-      toast.success('User updated successfully!');
+      dismissUserToast(loadingToastId);
+      showUserSuccess('User updated successfully!');
       onClose();
     } catch (error) {
       console.error('[EDIT USER MODAL] Error:', error);
+      dismissUserToast(loadingToastId);
       
       // Show backend validation errors
       if (error.response?.data?.errors) {
         error.response.data.errors.forEach(err => {
-          toast.error(err);
+          showUserError(err);
         });
       } else {
         const errorMessage = error.response?.data?.message || 
                             error.response?.data?.error || 
                             error.message || 
                             'Failed to update user';
-        toast.error(errorMessage);
+        showUserError(errorMessage);
       }
     } finally {
       setLoading(false);

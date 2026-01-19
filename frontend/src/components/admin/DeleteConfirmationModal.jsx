@@ -1,14 +1,17 @@
+// DeleteConfirmationModal.jsx - UPDATED WITH TOASTER
 import { useState } from 'react';
-import { FiTrash2, FiX, FiAlertTriangle, FiInfo ,FiAlertCircle} from 'react-icons/fi';
+import { FiTrash2, FiX, FiAlertTriangle, FiInfo, FiAlertCircle } from 'react-icons/fi';
+import { useUserToast } from '../../hooks/useUserToast';
 
 const DeleteConfirmationModal = ({ userToDelete, onClose, onConfirm }) => {
+  const { showUserError } = useUserToast();
   const isBulk = userToDelete?.type === 'bulk';
   const [deleteType, setDeleteType] = useState('soft'); // 'soft' or 'permanent'
   const [confirmText, setConfirmText] = useState('');
   
   const handleConfirm = () => {
     if (deleteType === 'permanent' && confirmText !== 'DELETE PERMANENTLY') {
-      toast.error('Please type "DELETE PERMANENTLY" to confirm permanent deletion');
+      showUserError('Please type "DELETE PERMANENTLY" to confirm permanent deletion');
       return;
     }
     onConfirm({ ...userToDelete, permanent: deleteType === 'permanent' });

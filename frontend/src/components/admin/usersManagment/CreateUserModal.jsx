@@ -1,7 +1,8 @@
+// CreateUserModal.jsx
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminAPI } from '../../../api/admin';
-import { toast } from 'react-hot-toast';
+import { useUserToast } from '../../../hooks/useUserToast';
 import { 
   FiUser, 
   FiMail, 
@@ -19,6 +20,7 @@ import {
 
 const CreateUserModal = ({ onClose, onSuccess }) => {
   const queryClient = useQueryClient();
+  const { showUserLoading, showUserSuccess, showUserError, dismissUserToast } = useUserToast();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
@@ -135,11 +137,13 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
     e.preventDefault();
     
     if (!validateForm()) {
-      Object.values(errors).forEach(error => toast.error(error));
+      Object.values(errors).forEach(error => showUserError(error));
       return;
     }
 
     setLoading(true);
+    const loadingToastId = showUserLoading('Creating user...');
+    
     try {
       const userData = {
         ...formData,
@@ -160,28 +164,31 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
       const response = await adminAPI.createUser(userData);
       
       if (response.data.success) {
-        toast.success('User created successfully!');
+        dismissUserToast(loadingToastId);
+        showUserSuccess('User created successfully!');
         queryClient.invalidateQueries(['admin', 'users']);
         queryClient.invalidateQueries(['admin', 'dashboard']);
         onSuccess?.();
         onClose();
       } else {
-        toast.error(response.data.message || 'Failed to create user');
+        dismissUserToast(loadingToastId);
+        showUserError(response.data.message || 'Failed to create user');
       }
     } catch (error) {
       console.error('Create user error:', error);
+      dismissUserToast(loadingToastId);
       
       // Show backend validation errors
       if (error.response?.data?.errors) {
         error.response.data.errors.forEach(err => {
-          toast.error(err);
+          showUserError(err);
         });
       } else {
         const errorMessage = error.response?.data?.message || 
                             error.response?.data?.error || 
                             error.message || 
                             'Failed to create user';
-        toast.error(errorMessage);
+        showUserError(errorMessage);
       }
     } finally {
       setLoading(false);

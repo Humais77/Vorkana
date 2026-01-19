@@ -34,7 +34,7 @@ import {
   FiActivity
 } from 'react-icons/fi';
 import { format, formatDistanceToNow } from 'date-fns';
-import { toast } from 'react-hot-toast';
+import { useCategoryToast } from '../../../hooks/useCategoryToast';
 
 const CategoryDetailsModal = ({ 
   category, 
@@ -44,6 +44,14 @@ const CategoryDetailsModal = ({
   onDelete,
   onDuplicate
 }) => {
+  const {
+      showCategoryLoading,
+      showCategorySuccess,
+      showCategoryError,
+      showCategoryWarning,
+      showCategoryInfo,
+      dismissCategoryToast
+    } = useCategoryToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -80,16 +88,16 @@ const CategoryDetailsModal = ({
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
+   showCategorySuccess('Copied to clipboard');
   };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    toast.success('Refreshing category data...');
+   showCategorySuccess('Refreshing category data...');
     // In a real app, you would refetch the category data here
     setTimeout(() => {
       setIsRefreshing(false);
-      toast.success('Category data refreshed');
+     showCategorySuccess('Category data refreshed');
     }, 1000);
   };
 

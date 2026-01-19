@@ -1,8 +1,8 @@
-// UserManagement.jsx - UPDATED DATA EXTRACTION LOGIC
+// UserManagement.jsx - UPDATED WITH TOASTER
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAdminUsers, useUpdateUser, useDeleteUser ,useBulkUserOperations, useExportUsers } from '../../../hooks/useAdminDashboard';
-import { toast } from 'react-hot-toast';
+import { useUserToast } from '../../../hooks/useUserToast';
 import {
   FiUsers,
   FiSearch,
@@ -77,6 +77,7 @@ const UserTableRow = memo(({
 }) => {
   const [localLoading, setLocalLoading] = useState(false);
   const [rowError, setRowError] = useState(null);
+  const { showUserLoading, showUserSuccess, showUserError, dismissUserToast } = useUserToast();
 
   // Validate user object
   const safeUser = useMemo(() => {
@@ -144,13 +145,15 @@ const UserTableRow = memo(({
     try {
       setLocalLoading(true);
       setRowError(null);
+      const loadingToastId = showUserLoading(`${actionName} user...`);
       
       if (!userId) {
         throw new Error('Invalid user ID');
       }
       
       await onUpdateUser(userId, data);
-      toast.success(`User ${actionName.toLowerCase()} successfully`);
+      dismissUserToast(loadingToastId);
+      showUserSuccess(`User ${actionName.toLowerCase()} successfully`);
     } catch (error) {
       console.error(`[USER ACTION ERROR] ${actionName}:`, error);
       const errorMessage = error.response?.data?.message || 
@@ -158,7 +161,7 @@ const UserTableRow = memo(({
                           error.message || 
                           'Failed to update user';
       setRowError(errorMessage);
-      toast.error(errorMessage);
+      showUserError(errorMessage);
     } finally {
       setLocalLoading(false);
     }
@@ -395,6 +398,15 @@ UserTableRow.displayName = 'UserTableRow';
 // Main Component with enhanced error handling
 const UsersManagement = () => {
   const queryClient = useQueryClient();
+  const { 
+    showUserLoading, 
+    showUserSuccess, 
+    showUserError, 
+    showUserWarning,
+    showUserInfo,
+    dismissUserToast 
+  } = useUserToast();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     role: '',
@@ -438,162 +450,166 @@ const UsersManagement = () => {
   const bulkUserMutation = useBulkUserOperations();
   const exportUsersMutation = useExportUsers();
 
-const users = useMemo(() => {
-  if (!data) return [];
-  
-  // Debug logging
-  console.log('[USERS EXTRACTION] Raw data structure:', {
-    hasDataProp: !!data.data,
-    dataType: typeof data.data,
-    dataKeys: Object.keys(data)
-  });
-  
-  // First check if data.data exists and is an object with users array
-  if (data.data && typeof data.data === 'object') {
-    // Check multiple possible user array locations
-    if (Array.isArray(data.data.users)) {
-      console.log('[USERS EXTRACTION] Found users in data.data.users');
-      return data.data.users;
+  const users = useMemo(() => {
+    if (!data) return [];
+    
+    // Debug logging
+    console.log('[USERS EXTRACTION] Raw data structure:', {
+      hasDataProp: !!data.data,
+      dataType: typeof data.data,
+      dataKeys: Object.keys(data)
+    });
+    
+    // First check if data.data exists and is an object with users array
+    if (data.data && typeof data.data === 'object') {
+      // Check multiple possible user array locations
+      if (Array.isArray(data.data.users)) {
+        console.log('[USERS EXTRACTION] Found users in data.data.users');
+        return data.data.users;
+      }
+      if (Array.isArray(data.data)) {
+        console.log('[USERS EXTRACTION] Found users in data.data (direct array)');
+        return data.data;
+      }
+      if (data.data.data && Array.isArray(data.data.data)) {
+        console.log('[USERS EXTRACTION] Found users in data.data.data');
+        return data.data.data;
+      }
     }
-    if (Array.isArray(data.data)) {
-      console.log('[USERS EXTRACTION] Found users in data.data (direct array)');
-      return data.data;
+    
+    // Check direct properties
+    if (Array.isArray(data.users)) {
+      console.log('[USERS EXTRACTION] Found users in data.users');
+      return data.users;
     }
-    if (data.data.data && Array.isArray(data.data.data)) {
-      console.log('[USERS EXTRACTION] Found users in data.data.data');
-      return data.data.data;
+    
+    if (Array.isArray(data)) {
+      console.log('[USERS EXTRACTION] Found users in data (direct array)');
+      return data;
     }
-  }
-  
-  // Check direct properties
-  if (Array.isArray(data.users)) {
-    console.log('[USERS EXTRACTION] Found users in data.users');
-    return data.users;
-  }
-  
-  if (Array.isArray(data)) {
-    console.log('[USERS EXTRACTION] Found users in data (direct array)');
-    return data;
-  }
-  
-  // Fallback to empty array
-  console.log('[USERS EXTRACTION] No users found, returning empty array');
-  return [];
-}, [data]);
-const pagination = useMemo(() => {
-  try {
-    if (!data) {
-      return { total: 0, totalPages: 1, page: 1, limit };
-    }
+    
+    // Fallback to empty array
+    console.log('[USERS EXTRACTION] No users found, returning empty array');
+    return [];
+  }, [data]);
 
-    // Check multiple possible pagination locations
-    let total = 0;
-    let pageNum = parseInt(page) || 1;
-    
-    // Check data.data.pagination
-    if (data.data && data.data.pagination) {
-      const paginationData = data.data.pagination;
-      total = paginationData.total || paginationData.count || 0;
-      console.log('[PAGINATION] Found in data.data.pagination:', paginationData);
+  const pagination = useMemo(() => {
+    try {
+      if (!data) {
+        return { total: 0, totalPages: 1, page: 1, limit };
+      }
+
+      // Check multiple possible pagination locations
+      let total = 0;
+      let pageNum = parseInt(page) || 1;
+      
+      // Check data.data.pagination
+      if (data.data && data.data.pagination) {
+        const paginationData = data.data.pagination;
+        total = paginationData.total || paginationData.count || 0;
+        console.log('[PAGINATION] Found in data.data.pagination:', paginationData);
+      }
+      // Check data.pagination
+      else if (data.pagination) {
+        total = data.pagination.total || data.pagination.count || 0;
+        console.log('[PAGINATION] Found in data.pagination:', data.pagination);
+      }
+      // Check data.total directly
+      else if (data.total !== undefined) {
+        total = data.total;
+        console.log('[PAGINATION] Found in data.total:', total);
+      }
+      // Check data.data.total
+      else if (data.data && data.data.total !== undefined) {
+        total = data.data.total;
+        console.log('[PAGINATION] Found in data.data.total:', total);
+      }
+      // Use users length as last resort
+      else if (Array.isArray(users)) {
+        total = users.length;
+        console.log('[PAGINATION] Using users length as total:', total);
+      }
+      
+      const totalPages = Math.ceil(total / limit) || 1;
+      
+      return {
+        total,
+        totalPages,
+        page: pageNum,
+        limit,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      };
+    } catch (err) {
+      console.error('[PAGINATION ERROR]', err);
+      return { total: 0, totalPages: 1, page: 1, limit, hasNext: false, hasPrev: false };
     }
-    // Check data.pagination
-    else if (data.pagination) {
-      total = data.pagination.total || data.pagination.count || 0;
-      console.log('[PAGINATION] Found in data.pagination:', data.pagination);
-    }
-    // Check data.total directly
-    else if (data.total !== undefined) {
-      total = data.total;
-      console.log('[PAGINATION] Found in data.total:', total);
-    }
-    // Check data.data.total
-    else if (data.data && data.data.total !== undefined) {
-      total = data.data.total;
-      console.log('[PAGINATION] Found in data.data.total:', total);
-    }
-    // Use users length as last resort
-    else if (Array.isArray(users)) {
-      total = users.length;
-      console.log('[PAGINATION] Using users length as total:', total);
-    }
-    
-    const totalPages = Math.ceil(total / limit) || 1;
-    
-    return {
-      total,
-      totalPages,
-      page: pageNum,
-      limit,
-      hasNext: pageNum < totalPages,
-      hasPrev: pageNum > 1
-    };
-  } catch (err) {
-    console.error('[PAGINATION ERROR]', err);
-    return { total: 0, totalPages: 1, page: 1, limit, hasNext: false, hasPrev: false };
-  }
-}, [data, users, page, limit]);
+  }, [data, users, page, limit]);
+
   // Memoized stats calculation with safe array handling
-const userStats = useMemo(() => {
-  try {
-    if (!Array.isArray(users)) return { total: 0, active: 0, admins: 0 };
-    
-    const safeUsers = users.filter(user => user && user._id);
-    
-    const stats = {
-      total: pagination.total || safeUsers.length,
-      active: safeUsers.filter(u => u.isActive === true).length,
-      inactive: safeUsers.filter(u => u.isActive === false).length,
-      admins: safeUsers.filter(u => u.role === 'admin').length,
-      sellers: safeUsers.filter(u => u.role === 'seller').length,
-      buyers: safeUsers.filter(u => u.role === 'buyer').length,
-      verified: safeUsers.filter(u => u.emailVerified === true).length,
-      unverified: safeUsers.filter(u => !u.emailVerified).length,
-      newToday: safeUsers.filter(u => {
-        const createdDate = new Date(u.createdAt);
-        const today = new Date();
-        return createdDate.toDateString() === today.toDateString();
-      }).length,
-      online: safeUsers.filter(u => {
-        if (!u.lastSeenAt) return false;
-        const lastSeen = new Date(u.lastSeenAt);
-        const now = new Date();
-        return (now - lastSeen) < 5 * 60 * 1000; // Last 5 minutes
-      }).length
-    };
-    
-    stats.verifiedPercentage = stats.total > 0 
-      ? Math.round((stats.verified / stats.total) * 100) 
-      : 0;
-    stats.activePercentage = stats.total > 0 
-      ? Math.round((stats.active / stats.total) * 100) 
-      : 0;
-    
-    return stats;
-  } catch (err) {
-    return { 
-      total: 0, 
-      active: 0, 
-      admins: 0,
-      sellers: 0,
-      buyers: 0,
-      verified: 0,
-      unverified: 0,
-      newToday: 0,
-      online: 0,
-      verifiedPercentage: 0,
-      activePercentage: 0
-    };
-  }
-}, [users, pagination.total]);
+  const userStats = useMemo(() => {
+    try {
+      if (!Array.isArray(users)) return { total: 0, active: 0, admins: 0 };
+      
+      const safeUsers = users.filter(user => user && user._id);
+      
+      const stats = {
+        total: pagination.total || safeUsers.length,
+        active: safeUsers.filter(u => u.isActive === true).length,
+        inactive: safeUsers.filter(u => u.isActive === false).length,
+        admins: safeUsers.filter(u => u.role === 'admin').length,
+        sellers: safeUsers.filter(u => u.role === 'seller').length,
+        buyers: safeUsers.filter(u => u.role === 'buyer').length,
+        verified: safeUsers.filter(u => u.emailVerified === true).length,
+        unverified: safeUsers.filter(u => !u.emailVerified).length,
+        newToday: safeUsers.filter(u => {
+          const createdDate = new Date(u.createdAt);
+          const today = new Date();
+          return createdDate.toDateString() === today.toDateString();
+        }).length,
+        online: safeUsers.filter(u => {
+          if (!u.lastSeenAt) return false;
+          const lastSeen = new Date(u.lastSeenAt);
+          const now = new Date();
+          return (now - lastSeen) < 5 * 60 * 1000; // Last 5 minutes
+        }).length
+      };
+      
+      stats.verifiedPercentage = stats.total > 0 
+        ? Math.round((stats.verified / stats.total) * 100) 
+        : 0;
+      stats.activePercentage = stats.total > 0 
+        ? Math.round((stats.active / stats.total) * 100) 
+        : 0;
+      
+      return stats;
+    } catch (err) {
+      return { 
+        total: 0, 
+        active: 0, 
+        admins: 0,
+        sellers: 0,
+        buyers: 0,
+        verified: 0,
+        unverified: 0,
+        newToday: 0,
+        online: 0,
+        verifiedPercentage: 0,
+        activePercentage: 0
+      };
+    }
+  }, [users, pagination.total]);
+
   // Handle query errors
   useEffect(() => {
     if (queryError) {
       console.error('Query error:', queryError);
       setError(queryError.message || 'Failed to load users');
+      showUserError(queryError.message || 'Failed to load users');
     } else {
       setError(null);
     }
-  }, [queryError]);
+  }, [queryError, showUserError]);
 
   // Memoized handlers
   const handleSearch = useCallback((e) => {
@@ -619,13 +635,16 @@ const userStats = useMemo(() => {
     setPage(1);
     setSelectedUsers([]);
     refetch();
-  }, [refetch]);
+    showUserInfo('Filters cleared');
+  }, [refetch, showUserInfo]);
 
   const handleBulkAction = useCallback(async (action) => {
     if (selectedUsers.length === 0) {
-      toast.error('Please select users first');
+      showUserWarning('Please select users first');
       return;
     }
+
+    const loadingToastId = showUserLoading(`Processing ${selectedUsers.length} users...`);
 
     try {
       const result = await bulkUserMutation.mutateAsync({
@@ -634,16 +653,19 @@ const userStats = useMemo(() => {
       });
       
       if (result.success) {
-        toast.success(result.message || `${selectedUsers.length} users updated successfully`);
+        dismissUserToast(loadingToastId);
+        showUserSuccess(result.message || `${selectedUsers.length} users updated successfully`);
         setSelectedUsers([]);
         
         // Invalidate cache
         queryClient.invalidateQueries(['admin', 'users']);
       } else {
-        toast.error(result.message || 'Failed to perform bulk action');
+        dismissUserToast(loadingToastId);
+        showUserError(result.message || 'Failed to perform bulk action');
       }
     } catch (error) {
       console.error('[BULK ACTION ERROR]', error);
+      dismissUserToast(loadingToastId);
       
       // Show detailed error message
       const errorMessage = error.response?.data?.message || 
@@ -653,154 +675,170 @@ const userStats = useMemo(() => {
       // Show validation errors if they exist
       if (error.response?.data?.errors) {
         error.response.data.errors.forEach(err => {
-          toast.error(err);
+          showUserError(err);
         });
       } else {
-        toast.error(errorMessage);
+        showUserError(errorMessage);
       }
     }
-  }, [selectedUsers, bulkUserMutation, queryClient]);
+  }, [selectedUsers, bulkUserMutation, queryClient, showUserLoading, showUserSuccess, showUserError, showUserWarning, dismissUserToast]);
 
-const handleDeleteUser = useCallback(async (deleteOptions) => {
-  try {
-    const { permanent = false } = deleteOptions;
+  const handleDeleteUser = useCallback(async (deleteOptions) => {
+    const loadingToastId = showUserLoading('Deleting user...');
     
-    console.log('[DELETE HANDLER] Starting delete:', { 
-      userToDelete, 
-      permanent,
-      type: userToDelete?.type 
-    });
-    
-    if (userToDelete?.type === 'single' && userToDelete?.id) {
-      const userId = userToDelete.id;
+    try {
+      const { permanent = false } = deleteOptions;
       
-      // Validate ID format
-      if (!userId || userId === 'undefined' || userId === 'null' || userId.includes('[object')) {
-        toast.error('Invalid user ID format');
-        return;
+      console.log('[DELETE HANDLER] Starting delete:', { 
+        userToDelete, 
+        permanent,
+        type: userToDelete?.type 
+      });
+      
+      if (userToDelete?.type === 'single' && userToDelete?.id) {
+        const userId = userToDelete.id;
+        
+        // Validate ID format
+        if (!userId || userId === 'undefined' || userId === 'null' || userId.includes('[object')) {
+          dismissUserToast(loadingToastId);
+          showUserError('Invalid user ID format');
+          return;
+        }
+        
+        console.log('[DELETE HANDLER] Deleting single user:', userId);
+        
+        if (permanent) {
+          // Permanent delete
+          await deleteUserMutation.mutateAsync({
+            id: userId,
+            permanent: true
+          });
+          dismissUserToast(loadingToastId);
+          showUserSuccess('User permanently deleted');
+        } else {
+          // Soft delete (deactivate)
+          await updateUserMutation.mutateAsync({
+            id: userId,
+            data: { 
+              isActive: false, 
+              deletedAt: new Date().toISOString() 
+            }
+          });
+          dismissUserToast(loadingToastId);
+          showUserSuccess('User deactivated successfully');
+        }
+      } else if (userToDelete?.type === 'bulk' && userToDelete?.ids) {
+        console.log('[DELETE HANDLER] Deleting bulk users:', userToDelete.ids.length);
+        
+        // Validate all IDs
+        const validIds = userToDelete.ids.filter(id => 
+          id && id !== 'undefined' && id !== 'null' && !id.includes('[object')
+        );
+        
+        if (validIds.length === 0) {
+          dismissUserToast(loadingToastId);
+          showUserError('No valid user IDs found');
+          return;
+        }
+        
+        if (permanent) {
+          // Permanent bulk delete - use bulk mutation if available
+          await bulkUserMutation.mutateAsync({
+            ids: validIds,
+            operation: 'delete',
+            data: { permanent: true }
+          });
+          dismissUserToast(loadingToastId);
+          showUserSuccess(`${validIds.length} users permanently deleted`);
+        } else {
+          // Soft bulk delete
+          await bulkUserMutation.mutateAsync({
+            ids: validIds,
+            operation: 'deactivate'
+          });
+          dismissUserToast(loadingToastId);
+          showUserSuccess(`${validIds.length} users deactivated`);
+        }
       }
       
-      console.log('[DELETE HANDLER] Deleting single user:', userId);
+      setSelectedUsers([]);
+      setShowDeleteModal(false);
+      setUserToDelete(null);
       
-      if (permanent) {
-        // Permanent delete
-        await deleteUserMutation.mutateAsync({
-          id: userId,
-          permanent: true
-        });
-        toast.success('User permanently deleted');
-      } else {
-        // Soft delete (deactivate)
-        await updateUserMutation.mutateAsync({
-          id: userId,
-          data: { 
-            isActive: false, 
-            deletedAt: new Date().toISOString() 
-          }
-        });
-        toast.success('User deactivated successfully');
-      }
-    } else if (userToDelete?.type === 'bulk' && userToDelete?.ids) {
-      console.log('[DELETE HANDLER] Deleting bulk users:', userToDelete.ids.length);
+      // Invalidate cache
+      queryClient.invalidateQueries(['admin', 'users']);
       
-      // Validate all IDs
-      const validIds = userToDelete.ids.filter(id => 
-        id && id !== 'undefined' && id !== 'null' && !id.includes('[object')
-      );
+    } catch (error) {
+      console.error('[DELETE HANDLER ERROR]', error);
+      dismissUserToast(loadingToastId);
       
-      if (validIds.length === 0) {
-        toast.error('No valid user IDs found');
-        return;
-      }
+      // Provide more detailed error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to delete users';
       
-      if (permanent) {
-        // Permanent bulk delete - use bulk mutation if available
-        await bulkUserMutation.mutateAsync({
-          ids: validIds,
-          operation: 'delete',
-          data: { permanent: true }
-        });
-        toast.success(`${validIds.length} users permanently deleted`);
-      } else {
-        // Soft bulk delete
-        await bulkUserMutation.mutateAsync({
-          ids: validIds,
-          operation: 'deactivate'
-        });
-        toast.success(`${validIds.length} users deactivated`);
-      }
+      showUserError(`Delete failed: ${errorMessage}`);
     }
-    
-    setSelectedUsers([]);
-    setShowDeleteModal(false);
-    setUserToDelete(null);
-    
-    // Invalidate cache
-    queryClient.invalidateQueries(['admin', 'users']);
-    
-  } catch (error) {
-    console.error('[DELETE HANDLER ERROR]', error);
-    
-    // Provide more detailed error message
-    const errorMessage = error.response?.data?.message || 
-                        error.response?.data?.error || 
-                        error.message || 
-                        'Failed to delete users';
-    
-    toast.error(`Delete failed: ${errorMessage}`);
-  }
-}, [userToDelete, deleteUserMutation, updateUserMutation, bulkUserMutation, queryClient]);
+  }, [userToDelete, deleteUserMutation, updateUserMutation, bulkUserMutation, queryClient, showUserLoading, showUserSuccess, showUserError, dismissUserToast]);
+
   const handleViewUser = useCallback((user) => {
     if (!user || typeof user !== 'object') {
-      toast.error('Invalid user data');
+      showUserError('Invalid user data');
       return;
     }
     setViewingUser(user);
     setShowUserDetails(true);
-  }, []);
+  }, [showUserError]);
 
   const handleEditUser = useCallback((user) => {
     if (!user || typeof user !== 'object') {
-      toast.error('Invalid user data');
+      showUserError('Invalid user data');
       return;
     }
     setEditingUser(user);
     setShowEditModal(true);
-  }, []);
+  }, [showUserError]);
 
   const handleUpdateUser = useCallback(async (userId, data) => {
     if (!userId) {
-      toast.error('Invalid user ID');
-      return;
+      showUserError('Invalid user ID');
+      throw new Error('Invalid user ID');
     }
+    
+    const loadingToastId = showUserLoading('Updating user...');
     
     try {
       await updateUserMutation.mutateAsync({ id: userId, data });
+      dismissUserToast(loadingToastId);
+      showUserSuccess('User updated successfully');
       
       // Invalidate cache
       queryClient.invalidateQueries(['admin', 'users']);
       
     } catch (error) {
       console.error('Update user error:', error);
+      dismissUserToast(loadingToastId);
       const errorMessage = error.response?.data?.message || 
                           error.response?.data?.error || 
                           error.message || 
                           'Failed to update user';
+      showUserError(errorMessage);
       throw new Error(errorMessage);
     }
-  }, [updateUserMutation, queryClient]);
+  }, [updateUserMutation, queryClient, showUserLoading, showUserSuccess, showUserError, dismissUserToast]);
 
   const handleUserCreated = useCallback(() => {
-    toast.success('User created successfully!');
+    showUserSuccess('User created successfully!');
     setShowCreateModal(false);
     
     // Invalidate cache
     queryClient.invalidateQueries(['admin', 'users']);
-  }, [queryClient]);
+  }, [queryClient, showUserSuccess]);
 
   const toggleSelectAll = useCallback((e) => {
     if (!Array.isArray(users)) {
-      toast.error('Cannot select users: data not loaded');
+      showUserError('Cannot select users: data not loaded');
       return;
     }
     
@@ -811,7 +849,7 @@ const handleDeleteUser = useCallback(async (deleteOptions) => {
     } else {
       setSelectedUsers([]);
     }
-  }, [users]);
+  }, [users, showUserError]);
 
   const toggleSelectUser = useCallback((userId) => {
     setSelectedUsers(prev =>
@@ -824,75 +862,78 @@ const handleDeleteUser = useCallback(async (deleteOptions) => {
   const toggleActionMenu = useCallback((userId) => {
     setActionMenu(actionMenu === userId ? null : userId);
   }, [actionMenu]);
-// Update the handleDelete function to extract ID properly
-const handleDelete = useCallback((user) => {
-  if (!user) {
-    toast.error('Invalid user data');
-    return;
-  }
-  
-  // Safely extract the ID
-  let userId;
-  if (typeof user === 'string') {
-    userId = user;
-  } else if (user._id) {
-    userId = user._id;
-  } else if (user.id) {
-    userId = user.id;
-  } else {
-    toast.error('No valid user ID found');
-    return;
-  }
-  
-  // Validate the ID format
-  if (!userId || 
-      userId === 'undefined' || 
-      userId === 'null' || 
-      userId.includes('[object') ||
-      userId.includes('temp-')) {
-    toast.error('Invalid user ID format');
-    return;
-  }
-  
-  console.log('[DELETE USER] Setting user to delete:', { 
-    type: 'single', 
-    id: userId,
-    userEmail: user.email || 'No email'
-  });
-  
-  setUserToDelete({ type: 'single', id: userId });
-  setShowDeleteModal(true);
-}, []);
 
-// Also update bulk delete handler
-const handleBulkDelete = useCallback(() => {
-  if (selectedUsers.length === 0) {
-    toast.error('Please select users first');
-    return;
-  }
-  
-  console.log('[BULK DELETE] Setting users to delete:', { 
-    type: 'bulk', 
-    ids: selectedUsers,
-    count: selectedUsers.length 
-  });
-  
-  setUserToDelete({ type: 'bulk', ids: selectedUsers });
-  setShowDeleteModal(true);
-}, [selectedUsers]);
+  const handleDelete = useCallback((user) => {
+    if (!user) {
+      showUserError('Invalid user data');
+      return;
+    }
+    
+    // Safely extract the ID
+    let userId;
+    if (typeof user === 'string') {
+      userId = user;
+    } else if (user._id) {
+      userId = user._id;
+    } else if (user.id) {
+      userId = user.id;
+    } else {
+      showUserError('No valid user ID found');
+      return;
+    }
+    
+    // Validate the ID format
+    if (!userId || 
+        userId === 'undefined' || 
+        userId === 'null' || 
+        userId.includes('[object') ||
+        userId.includes('temp-')) {
+      showUserError('Invalid user ID format');
+      return;
+    }
+    
+    console.log('[DELETE USER] Setting user to delete:', { 
+      type: 'single', 
+      id: userId,
+      userEmail: user.email || 'No email'
+    });
+    
+    setUserToDelete({ type: 'single', id: userId });
+    setShowDeleteModal(true);
+  }, [showUserError]);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedUsers.length === 0) {
+      showUserWarning('Please select users first');
+      return;
+    }
+    
+    console.log('[BULK DELETE] Setting users to delete:', { 
+      type: 'bulk', 
+      ids: selectedUsers,
+      count: selectedUsers.length 
+    });
+    
+    setUserToDelete({ type: 'bulk', ids: selectedUsers });
+    setShowDeleteModal(true);
+  }, [selectedUsers, showUserWarning]);
 
   const refreshData = useCallback(() => {
     try {
+      const loadingToastId = showUserLoading('Refreshing data...');
       refetch();
       setSelectedUsers([]);
-      toast.success('Data refreshed');
+      dismissUserToast(loadingToastId);
+      showUserSuccess('Data refreshed');
     } catch (error) {
       console.error('Refresh error:', error);
-      toast.error('Failed to refresh data');
+      showUserError('Failed to refresh data');
     }
-  }, [refetch]);
+  }, [refetch, showUserLoading, showUserSuccess, showUserError, dismissUserToast]);
 
   const exportUsers = useCallback(async () => {
+    const loadingToastId = showUserLoading('Exporting users...');
+    
     try {
       const response = await exportUsersMutation.mutateAsync('csv');
       
@@ -907,12 +948,14 @@ const handleBulkDelete = useCallback(() => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      toast.success('Users exported successfully');
+      dismissUserToast(loadingToastId);
+      showUserSuccess('Users exported successfully');
     } catch (error) {
       console.error('Export error:', error);
-      toast.error('Failed to export users');
+      dismissUserToast(loadingToastId);
+      showUserError('Failed to export users');
     }
-  }, [exportUsersMutation]);
+  }, [exportUsersMutation, showUserLoading, showUserSuccess, showUserError, dismissUserToast]);
 
   const handleCreateUser = useCallback(() => {
     setShowCreateModal(true);
@@ -999,8 +1042,6 @@ const handleBulkDelete = useCallback(() => {
 
   return (
     <div className="space-y-6">
-     
-
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -1035,95 +1076,95 @@ const handleBulkDelete = useCallback(() => {
       </div>
 
       {/* Quick Stats */}
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-600">Total Users</p>
-        <p className="text-2xl font-bold mt-1">{userStats.total.toLocaleString()}</p>
-        <div className="flex items-center mt-1">
-          <span className="text-xs text-green-600 font-medium">
-            +{userStats.newToday} today
-          </span>
-          <span className="mx-2 text-gray-300">|</span>
-          <span className="text-xs text-blue-600">
-            {userStats.online} online
-          </span>
-        </div>
-      </div>
-      <FiUsers className="h-8 w-8 text-blue-500" />
-    </div>
-  </div>
-  
-  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-600">Active Users</p>
-        <p className="text-2xl font-bold mt-1">{userStats.active.toLocaleString()}</p>
-        <div className="mt-1">
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-green-600 h-2 rounded-full" 
-              style={{ width: `${userStats.activePercentage}%` }}
-            ></div>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            {userStats.activePercentage}% of total
-          </p>
-        </div>
-      </div>
-      <FiUserCheck className="h-8 w-8 text-green-500" />
-    </div>
-  </div>
-  
-  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-600">Verified Users</p>
-        <p className="text-2xl font-bold mt-1">{userStats.verified.toLocaleString()}</p>
-        <div className="mt-1">
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full" 
-              style={{ width: `${userStats.verifiedPercentage}%` }}
-            ></div>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            {userStats.verifiedPercentage}% verified
-          </p>
-        </div>
-      </div>
-      <FiShield className="h-8 w-8 text-blue-500" />
-    </div>
-  </div>
-  
-  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-600">User Roles</p>
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          <div className="text-center">
-            <p className="text-lg font-bold text-purple-600">{userStats.admins}</p>
-            <p className="text-xs text-gray-500">Admins</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-blue-600">{userStats.sellers}</p>
-            <p className="text-xs text-gray-500">Sellers</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-green-600">{userStats.buyers}</p>
-            <p className="text-xs text-gray-500">Buyers</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-gray-600">{userStats.total - (userStats.admins + userStats.sellers + userStats.buyers)}</p>
-            <p className="text-xs text-gray-500">Regular</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Users</p>
+              <p className="text-2xl font-bold mt-1">{userStats.total.toLocaleString()}</p>
+              <div className="flex items-center mt-1">
+                <span className="text-xs text-green-600 font-medium">
+                  +{userStats.newToday} today
+                </span>
+                <span className="mx-2 text-gray-300">|</span>
+                <span className="text-xs text-blue-600">
+                  {userStats.online} online
+                </span>
+              </div>
+            </div>
+            <FiUsers className="h-8 w-8 text-blue-500" />
           </div>
         </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Active Users</p>
+              <p className="text-2xl font-bold mt-1">{userStats.active.toLocaleString()}</p>
+              <div className="mt-1">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full" 
+                    style={{ width: `${userStats.activePercentage}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {userStats.activePercentage}% of total
+                </p>
+              </div>
+            </div>
+            <FiUserCheck className="h-8 w-8 text-green-500" />
+          </div>
+        </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Verified Users</p>
+              <p className="text-2xl font-bold mt-1">{userStats.verified.toLocaleString()}</p>
+              <div className="mt-1">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full" 
+                    style={{ width: `${userStats.verifiedPercentage}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {userStats.verifiedPercentage}% verified
+                </p>
+              </div>
+            </div>
+            <FiShield className="h-8 w-8 text-blue-500" />
+          </div>
+        </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">User Roles</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-purple-600">{userStats.admins}</p>
+                  <p className="text-xs text-gray-500">Admins</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-blue-600">{userStats.sellers}</p>
+                  <p className="text-xs text-gray-500">Sellers</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-green-600">{userStats.buyers}</p>
+                  <p className="text-xs text-gray-500">Buyers</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-600">{userStats.total - (userStats.admins + userStats.sellers + userStats.buyers)}</p>
+                  <p className="text-xs text-gray-500">Regular</p>
+                </div>
+              </div>
+            </div>
+            <FiUserCheck className="h-8 w-8 text-indigo-500" />
+          </div>
+        </div>
       </div>
-      <FiUserCheck className="h-8 w-8 text-indigo-500" />
-    </div>
-  </div>
-</div>
 
       {/* Bulk Actions */}
       {selectedUsers.length > 0 && (
@@ -1175,10 +1216,7 @@ const handleBulkDelete = useCallback(() => {
                 <span>Make Admin</span>
               </button>
               <button
-                onClick={() => {
-                  setUserToDelete({ type: 'bulk', ids: selectedUsers });
-                  setShowDeleteModal(true);
-                }}
+                onClick={handleBulkDelete}
                 className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1"
               >
                 <FiTrash2 className="h-4 w-4" />
