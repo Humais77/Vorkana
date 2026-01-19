@@ -1,9 +1,12 @@
+// Hero.jsx
 import { useState, useEffect, useRef } from "react";
 import { Pause, Play } from "lucide-react";
 import HeroSearch from "../../../components/Search/HeroSearch";
 import { useNavigate } from "react-router-dom";
 import useVideoStore from '../../../store/useVideoStore';
 import { getHeroVideoAssets, preloadVideo } from '../../../utils/cloudinaryFrontend';
+import { useSubcategories } from '../../../hooks/useSubcategories';
+import LoadingSpinner from '../../../layouts/LoadingSpinner';
 
 const Hero = ({ isAuthModalOpen = false }) => {
   const [paused, setPaused] = useState(false);
@@ -25,6 +28,33 @@ const Hero = ({ isAuthModalOpen = false }) => {
     posterUrl,
     lowQualityVideoUrl 
   } = getHeroVideoAssets(VIDEO_PUBLIC_ID, POSTER_PUBLIC_ID);
+
+  // Define the specific category names we want to show (same as before)
+  const categoryNames = [
+    "website development",
+    "architecture & interior design",
+    "UGC videos",
+    "video editing",
+    "vibe coding"
+  ];
+
+  // === Fetch subcategories from backend ===
+  const { 
+    data: subcategories = [], 
+    isLoading: subcategoriesLoading,
+    error: subcategoriesError,
+    isError: hasSubcategoriesError
+  } = useSubcategories({
+    params: {
+      isActive: true,
+      limit: 100,
+      sortBy: 'name',
+      sortOrder: 'asc'
+    },
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 
   // === PRODUCTION: Preload video on component mount ===
   useEffect(() => {
@@ -173,18 +203,42 @@ const Hero = ({ isAuthModalOpen = false }) => {
     }
   };
 
+  // This function stays EXACTLY THE SAME as before
   const handleCategoryClick = (name) => {
     navigate(`/search?query=${encodeURIComponent(name)}`);
   };
 
-  const categories = [
-    { id: 1, name: "website development" },
-    { id: 2, name: "architecture & interior design" },
-    { id: 3, name: "UGC videos" },
-    { id: 4, name: "video editing" },
-    { id: 5, name: "vibe coding", isNew: true },
-  ];
+  // Prepare categories data based on backend subcategories
+  const getCategoriesToDisplay = () => {
+    // If loading or error, show no categories
+    if (subcategoriesLoading || hasSubcategoriesError) {
+      return [];
+    }
 
+    // Try to match backend subcategories with our category names
+    const matchedCategories = [];
+    
+    for (const categoryName of categoryNames) {
+      // Try to find exact match in subcategories
+      const matchedSubcategory = subcategories.find(subcat => 
+        subcat.name.toLowerCase() === categoryName.toLowerCase()
+      );
+
+      // If found, use the subcategory name
+      // If not found, we'll just show the category name but it won't be clickable
+      if (matchedSubcategory) {
+        matchedCategories.push({
+          id: matchedSubcategory._id,
+          name: matchedSubcategory.name,
+          isNew: categoryName.toLowerCase() === "vibe coding"
+        });
+      }
+    }
+
+    return matchedCategories;
+  };
+
+  const categoriesToDisplay = getCategoriesToDisplay();
   const trustedCompanies = ["Google", "NETFLIX", "ABC", "PayPal", "Olympiant"];
 
   return (
@@ -200,7 +254,7 @@ const Hero = ({ isAuthModalOpen = false }) => {
           muted
           loop
           playsInline
-          preload="metadata" // Changed from 'auto' to 'metadata' for faster initial load
+          preload="metadata"
           fetchPriority="high"
           poster={posterUrl}
           className={`
@@ -213,7 +267,7 @@ const Hero = ({ isAuthModalOpen = false }) => {
           // PRODUCTION: Add these attributes for better performance
           disablePictureInPicture
           disableRemotePlayback
-          crossorigin="anonymous"
+          crossOrigin="anonymous"
         >
           {/* PRODUCTION: Fallback source for older browsers */}
           <source src={videoUrl} type="video/mp4" />
@@ -231,17 +285,17 @@ const Hero = ({ isAuthModalOpen = false }) => {
         />
       )}
 
-      {/* === PRODUCTION: Minimal loading indicator === */}
+      {/* === PRODUCTION: Video loading indicator === */}
       {!videoReady && !isMobile && !videoLoadError && (
         <div className="absolute inset-0 hidden lg:flex items-center justify-center bg-black/40">
-          <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          <LoadingSpinner size="small" />
         </div>
       )}
 
       {/* Buffering indicator */}
       {isBuffering && videoReady && !isMobile && (
         <div className="absolute inset-0 hidden lg:flex items-center justify-center bg-black/20">
-          <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+          <LoadingSpinner size="small" />
         </div>
       )}
 
@@ -258,21 +312,39 @@ const Hero = ({ isAuthModalOpen = false }) => {
           <HeroSearch />
         </div>
 
-        <div className="flex flex-wrap gap-3 mt-8">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryClick(cat.name)}
-              className="px-5 py-2.5 border-2 border-white/40 rounded-full backdrop-blur-sm hover:bg-white/10 transition"
-            >
-              {cat.name}
-              {cat.isNew && (
-                <span className="ml-2 px-2 text-[10px] bg-yellow-400 text-black font-bold rounded-full">
-                  NEW
-                </span>
-              )}
-            </button>
-          ))}
+        {/* Categories Section */}
+        <div className="mt-8">
+          {subcategoriesLoading ? (
+            <div className="flex justify-center">
+              <LoadingSpinner size="small" />
+            </div>
+          ) : hasSubcategoriesError ? (
+            <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg border border-red-700/50">
+              Cannot load categories. Please try again later.
+            </div>
+          ) : categoriesToDisplay.length > 0 ? (
+            <div className="flex flex-wrap gap-3">
+              {categoriesToDisplay.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => handleCategoryClick(cat.name)}
+                  className="px-5 py-2.5 border-2 border-white/40 rounded-full backdrop-blur-sm hover:bg-white/10 transition"
+                >
+                  {cat.name}
+                  {cat.isNew && (
+                    <span className="ml-2 px-2 text-[10px] bg-yellow-400 text-black font-bold rounded-full">
+                      NEW
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // No matching subcategories found in database
+            <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg border border-red-700/50">
+              No matching categories found in database. Please add the required subcategories.
+            </div>
+          )}
         </div>
 
         <div className="mt-12 flex flex-wrap items-center gap-6">
