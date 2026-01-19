@@ -293,47 +293,48 @@ const GigEdit = () => {
 
   // Handle update success
   useEffect(() => {
-    if (updateSuccess && updatedGigData && isSubmitting && !hasProcessedSuccessRef.current) {
-      console.log('Update successful, processing...');
-      hasProcessedSuccessRef.current = true;
-      
-      setIsSubmitting(false);
-      
-      showGigUpdateSuccess(
-      id, 
-      'Gig Updated Successfully',
+  if (updateSuccess && updatedGigData && isSubmitting && !hasProcessedSuccessRef.current) {
+    console.log('Update successful, processing...');
+    hasProcessedSuccessRef.current = true;
+    
+    setIsSubmitting(false);
+    
+    // Show success toast with 5-second timer and description
+    showGigUpdateSuccess(
+      id,
+      'Gig Updated Successfully!',
       'Your changes are being processed and will be visible across the platform shortly.'
     );
+    
+    // Update local state with fresh data
+    const updatedGig = updatedGigData.data || updatedGigData.gig || updatedGigData;
+    if (updatedGig) {
+      setCurrentVersion(updatedGig.version || (currentVersion + 1));
       
-      // Update local state with fresh data
-      const updatedGig = updatedGigData.data || updatedGigData.gig || updatedGigData;
-      if (updatedGig) {
-        setCurrentVersion(updatedGig.version || (currentVersion + 1));
-        
-        if (updatedGig.images && Array.isArray(updatedGig.images)) {
-          setExistingImages(updatedGig.images);
-        }
-        
-        if (updatedGig.thumbnail) {
-          setExistingThumbnail(updatedGig.thumbnail);
-        }
-        
-        // Clear uploaded images
-        setUploadedImages([]);
-        setThumbnailFile(null);
+      if (updatedGig.images && Array.isArray(updatedGig.images)) {
+        setExistingImages(updatedGig.images);
       }
       
-      // Invalidate query to refresh data
-      queryClient.invalidateQueries({ queryKey: ['gig', id] });
+      if (updatedGig.thumbnail) {
+        setExistingThumbnail(updatedGig.thumbnail);
+      }
+      
+      // Clear uploaded images
+      setUploadedImages([]);
+      setThumbnailFile(null);
     }
     
-    // Reset success flag when submission starts
-    return () => {
-      if (isSubmitting) {
-        hasProcessedSuccessRef.current = false;
-      }
-    };
-  }, [updateSuccess, updatedGigData, id, showGigUpdateSuccess, currentVersion, isSubmitting, queryClient]);
+    // Invalidate query to refresh data
+    queryClient.invalidateQueries({ queryKey: ['gig', id] });
+  }
+  
+  // Reset success flag when submission starts
+  return () => {
+    if (isSubmitting) {
+      hasProcessedSuccessRef.current = false;
+    }
+  };
+}, [updateSuccess, updatedGigData, id, showGigUpdateSuccess, currentVersion, isSubmitting, queryClient]);
 
   // Handle update errors
   useEffect(() => {

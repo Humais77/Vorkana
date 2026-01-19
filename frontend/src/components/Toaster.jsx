@@ -44,10 +44,9 @@ const defaultToastConfig = {
   position: TOAST_POSITIONS.BOTTOM_RIGHT,
   autoClose: 5000,
   hideProgressBar: false,
-  closeOnClick: true,
-  pauseOnHover: true,
-  draggable: true,
-  progress: undefined,
+  closeOnClick: false, // Disable close on click
+  pauseOnHover: false, // Disable pause on hover
+  draggable: false, // Disable dragging
   theme: 'colored',
 };
 
@@ -62,6 +61,7 @@ const getSafeMessage = (message) => {
   return String(message);
 };
 
+// Generic toast function
 export const showToast = (type, title, description = '', options = {}) => {
   const Icon = ToastIcons[type];
   
@@ -106,72 +106,69 @@ export const showToast = (type, title, description = '', options = {}) => {
   return toast[type](toastContent, config);
 };
 
-// Specific toast functions - updated to ensure string messages
+// Specific toast functions
 export const showSuccessToast = (message, options = {}) => {
   const safeMessage = getSafeMessage(message);
-  return showToast(TOAST_TYPES.SUCCESS, safeMessage, '', options);
+  
+  const successOptions = {
+    ...defaultToastConfig,
+    ...options,
+    autoClose: options.autoClose || 5000,
+  };
+  
+  return toast.success(safeMessage, successOptions);
 };
 
 export const showErrorToast = (message, options = {}) => {
   const safeMessage = getSafeMessage(message);
-  return showToast(TOAST_TYPES.ERROR, safeMessage, '', options);
+  
+  const errorOptions = {
+    ...defaultToastConfig,
+    ...options,
+    autoClose: options.autoClose || 5000,
+  };
+  
+  return toast.error(safeMessage, errorOptions);
 };
 
 export const showWarningToast = (message, options = {}) => {
   const safeMessage = getSafeMessage(message);
-  return showToast(TOAST_TYPES.WARNING, safeMessage, '', options);
+  
+  const warningOptions = {
+    ...defaultToastConfig,
+    ...options,
+    autoClose: options.autoClose || 5000,
+  };
+  
+  return toast.warning(safeMessage, warningOptions);
 };
 
 export const showInfoToast = (message, options = {}) => {
   const safeMessage = getSafeMessage(message);
-  return showToast(TOAST_TYPES.INFO, safeMessage, '', options);
+  
+  const infoOptions = {
+    ...defaultToastConfig,
+    ...options,
+    autoClose: options.autoClose || 5000,
+  };
+  
+  return toast.info(safeMessage, infoOptions);
 };
 
 export const showLoadingToast = (message, options = {}) => {
   const safeMessage = getSafeMessage(message);
-  return showToast(TOAST_TYPES.LOADING, safeMessage, '', options);
+  
+  const loadingOptions = {
+    ...defaultToastConfig,
+    ...options,
+    autoClose: false, // Loading toasts shouldn't auto-close
+  };
+  
+  return toast.loading(safeMessage, loadingOptions);
 };
 
 export const dismissToast = (toastId) => {
   toast.dismiss(toastId);
-};
-
-export const showGigUpdateSuccessToast = (gigId, title = 'Success!', description = '') => {
-  const safeTitle = getSafeMessage(title);
-  const safeDescription = description ? getSafeMessage(description) : '';
-  
-  const toastContent = (
-    <div className="flex items-start gap-3">
-      <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
-      <div>
-        <p className="font-medium text-gray-900">{safeTitle}</p>
-        {safeDescription && (
-          <p className="text-sm text-gray-600 mt-1">{safeDescription}</p>
-        )}
-        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-          <Clock className="h-3 w-3" />
-          <span>Redirecting in 10 seconds...</span>
-        </div>
-      </div>
-    </div>
-  );
-  
-  const toastId = toast.success(toastContent, {
-    position: 'bottom-right',
-    autoClose: 5000,
-    hideProgressBar: false,
-    closeOnClick: true,
-    pauseOnHover: true,
-    draggable: true,
-    theme: 'colored',
-    onClose: () => {
-      setTimeout(() => {
-        window.location.href = `/gig/${gigId}`;
-      }, 300);
-    }
-  });
-  
-  return toastId;
 };
 
 // Toast container component
@@ -182,13 +179,13 @@ const Toaster = () => {
       autoClose={5000}
       hideProgressBar={false}
       newestOnTop
-      closeOnClick
+      closeOnClick={false}
       rtl={false}
-      pauseOnFocusLoss
-      draggable
-      pauseOnHover
+      pauseOnFocusLoss={false}
+      pauseOnHover={false}
+      draggable={false}
       theme="colored"
-      toastClassName="!bg-white !text-gray-900 !rounded-xl !shadow-lg !border !border-gray-200"
+      toastClassName="!bg-white !text-gray-900 !rounded-xl !shadow-lg !border !border-gray-200 !cursor-default"
       progressClassName="!bg-gradient-to-r !from-emerald-500 !to-teal-500"
       bodyClassName="!p-4"
     />

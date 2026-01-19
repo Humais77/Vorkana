@@ -43,7 +43,6 @@ import {
   AlertTriangle,
   History as HistoryIcon // Renamed import to avoid conflict
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService, useUpdateService } from '../../../hooks/useServices';
@@ -51,6 +50,7 @@ import { useCategories, useParentCategories } from '../../../hooks/useCategories
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { isProfileCompleteEnough } from '../../../utils/profileUtils';
+import { useServiceToast } from '../../../hooks/useServiceToast';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
@@ -133,6 +133,15 @@ const EditService = () => {
   const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
   const queryClient = useQueryClient();
   
+  // Service Toast hook
+  const {
+    showServiceLoading,
+    showServiceUpdateSuccess,
+    showServiceError,
+    showServiceInfo,
+    dismissServiceToast
+  } = useServiceToast();
+  
   // TanStack Query hooks
   const {
     data: serviceData,
@@ -185,7 +194,6 @@ const EditService = () => {
   const [thumbnailFile, setThumbnailFile] = useState(null);
   const [existingThumbnail, setExistingThumbnail] = useState(null);
   const [errors, setErrors] = useState({});
-  const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [newKeyword, setNewKeyword] = useState("");
@@ -213,6 +221,7 @@ const EditService = () => {
   const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
   const hasPopulatedRef = useRef(false);
+  const hasProcessedSuccessRef = useRef(false);
 
   // Memoized values
   const subcategoriesData = useSubcategoriesByCategory(formData.category, {
@@ -246,7 +255,7 @@ const EditService = () => {
       
       // Check if user is owner
       if (currentUser && currentService.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
-        toast.error('You can only edit your own services');
+        showServiceError('You can only edit your own services');
         navigate(`/services/${id}`);
         return;
       }
@@ -284,43 +293,49 @@ const EditService = () => {
         setExistingThumbnail(currentService.thumbnail);
       }
     }
-  }, [currentService, currentUser, id, navigate]);
+  }, [currentService, currentUser, id, navigate, showServiceError]);
 
-  // Handle update success
   useEffect(() => {
-    if (updateSuccess && updatedServiceData && isSubmitting) {
-      setSuccess(true);
-      setVersionConflict(false);
-      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-      
-      const message = updatedServiceData.message || "Service updated successfully!";
-      toast.success(message);
+  if (updateSuccess && updatedServiceData && isSubmitting && !hasProcessedSuccessRef.current) {
+    hasProcessedSuccessRef.current = true;
+    
+    setIsSubmitting(false);
+    
+    // Show success toast with 5-second timer and description
+    showServiceUpdateSuccess(
+      id,
+      'Service Updated Successfully!',
+      'Your changes are being processed and will be visible across the platform shortly.'
+    );
 
-      // Reset populated flag to allow re-population on refresh
-      hasPopulatedRef.current = false;
+    // Invalidate queries
+    queryClient.invalidateQueries({
+      queryKey: ['service', id]
+    });
+    
+    queryClient.invalidateQueries({
+      queryKey: ['services']
+    });
 
-      // Invalidate queries
-      queryClient.invalidateQueries({
-        queryKey: ['service', id]
-      });
-      
-      queryClient.invalidateQueries({
-        queryKey: ['services']
-      });
-
-      // Redirect after delay
-      setTimeout(() => {
-        navigate(`/services/${id}`, {
-          state: { refresh: true, updated: true }
-        });
-      }, 500);
+    // Reset form state
+    setVersionConflict(false);
+    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+    hasPopulatedRef.current = false;
+  }
+  
+  // Reset success flag when submission starts
+  return () => {
+    if (isSubmitting) {
+      hasProcessedSuccessRef.current = false;
     }
-  }, [updateSuccess, updatedServiceData, navigate, id, queryClient, isSubmitting]);
+  };
+}, [updateSuccess, updatedServiceData, id, queryClient, isSubmitting, showServiceUpdateSuccess]);
 
   // Handle update errors
   useEffect(() => {
     if (updateError) {
       setIsSubmitting(false);
+      hasProcessedSuccessRef.current = false;
       
       // Handle version conflict
       if (updateError.code === 'VERSION_CONFLICT') {
@@ -331,7 +346,7 @@ const EditService = () => {
           serverData: null
         });
         
-        toast.error(updateError.message || 'Service was modified by another user. Please refresh.');
+        showServiceError(updateError.message || 'Service was modified by another user. Please refresh.');
         
         // Force refresh to get latest data
         setTimeout(() => {
@@ -341,12 +356,12 @@ const EditService = () => {
       // Handle subcategory errors
       else if (updateError.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Please select a valid subcategory' }));
-        toast.error('Subcategory validation failed');
+        showServiceError('Subcategory validation failed');
       } else {
-        toast.error(updateError.message || 'Failed to update service');
+        showServiceError(updateError.message || 'Failed to update service');
       }
     }
-  }, [updateError, currentVersion]);
+  }, [updateError, currentVersion, showServiceError]);
 
   // Cleanup
   useEffect(() => {
@@ -361,10 +376,10 @@ const EditService = () => {
   // Profile completion check
   useEffect(() => {
     if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
-      toast.error('Please complete your profile before editing services');
+      showServiceError('Please complete your profile before editing services');
       navigate('/dashboard');
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, showServiceError]);
 
   // Get category name for display
   const getCategoryName = useCallback(() => {
@@ -411,19 +426,19 @@ const EditService = () => {
         tags: [...prev.tags, newTag.trim()]
       }));
       setNewTag("");
-      toast.success('Tag added');
+      showServiceInfo('Tag added');
     } else if (formData.tags.length >= 20) {
-      toast.error('Maximum 20 tags allowed');
+      showServiceError('Maximum 20 tags allowed');
     }
-  }, [newTag, formData.tags]);
+  }, [newTag, formData.tags, showServiceInfo, showServiceError]);
 
   const handleRemoveTag = useCallback((tagToRemove) => {
     setFormData(prev => ({
       ...prev,
       tags: prev.tags.filter(tag => tag !== tagToRemove)
     }));
-    toast.success('Tag removed');
-  }, []);
+    showServiceInfo('Tag removed');
+  }, [showServiceInfo]);
 
   // Search Keywords Management
   const handleAddKeyword = useCallback(() => {
@@ -433,19 +448,19 @@ const EditService = () => {
         searchKeywords: [...prev.searchKeywords, newKeyword.trim()]
       }));
       setNewKeyword("");
-      toast.success('Keyword added');
+      showServiceInfo('Keyword added');
     } else if (formData.searchKeywords.length >= 20) {
-      toast.error('Maximum 20 keywords allowed');
+      showServiceError('Maximum 20 keywords allowed');
     }
-  }, [newKeyword, formData.searchKeywords]);
+  }, [newKeyword, formData.searchKeywords, showServiceInfo, showServiceError]);
 
   const handleRemoveKeyword = useCallback((keywordToRemove) => {
     setFormData(prev => ({
       ...prev,
       searchKeywords: prev.searchKeywords.filter(keyword => keyword !== keywordToRemove)
     }));
-    toast.success('Keyword removed');
-  }, []);
+    showServiceInfo('Keyword removed');
+  }, [showServiceInfo]);
 
   // Features Management
   const handleAddFeature = useCallback(() => {
@@ -455,17 +470,17 @@ const EditService = () => {
         features: [...prev.features, { ...newFeature }]
       }));
       setNewFeature({ title: "", description: "", included: true });
-      toast.success('Feature added');
+      showServiceInfo('Feature added');
     }
-  }, [newFeature]);
+  }, [newFeature, showServiceInfo]);
 
   const handleRemoveFeature = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       features: prev.features.filter((_, i) => i !== index)
     }));
-    toast.success('Feature removed');
-  }, []);
+    showServiceInfo('Feature removed');
+  }, [showServiceInfo]);
 
   // FAQs Management
   const handleAddFAQ = useCallback(() => {
@@ -475,17 +490,17 @@ const EditService = () => {
         faqs: [...prev.faqs, { ...newFAQ }]
       }));
       setNewFAQ({ question: "", answer: "" });
-      toast.success('FAQ added');
+      showServiceInfo('FAQ added');
     }
-  }, [newFAQ]);
+  }, [newFAQ, showServiceInfo]);
 
   const handleRemoveFAQ = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
       faqs: prev.faqs.filter((_, i) => i !== index)
     }));
-    toast.success('FAQ removed');
-  }, []);
+    showServiceInfo('FAQ removed');
+  }, [showServiceInfo]);
 
   // Create a utility function to optimize images before upload
   const optimizeImageBeforeUpload = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
@@ -543,7 +558,7 @@ const EditService = () => {
     // Validate total image count
     const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
     if (totalImages > 10) {
-      toast.error('Maximum 10 images allowed');
+      showServiceError('Maximum 10 images allowed');
       return;
     }
     
@@ -569,7 +584,7 @@ const EditService = () => {
       // Validate optimized files
       for (const file of optimizedFiles) {
         if (file.size > 2 * 1024 * 1024) { // Max 2MB after optimization
-          toast.error(`${file.name} is too large after optimization`);
+          showServiceError(`${file.name} is too large after optimization`);
           setUploadingImages(false);
           return;
         }
@@ -585,25 +600,25 @@ const EditService = () => {
       }));
       
       setUploadedImages(prev => [...prev, ...previewImages]);
-      toast.success(`${newFiles.length} image(s) added successfully`);
+      showServiceInfo(`${newFiles.length} image(s) added successfully`);
     } catch (error) {
       console.error('Error uploading images:', error);
-      toast.error('Failed to add images');
+      showServiceError('Failed to add images');
     } finally {
       setUploadingImages(false);
     }
-  }, [uploadingImages, existingImages, uploadedImages]);
+  }, [uploadingImages, existingImages, uploadedImages, showServiceError, showServiceInfo]);
 
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
     
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('Thumbnail exceeds 2MB limit');
+      showServiceError('Thumbnail exceeds 2MB limit');
       return;
     }
     
     if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
-      toast.error('Invalid image type for thumbnail');
+      showServiceError('Invalid image type for thumbnail');
       return;
     }
     
@@ -616,8 +631,8 @@ const EditService = () => {
       isNew: true
     });
     
-    toast.success('Thumbnail selected');
-  }, [uploadingThumbnail]);
+    showServiceInfo('Thumbnail selected');
+  }, [uploadingThumbnail, showServiceError, showServiceInfo]);
 
   const removeExistingImage = useCallback((index) => {
     const imageToRemove = existingImages[index];
@@ -628,26 +643,26 @@ const EditService = () => {
       setExistingThumbnail(null);
     }
     
-    toast.success('Image removed');
-  }, [existingImages, existingThumbnail]);
+    showServiceInfo('Image removed');
+  }, [existingImages, existingThumbnail, showServiceInfo]);
 
   const removeUploadedImage = useCallback((index) => {
     const image = uploadedImages[index];
     URL.revokeObjectURL(image.preview);
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
-    toast.success('Image removed');
-  }, [uploadedImages]);
+    showServiceInfo('Image removed');
+  }, [uploadedImages, showServiceInfo]);
 
   const removeThumbnail = useCallback(() => {
     if (thumbnailFile) {
       URL.revokeObjectURL(thumbnailFile.preview);
       setThumbnailFile(null);
-      toast.success('Thumbnail removed');
+      showServiceInfo('Thumbnail removed');
     } else if (existingThumbnail) {
       setExistingThumbnail(null);
-      toast.success('Thumbnail removed');
+      showServiceInfo('Thumbnail removed');
     }
-  }, [thumbnailFile, existingThumbnail]);
+  }, [thumbnailFile, existingThumbnail, showServiceInfo]);
 
   // Helper function to handle Enter key press
   const handleKeyPress = useCallback((e, type) => {
@@ -719,16 +734,16 @@ const EditService = () => {
       setVersionConflict(false);
       setConflictResolution({ show: false, serverVersion: 1, serverData: null });
       
-      toast.success('Service data refreshed successfully!');
+      showServiceInfo('Service data refreshed successfully!');
       
       return result;
     } catch (error) {
-      toast.error('Failed to refresh service data');
+      showServiceError('Failed to refresh service data');
       throw error;
     } finally {
       setIsRefreshing(false);
     }
-  }, [id, refetchService, queryClient]);
+  }, [id, refetchService, queryClient, showServiceInfo, showServiceError]);
 
   const handleResolveConflict = useCallback(async () => {
     setIsRefreshing(true);
@@ -751,14 +766,14 @@ const EditService = () => {
         });
         
         // Show comparison options
-        toast.success('Latest version loaded. Please review changes.');
+        showServiceInfo('Latest version loaded. Please review changes.');
       }
     } catch (error) {
-      toast.error('Failed to resolve conflict');
+      showServiceError('Failed to resolve conflict');
     } finally {
       setIsRefreshing(false);
     }
-  }, [id, refetchService, queryClient]);
+  }, [id, refetchService, queryClient, showServiceInfo, showServiceError]);
 
   // Add this function to handle manual conflict resolution
   const handleManualResolve = useCallback((action) => {
@@ -770,7 +785,7 @@ const EditService = () => {
           version: conflictResolution.serverVersion
         }));
         setVersionConflict(false);
-        toast.success('Your changes will be applied on top of latest version');
+        showServiceInfo('Your changes will be applied on top of latest version');
         break;
         
       case 'use_server_changes':
@@ -812,16 +827,16 @@ const EditService = () => {
         setVersionConflict(false);
         setConflictResolution({ show: false, serverVersion: 1, serverData: null });
         hasPopulatedRef.current = false; // Allow re-population
-        toast.success('Loaded latest version from server');
+        showServiceInfo('Loaded latest version from server');
         break;
         
       case 'merge_changes':
         // Show merge interface (simplified version)
-        toast.info('Manual merge required. Please refresh and edit again.');
+        showServiceInfo('Manual merge required. Please refresh and edit again.');
         handleRefreshService();
         break;
     }
-  }, [conflictResolution, handleRefreshService]);
+  }, [conflictResolution, handleRefreshService, showServiceInfo]);
 
   // Update the handleSubmit function to include version
   const handleSubmit = useCallback(async (e) => {
@@ -834,7 +849,7 @@ const EditService = () => {
     setVersionConflict(false);
     
     if (!isAuthenticated) {
-      toast.error("Please sign in to update services");
+      showServiceError("Please sign in to update services");
       setIsSubmitting(false);
       return;
     }
@@ -869,7 +884,8 @@ const EditService = () => {
         version: formData.version || currentVersion
       };
 
-      console.log('Updating service with version:', updateData.version);
+      // Show loading toast
+      showServiceLoading('Updating service...');
 
       // Create FormData
       const formDataToSend = new FormData();
@@ -903,6 +919,7 @@ const EditService = () => {
 
     } catch (error) {
       console.error("Error in handleSubmit:", error);
+      dismissServiceToast();
       
       // Handle specific errors
       if (error.code === 'VERSION_CONFLICT') {
@@ -910,18 +927,18 @@ const EditService = () => {
         return;
       } else if (error.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
-        toast.error('Please select a valid subcategory');
+        showServiceError('Please select a valid subcategory');
       } else if (error.message?.includes('Category not found')) {
-        toast.error('Selected category no longer exists. Please refresh and select again.');
+        showServiceError('Selected category no longer exists. Please refresh and select again.');
       } else if (error.message?.includes('Validation failed')) {
-        toast.error('Please check your input and try again.');
+        showServiceError('Please check your input and try again.');
       } else {
-        toast.error(error.message || 'Failed to update service. Please try again.');
+        showServiceError(error.message || 'Failed to update service. Please try again.');
       }
       
       setIsSubmitting(false);
     }
-  }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, currentVersion, isSubmitting]);
+  }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, currentVersion, isSubmitting, showServiceLoading, showServiceError, dismissServiceToast]);
 
   useEffect(() => {
     // Refresh service data when component mounts
@@ -1045,32 +1062,6 @@ const EditService = () => {
             >
               Browse Services
             </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Success state
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <div className="bg-white rounded-2xl p-12 shadow-xl">
-            <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Service Updated Successfully!</h2>
-            <p className="text-gray-600 text-lg mb-8">
-              Your service has been updated. Redirecting to service page...
-            </p>
-            <div className="w-24 h-1 bg-emerald-500 rounded-full mx-auto animate-pulse"></div>
-            <div className="mt-8">
-              <button
-                onClick={() => navigate(`/services/${id}`)}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
-              >
-                View Updated Service
-              </button>
-            </div>
           </div>
         </div>
       </div>

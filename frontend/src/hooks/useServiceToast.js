@@ -1,4 +1,3 @@
-// hooks/useServiceToast.js
 import { useCallback, useRef } from 'react';
 import {
   showSuccessToast,
@@ -57,7 +56,37 @@ export const useServiceToast = () => {
     return toastId;
   }, []);
 
-  // Show success toast
+  // Show success toast with redirect option - UPDATED to match gig pattern
+  const showServiceUpdateSuccess = useCallback((serviceId, title = 'Success!', description = '') => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    const safeTitle = ensureString(title);
+    const safeDescription = ensureString(description);
+    
+    const toastOptions = {
+      autoClose: 5000,
+      onClose: () => {
+        setTimeout(() => {
+          window.location.href = `/services/${serviceId}`;
+        }, 300);
+      }
+    };
+    
+    // Combine title and description for the toast content
+    let toastContent = safeTitle;
+    if (safeDescription) {
+      toastContent = `${safeTitle}\n${safeDescription}`;
+    }
+    
+    const toastId = showSuccessToast(toastContent, toastOptions);
+    
+    return toastId;
+  }, []);
+
+  // Show simple success toast
   const showServiceSuccess = useCallback((message, options = {}) => {
     if (loadingToastIdRef.current) {
       dismissToast(loadingToastIdRef.current);
@@ -129,6 +158,7 @@ export const useServiceToast = () => {
 
   return {
     showServiceLoading,
+    showServiceUpdateSuccess,
     showServiceSuccess,
     showServiceError,
     showServiceWarning,

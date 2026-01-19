@@ -1,6 +1,5 @@
 import { useCallback, useRef } from 'react';
 import {
-  showGigUpdateSuccessToast,
   showSuccessToast,
   showErrorToast,
   showWarningToast,
@@ -35,20 +34,35 @@ export const useGigToast = () => {
     return toastId;
   }, []);
 
-  // Show success toast with redirect
+  // Show success toast with redirect option
   const showGigUpdateSuccess = useCallback((gigId, title = 'Success!', description = '') => {
-    if (loadingToastIdRef.current) {
-      dismissToast(loadingToastIdRef.current);
-      loadingToastIdRef.current = null;
+  if (loadingToastIdRef.current) {
+    dismissToast(loadingToastIdRef.current);
+    loadingToastIdRef.current = null;
+  }
+  
+  const safeTitle = ensureString(title);
+  const safeDescription = ensureString(description);
+  
+  const toastOptions = {
+    autoClose: 5000,
+    onClose: () => {
+      setTimeout(() => {
+        window.location.href = `/gig/${gigId}`;
+      }, 300);
     }
-    
-    const safeTitle = ensureString(title);
-    const safeDescription = ensureString(description);
-    
-    const toastId = showGigUpdateSuccessToast(gigId, safeTitle, safeDescription);
-    
-    return toastId;
-  }, []);
+  };
+  
+  // Combine title and description for the toast content
+  let toastContent = safeTitle;
+  if (safeDescription) {
+    toastContent = `${safeTitle}\n${safeDescription}`;
+  }
+  
+  const toastId = showSuccessToast(toastContent, toastOptions);
+  
+  return toastId;
+}, []);
 
   // Show simple success toast
   const showGigSuccess = useCallback((message, options = {}) => {
