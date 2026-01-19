@@ -392,6 +392,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
             {/* Desktop: Navigation Items */}
             <div className="hidden lg:flex items-center space-x-4">
+              <Link
+    to="/how-it-works"
+    onClick={closeAllDropdowns}
+    className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150 font-medium"
+  >
+    <span>How It Works</span>
+  </Link>
               <div className="relative" ref={exploreRef}>
                 <button
                   onClick={() => toggleDropdown('explore')}
@@ -648,6 +655,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <Home className="w-5 h-5 text-gray-600" />
                         <span className="font-medium text-gray-800">Home</span>
                       </Link>
+                      <Link
+    to="/how-it-works"
+    onClick={() => setMobileMenuOpen(false)}
+    className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
+  >
+    <span className="w-5 h-5 flex items-center justify-center">📋</span>
+    <span className="font-medium text-gray-800">How It Works</span>
+  </Link>
                     </div>
 
                     {/* Explore Section */}
