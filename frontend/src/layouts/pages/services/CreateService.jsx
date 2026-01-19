@@ -48,7 +48,7 @@ import { useParentCategories } from '../../../hooks/useCategories.js';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories.js';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore.js';
-import { isProfileCompleteEnough,calculateProfileCompletion } from '../../../utils/profileUtils.js';
+import { isProfileCompleteEnough, calculateProfileCompletion } from '../../../utils/profileUtils.js';
 import { SeoWrapper } from '../../../components/SeoWrapper.jsx';
 
 // Structured Data for Service Creation
@@ -141,6 +141,7 @@ const DELIVERY_TIME_UNITS = [
 const CreateService = () => {
   const navigate = useNavigate();
   const createServiceMutation = useCreateService();
+  const { user: currentUser } = useAuthStore();
   
   // Initialize formData with all required fields as empty strings, not undefined
   const [formData, setFormData] = useState({
@@ -188,8 +189,6 @@ const CreateService = () => {
     refetch: refetchCategories 
   } = useParentCategories();
   
-  const { user: currentUser, isAuthenticated } = useAuthStore();
-  
   // Component states
   const [newTag, setNewTag] = useState('');
   const [newKeyword, setNewKeyword] = useState('');
@@ -218,7 +217,6 @@ const CreateService = () => {
   const [success, setSuccess] = useState(false);
   const [createdServiceId, setCreatedServiceId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showLoginMessage, setShowLoginMessage] = useState(true);
   const [completedFields, setCompletedFields] = useState({
     title: false,
     category: false,
@@ -252,41 +250,39 @@ const CreateService = () => {
   }, [uploadedImages, thumbnailFile]);
 
   // Check profile completion
- useEffect(() => {
-  if (currentUser) {
-    // Check profile completion but don't redirect immediately
-    if (!isProfileCompleteEnough(currentUser, 70)) {
-      // Show a warning toast that doesn't block navigation
-      toast.error(
-        <div>
-          <div className="font-semibold mb-1">Profile Incomplete</div>
-          <div className="text-sm mb-2">
-            Your profile is {calculateProfileCompletion(currentUser)}% complete. 
-            You need at least 70% completion to publish services.
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => navigate('/profile')}
-              className="flex-1 bg-gray-900 text-white py-1.5 rounded text-xs font-medium hover:bg-black transition-colors"
-            >
-              Complete Profile
-            </button>
-            <button
-              onClick={() => toast.dismiss()}
-              className="flex-1 bg-gray-200 text-gray-800 py-1.5 rounded text-xs font-medium hover:bg-gray-300 transition-colors"
-            >
-              Continue Anyway
-            </button>
-          </div>
-        </div>,
-        {
-          duration: 8000, // Longer duration
-          id: 'profile-incomplete-warning', // Unique ID to prevent multiple toasts
-        }
-      );
+  useEffect(() => {
+    if (currentUser) {
+      if (!isProfileCompleteEnough(currentUser, 70)) {
+        toast.error(
+          <div>
+            <div className="font-semibold mb-1">Profile Incomplete</div>
+            <div className="text-sm mb-2">
+              Your profile is {calculateProfileCompletion(currentUser)}% complete. 
+              You need at least 70% completion to publish services.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => navigate('/profile')}
+                className="flex-1 bg-gray-900 text-white py-1.5 rounded text-xs font-medium hover:bg-black transition-colors"
+              >
+                Complete Profile
+              </button>
+              <button
+                onClick={() => toast.dismiss()}
+                className="flex-1 bg-gray-200 text-gray-800 py-1.5 rounded text-xs font-medium hover:bg-gray-300 transition-colors"
+              >
+                Continue Anyway
+              </button>
+            </div>
+          </div>,
+          {
+            duration: 8000,
+            id: 'profile-incomplete-warning',
+          }
+        );
+      }
     }
-  }
-}, [currentUser, navigate]);
+  }, [currentUser, navigate]);
 
   // Reset subcategory when category changes
   useEffect(() => {
@@ -347,6 +343,7 @@ const CreateService = () => {
     if (type === 'checkbox') {
       newValue = checked;
     } else if (type === 'number') {
+      // For number inputs, keep as string but allow empty
       newValue = value === '' ? '' : value;
     } else if (type === 'select-one') {
       newValue = value || '';
@@ -355,6 +352,7 @@ const CreateService = () => {
     } else if (name === 'shortDescription') {
       newValue = (value || '').slice(0, 250);
     } else {
+      // Always ensure it's a string, never undefined
       newValue = value || '';
     }
     
@@ -383,9 +381,8 @@ const CreateService = () => {
 
   // Validate field
   const validateField = useCallback((fieldName, value) => {
-    if ((fieldName === 'price' || fieldName === 'deliveryTime') && value === '') {
-      return false;
-    }
+    // For empty string values
+    if (value === '') return false;
     
     const stringValue = String(value || '');
     const trimmedValue = stringValue.trim();
@@ -614,7 +611,7 @@ const CreateService = () => {
     }
   }, [uploadingImages, uploadedImages]);
 
-  // Thumbnail Upload - FIXED
+  // Thumbnail Upload
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
     
@@ -790,15 +787,6 @@ const CreateService = () => {
     }
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('userToken');
-
-      if (!token) {
-        toast.error('Please login to create a service');
-        navigate('/signin');
-        setIsSubmitting(false);
-        return;
-      }
-
       // Create FormData
       const submitFormData = new FormData();
 
@@ -893,7 +881,7 @@ const CreateService = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData, validateStep, createServiceMutation, thumbnailFile, uploadedImages, navigate, refetchCategories]);
+  }, [formData, validateStep, createServiceMutation, thumbnailFile, uploadedImages, refetchCategories]);
 
   // Get category name for display
   const getCategoryName = useCallback(() => {
@@ -1033,7 +1021,7 @@ const CreateService = () => {
     </div>
   ), []);
 
-  // Render step content
+  // Render step content - Fixed controlled inputs
   const renderStepContent = useMemo(() => {
     switch (activeStep) {
       case 1:
@@ -1496,7 +1484,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFeature.title}
+                          value={newFeature.title || ''}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, title: e.target.value }))}
                           onKeyPress={(e) => handleKeyPress(e, 'feature')}
                           className="w-full p-3 border border-gray-300 rounded-lg"
@@ -1510,7 +1498,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFeature.description}
+                          value={newFeature.description || ''}
                           onChange={(e) => setNewFeature(prev => ({ ...prev, description: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Brief description"
@@ -1767,7 +1755,7 @@ const CreateService = () => {
                         </label>
                         <input
                           type="text"
-                          value={newFAQ.question}
+                          value={newFAQ.question || ''}
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, question: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           placeholder="Common question from clients"
@@ -1779,7 +1767,7 @@ const CreateService = () => {
                           Answer
                         </label>
                         <textarea
-                          value={newFAQ.answer}
+                          value={newFAQ.answer || ''}
                           onChange={(e) => setNewFAQ(prev => ({ ...prev, answer: e.target.value }))}
                           className="w-full p-3 border border-gray-300 rounded-lg"
                           rows="3"

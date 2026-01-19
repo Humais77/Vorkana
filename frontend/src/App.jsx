@@ -1,11 +1,12 @@
-// App.jsx – Updated version
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useEffect, useState, lazy, Suspense } from 'react';
+// App.jsx – Updated with global auth handling
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState, lazy, Suspense, useCallback } from 'react';
 
 // Providers / Hooks
 import { SecurityProvider } from './context/SecurityContext';
 import { useAuthSync } from './hooks/useAuthSync';
 import { useCheckAuth } from './hooks/useAuth';
+import { useAuthStore } from './store/useAuthStore';
 // Layouts
 import PublicLayout from './layouts/PublicLayout';
 
@@ -64,13 +65,66 @@ const HowItWorksPage = lazy(() => import('./layouts/pages/footer/HowItWorksPage'
 const HelpCenterPage = lazy(() => import('./layouts/pages/footer/HelpCenterPage'));
 const ContactPage = lazy(() => import('./layouts/pages/footer/ContactPage'));
 const FaqPage = lazy(()=> import('./layouts/pages/footer/FaqSection'))
+
+// Auth Protected Route Component
+const AuthProtectedRoute = ({ children, requireProfileCompletion = false, redirectTo = '/signin' }) => {
+  const { isAuthenticated, isLoading, user } = useAuthStore();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!isAuthenticated) {
+        // Store the intended destination
+        sessionStorage.setItem('redirectAfterLogin', location.pathname);
+        navigate(redirectTo, { state: { from: location.pathname } });
+      } else if (requireProfileCompletion && user) {
+        // Check profile completion (you'll need to implement this)
+        const profileComplete = calculateProfileCompletion(user) >= 70;
+        if (!profileComplete) {
+          navigate('/profile', { 
+            state: { 
+              from: location.pathname,
+              requireCompletion: true 
+            } 
+          });
+        }
+      }
+    }
+  }, [isAuthenticated, isLoading, navigate, location, requireProfileCompletion, user, redirectTo]);
+
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
+
+  return isAuthenticated ? children : null;
+};
+
+// Helper function for profile completion (you need to implement this)
+const calculateProfileCompletion = (user) => {
+  // Implement your profile completion logic here
+  if (!user) return 0;
+  
+  let score = 0;
+  if (user.name) score += 20;
+  if (user.email) score += 20;
+  if (user.profilePicture) score += 15;
+  if (user.bio) score += 15;
+  if (user.skills && user.skills.length > 0) score += 15;
+  if (user.country) score += 15;
+  
+  return Math.min(score, 100);
+};
+
 // Loading fallback
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center">
     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
   </div>
 );
-const CookieChecker = () => {
+
+// Cookie/Auth Checker Component
+const AuthChecker = () => {
   useAuthSync();
   const { data: authCheck, isLoading } = useCheckAuth();
   
@@ -82,11 +136,13 @@ const CookieChecker = () => {
   
   return null;
 };
+
 const App = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
 
-useEffect(() => {
+  useEffect(() => {
+    // Clean up old tokens on app start
     localStorage.removeItem('userToken');
     localStorage.removeItem('refreshToken');
     
@@ -95,23 +151,23 @@ useEffect(() => {
     window.addEventListener('beforeunload', cleanup);
     return () => window.removeEventListener('beforeunload', cleanup);
   }, []);
-  const openSigninModal = () => {
+
+  const openSigninModal = useCallback(() => {
     setActiveTab('signin');
     setShowAuthModal(true);
-  };
+  }, []);
 
-  const openSignupModal = () => {
+  const openSignupModal = useCallback(() => {
     setActiveTab('signup');
     setShowAuthModal(true);
-  };
+  }, []);
 
   return (
     <BrowserRouter>
       <SecurityProvider>
-        
         <Toaster/>
         <ScrollToTop />
-         <CookieChecker />
+        <AuthChecker />
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
             <Route
@@ -131,9 +187,18 @@ useEffect(() => {
               <Route path="/signin" element={<Signin />} />
               <Route path="/signup" element={<Signup />} />
 
-              <Route path="/create-gig" element={<GigCreate />} />
+              {/* Protected Routes */}
+              <Route path="/gig/create" element={
+                <AuthProtectedRoute requireProfileCompletion={true}>
+                  <GigCreate />
+                </AuthProtectedRoute>
+              } />
               <Route path="/gig/:id" element={<GigDetails />} />
-              <Route path="/edit-gig/:id" element={<GigEdit />} />
+              <Route path="/edit-gig/:id" element={
+                <AuthProtectedRoute>
+                  <GigEdit />
+                </AuthProtectedRoute>
+              } />
 
               <Route path="/categories/:categoryId" element={<CategoryPage />} />
               <Route path="/categories/:categoryId/:subcategorySlug" element={<SubcategoryDetailPage />} />
@@ -141,28 +206,45 @@ useEffect(() => {
               <Route path="/gigs" element={<GigListingsPage />} />
               <Route path="/what-are-gigs" element={<GigsInfoPage />} />
 
-              <Route path="/profile" element={<Profile />} />
+              <Route path="/profile" element={
+                <AuthProtectedRoute>
+                  <Profile />
+                </AuthProtectedRoute>
+              } />
               <Route path="/profile/:userId" element={<PublicProfile />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={
+                <AuthProtectedRoute>
+                  <Dashboard />
+                </AuthProtectedRoute>
+              } />
 
-              <Route path="/services/create" element={<CreateService />} />
-              <Route path="/edit-service/:id" element={<EditService />} />
+              <Route path="/services/create" element={
+                <AuthProtectedRoute requireProfileCompletion={true}>
+                  <CreateService />
+                </AuthProtectedRoute>
+              } />
+              <Route path="/edit-service/:id" element={
+                <AuthProtectedRoute>
+                  <EditService />
+                </AuthProtectedRoute>
+              } />
               <Route path="/services/:id" element={<ServiceDetails />} />
               <Route path="/services" element={<ServiceListingPage />} />
               <Route path="/what-are-services" element={<ServicesInfoPage />} />
 
               <Route path="/popular-services" element={<PopularServicesPage />} />
               <Route path="/popular-services/:categorySlug" element={<PopularServicesPage />} />
-<Route path="/how-it-works" element={<HowItWorksPage />} />
-<Route path="/help" element={<HelpCenterPage />} />
-<Route path="/contact" element={<ContactPage />} />
-<Route path="/faq" element={<FaqPage />} />
+              <Route path="/how-it-works" element={<HowItWorksPage />} />
+              <Route path="/help" element={<HelpCenterPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/faq" element={<FaqPage />} />
+
+              {/* Auth Routes */}
               <Route path="/verify-email/:token?" element={
                 <VerificationWrapper>
                   <VerifyEmail />
                 </VerificationWrapper>
               } />
-
               <Route path="/verified" element={<VerifiedPage />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
@@ -189,6 +271,5 @@ useEffect(() => {
     </BrowserRouter>
   );
 };
-
 
 export default App;
