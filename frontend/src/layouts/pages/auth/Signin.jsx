@@ -6,10 +6,12 @@ import { toast } from 'react-hot-toast';
 import { useLogin, validateEmail } from '../../../hooks/useAuth';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { motion } from 'framer-motion';
-import auth_modal_bg from '../../../assets/auth_modal_bg.png';
 import { FaCheck, FaExclamationTriangle } from 'react-icons/fa';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-
+import { buildImageUrl } from '../../../utils/cloudinaryFrontend';
+const Signin_Bg = buildImageUrl({
+   publicId: "g4a7llwoypdpioirgrgv",
+})
 // Structured Data
 const signinStructuredData = {
   '@context': 'https://schema.org',
@@ -364,7 +366,7 @@ const Signin = () => {
             {/* Left Side - Benefits */}
             <aside
               className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
-              style={{ backgroundImage: `url(${auth_modal_bg})` }}
+              style={{ backgroundImage: `url(${Signin_Bg})` }}
               role="complementary"
               aria-label="Benefits of joining Vorkanna"
             >

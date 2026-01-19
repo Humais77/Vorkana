@@ -32,8 +32,10 @@ import { useProfilePicture } from '../../../hooks/useProfilePicture';
 import { useUpdateProfile, useGetProfile } from '../../../hooks/useAuth';
 import { formatDateForAPI, formatDateForInput } from '../../../utils/dateUtils';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-import default_pp from '../../../assets/default_pp-modified.png';
-
+import { buildImageUrl } from '../../../utils/cloudinaryFrontend';
+const default_pp_URL = buildImageUrl({
+  publicId:"wzbsbwsonnqfxiuyadmp"
+})
 // Memoized Profile Section Components
 const ProfileSection = memo(({ 
   title, 
@@ -93,7 +95,7 @@ const ProfileHeader = memo(({
       <div className="relative group">
         <div className="relative">
           <img
-            src={user?.picture || default_pp}
+            src={user?.picture || default_pp_URL}
             alt={user?.name}
             className="w-20 h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-white shadow cursor-pointer"
             style={{ opacity: isUploadingPicture ? 0.7 : 1 }}

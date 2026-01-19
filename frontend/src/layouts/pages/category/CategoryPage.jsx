@@ -24,8 +24,10 @@ import { useQuery } from '@tanstack/react-query';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { useCategory } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
-import background_img from '../../../assets/background_image.png'
-
+import { buildImageUrl } from '../../../utils/cloudinaryFrontend';
+const background_image = buildImageUrl({
+  publicId:"xyfggm2dyvi7ulvl17oy"
+})
 const CategoryPage = () => {
   const { categoryId } = useParams();
   const navigate = useNavigate();
@@ -193,7 +195,7 @@ const CategoryPage = () => {
         <div 
           className="relative text-white"
           style={{
-            backgroundImage: `url(${background_img})`,
+            backgroundImage: `url(${background_image})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'

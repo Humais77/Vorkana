@@ -4,13 +4,16 @@ import { useAuthStore } from "../../../store/useAuthStore";
 import { useLogout } from "../../../hooks/useAuth";
 import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import default_pp from '../../../assets/default_pp-modified.png'
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import { useSessionWatcher } from '../../../hooks/useAuth';
-const LOGO_URL = buildImageUrl({
+const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
+  width: 220
+});
+const Default_pp_URL = buildImageUrl({
+  publicId: "wzbsbwsonnqfxiuyadmp",
   width: 220
 });
 
@@ -210,7 +213,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 draggable="true"
               >
                 <img
-  src={LOGO_URL}
+  src={Logo_URL}
   alt="Vorkanna"
   className="h-10 lg:h-10 w-auto object-contain"
  />
@@ -238,7 +241,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 draggable="true"
               >
                 <img
-                  src={LOGO_URL}
+                  src={Logo_URL}
                   alt="Vorkanna"
                   className="h-10 w-auto pointer-events-none"
                   loading="eager"
@@ -257,7 +260,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                     aria-label="Profile menu"
                   >
                     <img
-                      src={user?.picture || default_pp}
+                      src={user?.picture || Default_pp_URL}
                       className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
                       loading="lazy"
                       alt="Profile"
@@ -278,7 +281,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <div className="p-4 border-b border-gray-100">
                             <div className="flex items-center space-x-3">
                               <img
-                                src={user?.picture || default_pp}
+                                src={user?.picture ||Default_pp_URL}
                                 alt={user?.name}
                                 className="w-10 h-10 rounded-full object-cover"
                                 loading="lazy"
@@ -481,7 +484,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                     >
                       <img
-                        src={user?.picture || default_pp}
+                        src={user?.picture ||Default_pp_URL}
                         className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
                         loading="lazy"
                         alt="Profile"
@@ -586,7 +589,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-1">
-                        <img src={LOGO_URL} alt="Vorkanna" className="h-10 w-auto" loading="eager" />
+                        <img src={Logo_URL} alt="Vorkanna" className="h-10 w-auto" loading="eager" />
                       </div>
                       <button
                         onClick={() => setMobileMenuOpen(false)}
@@ -611,13 +614,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                         <div className="flex items-center space-x-3">
                           <img
-                            src={user?.picture || default_pp}
+                            src={user?.picture ||Default_pp_URL}
                             alt={user?.name}
                             className="w-10 h-10 rounded-full object-cover border border-gray-300"
                             loading="lazy"
                             onError={(e) => {
                               e.target.onerror = null;
-                              e.target.src = default_pp;
+                              e.target.src = Default_pp_URL;
                             }}
                           />
                           <div className="flex-1 min-w-0">

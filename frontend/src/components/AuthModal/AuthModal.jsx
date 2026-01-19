@@ -7,7 +7,10 @@ import { toast } from 'react-hot-toast';
 import { useLogin, useRegister, validatePassword, validateEmail, validateName, usePasswordStrength } from '../../hooks/useAuth';
 import { useAuthStore } from '../../store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import auth_modal_bg from '../../assets/auth_modal_bg.png';
+import { buildImageUrl } from '../../utils/cloudinaryFrontend';
+const Auth_Modal_BG = buildImageUrl({
+   publicId: "g4a7llwoypdpioirgrgv",
+})
 
 const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
   const navigate = useNavigate();
@@ -692,7 +695,7 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
             {/* Left Side - Benefits */}
             <div
               className="hidden lg:flex flex-col w-[45%] p-8 text-white bg-cover bg-center relative"
-              style={{ backgroundImage: `url(${auth_modal_bg})` }}
+              style={{ backgroundImage: `url(${Auth_Modal_BG})` }}
             >
               <div className="flex-1">
                 <h1 className="text-3xl font-bold mt-2 mb-4">Success starts here</h1>
