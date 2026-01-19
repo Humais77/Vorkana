@@ -53,71 +53,117 @@ import {
   MapPin
 } from 'lucide-react';
 
-// Enhanced Image component with better caching and loading
 const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, itemId, forceRefresh }) => {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [imgSrc, setImgSrc] = useState('');
+  const [imgSrc, setImgSrc] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 2;
 
+  // Validate and clean the URL
+  const validateUrl = useCallback((url) => {
+    if (!url || typeof url !== 'string') return null;
+    
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return null;
+    
+    // Check if it's a valid URL
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('/')) {
+      // Check if it's an empty URL pattern
+      if (trimmedUrl === 'http://' || trimmedUrl === 'https://' || trimmedUrl === '/') {
+        return null;
+      }
+      return trimmedUrl;
+    }
+    
+    // If it starts with data:, use as is
+    if (trimmedUrl.startsWith('data:')) {
+      return trimmedUrl;
+    }
+    
+    return null;
+  }, []);
+
   // Generate a unique cache busting URL
   const getCacheBustedUrl = useCallback((url) => {
-    if (!url) return url;
+    const validUrl = validateUrl(url);
+    if (!validUrl) return null;
     
-    // Clean URL - remove any existing cache busting params
-    const cleanUrl = url.split('?')[0];
-    const separator = cleanUrl.includes('?') ? '&' : '?';
-    
-    // Add multiple cache busting strategies
-    const params = new URLSearchParams();
-    params.append('_', Date.now()); // Timestamp
-    params.append('v', forceRefresh || Date.now()); // Version from prop
-    params.append('retry', retryCount); // Retry count
-    params.append('type', type); // Item type for cache grouping
-    params.append('id', itemId?.slice(-6)); // Last 6 chars of ID
-    
-    return `${cleanUrl}${separator}${params.toString()}`;
-  }, [type, itemId, forceRefresh, retryCount]);
+    try {
+      // For data URLs, return as is
+      if (validUrl.startsWith('data:')) {
+        return validUrl;
+      }
+      
+      // Clean URL - remove any existing cache busting params
+      const urlObj = new URL(validUrl, window.location.origin);
+      const cleanUrl = urlObj.origin + urlObj.pathname;
+      const separator = urlObj.search ? '&' : '?';
+      
+      // Add cache busting parameters
+      const params = new URLSearchParams(urlObj.search);
+      params.set('_t', Date.now().toString()); // Timestamp
+      params.set('v', forceRefresh || Date.now()); // Version from prop
+      params.set('rc', retryCount.toString()); // Retry count
+      params.set('type', type || 'item'); // Item type for cache grouping
+      
+      // Add ID if available
+      if (itemId) {
+        params.set('id', itemId.slice(-8)); // Last 8 chars of ID
+      }
+      
+      return `${cleanUrl}${separator}${params.toString()}`;
+    } catch (error) {
+      console.warn('Error processing URL:', validUrl, error);
+      // Return the original URL if parsing fails
+      return validUrl;
+    }
+  }, [validateUrl, type, itemId, forceRefresh, retryCount]);
 
   // Reset and load image
   const loadImage = useCallback(() => {
-    if (!src) {
+    const validUrl = validateUrl(src);
+    if (!validUrl) {
       setError(true);
       setLoading(false);
+      setImgSrc(null);
+      return;
+    }
+
+    const finalSrc = getCacheBustedUrl(validUrl);
+    if (!finalSrc) {
+      setError(true);
+      setLoading(false);
+      setImgSrc(null);
       return;
     }
 
     setLoading(true);
     setError(false);
-    
-    const finalSrc = getCacheBustedUrl(src);
     setImgSrc(finalSrc);
-
-    const img = new window.Image();
-    img.src = finalSrc;
-    img.crossOrigin = 'anonymous';
-    
-    img.onload = () => {
-      setLoading(false);
-      setError(false);
-    };
-    
-    img.onerror = () => {
-      if (retryCount < maxRetries) {
-        setRetryCount(prev => prev + 1);
-        setTimeout(() => loadImage(), 500 * (retryCount + 1));
-      } else {
-        setError(true);
-        setLoading(false);
-      }
-    };
-  }, [src, getCacheBustedUrl, retryCount]);
+  }, [src, getCacheBustedUrl, validateUrl]);
 
   // Load image on mount and when src changes
   useEffect(() => {
     loadImage();
   }, [loadImage]);
+
+  // Handle image load success
+  const handleLoad = useCallback(() => {
+    setLoading(false);
+    setError(false);
+  }, []);
+
+  // Handle image load error
+  const handleError = useCallback(() => {
+    if (retryCount < maxRetries) {
+      setRetryCount(prev => prev + 1);
+      setTimeout(() => loadImage(), 500 * (retryCount + 1));
+    } else {
+      setError(true);
+      setLoading(false);
+    }
+  }, [retryCount, loadImage]);
 
   // Force refresh when forceRefresh prop changes
   useEffect(() => {
@@ -127,7 +173,8 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     }
   }, [forceRefresh, loadImage]);
 
-  if (!src || error) {
+  // If no valid source, return fallback immediately
+  if (!src || !validateUrl(src)) {
     return fallback || (
       <div className={`bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center ${className}`}>
         <div className="text-center p-4">
@@ -140,32 +187,43 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     );
   }
 
+  // If error occurred, return fallback
+  if (error) {
+    return fallback || (
+      <div className={`bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center ${className}`}>
+        <div className="text-center p-4">
+          <Image className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <span className="text-xs text-gray-500 font-medium">
+            Image failed to load
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <>
+    <div className={`relative ${className}`}>
+      {/* Loading skeleton */}
       {loading && (
-        <div className={`bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse ${className}`} />
+        <div className={`absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse ${className}`} />
       )}
-      <img
-        src={imgSrc}
-        alt={alt}
-        className={`${className} ${loading ? 'hidden' : 'block'} object-cover transition-opacity duration-300`}
-        onLoad={() => {
-          setLoading(false);
-        }}
-        onError={() => {
-          if (retryCount < maxRetries) {
-            setRetryCount(prev => prev + 1);
-            setTimeout(() => loadImage(), 500 * (retryCount + 1));
-          } else {
-            setError(true);
-            setLoading(false);
-          }
-        }}
-        loading="lazy"
-        decoding="async"
-        key={`${itemId}-${forceRefresh || Date.now()}`}
-      />
-    </>
+      
+      {/* Actual image */}
+      {imgSrc && (
+        <img
+          src={imgSrc}
+          alt={alt}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${
+            loading ? 'opacity-0' : 'opacity-100'
+          }`}
+          onLoad={handleLoad}
+          onError={handleError}
+          loading="lazy"
+          decoding="async"
+          key={`${itemId}-${forceRefresh || Date.now()}`}
+        />
+      )}
+    </div>
   );
 });
 ImageWithFallback.displayName = 'ImageWithFallback';
@@ -196,67 +254,100 @@ const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, onClic
 ));
 StatsCard.displayName = 'StatsCard';
 
-// Helper function to get thumbnail URL with consistent logic
 const getThumbnailUrl = (item, type) => {
   if (!item) return null;
   
-  // Prioritize direct thumbnail fields
-  if (item.thumbnail) {
-    if (typeof item.thumbnail === 'string') {
-      // Ensure URL is properly formatted
-      const url = item.thumbnail.trim();
-      if (url.startsWith('http') || url.startsWith('/')) {
-        return url;
+  // Helper to validate and extract URL
+  const extractUrl = (value) => {
+    if (!value) return null;
+    
+    // If it's a string, validate it
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      // Check if it's a valid URL pattern
+      if (trimmed && (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:'))) {
+        // Ensure it's not just a prefix
+        if (trimmed === 'http://' || trimmed === 'https://' || trimmed === '/') {
+          return null;
+        }
+        return trimmed;
       }
+      return null;
     }
-    if (item.thumbnail?.url) {
-      return item.thumbnail.url;
+    
+    // If it's an object with url property
+    if (value && typeof value === 'object' && value.url) {
+      return extractUrl(value.url);
     }
+    
+    return null;
+  };
+  
+  // Check all possible thumbnail sources in priority order
+  
+  // 1. Direct thumbnail fields
+  if (item.thumbnail) {
+    const url = extractUrl(item.thumbnail);
+    if (url) return url;
   }
   
-  // Check images array with priority for thumbnail flagged images
+  // 2. Images array with priority for thumbnail flagged images
   if (item.images && Array.isArray(item.images) && item.images.length > 0) {
-    // Look for thumbnail image
+    // Look for thumbnail image first
     const thumbnailImage = item.images.find(img => img.isThumbnail === true);
     if (thumbnailImage) {
-      if (typeof thumbnailImage === 'string') return thumbnailImage;
-      if (thumbnailImage.url) return thumbnailImage.url;
+      const url = extractUrl(thumbnailImage);
+      if (url) return url;
     }
     
     // Use first image
     const firstImage = item.images[0];
-    if (typeof firstImage === 'string') return firstImage;
-    if (firstImage.url) return firstImage.url;
+    const url = extractUrl(firstImage);
+    if (url) return url;
   }
   
-  // Check for specific nested structures (from API response)
-  if (item.data?.thumbnail?.url) return item.data.thumbnail.url;
-  if (item.data?.images?.[0]?.url) return item.data.images[0].url;
-  if (item.service?.thumbnail?.url) return item.service.thumbnail.url;
-  if (item.gig?.thumbnail?.url) return item.gig.thumbnail.url;
+  // 3. Check for specific nested structures (from API response)
+  if (item.data?.thumbnail) {
+    const url = extractUrl(item.data.thumbnail);
+    if (url) return url;
+  }
   
-  // Try common image fields
+  if (item.data?.images?.[0]) {
+    const url = extractUrl(item.data.images[0]);
+    if (url) return url;
+  }
+  
+  if (item.service?.thumbnail) {
+    const url = extractUrl(item.service.thumbnail);
+    if (url) return url;
+  }
+  
+  if (item.gig?.thumbnail) {
+    const url = extractUrl(item.gig.thumbnail);
+    if (url) return url;
+  }
+  
+  // 4. Try common image fields
   if (item.image) {
-    if (typeof item.image === 'string') return item.image;
-    if (item.image.url) return item.image.url;
+    const url = extractUrl(item.image);
+    if (url) return url;
   }
   
-  // For gigs, check additional fields
+  // 5. For gigs, check additional fields
   if (type === 'gig') {
     if (item.gigImages?.[0]) {
-      if (typeof item.gigImages[0] === 'string') return item.gigImages[0];
-      if (item.gigImages[0].url) return item.gigImages[0].url;
+      const url = extractUrl(item.gigImages[0]);
+      if (url) return url;
     }
   }
   
-  // For services
+  // 6. For services
   if (type === 'service') {
     if (item.serviceImages?.[0]) {
-      if (typeof item.serviceImages[0] === 'string') return item.serviceImages[0];
-      if (item.serviceImages[0].url) return item.serviceImages[0].url;
+      const url = extractUrl(item.serviceImages[0]);
+      if (url) return url;
     }
   }
-  
   return null;
 };
 
@@ -396,23 +487,23 @@ const ItemCard = memo(({
         onClick={() => onClick(item._id || item.id)}
       >
         <ImageWithFallback
-          src={thumbnailUrl}
-          alt={title}
-          className="w-full h-full"
-          type={itemType}
-          itemId={item._id || item.id}
-          forceRefresh={imageRefreshKey}
-          fallback={
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-              <div className="text-center p-4">
-                <Image className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                <span className="text-sm text-gray-500 font-medium">
-                  {isService ? 'Service' : 'Gig'} Image
-                </span>
-              </div>
-            </div>
-          }
-        />
+  src={thumbnailUrl} 
+  alt={title}
+  className="w-full h-full"
+  type={itemType}
+  itemId={item._id || item.id}
+  forceRefresh={imageRefreshKey}
+  fallback={
+    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+      <div className="text-center p-4">
+        <Image className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+        <span className="text-sm text-gray-500 font-medium">
+          {isService ? 'Service' : 'Gig'} Image
+        </span>
+      </div>
+    </div>
+  }
+/>
         
         {/* Status Badge Overlay */}
         <div className="absolute top-3 left-3">
@@ -1194,7 +1285,7 @@ const Dashboard = () => {
     
     // Store current stats before navigation
     sessionStorage.setItem('preCreateStats', JSON.stringify(stats));
-    navigate('/create-gig', { state: { from: 'dashboard' } });
+    navigate('/gig/create', { state: { from: 'dashboard' } });
   }, [canCreateContent, navigate, stats]);
 
   const handleCompleteProfile = useCallback(() => {
