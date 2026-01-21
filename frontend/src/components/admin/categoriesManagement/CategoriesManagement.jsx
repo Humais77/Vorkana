@@ -1,5 +1,5 @@
-// CategoriesManagement.jsx - UPDATED with real-time updates
-import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
+// CategoriesManagement.jsx - Professional UI Update
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
@@ -12,8 +12,8 @@ import {
 import { useCategoryToast } from '../../../hooks/useCategoryToast';
 import {
   FiFolder,
-  FiDownload,
   FiSearch,
+  FiDownload,
   FiFilter,
   FiEdit2,
   FiTrash2,
@@ -25,16 +25,12 @@ import {
   FiChevronRight,
   FiRefreshCw,
   FiStar,
-  FiPackage,
   FiMoreVertical,
-  FiChevronDown,
-  FiChevronUp,
   FiTrendingUp,
-  FiFolderPlus,
   FiX,
-  FiClock,
   FiLoader,
-  FiAlertTriangle
+  FiGrid,
+  FiHash
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
@@ -42,7 +38,7 @@ import CategoryEditModal from './CategoryEditModal';
 import CategoryDeleteModal from './CategoryDeleteModal';
 import CategoryDetailsModal from './CategoryDetailsModal';
 
-// Memoized table row component
+// Category Table Row Component
 const CategoryTableRow = memo(({ 
   category, 
   isExpanded, 
@@ -52,167 +48,147 @@ const CategoryTableRow = memo(({
   onView, 
   onEdit, 
   onDelete,
-  onDuplicate,
   onOpenActionMenu,
   actionMenuId,
   isUpdatingId,
-  isDeletingId,
-  isCreatingId,
-  hasError
+  isDeletingId
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
-      ? 'bg-green-100 text-green-800 border border-green-200' 
-      : 'bg-red-100 text-red-800 border border-red-200';
+      ? 'bg-green-100 text-green-700 border border-green-200' 
+      : 'bg-red-100 text-red-700 border border-red-200';
   };
 
   const getFeaturedColor = (featured) => {
     return featured 
-      ? 'bg-purple-100 text-purple-800 border border-purple-200' 
-      : 'bg-gray-100 text-gray-800 border border-gray-200';
+      ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+      : 'bg-gray-100 text-gray-700 border border-gray-200';
   };
 
   const isUpdating = isUpdatingId === category._id;
   const isDeleting = isDeletingId === category._id;
-  const isCreating = isCreatingId === category._id;
-  const hasItemError = hasError === category._id;
 
   return (
     <React.Fragment>
-      <tr className={`hover:bg-gray-50 ${hasItemError ? 'bg-red-50' : ''} ${isCreating ? 'bg-blue-50' : ''}`}>
-        <td className="px-4 py-4">
+      <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+        <td className="px-6 py-4">
           <input
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(category._id)}
-            disabled={isDeleting || isCreating}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+            disabled={isDeleting}
+            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
           />
         </td>
-        <td className="px-4 py-4">
-          <div className="flex items-center space-x-3">
+        <td className="px-6 py-4">
+          <div className="flex items-center">
             <button
               onClick={() => !isDeleting && onToggleExpand(category._id)}
-              disabled={isDeleting || isCreating}
-              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
+              disabled={isDeleting}
+              className="p-1 hover:bg-gray-100 rounded mr-3 disabled:opacity-50"
             >
               {isExpanded ? (
-                <FiChevronUp className="h-4 w-4 text-gray-500" />
+                <FiChevronLeft className="h-4 w-4 text-gray-500 rotate-270" />
               ) : (
-                <FiChevronDown className="h-4 w-4 text-gray-500" />
+                <FiChevronRight className="h-4 w-4 text-gray-500" />
               )}
             </button>
             <div>
-              <div className="flex items-center space-x-2">
-                {(isUpdating || isCreating) && (
+              <div className="flex items-center gap-2">
+                {isUpdating && (
                   <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
                 )}
-                {isDeleting && (
-                  <FiLoader className="h-3 w-3 animate-spin text-red-500" />
-                )}
-                {hasItemError && (
-                  <FiAlertTriangle className="h-3 w-3 text-red-500" />
-                )}
-                <div className={`text-sm font-medium ${hasItemError ? 'text-red-700' : 'text-gray-900'}`}>
-                  {category.name}
-                  {isCreating && category.__isOptimistic && (
-                    <span className="ml-2 text-xs text-blue-600">(Creating...)</span>
-                  )}
-                </div>
+                <p className="text-sm font-medium text-gray-900">{category.name}</p>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                Slug: {category.slug || 'N/A'}
-                {isCreating && category.__isOptimistic && (
-                  <span className="ml-2 text-blue-500">Temporary ID</span>
-                )}
+              <div className="text-xs text-gray-500 mt-1 flex items-center">
+                <FiHash className="h-3 w-3 mr-1" />
+                {category.slug || 'no-slug'}
               </div>
             </div>
           </div>
         </td>
-        <td className="px-4 py-4">
+        <td className="px-6 py-4">
           <div className="flex flex-col gap-1">
-            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(category.isActive)}`}>
-              {category.isActive ? 'Active' : 'Inactive'}
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(category.isActive)}`}>
+              {category.isActive ? 'ACTIVE' : 'INACTIVE'}
             </span>
             {category.featured && (
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getFeaturedColor(category.featured)}`}>
-                Featured
-              </span>
-            )}
-            {category.popular && (
-              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 border border-orange-200">
-                Popular
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getFeaturedColor(category.featured)}`}>
+                <FiStar className="h-3 w-3 mr-1" />
+                FEATURED
               </span>
             )}
           </div>
         </td>
-        <td className="px-4 py-4 text-sm text-gray-500">
-          {category.createdAt ? format(new Date(category.createdAt), 'MMM d, yyyy') : 'Just now'}
+        <td className="px-6 py-4">
+          <div className="text-sm text-gray-900">
+            <div className="flex items-center gap-1">
+              <FiGrid className="h-3 w-3 text-gray-400" />
+              <span>{category.servicesCount || 0} services</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {category.gigsCount || 0} gigs
+            </div>
+          </div>
         </td>
-        <td className="px-4 py-4">
-          <div className="flex items-center space-x-2">
+        <td className="px-6 py-4">
+          <div className="text-sm text-gray-500">
+            {category.createdAt ? format(new Date(category.createdAt), 'MMM d, yyyy') : 'N/A'}
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => !isDeleting && !isCreating && onView(category)}
-              disabled={isDeleting || isCreating}
-              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
+              onClick={() => !isDeleting && onView(category)}
+              disabled={isDeleting}
+              className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
             </button>
             <button
-              onClick={() => !isDeleting && !isCreating && onEdit(category)}
-              disabled={isDeleting || isCreating || isUpdating}
-              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+              onClick={() => !isDeleting && onEdit(category)}
+              disabled={isDeleting || isUpdating}
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
               title="Edit Category"
             >
               {isUpdating ? (
-                <FiLoader className="h-4 w-4 animate-spin text-blue-500" />
+                <FiLoader className="h-4 w-4 animate-spin" />
               ) : (
                 <FiEdit2 className="h-4 w-4" />
               )}
             </button>
+            
             <div className="relative">
               <button
-                onClick={() => !isDeleting && !isCreating && onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
-                disabled={isDeleting || isCreating}
-                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
+                onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === category._id ? null : category._id)}
+                disabled={isDeleting}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
               
-              {actionMenuId === category._id && !isDeleting && !isCreating && (
+              {actionMenuId === category._id && !isDeleting && (
                 <>
                   <div 
                     className="fixed inset-0 z-10"
                     onClick={() => onOpenActionMenu(null)}
                   />
-                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 py-1">
+                    <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                      Quick Actions
+                    </div>
                     <div className="py-1">
-                      <button
-                        onClick={() => {
-                          onDuplicate(category);
-                          onOpenActionMenu(null);
-                        }}
-                        disabled={isDeleting || isCreating}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                      >
-                        <span className="mr-2">📋</span>
-                        Duplicate
-                      </button>
                       <button
                         onClick={() => {
                           onDelete(category);
                           onOpenActionMenu(null);
                         }}
-                        disabled={isDeleting || isCreating}
+                        disabled={isDeleting}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        {isDeleting ? (
-                          <FiLoader className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <FiTrash2 className="h-4 w-4 mr-2" />
-                        )}
-                        {isDeleting ? 'Deleting...' : 'Delete'}
+                        <FiTrash2 className="h-4 w-4 mr-3" />
+                        Delete Category
                       </button>
                     </div>
                   </div>
@@ -225,37 +201,28 @@ const CategoryTableRow = memo(({
       
       {isExpanded && (
         <tr>
-          <td colSpan="5" className="px-4 py-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
-                <div className="text-sm text-gray-700">
-                  {category.description || 'No description provided'}
+          <td colSpan="6" className="px-6 py-4 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Description</h4>
+                <p className="text-sm text-gray-700">{category.description || 'No description provided'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Settings</h4>
+                <div className="space-y-1">
+                  <div className="text-sm">
+                    <span className="text-gray-500">Order:</span> {category.order || 0}
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-gray-500">Version:</span> {category.version || 1}
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Stats</div>
-                <div className="text-sm">
-                  <div><span className="text-gray-500">Services:</span> {category.servicesCount || 0}</div>
-                  <div><span className="text-gray-500">Gigs:</span> {category.gigsCount || 0}</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Settings</div>
-                <div className="text-sm">
-                  <div><span className="text-gray-500">Order:</span> {category.order || 0}</div>
-                  <div><span className="text-gray-500">Level:</span> {category.level || 0}</div>
-                  <div><span className="text-gray-500">Version:</span> {category.version || 1}</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Last Updated</div>
-                <div className="text-sm text-gray-700">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Last Updated</h4>
+                <p className="text-sm text-gray-700">
                   {category.updatedAt ? format(new Date(category.updatedAt), 'MMM d, yyyy HH:mm') : 'N/A'}
-                  {category.__isOptimistic && (
-                    <div className="text-xs text-blue-600 mt-1">Optimistic update</div>
-                  )}
-                </div>
+                </p>
               </div>
             </div>
           </td>
@@ -267,7 +234,7 @@ const CategoryTableRow = memo(({
 
 CategoryTableRow.displayName = 'CategoryTableRow';
 
-// Main Component with improved state management
+// Main Component
 const CategoriesManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
@@ -288,26 +255,20 @@ const CategoriesManagement = () => {
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [updatingCategoryId, setUpdatingCategoryId] = useState(null);
   const [deletingCategoryId, setDeletingCategoryId] = useState(null);
-  const [creatingCategoryId, setCreatingCategoryId] = useState(null);
-  const [errorCategoryId, setErrorCategoryId] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
 
   const limit = 20;
   
-  // React Query hooks with proper error handling
   const { 
     data, 
     isLoading, 
     isFetching,
     refetch, 
-    isRefetching,
-    error: fetchError
+    isRefetching
   } = useAdminCategories({
     page,
     limit,
     search: searchTerm,
-    ...filters,
-    _refresh: lastRefresh // Force refresh when needed
+    ...filters
   });
   
   const createCategoryMutation = useCreateCategory();
@@ -318,28 +279,17 @@ const CategoriesManagement = () => {
   
   const { data: categoryStatsData } = useCategoryStats();
   
-  // Use custom toast hook
   const {
     showCategoryLoading,
     showCategorySuccess,
     showCategoryError,
     showCategoryWarning,
-    showCategoryInfo,
     dismissCategoryToast
   } = useCategoryToast();
   
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
-  // Handle fetch errors
-  useEffect(() => {
-    if (fetchError) {
-      console.error('Categories fetch error:', fetchError);
-      showCategoryError('Failed to load categories. Please refresh.');
-    }
-  }, [fetchError, showCategoryError]);
-
-  // Memoized handlers
   const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
@@ -347,10 +297,6 @@ const CategoriesManagement = () => {
     setExpandedCategories([]);
     refetch();
   }, [refetch]);
-
-  const handleSearchChange = useCallback((value) => {
-    setSearchTerm(value);
-  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -375,50 +321,12 @@ const CategoriesManagement = () => {
       await bulkOperationsMutation.mutateAsync(bulkData);
       setSelectedCategories([]);
       dismissCategoryToast(loadingToastId);
-      showCategorySuccess(`${selectedCategories.length} categories ${action}ed successfully`);
+      showCategorySuccess(`${selectedCategories.length} categories updated successfully`);
     } catch (error) {
       dismissCategoryToast(loadingToastId);
-      const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
-      const validationErrors = error.response?.data?.errors;
-      
-      if (validationErrors) {
-        validationErrors.forEach(err => showCategoryError(err));
-      } else {
-        showCategoryError(errorMessage);
-      }
+      showCategoryError(error.response?.data?.message || 'Failed to perform bulk action');
     }
   }, [selectedCategories, bulkOperationsMutation, showCategoryLoading, showCategorySuccess, showCategoryError, showCategoryWarning, dismissCategoryToast]);
-
-  const handleCreateCategory = useCallback(async (categoryData) => {
-    const loadingToastId = showCategoryLoading('Creating category...');
-    setCreatingCategoryId('temp'); // Set temporary ID
-    
-    try {
-      const result = await createCategoryMutation.mutateAsync(categoryData);
-      dismissCategoryToast(loadingToastId);
-      showCategorySuccess('Category created successfully');
-      setShowCreateModal(false);
-      setCreatingCategoryId(null);
-      
-      // Force immediate UI update
-      setLastRefresh(Date.now());
-      
-      return result;
-    } catch (error) {
-      dismissCategoryToast(loadingToastId);
-      setCreatingCategoryId(null);
-      setErrorCategoryId('temp');
-      
-      // Show specific error messages
-      if (error.response?.data?.errors) {
-        error.response.data.errors.forEach(err => showCategoryError(err));
-      } else {
-        showCategoryError(error.response?.data?.message || 'Failed to create category');
-      }
-      
-      throw error;
-    }
-  }, [createCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleUpdateCategory = useCallback(async (categoryData) => {
     if (!selectedCategory) return;
@@ -436,24 +344,14 @@ const CategoriesManagement = () => {
       setShowEditModal(false);
       setSelectedCategory(null);
       setUpdatingCategoryId(null);
-      
-      // Force immediate UI update
-      setLastRefresh(Date.now());
+      refetch();
     } catch (error) {
       dismissCategoryToast(loadingToastId);
       setUpdatingCategoryId(null);
-      setErrorCategoryId(selectedCategory._id);
-      
-      // Show specific error messages
-      if (error.response?.data?.errors) {
-        error.response.data.errors.forEach(err => showCategoryError(err));
-      } else {
-        showCategoryError(error.response?.data?.message || 'Failed to update category');
-      }
-      
+      showCategoryError(error.response?.data?.message || 'Failed to update category');
       throw error;
     }
-  }, [selectedCategory, updateCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+  }, [selectedCategory, updateCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
     const loadingToastId = showCategoryLoading('Deleting category...');
@@ -466,82 +364,14 @@ const CategoriesManagement = () => {
       setShowDeleteModal(false);
       setSelectedCategory(null);
       setDeletingCategoryId(null);
-      
-      // Force immediate UI update
-      setLastRefresh(Date.now());
+      refetch();
     } catch (error) {
       dismissCategoryToast(loadingToastId);
       setDeletingCategoryId(null);
-      setErrorCategoryId(deleteOptions.id);
-      
-      // Show specific error messages
-      const errorMessage = error.response?.data?.message || 'Failed to delete category';
-      if (error.response?.data?.details) {
-        showCategoryError(`${errorMessage}: ${error.response.data.details}`);
-      } else {
-        showCategoryError(errorMessage);
-      }
-      
+      showCategoryError(error.response?.data?.message || 'Failed to delete category');
       throw error;
     }
-  }, [deleteCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
-
-  const handleDuplicate = useCallback(async (category) => {
-    const loadingToastId = showCategoryLoading('Duplicating category...');
-    
-    try {
-      const duplicateData = {
-        name: `${category.name} (Copy)`,
-        description: category.description,
-        parentCategory: category.parentCategory?._id || category.parentCategory || '',
-        featured: category.featured,
-        popular: category.popular,
-        isActive: category.isActive,
-        order: (category.order || 0) + 1,
-        metaTitle: category.metaTitle,
-        metaDescription: category.metaDescription,
-        slug: `${category.slug}-copy-${Date.now()}`
-      };
-      
-      await createCategoryMutation.mutateAsync(duplicateData);
-      dismissCategoryToast(loadingToastId);
-      showCategorySuccess('Category duplicated successfully');
-    } catch (error) {
-      dismissCategoryToast(loadingToastId);
-      const errorMessage = error.response?.data?.message || 'Failed to duplicate category';
-      const validationErrors = error.response?.data?.errors;
-      
-      if (validationErrors) {
-        validationErrors.forEach(err => showCategoryError(err));
-      } else {
-        showCategoryError(errorMessage);
-      }
-    }
-  }, [createCategoryMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
-
-  const exportCategories = useCallback(async () => {
-    const loadingToastId = showCategoryLoading('Exporting categories...');
-    
-    try {
-      const response = await exportCategoriesMutation.mutateAsync('csv');
-      
-      const blob = new Blob([response.data], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `categories_export_${Date.now()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      dismissCategoryToast(loadingToastId);
-      showCategorySuccess('Categories exported successfully');
-    } catch (error) {
-      dismissCategoryToast(loadingToastId);
-      showCategoryError('Failed to export categories');
-    }
-  }, [exportCategoriesMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+  }, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -585,80 +415,59 @@ const CategoriesManagement = () => {
   const refreshData = useCallback(() => {
     setSelectedCategories([]);
     setExpandedCategories([]);
-    setErrorCategoryId(null);
-    setLastRefresh(Date.now());
+    refetch();
     showCategorySuccess('Data refreshed');
-  }, [showCategorySuccess]);
+  }, [refetch, showCategorySuccess]);
 
-  // Memoized stats calculation
+  const exportCategories = useCallback(async () => {
+    const loadingToastId = showCategoryLoading('Exporting categories...');
+    
+    try {
+      const response = await exportCategoriesMutation.mutateAsync('csv');
+      
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `categories_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Categories exported successfully');
+    } catch (error) {
+      dismissCategoryToast(loadingToastId);
+      showCategoryError('Failed to export categories');
+    }
+  }, [exportCategoriesMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+
   const stats = useMemo(() => {
-    const active = categories.filter(c => c.isActive).length;
-    const featured = categories.filter(c => c.featured).length;
-    const popular = categories.filter(c => c.popular).length;
-    const totalServices = categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0);
-    const totalGigs = categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0);
-
+    const categoryStats = categoryStatsData?.data?.overview?.[0] || {};
+    
     return {
       total: pagination.total || categories.length,
-      active,
-      featured,
-      popular,
-      totalServices,
-      totalGigs
+      active: categories.filter(c => c.isActive).length,
+      featured: categories.filter(c => c.featured).length,
+      totalServices: categoryStats.totalServices || categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0),
+      totalGigs: categoryStats.totalGigs || categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0)
     };
-  }, [categories, pagination.total]);
+  }, [categories, pagination.total, categoryStatsData]);
 
-  // Clear error after timeout
-  useEffect(() => {
-    if (errorCategoryId) {
-      const timer = setTimeout(() => {
-        setErrorCategoryId(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [errorCategoryId]);
-
-  // Loading states
   const isCreating = createCategoryMutation.isLoading;
   const isUpdating = updateCategoryMutation.isLoading;
   const isDeleting = deleteCategoryMutation.isLoading;
   const isBulkOperating = bulkOperationsMutation.isLoading;
   const isExporting = exportCategoriesMutation.isLoading;
-
   const isTableLoading = isLoading || isFetching;
-  const showSkeleton = isTableLoading && !categories.length;
 
-  if (showSkeleton) {
+  if (isTableLoading && !categories.length) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Category Management</h1>
-            <p className="text-gray-600">Organize and manage content categories</p>
-          </div>
-          <div className="flex gap-3">
-            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
-            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
-            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-gray-200 rounded-lg p-4 animate-pulse">
-              <div className="h-20"></div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
-        </div>
-        
-        <div className="bg-white rounded-lg border border-gray-200">
-          <div className="h-64 flex items-center justify-center">
-            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
-          </div>
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading categories...</p>
         </div>
       </div>
     );
@@ -667,108 +476,109 @@ const CategoriesManagement = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Category Management</h1>
-          <p className="text-gray-600">Organize and manage content categories</p>
+          <p className="text-gray-600 mt-1">Organize and manage content categories</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={exportCategories}
             disabled={isExporting || isTableLoading}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
+            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 transition-colors"
           >
             {isExporting ? (
               <>
                 <FiLoader className="h-4 w-4 animate-spin" />
-                <span>Exporting...</span>
+                Exporting...
               </>
             ) : (
               <>
                 <FiDownload className="h-4 w-4" />
-                <span>Export</span>
+                Export
               </>
             )}
           </button>
           <button
             onClick={refreshData}
             disabled={isRefetching || isBulkOperating || isTableLoading}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50 transition-colors"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            Refresh
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
             disabled={isCreating || isTableLoading}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
+            className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 transition-colors"
           >
-            {isCreating ? (
-              <>
-                <FiLoader className="h-4 w-4 animate-spin" />
-                <span>Creating...</span>
-              </>
-            ) : (
-              <>
-                <FiPlus className="h-4 w-4" />
-                <span>Add Category</span>
-              </>
-            )}
+            <FiPlus className="h-4 w-4" />
+            Add Category
           </button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Categories</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-sm font-medium text-gray-600">Total Categories</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
             </div>
-            <FiFolder className="h-8 w-8 text-blue-600" />
+            <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <FiFolder className="h-6 w-6 text-indigo-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Active</p>
-              <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+              <p className="text-sm font-medium text-gray-600">Active</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
             </div>
-            <FiCheckCircle className="h-8 w-8 text-green-600" />
+            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+              <FiCheckCircle className="h-6 w-6 text-green-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Featured</p>
-              <p className="text-2xl font-bold text-purple-600">{stats.featured}</p>
+              <p className="text-sm font-medium text-gray-600">Featured</p>
+              <p className="text-2xl font-bold text-purple-600 mt-1">{stats.featured}</p>
             </div>
-            <FiStar className="h-8 w-8 text-purple-600" />
+            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <FiStar className="h-6 w-6 text-purple-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Popular</p>
-              <p className="text-2xl font-bold text-yellow-600">{stats.popular}</p>
+              <p className="text-sm font-medium text-gray-600">Total Services</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalServices}</p>
             </div>
-            <FiTrendingUp className="h-8 w-8 text-yellow-600" />
+            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <FiTrendingUp className="h-6 w-6 text-blue-600" />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Bulk Actions */}
       {selectedCategories.length > 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
-              <FiFolder className="h-5 w-5 text-indigo-600" />
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <FiFolder className="h-5 w-5 text-indigo-600" />
+              </div>
               <div>
-                <p className="font-medium text-indigo-800">
+                <p className="font-medium text-indigo-900">
                   {selectedCategories.length} categor{selectedCategories.length > 1 ? 'ies' : 'y'} selected
                 </p>
                 <p className="text-sm text-indigo-600">Choose an action to perform</p>
@@ -777,54 +587,27 @@ const CategoriesManagement = () => {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleBulkAction('activate')}
-                disabled={isBulkOperating || isTableLoading}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiCheckCircle className="h-4 w-4" />
-                    <span>Activate</span>
-                  </>
-                )}
+                <FiCheckCircle className="h-4 w-4" />
+                Activate
               </button>
               <button
                 onClick={() => handleBulkAction('deactivate')}
-                disabled={isBulkOperating || isTableLoading}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiXCircle className="h-4 w-4" />
-                    <span>Deactivate</span>
-                  </>
-                )}
+                <FiXCircle className="h-4 w-4" />
+                Deactivate
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
-                disabled={isBulkOperating || isTableLoading}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
+                disabled={isBulkOperating}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiTrash2 className="h-4 w-4" />
-                    <span>Delete</span>
-                  </>
-                )}
+                <FiTrash2 className="h-4 w-4" />
+                Delete
               </button>
             </div>
           </div>
@@ -832,31 +615,23 @@ const CategoriesManagement = () => {
       )}
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
-          <form onSubmit={handleSearch} className="flex-1 md:mr-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <form onSubmit={handleSearch} className="flex-1">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
-                placeholder="Search categories by name, slug, or description..."
+                placeholder="Search categories by name or slug..."
                 value={searchTerm}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                disabled={isTableLoading}
-                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setPage(1);
-                    if (!isTableLoading) {
-                      refetch();
-                    }
-                  }}
-                  disabled={isTableLoading}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   <FiX className="h-4 w-4" />
                 </button>
@@ -867,23 +642,23 @@ const CategoriesManagement = () => {
           <button
             onClick={() => setShowFilters(!showFilters)}
             disabled={isBulkOperating || isTableLoading}
-            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
-            <span className="hidden md:inline">Filters</span>
+            Filters
           </button>
         </div>
 
         {/* Advanced Filters */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
                 disabled={isTableLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">All Status</option>
                 <option value="true">Active</option>
@@ -892,12 +667,12 @@ const CategoriesManagement = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Featured</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Featured</label>
               <select
                 value={filters.featured}
                 onChange={(e) => handleFilterChange('featured', e.target.value)}
                 disabled={isTableLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">All</option>
                 <option value="true">Featured</option>
@@ -906,27 +681,26 @@ const CategoriesManagement = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
               <select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
                 disabled={isTableLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
-                <option value="order">Sort Order</option>
-                <option value="updatedAt">Last Updated</option>
+                <option value="order">Order</option>
               </select>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort Order</label>
               <select
                 value={filters.sortOrder}
                 onChange={(e) => handleFilterChange('sortOrder', e.target.value)}
                 disabled={isTableLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="desc">Descending</option>
                 <option value="asc">Ascending</option>
@@ -937,35 +711,38 @@ const CategoriesManagement = () => {
       </div>
 
       {/* Categories Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="w-12 px-4 py-3">
+                <th className="w-12 px-6 py-3">
                   <input
                     type="checkbox"
                     checked={selectedCategories.length === categories.length && categories.length > 0}
                     onChange={toggleSelectAll}
-                    disabled={isBulkOperating || isTableLoading || categories.length === 0}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                    disabled={isBulkOperating || isTableLoading}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Category Details
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status & Tags
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Status
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Content
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Created
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-gray-100">
               {categories.map((category) => (
                 <CategoryTableRow
                   key={category._id}
@@ -977,13 +754,10 @@ const CategoriesManagement = () => {
                   onView={handleView}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
-                  onDuplicate={handleDuplicate}
                   onOpenActionMenu={setActionMenu}
                   actionMenuId={actionMenu}
                   isUpdatingId={updatingCategoryId}
                   isDeletingId={deletingCategoryId}
-                  isCreatingId={creatingCategoryId}
-                  hasError={errorCategoryId}
                 />
               ))}
             </tbody>
@@ -992,38 +766,35 @@ const CategoriesManagement = () => {
 
         {/* Empty State */}
         {categories.length === 0 && !isTableLoading && (
-          <div className="text-center py-12">
-            <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
-            <h3 className="mt-4 text-lg font-medium text-gray-900">No categories found</h3>
-            <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Create your first category
-            </button>
+          <div className="text-center py-16">
+            <FiFolder className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">No categories found</h3>
+            <p className="mt-2 text-gray-500 max-w-md mx-auto">
+              Try adjusting your search or filter criteria to find what you're looking for.
+            </p>
           </div>
         )}
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="px-4 py-4 border-t border-gray-200">
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="text-sm text-gray-700">
                 Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
                 <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
                 <span className="font-medium">{pagination.total}</span> categories
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1 || isBulkOperating || isTableLoading}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  disabled={page === 1 || isBulkOperating}
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
                 >
                   <FiChevronLeft className="h-4 w-4" />
+                  Previous
                 </button>
                 
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                     let pageNum;
                     if (pagination.totalPages <= 5) {
@@ -1040,37 +811,25 @@ const CategoriesManagement = () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
-                        disabled={isBulkOperating || isTableLoading}
-                        className={`px-3 py-1.5 rounded-md text-sm ${
+                        disabled={isBulkOperating}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium min-w-[40px] ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
-                            : 'border border-gray-300 hover:bg-gray-50'
-                        } disabled:opacity-50`}
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
-                  
-                  {pagination.totalPages > 5 && page < pagination.totalPages - 2 && (
-                    <>
-                      <span className="px-2 text-gray-400">...</span>
-                      <button
-                        onClick={() => setPage(pagination.totalPages)}
-                        disabled={isBulkOperating || isTableLoading}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
-                      >
-                        {pagination.totalPages}
-                      </button>
-                    </>
-                  )}
                 </div>
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page === pagination.totalPages || isBulkOperating || isTableLoading}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  disabled={page === pagination.totalPages || isBulkOperating}
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
                 >
+                  Next
                   <FiChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -1084,9 +843,17 @@ const CategoriesManagement = () => {
         <CategoryCreateModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateCategory}
+          onSubmit={async (data) => {
+            try {
+              await createCategoryMutation.mutateAsync(data);
+              showCategorySuccess('Category created successfully');
+              setShowCreateModal(false);
+              refetch();
+            } catch (error) {
+              showCategoryError(error.response?.data?.message || 'Failed to create category');
+            }
+          }}
           loading={createCategoryMutation.isLoading}
-          error={createCategoryMutation.error}
         />
       )}
       
@@ -1100,7 +867,6 @@ const CategoriesManagement = () => {
           }}
           onSubmit={handleUpdateCategory}
           loading={updateCategoryMutation.isLoading}
-          error={updateCategoryMutation.error}
         />
       )}
       
@@ -1114,7 +880,6 @@ const CategoriesManagement = () => {
           }}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onDuplicate={handleDuplicate}
         />
       )}
       
@@ -1128,7 +893,6 @@ const CategoriesManagement = () => {
           }}
           onDelete={handleDeleteCategory}
           loading={deleteCategoryMutation.isLoading}
-          error={deleteCategoryMutation.error}
         />
       )}
     </div>

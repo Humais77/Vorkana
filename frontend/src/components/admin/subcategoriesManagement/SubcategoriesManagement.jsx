@@ -1,4 +1,4 @@
-// SubcategoriesManagement.jsx - UPDATED
+// SubcategoriesManagement.jsx - Professional UI Update
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminSubcategories, 
@@ -13,7 +13,6 @@ import { useSubcategoryToast } from '../../../hooks/useSubcategoryToast';
 import {
   FiFolder,
   FiSearch,
-  FiDownload,
   FiFilter,
   FiEdit2,
   FiTrash2,
@@ -24,14 +23,13 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiRefreshCw,
-  FiPackage,
+  FiDownload,
   FiMoreVertical,
-  FiChevronDown,
-  FiChevronUp,
-  FiFolderPlus,
   FiX,
   FiLoader,
-  FiAlertTriangle 
+  FiGrid,
+  FiHash,
+  FiFolderPlus
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import SubcategoryCreateModal from './SubcategoryCreateModal';
@@ -39,7 +37,7 @@ import SubcategoryEditModal from './SubcategoryEditModal';
 import SubcategoryDeleteModal from './SubcategoryDeleteModal';
 import SubcategoryDetailsModal from './SubcategoryDetailsModal';
 
-// Memoized table row component
+// Subcategory Table Row Component
 const SubcategoryTableRow = memo(({ 
   subcategory, 
   isExpanded, 
@@ -49,106 +47,92 @@ const SubcategoryTableRow = memo(({
   onView, 
   onEdit, 
   onDelete,
-  onDuplicate,
   onOpenActionMenu,
   actionMenuId,
   categoriesMap,
   isUpdatingId,
-  isDeletingId,
-  isCreatingId,
-  hasError
+  isDeletingId
 }) => {
   const getStatusColor = (isActive) => {
     return isActive 
-      ? 'bg-green-100 text-green-800 border border-green-200' 
-      : 'bg-red-100 text-red-800 border border-red-200';
+      ? 'bg-green-100 text-green-700 border border-green-200' 
+      : 'bg-red-100 text-red-700 border border-red-200';
   };
 
   const isUpdating = isUpdatingId === subcategory._id;
   const isDeleting = isDeletingId === subcategory._id;
-  const isCreating = isCreatingId === subcategory._id;
-  const hasItemError = hasError === subcategory._id;
 
   return (
     <React.Fragment>
-      <tr className="hover:bg-gray-50">
-        <td className="px-4 py-4">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={() => onToggleSelect(subcategory._id)}
-          disabled={isDeleting || isCreating || isUpdating}
-          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
-        />
-      </td>
-        <td className="px-4 py-4">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => !isDeleting && !isCreating && !isUpdating && onToggleExpand(subcategory._id)}
-            disabled={isDeleting || isCreating || isUpdating}
-            className="p-1 hover:bg-gray-100 rounded disabled:opacity-50"
-          >
-            {isExpanded ? (
-              <FiChevronUp className="h-4 w-4 text-gray-500" />
-            ) : (
-              <FiChevronDown className="h-4 w-4 text-gray-500" />
-            )}
-          </button>
-          <div>
-            <div className="flex items-center space-x-2">
-              {isCreating && (
-                <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+      <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+        <td className="px-6 py-4">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(subcategory._id)}
+            disabled={isDeleting}
+            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+          />
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center">
+            <button
+              onClick={() => !isDeleting && onToggleExpand(subcategory._id)}
+              disabled={isDeleting}
+              className="p-1 hover:bg-gray-100 rounded mr-3 disabled:opacity-50"
+            >
+              {isExpanded ? (
+                <FiChevronLeft className="h-4 w-4 text-gray-500 rotate-270" />
+              ) : (
+                <FiChevronRight className="h-4 w-4 text-gray-500" />
               )}
-              {isUpdating && (
-                <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
-              )}
-              {isDeleting && (
-                <FiLoader className="h-3 w-3 animate-spin text-red-500" />
-              )}
-              {hasItemError && (
-                <FiAlertTriangle className="h-3 w-3 text-red-500" />
-              )}
-              <div className={`text-sm font-medium ${hasItemError ? 'text-red-700' : isUpdating ? 'text-blue-700' : 'text-gray-900'}`}>
-                {subcategory.name}
-                {isCreating && subcategory.__isOptimistic && (
-                  <span className="ml-2 text-xs text-blue-600">(Creating...)</span>
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                {isUpdating && (
+                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
                 )}
-                {isUpdating && subcategory.__isUpdating && (
-                  <span className="ml-2 text-xs text-blue-600">(Updating...)</span>
-                )}
+                <p className="text-sm font-medium text-gray-900">{subcategory.name}</p>
+              </div>
+              <div className="text-xs text-gray-500 mt-1 flex items-center">
+                <FiHash className="h-3 w-3 mr-1" />
+                {subcategory.slug || 'no-slug'}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Category: {categoriesMap[subcategory.category]?.name || 'N/A'}
               </div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Slug: {subcategory.slug || 'N/A'} • 
-              Category: {subcategory.category?.name || categoriesMap[subcategory.category]?.name || 'N/A'}
-              {isCreating && subcategory.__isOptimistic && (
-                <span className="ml-2 text-blue-500">Temporary ID</span>
-              )}
-              {subcategory.__optimisticUpdate && (
-                <span className="ml-2 text-blue-500">(Optimistic update)</span>
-              )}
-            </div>
           </div>
-        </div>
-      </td>
-        <td className="px-4 py-4">
+        </td>
+        <td className="px-6 py-4">
           <div className="flex flex-col gap-1">
-            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(subcategory.isActive)}`}>
-              {subcategory.isActive ? 'Active' : 'Inactive'}
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(subcategory.isActive)}`}>
+              {subcategory.isActive ? 'ACTIVE' : 'INACTIVE'}
             </span>
           </div>
         </td>
-        <td className="px-4 py-4">
+        <td className="px-6 py-4">
           <div className="text-sm text-gray-900">
-            {format(new Date(subcategory.createdAt), 'MMM d, yyyy')}
+            <div className="flex items-center gap-1">
+              <FiGrid className="h-3 w-3 text-gray-400" />
+              <span>{subcategory.servicesCount || 0} services</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {subcategory.gigsCount || 0} gigs
+            </div>
           </div>
         </td>
-        <td className="px-4 py-4">
-          <div className="flex items-center space-x-2">
+        <td className="px-6 py-4">
+          <div className="text-sm text-gray-500">
+            {subcategory.createdAt ? format(new Date(subcategory.createdAt), 'MMM d, yyyy') : 'N/A'}
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => !isDeleting && onView(subcategory)}
               disabled={isDeleting}
-              className="p-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-50"
+              className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
@@ -156,20 +140,21 @@ const SubcategoryTableRow = memo(({
             <button
               onClick={() => !isDeleting && onEdit(subcategory)}
               disabled={isDeleting || isUpdating}
-              className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
               title="Edit Subcategory"
             >
               {isUpdating ? (
-                <FiLoader className="h-4 w-4 animate-spin text-blue-500" />
+                <FiLoader className="h-4 w-4 animate-spin" />
               ) : (
                 <FiEdit2 className="h-4 w-4" />
               )}
             </button>
+            
             <div className="relative">
               <button
                 onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === subcategory._id ? null : subcategory._id)}
                 disabled={isDeleting}
-                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-50"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
@@ -180,18 +165,11 @@ const SubcategoryTableRow = memo(({
                     className="fixed inset-0 z-10"
                     onClick={() => onOpenActionMenu(null)}
                   />
-                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 py-1">
+                    <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                      Quick Actions
+                    </div>
                     <div className="py-1">
-                      <button
-                        onClick={() => {
-                          onDuplicate(subcategory);
-                          onOpenActionMenu(null);
-                        }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        <span className="mr-2">📋</span>
-                        Duplicate
-                      </button>
                       <button
                         onClick={() => {
                           onDelete(subcategory);
@@ -200,12 +178,8 @@ const SubcategoryTableRow = memo(({
                         disabled={isDeleting}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        {isDeleting ? (
-                          <FiLoader className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <FiTrash2 className="h-4 w-4 mr-2" />
-                        )}
-                        {isDeleting ? 'Deleting...' : 'Delete'}
+                        <FiTrash2 className="h-4 w-4 mr-3" />
+                        Delete Subcategory
                       </button>
                     </div>
                   </div>
@@ -218,31 +192,30 @@ const SubcategoryTableRow = memo(({
       
       {isExpanded && (
         <tr>
-          <td colSpan="5" className="px-4 py-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Description</div>
-                <div className="text-sm text-gray-700">
-                  {subcategory.description || 'No description provided'}
+          <td colSpan="6" className="px-6 py-4 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Description</h4>
+                <p className="text-sm text-gray-700">{subcategory.description || 'No description provided'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Settings</h4>
+                <div className="space-y-1">
+                  <div className="text-sm">
+                    <span className="text-gray-500">Order:</span> {subcategory.order || 0}
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-gray-500">Category:</span> {categoriesMap[subcategory.category]?.name || 'N/A'}
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Settings</div>
-                <div className="text-sm">
-                  <div><span className="text-gray-500">Order:</span> {subcategory.order || 0}</div>
-                  <div><span className="text-gray-500">Category:</span> {categoriesMap[subcategory.category]?.name || 'N/A'}</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase">Last Updated</div>
-                <div className="text-sm text-gray-700">
-                  {format(new Date(subcategory.updatedAt), 'MMM d, yyyy HH:mm')}
-                </div>
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Last Updated</h4>
+                <p className="text-sm text-gray-700">
+                  {subcategory.updatedAt ? format(new Date(subcategory.updatedAt), 'MMM d, yyyy HH:mm') : 'N/A'}
+                </p>
               </div>
             </div>
-            {subcategory.__isOptimistic && (
-              <div className="text-xs text-blue-600 mt-1">Optimistic update</div>
-            )}
           </td>
         </tr>
       )}
@@ -273,25 +246,20 @@ const SubcategoriesManagement = () => {
   const [expandedSubcategories, setExpandedSubcategories] = useState([]);
   const [updatingSubcategoryId, setUpdatingSubcategoryId] = useState(null);
   const [deletingSubcategoryId, setDeletingSubcategoryId] = useState(null);
-const [lastRefresh, setLastRefresh] = useState(Date.now());
-  const [creatingSubcategoryId, setCreatingSubcategoryId] = useState(null);
-  const [errorSubcategoryId, setErrorSubcategoryId] = useState(null);
+
   const limit = 20;
   
-  // React Query hooks
   const { 
-   data, 
+    data, 
     isLoading, 
     isFetching,
     refetch, 
-    isRefetching,
-    error: fetchError
+    isRefetching
   } = useAdminSubcategories({
     page,
     limit,
     search: searchTerm,
-    ...filters,
-     _refresh: lastRefresh
+    ...filters
   });
   
   const { data: categoriesData } = useCategoriesForDropdown();
@@ -306,17 +274,14 @@ const [lastRefresh, setLastRefresh] = useState(Date.now());
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
-  // Use custom toast hook
   const {
     showSubcategoryLoading,
     showSubcategorySuccess,
     showSubcategoryError,
     showSubcategoryWarning,
-    showSubcategoryInfo,
     dismissSubcategoryToast
   } = useSubcategoryToast();
 
-  // Search with debounce
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchTerm !== '') {
@@ -328,7 +293,6 @@ const [lastRefresh, setLastRefresh] = useState(Date.now());
     return () => clearTimeout(timer);
   }, [searchTerm, refetch]);
 
-  // Create categories map for quick lookup
   const categoriesMap = useMemo(() => {
     return categories.reduce((map, cat) => {
       map[cat._id] = cat;
@@ -336,16 +300,11 @@ const [lastRefresh, setLastRefresh] = useState(Date.now());
     }, {});
   }, [categories]);
 
-  // Memoized handlers
   const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
     refetch();
   }, [refetch]);
-
-  const handleSearchChange = useCallback((value) => {
-    setSearchTerm(value);
-  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -370,110 +329,38 @@ const [lastRefresh, setLastRefresh] = useState(Date.now());
       setSelectedSubcategories([]);
       refetch();
       dismissSubcategoryToast(loadingToastId);
-      showSubcategorySuccess(`${selectedSubcategories.length} subcategories ${action}ed successfully`);
+      showSubcategorySuccess(`${selectedSubcategories.length} subcategories updated successfully`);
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
-      const errorMessage = error.response?.data?.message || 'Failed to perform bulk action';
-      const validationErrors = error.response?.data?.errors;
-      
-      if (validationErrors) {
-        validationErrors.forEach(err => showSubcategoryError(err));
-      } else {
-        showSubcategoryError(errorMessage);
-      }
+      showSubcategoryError(error.response?.data?.message || 'Failed to perform bulk action');
     }
   }, [selectedSubcategories, bulkOperationsMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
 
- useEffect(() => {
-    if (fetchError) {
-      console.error('Subcategories fetch error:', fetchError);
-      showSubcategoryError('Failed to load subcategories. Please refresh.');
-    }
-  }, [fetchError, showSubcategoryError]);
-
-  // Update handleCreateSubcategory
-  const handleCreateSubcategory = useCallback(async (subcategoryData) => {
-    const loadingToastId = showSubcategoryLoading('Creating subcategory...');
-    setCreatingSubcategoryId('temp'); // Set temporary ID
+  const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
+    if (!selectedSubcategory) return;
+    
+    const loadingToastId = showSubcategoryLoading('Updating subcategory...');
+    setUpdatingSubcategoryId(selectedSubcategory._id);
     
     try {
-      const result = await createSubcategoryMutation.mutateAsync(subcategoryData);
+      await updateSubcategoryMutation.mutateAsync({
+        id: selectedSubcategory._id,
+        data: subcategoryData
+      });
       dismissSubcategoryToast(loadingToastId);
-      showSubcategorySuccess('Subcategory created successfully');
-      setShowCreateModal(false);
-      setCreatingSubcategoryId(null);
-      
-      // Force immediate UI update
-      setLastRefresh(Date.now());
-      
-      return result;
+      showSubcategorySuccess('Subcategory updated successfully');
+      setShowEditModal(false);
+      setSelectedSubcategory(null);
+      setUpdatingSubcategoryId(null);
+      refetch();
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
-      setCreatingSubcategoryId(null);
-      setErrorSubcategoryId('temp');
-      
-      // Show specific error messages
-      if (error.response?.data?.errors) {
-        error.response.data.errors.forEach(err => showSubcategoryError(err));
-      } else {
-        showSubcategoryError(error.response?.data?.message || 'Failed to create subcategory');
-      }
-      
+      setUpdatingSubcategoryId(null);
+      showSubcategoryError(error.response?.data?.message || 'Failed to update subcategory');
       throw error;
     }
-  }, [createSubcategoryMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+  }, [selectedSubcategory, updateSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
- useEffect(() => {
-  // When lastRefresh changes, force refetch
-  if (lastRefresh) {
-    refetch();
-  }
-}, [lastRefresh, refetch]);
-
-// Update the handleUpdateSubcategory function
-const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
-  if (!selectedSubcategory) return;
-  
-  const loadingToastId = showSubcategoryLoading('Updating subcategory...');
-  setUpdatingSubcategoryId(selectedSubcategory._id);
-  
-  try {
-    console.log('[FRONTEND UPDATE] Updating subcategory:', selectedSubcategory._id, 'with data:', subcategoryData);
-    
-    // Call the mutation
-    await updateSubcategoryMutation.mutateAsync({
-      id: selectedSubcategory._id,
-      data: subcategoryData
-    });
-    
-    dismissSubcategoryToast(loadingToastId);
-    
-    // The success toast is already shown in the mutation's onSuccess
-    // Just close the modal
-    setShowEditModal(false);
-    setSelectedSubcategory(null);
-    setUpdatingSubcategoryId(null);
-    
-    // Force immediate UI update by updating lastRefresh
-    setLastRefresh(Date.now());
-    
-  } catch (error) {
-    dismissSubcategoryToast(loadingToastId);
-    setUpdatingSubcategoryId(null);
-    setErrorSubcategoryId(selectedSubcategory._id);
-    
-    // Show specific error messages
-    if (error.response?.data?.errors) {
-      error.response.data.errors.forEach(err => showSubcategoryError(err));
-    } else {
-      const errorMessage = error.response?.data?.message || 'Failed to update subcategory';
-      showSubcategoryError(errorMessage);
-    }
-    
-    throw error;
-  }
-}, [selectedSubcategory, updateSubcategoryMutation, showSubcategoryLoading, showSubcategoryError, dismissSubcategoryToast]);
-  // Update handleDeleteSubcategory
   const handleDeleteSubcategory = useCallback(async (deleteOptions) => {
     const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
     setDeletingSubcategoryId(deleteOptions.id);
@@ -485,75 +372,14 @@ const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
       setShowDeleteModal(false);
       setSelectedSubcategory(null);
       setDeletingSubcategoryId(null);
-      
-      // Force immediate UI update
-      setLastRefresh(Date.now());
-    } catch (error) {
-      dismissSubcategoryToast(loadingToastId);
-      setDeletingSubcategoryId(null);
-      setErrorSubcategoryId(deleteOptions.id);
-      
-      // Show specific error messages
-      const errorMessage = error.response?.data?.message || 'Failed to delete subcategory';
-      if (error.response?.data?.details) {
-        showSubcategoryError(`${errorMessage}: ${error.response.data.details}`);
-      } else {
-        showSubcategoryError(errorMessage);
-      }
-      
-      throw error;
-    }
-  }, [deleteSubcategoryMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
-
-  // Update refreshData
-  const refreshData = useCallback(() => {
-    setSelectedSubcategories([]);
-    setExpandedSubcategories([]);
-    setErrorSubcategoryId(null);
-    setLastRefresh(Date.now());
-    showSubcategorySuccess('Data refreshed');
-  }, [showSubcategorySuccess]);
-
-  // Clear error after timeout
-  useEffect(() => {
-    if (errorSubcategoryId) {
-      const timer = setTimeout(() => {
-        setErrorSubcategoryId(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [errorSubcategoryId]);
-
-  const handleDuplicate = useCallback(async (subcategory) => {
-    const loadingToastId = showSubcategoryLoading('Duplicating subcategory...');
-    
-    try {
-      const duplicateData = {
-        name: `${subcategory.name} (Copy)`,
-        description: subcategory.description,
-        category: subcategory.category?._id || subcategory.category || '',
-        order: subcategory.order + 1,
-        isActive: subcategory.isActive,
-        metaTitle: subcategory.metaTitle,
-        metaDescription: subcategory.metaDescription
-      };
-      
-      await createSubcategoryMutation.mutateAsync(duplicateData);
-      dismissSubcategoryToast(loadingToastId);
-      showSubcategorySuccess('Subcategory duplicated successfully');
       refetch();
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
-      const errorMessage = error.response?.data?.message || 'Failed to duplicate subcategory';
-      const validationErrors = error.response?.data?.errors;
-      
-      if (validationErrors) {
-        validationErrors.forEach(err => showSubcategoryError(err));
-      } else {
-        showSubcategoryError(errorMessage);
-      }
+      setDeletingSubcategoryId(null);
+      showSubcategoryError(error.response?.data?.message || 'Failed to delete subcategory');
+      throw error;
     }
-  }, [createSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+  }, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -594,6 +420,13 @@ const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
     setShowDeleteModal(true);
   }, []);
 
+  const refreshData = useCallback(() => {
+    setSelectedSubcategories([]);
+    setExpandedSubcategories([]);
+    refetch();
+    showSubcategorySuccess('Data refreshed');
+  }, [refetch, showSubcategorySuccess]);
+
   const exportSubcategories = useCallback(async () => {
     const loadingToastId = showSubcategoryLoading('Exporting subcategories...');
     
@@ -618,67 +451,30 @@ const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
     }
   }, [exportSubcategoriesMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
-
-  // Memoized stats calculation
   const stats = useMemo(() => {
-    const active = subcategories.filter(s => s.isActive).length;
-    // Remove services and gigs counts to prevent negative values
-    // Only show basic stats
-
     return {
       total: pagination.total || subcategories.length,
-      active,
-      activePercentage: subcategories.length > 0 ? Math.round((active / subcategories.length) * 100) : 0
+      active: subcategories.filter(s => s.isActive).length,
+      inactive: subcategories.filter(s => !s.isActive).length,
+      totalServices: subcategories.reduce((sum, sub) => sum + (sub.servicesCount || 0), 0),
+      totalGigs: subcategories.reduce((sum, sub) => sum + (sub.gigsCount || 0), 0)
     };
   }, [subcategories, pagination.total]);
 
-  // Loading states
   const isCreating = createSubcategoryMutation.isLoading;
   const isUpdating = updateSubcategoryMutation.isLoading;
   const isDeleting = deleteSubcategoryMutation.isLoading;
   const isBulkOperating = bulkOperationsMutation.isLoading;
   const isExporting = exportSubcategoriesMutation.isLoading;
- const isTableLoading = isLoading || isFetching;
-  const showSkeleton = isTableLoading && !subcategories.length;
-if (showSkeleton) {
+  const isTableLoading = isLoading || isFetching;
+
+  if (isTableLoading && !subcategories.length) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Subcategory Management</h1> {/* FIXED: Changed from "Category Management" */}
-            <p className="text-gray-600">Organize and manage subcategories within categories</p> {/* FIXED */}
-          </div>
-          <div className="flex gap-3">
-            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
-            <div className="h-10 w-24 bg-gray-200 rounded-lg animate-pulse"></div>
-            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
-          </div>
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading subcategories...</p>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> {/* FIXED: Changed from 6 to 4 columns */}
-          {[...Array(4)].map((_, i) => ( // FIXED: Changed from 6 to 4
-            <div key={i} className="bg-gray-200 rounded-lg p-4 animate-pulse">
-              <div className="h-20"></div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
-        </div>
-        
-        <div className="bg-white rounded-lg border border-gray-200">
-          <div className="h-64 flex items-center justify-center">
-            <FiLoader className="h-8 w-8 animate-spin text-indigo-600" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-  if (isLoading && !subcategories.length) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
@@ -686,114 +482,109 @@ if (showSkeleton) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Subcategory Management</h1>
-          <p className="text-gray-600">Organize and manage subcategories within categories</p>
+          <p className="text-gray-600 mt-1">Organize and manage subcategories within categories</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={exportSubcategories}
-            disabled={isExporting}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center space-x-2 disabled:opacity-50"
+            disabled={isExporting || isTableLoading}
+            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 transition-colors"
           >
             {isExporting ? (
               <>
                 <FiLoader className="h-4 w-4 animate-spin" />
-                <span>Exporting...</span>
+                Exporting...
               </>
             ) : (
               <>
                 <FiDownload className="h-4 w-4" />
-                <span>Export</span>
+                Export
               </>
             )}
           </button>
           <button
             onClick={refreshData}
-            disabled={isRefetching || isBulkOperating}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50"
+            disabled={isRefetching || isBulkOperating || isTableLoading}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50 transition-colors"
           >
             <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            Refresh
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            disabled={isCreating}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50"
+            disabled={isCreating || isTableLoading}
+            className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 transition-colors"
           >
-            {isCreating ? (
-              <>
-                <FiLoader className="h-4 w-4 animate-spin" />
-                <span>Creating...</span>
-              </>
-            ) : (
-              <>
-                <FiPlus className="h-4 w-4" />
-                <span>Add Subcategory</span>
-              </>
-            )}
+            <FiPlus className="h-4 w-4" />
+            Add Subcategory
           </button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Subcategories</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-sm font-medium text-gray-600">Total Subcategories</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
             </div>
-            <FiFolder className="h-8 w-8 text-blue-600" />
+            <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <FiFolder className="h-6 w-6 text-indigo-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Active</p>
-              <p className="text-2xl font-bold text-green-600">{stats.active}</p>
-              <p className="text-xs text-gray-500 mt-1">{stats.activePercentage}% active</p>
+              <p className="text-sm font-medium text-gray-600">Active</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
             </div>
-            <FiCheckCircle className="h-8 w-8 text-green-600" />
+            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+              <FiCheckCircle className="h-6 w-6 text-green-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">By Category</p>
-              <p className="text-2xl font-bold text-orange-600">{categories.length}</p>
+              <p className="text-sm font-medium text-gray-600">Total Services</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalServices}</p>
             </div>
-            <FiFolderPlus className="h-8 w-8 text-orange-600" />
+            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <FiGrid className="h-6 w-6 text-blue-600" />
+            </div>
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Last Updated</p>
-              <p className="text-lg font-bold text-teal-600">
-                {subcategories.length > 0 
-                  ? format(new Date(Math.max(...subcategories.map(s => new Date(s.updatedAt).getTime()))), 'MMM d')
-                  : 'Never'
-                }
-              </p>
+              <p className="text-sm font-medium text-gray-600">Categories</p>
+              <p className="text-2xl font-bold text-purple-600 mt-1">{categories.length}</p>
             </div>
-            <FiRefreshCw className="h-8 w-8 text-teal-600" />
+            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <FiFolderPlus className="h-6 w-6 text-purple-600" />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Bulk Actions */}
       {selectedSubcategories.length > 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
-              <FiFolder className="h-5 w-5 text-indigo-600" />
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <FiFolder className="h-5 w-5 text-indigo-600" />
+              </div>
               <div>
-                <p className="font-medium text-indigo-800">
+                <p className="font-medium text-indigo-900">
                   {selectedSubcategories.length} subcategor{selectedSubcategories.length > 1 ? 'ies' : 'y'} selected
                 </p>
                 <p className="text-sm text-indigo-600">Choose an action to perform</p>
@@ -803,53 +594,26 @@ if (showSkeleton) {
               <button
                 onClick={() => handleBulkAction('activate')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 flex items-center space-x-1 disabled:opacity-50"
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiCheckCircle className="h-4 w-4" />
-                    <span>Activate</span>
-                  </>
-                )}
+                <FiCheckCircle className="h-4 w-4" />
+                Activate
               </button>
               <button
                 onClick={() => handleBulkAction('deactivate')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-md text-sm hover:bg-yellow-200 flex items-center space-x-1 disabled:opacity-50"
+                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiXCircle className="h-4 w-4" />
-                    <span>Deactivate</span>
-                  </>
-                )}
+                <FiXCircle className="h-4 w-4" />
+                Deactivate
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 flex items-center space-x-1 disabled:opacity-50"
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
-                {isBulkOperating ? (
-                  <>
-                    <FiLoader className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiTrash2 className="h-4 w-4" />
-                    <span>Delete</span>
-                  </>
-                )}
+                <FiTrash2 className="h-4 w-4" />
+                Delete
               </button>
             </div>
           </div>
@@ -857,27 +621,23 @@ if (showSkeleton) {
       )}
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
-          <form onSubmit={handleSearch} className="flex-1 md:mr-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <form onSubmit={handleSearch} className="flex-1">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
-                placeholder="Search subcategories by name, slug, or description..."
+                placeholder="Search subcategories by name or slug..."
                 value={searchTerm}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setPage(1);
-                    refetch();
-                  }}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   <FiX className="h-4 w-4" />
                 </button>
@@ -887,23 +647,24 @@ if (showSkeleton) {
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            disabled={isBulkOperating}
-            className="px-4 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 hover:bg-gray-50 disabled:opacity-50"
+            disabled={isBulkOperating || isTableLoading}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50"
           >
             <FiFilter className="h-4 w-4" />
-            <span className="hidden md:inline">Filters</span>
+            Filters
           </button>
         </div>
 
         {/* Advanced Filters */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
               <select
                 value={filters.category}
                 onChange={(e) => handleFilterChange('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">All Categories</option>
                 {categories.map(category => (
@@ -915,11 +676,12 @@ if (showSkeleton) {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">All Status</option>
                 <option value="true">Active</option>
@@ -928,16 +690,16 @@ if (showSkeleton) {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
               <select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={isTableLoading}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
-                <option value="order">Sort Order</option>
-                <option value="updatedAt">Last Updated</option>
+                <option value="order">Order</option>
               </select>
             </div>
           </div>
@@ -945,88 +707,91 @@ if (showSkeleton) {
       </div>
 
       {/* Subcategories Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="w-12 px-4 py-3">
+                <th className="w-12 px-6 py-3">
                   <input
                     type="checkbox"
                     checked={selectedSubcategories.length === subcategories.length && subcategories.length > 0}
                     onChange={toggleSelectAll}
-                    disabled={isBulkOperating}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                    disabled={isBulkOperating || isTableLoading}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Subcategory Details
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Content
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Created
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-gray-100">
               {subcategories.map((subcategory) => (
-      <SubcategoryTableRow
-        key={subcategory._id}
-        subcategory={subcategory}
-        isExpanded={expandedSubcategories.includes(subcategory._id)}
-        isSelected={selectedSubcategories.includes(subcategory._id)}
-        onToggleExpand={toggleExpandSubcategory}
-        onToggleSelect={toggleSelectSubcategory}
-        onView={handleView}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onDuplicate={handleDuplicate}
-        onOpenActionMenu={setActionMenu}
-        actionMenuId={actionMenu}
-        categoriesMap={categoriesMap}
-        isUpdatingId={updatingSubcategoryId}
-        isDeletingId={deletingSubcategoryId}
-        isCreatingId={creatingSubcategoryId}
-        hasError={errorSubcategoryId}
-      />
-    ))}
+                <SubcategoryTableRow
+                  key={subcategory._id}
+                  subcategory={subcategory}
+                  isExpanded={expandedSubcategories.includes(subcategory._id)}
+                  isSelected={selectedSubcategories.includes(subcategory._id)}
+                  onToggleExpand={toggleExpandSubcategory}
+                  onToggleSelect={toggleSelectSubcategory}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onOpenActionMenu={setActionMenu}
+                  actionMenuId={actionMenu}
+                  categoriesMap={categoriesMap}
+                  isUpdatingId={updatingSubcategoryId}
+                  isDeletingId={deletingSubcategoryId}
+                />
+              ))}
             </tbody>
           </table>
         </div>
 
         {/* Empty State */}
-        {subcategories.length === 0 && !isLoading && (
-          <div className="text-center py-12">
-            <FiFolder className="h-12 w-12 text-gray-300 mx-auto" />
-            <h3 className="mt-4 text-lg font-medium text-gray-900">No subcategories found</h3>
-            <p className="mt-2 text-gray-500">Try adjusting your search or filters</p>
+        {subcategories.length === 0 && !isTableLoading && (
+          <div className="text-center py-16">
+            <FiFolder className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">No subcategories found</h3>
+            <p className="mt-2 text-gray-500 max-w-md mx-auto">
+              Try adjusting your search or filter criteria to find what you're looking for.
+            </p>
           </div>
         )}
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="px-4 py-4 border-t border-gray-200">
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="text-sm text-gray-700">
                 Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
                 <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
                 <span className="font-medium">{pagination.total}</span> subcategories
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1 || isBulkOperating}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
                 >
                   <FiChevronLeft className="h-4 w-4" />
+                  Previous
                 </button>
                 
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                     let pageNum;
                     if (pagination.totalPages <= 5) {
@@ -1044,36 +809,24 @@ if (showSkeleton) {
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
                         disabled={isBulkOperating}
-                        className={`px-3 py-1.5 rounded-md text-sm ${
+                        className={`px-3 py-2 rounded-lg text-sm font-medium min-w-[40px] ${
                           page === pageNum
                             ? 'bg-indigo-600 text-white'
-                            : 'border border-gray-300 hover:bg-gray-50'
-                        } disabled:opacity-50`}
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
-                  
-                  {pagination.totalPages > 5 && page < pagination.totalPages - 2 && (
-                    <>
-                      <span className="px-2 text-gray-400">...</span>
-                      <button
-                        onClick={() => setPage(pagination.totalPages)}
-                        disabled={isBulkOperating}
-                        className={`px-3 py-1.5 rounded-md text-sm border border-gray-300 hover:bg-gray-50 disabled:opacity-50`}
-                      >
-                        {pagination.totalPages}
-                      </button>
-                    </>
-                  )}
                 </div>
                 
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
                   disabled={page === pagination.totalPages || isBulkOperating}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
                 >
+                  Next
                   <FiChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -1087,9 +840,17 @@ if (showSkeleton) {
         <SubcategoryCreateModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateSubcategory}
+          onSubmit={async (data) => {
+            try {
+              await createSubcategoryMutation.mutateAsync(data);
+              showSubcategorySuccess('Subcategory created successfully');
+              setShowCreateModal(false);
+              refetch();
+            } catch (error) {
+              showSubcategoryError(error.response?.data?.message || 'Failed to create subcategory');
+            }
+          }}
           loading={createSubcategoryMutation.isLoading}
-          error={createSubcategoryMutation.error}
           categories={categories}
         />
       )}
@@ -1104,7 +865,6 @@ if (showSkeleton) {
           }}
           onSubmit={handleUpdateSubcategory}
           loading={updateSubcategoryMutation.isLoading}
-          error={updateSubcategoryMutation.error}
           categories={categories}
         />
       )}
@@ -1119,7 +879,6 @@ if (showSkeleton) {
           }}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onDuplicate={handleDuplicate}
           categoriesMap={categoriesMap}
         />
       )}
@@ -1134,7 +893,6 @@ if (showSkeleton) {
           }}
           onDelete={handleDeleteSubcategory}
           loading={deleteSubcategoryMutation.isLoading}
-          error={deleteSubcategoryMutation.error}
         />
       )}
     </div>
