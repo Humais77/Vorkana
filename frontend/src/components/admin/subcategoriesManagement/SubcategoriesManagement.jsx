@@ -37,7 +37,7 @@ import {
 import { format } from 'date-fns';
 import SubcategoryCreateModal from './SubcategoryCreateModal';
 import SubcategoryEditModal from './SubcategoryEditModal';
-import SubcategoryDeleteModal from './SubcategoryDeleteModal';
+import DeleteConfirmationModal from '../DeleteConfirmationModal';
 import SubcategoryDetailsModal from './SubcategoryDetailsModal';
 
 // Subcategory Table Row Component
@@ -251,6 +251,7 @@ const SubcategoriesManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const [showSubcategoryDetails, setShowSubcategoryDetails] = useState(false);
   const [selectedSubcategory, setSelectedSubcategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
@@ -383,24 +384,26 @@ const formatNumber = (value) => {
   }, [selectedSubcategory, updateSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
   const handleDeleteSubcategory = useCallback(async (deleteOptions) => {
-    const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
-    setDeletingSubcategoryId(deleteOptions.id);
-    
-    try {
-      await deleteSubcategoryMutation.mutateAsync(deleteOptions);
-      dismissSubcategoryToast(loadingToastId);
-      showSubcategorySuccess('Subcategory deleted successfully');
-      setShowDeleteModal(false);
-      setSelectedSubcategory(null);
-      setDeletingSubcategoryId(null);
-      refetch();
-    } catch (error) {
-      dismissSubcategoryToast(loadingToastId);
-      setDeletingSubcategoryId(null);
-      showSubcategoryError(error.response?.data?.message || 'Failed to delete subcategory');
-      throw error;
-    }
-  }, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+  const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
+  setDeletingSubcategoryId(deleteOptions.id);
+  
+  try {
+    await deleteSubcategoryMutation.mutateAsync(deleteOptions);
+    dismissSubcategoryToast(loadingToastId);
+    showSubcategorySuccess('Subcategory deleted successfully');
+    setShowDeleteModal(false);
+    setSelectedSubcategory(null);
+    setForceDelete(false);
+    setDeletingSubcategoryId(null);
+    refetch();
+  } catch (error) {
+    dismissSubcategoryToast(loadingToastId);
+    setDeletingSubcategoryId(null);
+    showSubcategoryError(error.response?.data?.message || 'Failed to delete subcategory');
+    throw error;
+  }
+}, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
+
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -437,9 +440,11 @@ const formatNumber = (value) => {
   }, []);
 
   const handleDelete = useCallback((subcategory) => {
-    setSelectedSubcategory(subcategory);
-    setShowDeleteModal(true);
-  }, []);
+  setSelectedSubcategory(subcategory);
+  setForceDelete(false);
+  setShowDeleteModal(true);
+}, []);
+
 
   const refreshData = useCallback(() => {
     setSelectedSubcategories([]);
@@ -978,18 +983,26 @@ const stats = useMemo(() => {
         />
       )}
       
-      {showDeleteModal && selectedSubcategory && (
-        <SubcategoryDeleteModal
-          subcategory={selectedSubcategory}
-          isOpen={showDeleteModal}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setSelectedSubcategory(null);
-          }}
-          onDelete={handleDeleteSubcategory}
-          loading={deleteSubcategoryMutation.isLoading}
-        />
-      )}
+     {showDeleteModal && selectedSubcategory && (
+  <DeleteConfirmationModal
+    item={selectedSubcategory}
+    isOpen={showDeleteModal}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setSelectedSubcategory(null);
+      setForceDelete(false);
+    }}
+    onDelete={handleDeleteSubcategory}
+    type="subcategory"
+    loading={deleteSubcategoryMutation.isLoading || deletingSubcategoryId === selectedSubcategory._id}
+    dependencies={{
+      services: selectedSubcategory.servicesCount || 0,
+      gigs: selectedSubcategory.gigsCount || 0
+    }}
+    forceDelete={forceDelete}
+    onForceDeleteChange={setForceDelete}
+  />
+)}
     </div>
   );
 };
