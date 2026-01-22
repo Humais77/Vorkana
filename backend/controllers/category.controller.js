@@ -2459,7 +2459,7 @@ const searchCategories = async (req, res, next) => {
     });
   }
 };
-const repairCategoryCounts = async (req, res, next) => {
+const repairCategoryCounts = async (req, res) => {
   const requestId = generateRequestId();
   
   try {
@@ -2472,21 +2472,83 @@ const repairCategoryCounts = async (req, res, next) => {
       });
     }
 
-    const result = await Category.repairCategoryCounts();
+    console.log('[REPAIR CATEGORY COUNTS] Starting repair process...');
     
-    // Invalidate all category cache
+    const categories = await Category.find({ deletedAt: null }).lean();
+    console.log(`[REPAIR CATEGORY COUNTS] Found ${categories.length} categories to repair`);
+    
+    let repairedCount = 0;
+    const results = [];
+    
+    for (const category of categories) {
+      try {
+        // Get actual count from database
+        const actualGigsCount = await Gig.countDocuments({
+          projectCategory: category._id,
+          status: 'open',
+          isActive: true,
+          deletedAt: null
+        });
+        
+        const actualServicesCount = await Service.countDocuments({
+          category: category._id,
+          status: 'active',
+          isActive: true,
+          deletedAt: null
+        });
+        
+        // Fix negative counts
+        const fixedGigsCount = Math.max(0, actualGigsCount);
+        const fixedServicesCount = Math.max(0, actualServicesCount);
+        
+        // Only update if counts are different
+        if (category.gigsCount !== fixedGigsCount || category.servicesCount !== fixedServicesCount) {
+          await Category.findByIdAndUpdate(category._id, {
+            gigsCount: fixedGigsCount,
+            servicesCount: fixedServicesCount,
+            lastUpdatedAt: new Date()
+          });
+          
+          repairedCount++;
+          results.push({
+            categoryId: category._id,
+            name: category.name,
+            oldGigsCount: category.gigsCount,
+            newGigsCount: fixedGigsCount,
+            oldServicesCount: category.servicesCount,
+            newServicesCount: fixedServicesCount,
+            repaired: true
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to repair category ${category._id}:`, error);
+        results.push({
+          categoryId: category._id,
+          name: category.name,
+          error: error.message,
+          repaired: false
+        });
+      }
+    }
+    
+    // Invalidate cache after repair
     await invalidateCategoryCache();
     
     res.json({
       success: true,
-      message: 'Category counts repaired successfully',
-      result,
+      message: `Repaired ${repairedCount} out of ${categories.length} categories`,
+      result: {
+        totalCategories: categories.length,
+        repairedCount,
+        failedCount: categories.length - repairedCount,
+        details: results
+      },
       requestId,
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('Repair category counts error:', error);
+    console.error('[REPAIR CATEGORY COUNTS ERROR]', error);
     res.status(500).json({
       success: false,
       message: 'Failed to repair category counts',
@@ -2495,6 +2557,7 @@ const repairCategoryCounts = async (req, res, next) => {
     });
   }
 };
+
 
 module.exports = {
   createCategory,

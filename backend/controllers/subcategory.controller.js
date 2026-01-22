@@ -953,7 +953,111 @@ res.set({
     next(error);
   }
 };
+const repairSubcategoryCounts = async (req, res) => {
+  const requestId = generateRequestId();
+  
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        requestId
+      });
+    }
 
+    console.log('[REPAIR SUBCATEGORY COUNTS] Starting repair process...');
+    
+    // Get all subcategories
+    const subcategories = await Subcategory.find({ deletedAt: null }).lean();
+    console.log(`[REPAIR SUBCATEGORY COUNTS] Found ${subcategories.length} subcategories to repair`);
+    
+    let repairedCount = 0;
+    const results = [];
+    
+    for (const subcategory of subcategories) {
+      try {
+        // Get actual count of active gigs for this subcategory
+        const actualGigsCount = await Gig.countDocuments({
+          subcategory: subcategory._id,
+          status: 'open',
+          isActive: true,
+          deletedAt: null
+        });
+        
+        // Get actual count of active services for this subcategory
+        const actualServicesCount = await Service.countDocuments({
+          subcategory: subcategory._id,
+          status: 'active',
+          isActive: true,
+          deletedAt: null
+        });
+        
+        // Only update if counts are different
+        if (actualGigsCount !== subcategory.gigsCount || actualServicesCount !== subcategory.servicesCount) {
+          await Subcategory.findByIdAndUpdate(subcategory._id, {
+            gigsCount: Math.max(0, actualGigsCount), // Ensure non-negative
+            servicesCount: Math.max(0, actualServicesCount) // Ensure non-negative
+          });
+          
+          repairedCount++;
+          results.push({
+            subcategoryId: subcategory._id,
+            subcategoryName: subcategory.name,
+            oldGigsCount: subcategory.gigsCount,
+            newGigsCount: actualGigsCount,
+            oldServicesCount: subcategory.servicesCount,
+            newServicesCount: actualServicesCount,
+            repaired: true
+          });
+          
+          console.log(`[REPAIR] Subcategory "${subcategory.name}" repaired: gigs ${subcategory.gigsCount} → ${actualGigsCount}, services ${subcategory.servicesCount} → ${actualServicesCount}`);
+        } else {
+          results.push({
+            subcategoryId: subcategory._id,
+            subcategoryName: subcategory.name,
+            status: 'already_correct',
+            gigsCount: actualGigsCount,
+            servicesCount: actualServicesCount
+          });
+        }
+      } catch (error) {
+        console.error(`[REPAIR ERROR] Failed to repair subcategory ${subcategory._id}:`, error);
+        results.push({
+          subcategoryId: subcategory._id,
+          subcategoryName: subcategory.name,
+          error: error.message,
+          repaired: false
+        });
+      }
+    }
+    
+    // Invalidate cache after repair
+    await invalidateSubcategoryCache();
+    
+    res.json({
+      success: true,
+      message: `Repaired ${repairedCount} out of ${subcategories.length} subcategories`,
+      result: {
+        totalSubcategories: subcategories.length,
+        repairedCount,
+        failedCount: subcategories.length - repairedCount,
+        details: results
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[REPAIR SUBCATEGORY COUNTS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to repair subcategory counts',
+      code: 'REPAIR_FAILED',
+      requestId
+    });
+  }
+};
 module.exports = {
   createSubcategory,
   getSubcategories,
@@ -963,5 +1067,6 @@ module.exports = {
   deleteSubcategory,
   restoreSubcategory,
   bulkUpdateSubcategories,
-  getSubcategoryBySlug
+  getSubcategoryBySlug,
+  repairSubcategoryCounts
 };

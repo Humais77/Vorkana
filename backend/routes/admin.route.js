@@ -11,6 +11,7 @@ const {
 } = require('../middleware/admin.middleware.js');
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
+const subcategoryController = require('../controllers/subcategory.controller.js');
 const gigController = require('../controllers/gig.controller.js');
 const {logout} = require('../controllers/auth.controller.js');
 const mongoose = require('mongoose');
@@ -166,29 +167,38 @@ router.get('/dashboard',
   cacheMiddleware(300, 'admin:dashboard'), // Cache for 5 minutes
   adminController.getDashboardStats
 );
-
-router.post('/logout',
+router.post('/logout', 
   verifyAdmin,
-  // Clear admin-specific cookies first
+  // Middleware to set admin logout flags
   (req, res, next) => {
-    res.clearCookie('adminToken', {
-      path: '/',
-      domain: process.env.COOKIE_DOMAIN || 'localhost'
+    console.log('🛡️ Admin logout middleware triggered for:', {
+      adminId: req.admin?._id,
+      email: req.admin?.email
     });
     
-    res.clearCookie('adminRefreshToken', {
-      path: '/api/auth/refresh',
-      domain: process.env.COOKIE_DOMAIN || 'localhost'
+    // Set flags for logout controller
+    req.isAdminLogout = true;
+    req.isAdmin = true;
+    req.adminId = req.admin._id;
+    
+    // Also set user object for logout controller
+    req.user = {
+      _id: req.admin._id,
+      email: req.admin.email,
+      name: req.admin.name,
+      role: req.admin.role
+    };
+    
+    console.log('🛡️ Admin flags set:', {
+      isAdminLogout: req.isAdminLogout,
+      isAdmin: req.isAdmin,
+      adminId: req.adminId
     });
+    
     next();
   },
-  // Call the main logout controller
-  (req, res, next) => {
-    // Pass control to auth controller logout
-    req.isAdmin = true; // Flag for admin logout
-    next();
-  },
-  logout // This is the main logout function from auth.controller.js
+  // Call the logout controller
+  logout
 );
 
 router.get('/session',
@@ -200,7 +210,54 @@ router.get('/session',
 // ============================================
 // SUBCATEGORY MANAGEMENT ROUTES
 // ============================================
+router.get('/categories/analytics', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_CATEGORY_ANALYTICS', 'categories'),
+  cacheMiddleware(300, 'admin:categories:analytics'), // Cache for 5 minutes
+  categoryController.getCategoryStats
+);
+router.get('/subcategories/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
+  cacheMiddleware(300, 'admin:subcategories:stats'), // Cache for 5 minutes
+  adminController.getSubcategoryStats
+);
+router.get('/services/stats', 
+  verifyAdmin, 
+  adminApiLimiter,
+  requirePermission('view_analytics'),
+  auditLog('VIEW_SERVICE_STATS', 'services'),
+  cacheMiddleware(300, 'admin:services:stats'), // Cache for 5 minutes
+  adminController.getServiceStats
+);
+router.post('/categories/repair-counts', 
+  verifyAdmin,
+  requirePermission('system_settings'),
+  auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
+  categoryController.repairCategoryCounts
+);
 
+router.post('/subcategories/repair-counts', 
+  verifyAdmin,
+  requirePermission('system_settings'),
+  auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
+  subcategoryController.repairSubcategoryCounts
+);
+
+// Gig statistics
+router.get('/gigs/stats', 
+  verifyAdmin, 
+  requirePermission('view_analytics'),
+  auditLog('VIEW_GIG_STATS', 'gigs'),
+  cacheMiddleware(300, 'admin:gigs:stats'), // Cache for 5 minutes
+  async (req, res, next) => {
+    req.user = { role: 'admin', _id: req.admin._id };
+    next();
+  },
+  gigController.getGigStats // Use main gig controller
+);
 
 router.get('/categories/dropdown', 
   verifyAdmin, 
@@ -412,13 +469,7 @@ router.get('/subcategories/export',
   adminController.exportSubcategories
 );
 
-router.get('/subcategories/stats', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
-  cacheMiddleware(300, 'admin:subcategories:stats'), // Cache for 5 minutes
-  adminController.getSubcategoryStats
-);
+
 
 router.post('/subcategories/bulk', 
   verifyAdmin, 
@@ -852,13 +903,6 @@ router.post('/categories/bulk-action',
   categoryController.bulkUpdateCategories
 );
 
-router.get('/categories/analytics', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_CATEGORY_ANALYTICS', 'categories'),
-  cacheMiddleware(300, 'admin:categories:analytics'), // Cache for 5 minutes
-  categoryController.getCategoryStats
-);
 
 
 // ============================================
@@ -886,14 +930,6 @@ router.get('/services',
   serviceController.getAdminServices
 );
 
-router.get('/services/stats', 
-  verifyAdmin, 
-  adminApiLimiter,
-  requirePermission('view_analytics'),
-  auditLog('VIEW_SERVICE_STATS', 'services'),
-  cacheMiddleware(300, 'admin:services:stats'), // Cache for 5 minutes
-  adminController.getServiceStats
-);
 
 router.delete('/services/:id', 
   verifyAdmin, 
@@ -1216,19 +1252,6 @@ router.get('/gigs/export',
     next();
   },
   gigController.exportGigs // Use main gig controller
-);
-
-// Gig statistics
-router.get('/gigs/stats', 
-  verifyAdmin, 
-  requirePermission('view_analytics'),
-  auditLog('VIEW_GIG_STATS', 'gigs'),
-  cacheMiddleware(300, 'admin:gigs:stats'), // Cache for 5 minutes
-  async (req, res, next) => {
-    req.user = { role: 'admin', _id: req.admin._id };
-    next();
-  },
-  gigController.getGigStats // Use main gig controller
 );
 
 // Restore gig (admin only)

@@ -482,17 +482,108 @@ serviceSchema.pre('save', async function() {
   }
   // No need to call next() in async middleware without parameter
 });
-
 serviceSchema.post('findOneAndDelete', async function (doc) {
   if (doc && doc.status === 'active') {
     try {
-      await mongoose.model('Category').decrementServicesCount(doc.category);
+      // Safely decrement category count
+      await mongoose.model('Category').findOneAndUpdate(
+        { _id: doc.category, servicesCount: { $gt: 0 } },
+        { $inc: { servicesCount: -1 } }
+      );
+      
+      // Safely decrement subcategory count if exists
+      if (doc.subcategory) {
+        await mongoose.model('Subcategory').findOneAndUpdate(
+          { _id: doc.subcategory, servicesCount: { $gt: 0 } },
+          { $inc: { servicesCount: -1 } }
+        );
+      }
     } catch (error) {
       console.error('Error decrementing service count on delete:', error);
     }
   }
 });
+serviceSchema.pre('save', async function() {
+  if (this.isModified('status')) {
+    const Service = mongoose.model('Service');
+    
+    // Get the current document from DB if not new
+    if (!this.isNew) {
+      try {
+        const currentDoc = await Service.findById(this._id);
+        if (currentDoc) {
+          this._previousStatus = currentDoc.status;
+        }
+      } catch (error) {
+        console.error('Error fetching previous status:', error);
+      }
+    }
+  }
+});
 
+serviceSchema.post('save', async function(doc) {
+  try {
+    // Only update counts if status changed
+    if (doc._previousStatus !== undefined) {
+      await updateServiceCounts(doc, doc._previousStatus);
+      // Clear the stored status
+      delete doc._previousStatus;
+    }
+  } catch (error) {
+    console.error('Error in service post-save middleware:', error);
+  }
+});
+const updateServiceCounts = async function(doc, oldStatus) {
+  try {
+    const Category = mongoose.model('Category');
+    const Subcategory = mongoose.model('Subcategory');
+    
+    const wasActive = oldStatus === 'active';
+    const isNowActive = doc.status === 'active';
+    
+    // Skip if no change or service is not active
+    if (wasActive === isNowActive || doc.isActive === false) {
+      return;
+    }
+    
+    // Update category count
+    if (!wasActive && isNowActive) {
+      // Service became active - increment count
+      await Category.findByIdAndUpdate(
+        doc.category,
+        { $inc: { servicesCount: 1 } }
+      );
+      
+      if (doc.subcategory) {
+        await Subcategory.findByIdAndUpdate(
+          doc.subcategory,
+          { $inc: { servicesCount: 1 } }
+        );
+      }
+    } else if (wasActive && !isNowActive) {
+      // Service became inactive - decrement count safely
+      await Category.findOneAndUpdate(
+        { 
+          _id: doc.category,
+          servicesCount: { $gt: 0 }
+        },
+        { $inc: { servicesCount: -1 } }
+      );
+      
+      if (doc.subcategory) {
+        await Subcategory.findOneAndUpdate(
+          { 
+            _id: doc.subcategory,
+            servicesCount: { $gt: 0 }
+          },
+          { $inc: { servicesCount: -1 } }
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Error updating service counts:', error.message);
+  }
+};
 // Indexes
 serviceSchema.index({ category: 1, status: 1 }, { name: 'category_status_idx' });
 serviceSchema.index({ createdBy: 1, status: 1 }, { name: 'creator_status_idx' });

@@ -2528,21 +2528,40 @@ const deleteGig = async (req, res, next) => {
     if (permanent === 'true' && isAdmin) {
       console.log(`[${requestId}] Permanent delete requested by admin`);
       
-      // Decrement category counts if gig was open
-      if (gig.status === 'open') {
-        try {
-          await mongoose.model('Category').decrementGigsCount(gig.projectCategory._id);
-          console.log(`[${requestId}] Decremented category count: ${gig.projectCategory._id}`);
-          
-          if (gig.subcategory) {
-            await mongoose.model('Subcategory').decrementGigsCount(gig.subcategory._id);
-            console.log(`[${requestId}] Decremented subcategory count: ${gig.subcategory._id}`);
-          }
-        } catch (error) {
-          console.error(`[${requestId}] Error decrementing counts:`, error);
-          // Continue with deletion even if count decrement fails
+      if (gig.isActive && gig.status === 'open') {
+      try {
+        // Use atomic operations to prevent negative counts
+        await Category.findByIdAndUpdate(
+          gig.projectCategory._id,
+          { 
+            $inc: { 
+              gigsCount: -1,
+              // Ensure count doesn't go below 0
+              ...(gig.projectCategory.gigsCount > 0 ? {} : { gigsCount: 0 })
+            }
+          },
+          { new: true }
+        );
+        console.log(`[${requestId}] Decremented category count: ${gig.projectCategory._id}`);
+        
+        if (gig.subcategory) {
+          await Subcategory.findByIdAndUpdate(
+            gig.subcategory._id,
+            { 
+              $inc: { 
+                gigsCount: -1,
+                // Ensure count doesn't go below 0
+                ...(gig.subcategory.gigsCount > 0 ? {} : { gigsCount: 0 })
+              }
+            },
+            { new: true }
+          );
+          console.log(`[${requestId}] Decremented subcategory count: ${gig.subcategory._id}`);
         }
+      } catch (error) {
+        console.error(`[${requestId}] Error decrementing counts:`, error);
       }
+    }
       
       // Delete images from Cloudinary
       try {
@@ -2591,20 +2610,50 @@ const deleteGig = async (req, res, next) => {
       // Soft delete
       console.log(`[${requestId}] Soft delete requested`);
       
-      // Decrement category counts if gig was open
-      if (gig.status === 'open') {
-        try {
-          await mongoose.model('Category').decrementGigsCount(gig.projectCategory._id);
-          console.log(`[${requestId}] Decremented category count for soft delete`);
-          
-          if (gig.subcategory) {
-            await mongoose.model('Subcategory').decrementGigsCount(gig.subcategory._id);
-            console.log(`[${requestId}] Decremented subcategory count for soft delete`);
-          }
-        } catch (error) {
-          console.error(`[${requestId}] Error decrementing counts for soft delete:`, error);
+      if (gig.isActive && gig.status === 'open') {
+      try {
+        // Use atomic operations with conditional decrement
+        await Category.findByIdAndUpdate(
+          gig.projectCategory._id,
+          [
+            {
+              $set: {
+                gigsCount: {
+                  $cond: {
+                    if: { $gt: ["$gigsCount", 0] },
+                    then: { $subtract: ["$gigsCount", 1] },
+                    else: 0
+                  }
+                }
+              }
+            }
+          ]
+        );
+        console.log(`[${requestId}] Decremented category count for soft delete`);
+        
+        if (gig.subcategory) {
+          await Subcategory.findByIdAndUpdate(
+            gig.subcategory._id,
+            [
+              {
+                $set: {
+                  gigsCount: {
+                    $cond: {
+                      if: { $gt: ["$gigsCount", 0] },
+                      then: { $subtract: ["$gigsCount", 1] },
+                      else: 0
+                    }
+                  }
+                }
+              }
+            ]
+          );
+          console.log(`[${requestId}] Decremented subcategory count for soft delete`);
         }
+      } catch (error) {
+        console.error(`[${requestId}] Error decrementing counts for soft delete:`, error);
       }
+    }
       
       // Update gig with soft delete fields
       result = await Gig.findByIdAndUpdate(
@@ -2737,7 +2786,30 @@ const restoreGig = async (req, res, next) => {
         });
       }
     }
-
+if (gig.status === 'open') {
+    try {
+      // Increment category count
+      await Category.findByIdAndUpdate(
+        gig.projectCategory,
+        { $inc: { gigsCount: 1 } },
+        { new: true }
+      );
+      console.log(`[${requestId}] Incremented category count for restore`);
+      
+      // Increment subcategory count if exists
+      if (gig.subcategory) {
+        await Subcategory.findByIdAndUpdate(
+          gig.subcategory,
+          { $inc: { gigsCount: 1 } },
+          { new: true }
+        );
+        console.log(`[${requestId}] Incremented subcategory count for restore`);
+      }
+    } catch (error) {
+      console.error(`[${requestId}] Error incrementing counts for restore:`, error);
+      // Continue with restoration even if count increment fails
+    }
+  }
     gig.isActive = true;
     gig.deletedAt = null;
     gig.deletedBy = null;

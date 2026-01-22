@@ -131,15 +131,21 @@ const categorySchema = new mongoose.Schema({
     maxlength: [30, 'Keyword cannot exceed 30 characters'],
   }],
   servicesCount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Services count cannot be negative'],
-  },
-  gigsCount: {
-    type: Number,
-    default: 0,
-    min: [0, 'Gigs count cannot be negative'],
-  },
+  type: Number,
+  default: 0,
+  min: [0, 'Services count cannot be negative'],
+  set: function(v) {
+    return Math.max(0, v);
+  }
+},
+gigsCount: {
+  type: Number,
+  default: 0,
+  min: [0, 'Gigs count cannot be negative'],
+  set: function(v) {
+    return Math.max(0, v);
+  }
+},
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -541,18 +547,32 @@ categorySchema.statics.incrementServicesCount = async function(categoryId, sessi
 };
 
 categorySchema.statics.decrementServicesCount = async function(categoryId) {
-  return this.findByIdAndUpdate(
+  // Use atomic operation to ensure count doesn't go below 0
+  const result = await this.findByIdAndUpdate(
     categoryId,
-    { 
-      $inc: { servicesCount: -1 },
-      $set: { lastUpdatedAt: new Date() }
-    },
+    [
+      {
+        $set: {
+          servicesCount: {
+            $cond: {
+              if: { $gt: ["$servicesCount", 0] },
+              then: { $subtract: ["$servicesCount", 1] },
+              else: 0
+            }
+          },
+          lastUpdatedAt: new Date()
+        }
+      }
+    ],
     { 
       new: true,
       runValidators: false 
     }
   );
+  
+  return result;
 };
+
 
 categorySchema.statics.incrementGigsCount = async function(categoryId) {
   return this.findByIdAndUpdate(
@@ -566,17 +586,48 @@ categorySchema.statics.incrementGigsCount = async function(categoryId) {
 };
 
 categorySchema.statics.decrementGigsCount = async function(categoryId) {
-  return this.findByIdAndUpdate(
-    categoryId,
+  // Use atomic operation with conditional update
+  const result = await this.findOneAndUpdate(
+    { 
+      _id: categoryId,
+      gigsCount: { $gt: 0 } // Only decrement if > 0
+    },
     { 
       $inc: { gigsCount: -1 },
       $set: { lastUpdatedAt: new Date() }
     },
     { 
       new: true,
-      runValidators: false 
+      runValidators: true 
     }
   );
+  
+  // If not found or count was 0, log but don't throw
+  if (!result) {
+    console.warn(`Category ${categoryId} gig count already at 0, skipping decrement`);
+  }
+  
+  return result;
+};
+
+// Add a method to get accurate counts directly from services/gigs
+categorySchema.statics.getAccurateCounts = async function(categoryId) {
+  const [servicesCount, gigsCount] = await Promise.all([
+    mongoose.model('Service').countDocuments({
+      category: categoryId,
+      status: 'active',
+      isActive: true,
+      deletedAt: null
+    }),
+    mongoose.model('Gig').countDocuments({
+      projectCategory: categoryId,
+      status: 'open',
+      isActive: true,
+      deletedAt: null
+    })
+  ]);
+  
+  return { servicesCount, gigsCount };
 };
 
 categorySchema.statics.getHierarchy = async function(categoryId, depth = 3) {
@@ -652,40 +703,70 @@ categorySchema.statics.repairCategoryCounts = async function() {
     
     const categories = await this.find({});
     let repairedCount = 0;
+    const results = [];
     
     for (const category of categories) {
-      // Get actual counts from services and gigs
-      const serviceCount = await mongoose.model('Service').countDocuments({
-        category: category._id,
-        status: 'active',
-        isActive: true,
-        deletedAt: null
-      });
-      
-      const gigCount = await mongoose.model('Gig').countDocuments({
-        projectCategory: category._id,
-        status: 'open',
-        isActive: true,
-        deletedAt: null
-      });
-      
-      // Update if counts don't match
-      if (category.servicesCount !== serviceCount || category.gigsCount !== gigCount) {
-        await this.findByIdAndUpdate(category._id, {
-          servicesCount: serviceCount,
-          gigsCount: gigCount,
-          lastUpdatedAt: new Date()
+      try {
+        const { servicesCount, gigsCount } = await this.getAccurateCounts(category._id);
+        
+        // Log the current state for debugging
+        console.log(`Category: ${category.name}`, {
+          currentServices: category.servicesCount,
+          actualServices: servicesCount,
+          currentGigs: category.gigsCount,
+          actualGigs: gigsCount
         });
         
-        console.log(`Repaired category ${category.name}: services=${serviceCount}, gigs=${gigCount}`);
-        repairedCount++;
+        // Only update if counts are different
+        if (category.servicesCount !== servicesCount || category.gigsCount !== gigsCount) {
+          await this.findByIdAndUpdate(category._id, {
+            servicesCount: Math.max(0, servicesCount), // Ensure non-negative
+            gigsCount: Math.max(0, gigsCount),         // Ensure non-negative
+            lastUpdatedAt: new Date()
+          });
+          
+          repairedCount++;
+          results.push({
+            categoryId: category._id,
+            name: category.name,
+            oldServicesCount: category.servicesCount,
+            newServicesCount: servicesCount,
+            oldGigsCount: category.gigsCount,
+            newGigsCount: gigsCount,
+            repaired: true
+          });
+          
+          console.log(`✅ Repaired category "${category.name}": services ${category.servicesCount} → ${servicesCount}, gigs ${category.gigsCount} → ${gigsCount}`);
+        } else {
+          results.push({
+            categoryId: category._id,
+            name: category.name,
+            status: 'already_correct',
+            servicesCount: servicesCount,
+            gigsCount: gigsCount
+          });
+          console.log(`✅ Category "${category.name}" already has correct counts`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to repair category ${category._id}:`, error);
+        results.push({
+          categoryId: category._id,
+          name: category.name,
+          error: error.message,
+          repaired: false
+        });
       }
     }
     
-    console.log(`Category count repair completed. Repaired ${repairedCount} categories.`);
-    return { repairedCount, totalCategories: categories.length };
+    console.log(`📊 Category count repair completed. Repaired ${repairedCount} out of ${categories.length} categories.`);
+    return { 
+      repairedCount, 
+      totalCategories: categories.length,
+      failedCount: categories.length - repairedCount,
+      details: results 
+    };
   } catch (error) {
-    console.error('Error repairing category counts:', error);
+    console.error('❌ Error repairing category counts:', error);
     throw error;
   }
 };

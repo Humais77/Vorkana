@@ -2139,20 +2139,86 @@ export const useCategoryStats = () => {
   });
 };
 
+// In useAdminDashboard.js - Fix the useSubcategoryStats hook
 export const useSubcategoryStats = () => {
   return useQuery({
     queryKey: ['admin', 'subcategories', 'stats'],
     queryFn: async () => {
       try {
         const response = await adminAPI.getSubcategoryStats();
-        return response.data;
+        
+        if (response.data.success) {
+          const statsData = response.data.data;
+          console.log('[SUBCATEGORY STATS] Backend data:', statsData);
+          
+          // Extract overview - it could be an array or object
+          let overview = {};
+          if (Array.isArray(statsData.overview)) {
+            overview = statsData.overview[0] || {};
+          } else if (typeof statsData.overview === 'object') {
+            overview = statsData.overview;
+          }
+          
+          return {
+            success: true,
+            data: {
+              overview: {
+                totalSubcategories: overview.totalSubcategories || 0,
+                activeSubcategories: overview.activeSubcategories || 0,
+                totalServices: Math.max(0, overview.totalServices || 0),
+                totalGigs: Math.max(0, overview.totalGigs || 0),
+                avgServices: Math.max(0, overview.avgServices || 0),
+                avgGigs: Math.max(0, overview.avgGigs || 0)
+              },
+              byCategory: statsData.byCategory || [],
+              growth: statsData.growth || []
+            }
+          };
+        }
+        throw new Error(response.data.message || 'Failed to fetch stats');
       } catch (error) {
-        console.error('Subcategory stats error:', error);
-        throw error;
+        console.error('[SUBCATEGORY STATS ERROR]', error);
+        // Return fallback data
+        return {
+          success: false,
+          data: {
+            overview: {
+              totalSubcategories: 0,
+              activeSubcategories: 0,
+              totalServices: 0,
+              totalGigs: 0,
+              avgServices: 0,
+              avgGigs: 0
+            },
+            byCategory: [],
+            growth: []
+          },
+          error: error.message
+        };
       }
     },
     staleTime: 30000,
-    retry: 2
+    retry: 2,
+    // Transform the data to ensure all numbers are positive
+    select: (data) => {
+      if (!data || !data.data) return data;
+      
+      const processedData = { ...data.data };
+      
+      // Ensure overview numbers are positive
+      if (processedData.overview) {
+        Object.keys(processedData.overview).forEach(key => {
+          if (typeof processedData.overview[key] === 'number') {
+            processedData.overview[key] = Math.max(0, processedData.overview[key]);
+          }
+        });
+      }
+      
+      return {
+        ...data,
+        data: processedData
+      };
+    }
   });
 };
 

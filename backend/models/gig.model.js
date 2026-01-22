@@ -510,25 +510,126 @@ gigSchema.post('save', async function(doc) {
     console.error('Error in gig post-save middleware:', error);
   }
 });
-
-// Update post-delete middleware
+gigSchema.post('findOneAndUpdate', async function(doc) {
+  // This runs when soft deleting (setting deletedAt)
+  try {
+    const update = this.getUpdate();
+    
+    // Check if this is a soft delete operation
+    if (update.deletedAt !== undefined && update.deletedAt !== null && doc) {
+      const Category = mongoose.model('Category');
+      const Subcategory = mongoose.model('Subcategory');
+      
+      // If the gig was open, decrement counts
+      if (doc.status === 'open' && doc.isActive !== false) {
+        // Decrement category count safely
+        const category = await Category.findById(doc.projectCategory);
+        if (category && category.gigsCount > 0) {
+          await Category.findByIdAndUpdate(
+            doc.projectCategory,
+            { 
+              $inc: { gigsCount: -1 },
+              ...(category.gigsCount - 1 < 0 ? { gigsCount: 0 } : {})
+            },
+            { new: true }
+          );
+          console.log(`Decremented category ${doc.projectCategory} gig count on SOFT delete`);
+        }
+        
+        // Decrement subcategory count if exists
+        if (doc.subcategory) {
+          const subcategory = await Subcategory.findById(doc.subcategory);
+          if (subcategory && subcategory.gigsCount > 0) {
+            await Subcategory.findByIdAndUpdate(
+              doc.subcategory,
+              { 
+                $inc: { gigsCount: -1 },
+                ...(subcategory.gigsCount - 1 < 0 ? { gigsCount: 0 } : {})
+              },
+              { new: true }
+            );
+            console.log(`Decremented subcategory ${doc.subcategory} gig count on SOFT delete`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in soft delete post middleware:', error);
+  }
+});
+gigSchema.post('findOneAndUpdate', async function(doc) {
+  // This also runs when restoring (clearing deletedAt)
+  try {
+    const update = this.getUpdate();
+    
+    // Check if this is a restore operation (deletedAt being set to null)
+    if (update.deletedAt === null && doc && doc.deletedAt !== null) {
+      const Category = mongoose.model('Category');
+      const Subcategory = mongoose.model('Subcategory');
+      
+      // If the gig is open, increment counts
+      if (doc.status === 'open') {
+        // Increment category count
+        await Category.findByIdAndUpdate(
+          doc.projectCategory,
+          { $inc: { gigsCount: 1 } },
+          { new: true }
+        );
+        console.log(`Incremented category ${doc.projectCategory} gig count on RESTORE`);
+        
+        // Increment subcategory count if exists
+        if (doc.subcategory) {
+          await Subcategory.findByIdAndUpdate(
+            doc.subcategory,
+            { $inc: { gigsCount: 1 } },
+            { new: true }
+          );
+          console.log(`Incremented subcategory ${doc.subcategory} gig count on RESTORE`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in restore post middleware:', error);
+  }
+});
 gigSchema.post('findOneAndDelete', async function(doc) {
+  // Only run this for HARD deletes (when document is physically removed from database)
+  // NOT for soft deletes (when deletedAt is set)
   if (doc && doc.status === 'open') {
     try {
       const Category = mongoose.model('Category');
       const Subcategory = mongoose.model('Subcategory');
       
-      // Decrement category count
-      await Category.updateGigsCount(doc.projectCategory, -1);
-      console.log(`Decremented category ${doc.projectCategory} gig count on delete`);
+      // Use safe decrement to prevent negative counts
+      const category = await Category.findById(doc.projectCategory);
+      if (category && category.gigsCount > 0) {
+        await Category.findByIdAndUpdate(
+          doc.projectCategory,
+          { 
+            $inc: { gigsCount: -1 },
+            // Ensure it doesn't go below 0
+            ...(category.gigsCount - 1 < 0 ? { gigsCount: 0 } : {})
+          }
+        );
+        console.log(`Decremented category ${doc.projectCategory} gig count on HARD delete`);
+      }
       
       // Decrement subcategory count if exists
       if (doc.subcategory) {
-        await Subcategory.decrementGigsCount(doc.subcategory);
-        console.log(`Decremented subcategory ${doc.subcategory} gig count on delete`);
+        const subcategory = await Subcategory.findById(doc.subcategory);
+        if (subcategory && subcategory.gigsCount > 0) {
+          await Subcategory.findByIdAndUpdate(
+            doc.subcategory,
+            { 
+              $inc: { gigsCount: -1 },
+              ...(subcategory.gigsCount - 1 < 0 ? { gigsCount: 0 } : {})
+            }
+          );
+          console.log(`Decremented subcategory ${doc.subcategory} gig count on HARD delete`);
+        }
       }
     } catch (error) {
-      console.error('Error decrementing gig count on delete:', error);
+      console.error('Error decrementing gig count on HARD delete:', error);
     }
   }
 });
@@ -642,35 +743,62 @@ const updateGigCounts = async function(doc, oldStatus) {
     const Category = mongoose.model('Category');
     const Subcategory = mongoose.model('Subcategory');
     
-    // Get the current status
-    const currentDoc = doc || this;
     const wasOpen = oldStatus === 'open';
-    const isNowOpen = currentDoc.status === 'open';
+    const isNowOpen = doc.status === 'open';
     
-    console.log(`Gig Count Update: ID=${currentDoc._id}, Old=${oldStatus}, New=${currentDoc.status}, Category=${currentDoc.projectCategory}`);
+    // Skip if no change or gig is not active
+    if (wasOpen === isNowOpen || doc.isActive === false) {
+      return;
+    }
     
-    // Only update counts if category exists
-    if (currentDoc.projectCategory) {
-      // Update category count
-      if (!wasOpen && isNowOpen) {
-        // Gig became open - increment count
-        await Category.updateGigsCount(currentDoc.projectCategory, 1);
-        console.log(`Incremented category ${currentDoc.projectCategory} gig count`);
-      } else if (wasOpen && !isNowOpen) {
-        // Gig became closed/assigned - decrement count
-        await Category.updateGigsCount(currentDoc.projectCategory, -1);
-        console.log(`Decremented category ${currentDoc.projectCategory} gig count`);
-      }
+    // Use atomic operations with proper conditions
+    if (!wasOpen && isNowOpen) {
+      // Gig became open - increment counts
+      await Category.findByIdAndUpdate(
+        doc.projectCategory,
+        { 
+          $inc: { gigsCount: 1 },
+          $set: { lastUpdatedAt: new Date() }
+        },
+        { session: this.$session() }
+      );
       
-      // Update subcategory count if exists
-      if (currentDoc.subcategory) {
-        if (!wasOpen && isNowOpen) {
-          await Subcategory.incrementGigsCount(currentDoc.subcategory);
-          console.log(`Incremented subcategory ${currentDoc.subcategory} gig count`);
-        } else if (wasOpen && !isNowOpen) {
-          await Subcategory.decrementGigsCount(currentDoc.subcategory);
-          console.log(`Decremented subcategory ${currentDoc.subcategory} gig count`);
-        }
+      if (doc.subcategory) {
+        await Subcategory.findByIdAndUpdate(
+          doc.subcategory,
+          { 
+            $inc: { gigsCount: 1 },
+            $set: { lastUpdatedAt: new Date() }
+          },
+          { session: this.$session() }
+        );
+      }
+    } else if (wasOpen && !isNowOpen) {
+      // Gig became closed - decrement with safety
+      await Category.findOneAndUpdate(
+        { 
+          _id: doc.projectCategory,
+          gigsCount: { $gt: 0 }
+        },
+        { 
+          $inc: { gigsCount: -1 },
+          $set: { lastUpdatedAt: new Date() }
+        },
+        { session: this.$session() }
+      );
+      
+      if (doc.subcategory) {
+        await Subcategory.findOneAndUpdate(
+          { 
+            _id: doc.subcategory,
+            gigsCount: { $gt: 0 }
+          },
+          { 
+            $inc: { gigsCount: -1 },
+            $set: { lastUpdatedAt: new Date() }
+          },
+          { session: this.$session() }
+        );
       }
     }
   } catch (error) {

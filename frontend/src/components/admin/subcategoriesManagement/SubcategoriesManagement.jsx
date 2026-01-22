@@ -7,11 +7,14 @@ import {
   useDeleteSubcategory,
   useBulkSubcategoryOperations,
   useCategoriesForDropdown,
-  useExportSubcategories
+  useExportSubcategories,
+  useSubcategoryStats
 } from '../../../hooks/useAdminDashboard';
 import { useSubcategoryToast } from '../../../hooks/useSubcategoryToast';
 import {
   FiFolder,
+  FiTrendingUp,
+  FiBriefcase,
   FiSearch,
   FiFilter,
   FiEdit2,
@@ -61,7 +64,15 @@ const SubcategoryTableRow = memo(({
 
   const isUpdating = isUpdatingId === subcategory._id;
   const isDeleting = isDeletingId === subcategory._id;
-
+ const safeNumber = (value, defaultValue = 0) => {
+    if (value === undefined || value === null) return defaultValue;
+    const num = Number(value);
+    return isNaN(num) ? defaultValue : Math.max(0, num);
+  };
+  
+  // Safely get services and gigs counts
+  const servicesCount = safeNumber(subcategory.servicesCount);
+  const gigsCount = safeNumber(subcategory.gigsCount);
   return (
     <React.Fragment>
       <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
@@ -115,10 +126,10 @@ const SubcategoryTableRow = memo(({
           <div className="text-sm text-gray-900">
             <div className="flex items-center gap-1">
               <FiGrid className="h-3 w-3 text-gray-400" />
-              <span>{subcategory.servicesCount || 0} services</span>
+              <span>{servicesCount} services</span>
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {subcategory.gigsCount || 0} gigs
+              {gigsCount} gigs
             </div>
           </div>
         </td>
@@ -270,7 +281,8 @@ const SubcategoriesManagement = () => {
   const deleteSubcategoryMutation = useDeleteSubcategory();
   const bulkOperationsMutation = useBulkSubcategoryOperations();
   const exportSubcategoriesMutation = useExportSubcategories();
-  
+  const { data: statsData } = useSubcategoryStats();
+const backendStats = statsData?.data?.overview || {};
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -335,7 +347,16 @@ const SubcategoriesManagement = () => {
       showSubcategoryError(error.response?.data?.message || 'Failed to perform bulk action');
     }
   }, [selectedSubcategories, bulkOperationsMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
+// Utility functions
+const safeNumber = (value, defaultValue = 0) => {
+  if (value === undefined || value === null) return defaultValue;
+  const num = Number(value);
+  return isNaN(num) ? defaultValue : Math.max(0, num);
+};
 
+const formatNumber = (value) => {
+  return safeNumber(value).toLocaleString('en-US');
+};
   const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
     if (!selectedSubcategory) return;
     
@@ -450,16 +471,44 @@ const SubcategoriesManagement = () => {
       showSubcategoryError('Failed to export subcategories');
     }
   }, [exportSubcategoriesMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
-
-  const stats = useMemo(() => {
-    return {
-      total: pagination.total || subcategories.length,
-      active: subcategories.filter(s => s.isActive).length,
-      inactive: subcategories.filter(s => !s.isActive).length,
-      totalServices: subcategories.reduce((sum, sub) => sum + (sub.servicesCount || 0), 0),
-      totalGigs: subcategories.reduce((sum, sub) => sum + (sub.gigsCount || 0), 0)
-    };
-  }, [subcategories, pagination.total]);
+const stats = useMemo(() => {
+  // Log for debugging
+  console.log('[DEBUG] Categories data:', {
+    categoriesCount: categories.length,
+    categoriesSample: categories.slice(0, 3).map(c => ({
+      name: c.name,
+      id: c._id,
+      allowSubcategories: c.allowSubcategories
+    })),
+    backendByCategory: statsData?.data?.byCategory,
+    backendByCategoryCount: statsData?.data?.byCategory?.length
+  });
+  
+  // Calculate categories with subcategories from backend
+  const categoriesWithSubcategories = statsData?.data?.byCategory?.length || 0;
+  
+  return {
+    // Subcategories stats
+    total: backendStats.totalSubcategories || pagination.total || subcategories.length,
+    active: backendStats.activeSubcategories || subcategories.filter(s => s.isActive).length,
+    inactive: subcategories.filter(s => !s.isActive).length,
+    
+    // Content stats
+    totalServices: Math.max(0, backendStats.totalServices || 
+      subcategories.reduce((sum, sub) => sum + (Math.max(0, sub.servicesCount || 0)), 0)),
+    totalGigs: Math.max(0, backendStats.totalGigs || 
+      subcategories.reduce((sum, sub) => sum + (Math.max(0, sub.gigsCount || 0)), 0)),
+    
+    // Categories - prioritize categories with subcategories from backend
+    totalCategories: categoriesWithSubcategories > 0 ? categoriesWithSubcategories : categories.length,
+    categoriesWithSubcategories: categoriesWithSubcategories,
+    totalAllCategories: categories.length,
+    
+    // Additional metrics
+    avgServices: Math.max(0, backendStats.avgServices || 0),
+    avgGigs: Math.max(0, backendStats.avgGigs || 0)
+  };
+}, [backendStats, statsData, subcategories, pagination.total, categories]);
 
   const isCreating = createSubcategoryMutation.isLoading;
   const isUpdating = updateSubcategoryMutation.isLoading;
@@ -525,55 +574,101 @@ const SubcategoriesManagement = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Subcategories</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
-            </div>
-            <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <FiFolder className="h-6 w-6 text-indigo-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active</p>
-              <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
-            </div>
-            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <FiCheckCircle className="h-6 w-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Services</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalServices}</p>
-            </div>
-            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FiGrid className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Categories</p>
-              <p className="text-2xl font-bold text-purple-600 mt-1">{categories.length}</p>
-            </div>
-            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <FiFolderPlus className="h-6 w-6 text-purple-600" />
-            </div>
-          </div>
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  {/* Total Subcategories Card */}
+  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-600">Total Subcategories</p>
+        <p className="text-2xl font-bold text-gray-900 mt-1">
+          {stats.total.toLocaleString()}
+        </p>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+            {stats.active} active
+          </span>
+          {stats.inactive > 0 && (
+            <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
+              {stats.inactive} inactive
+            </span>
+          )}
         </div>
       </div>
+      <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+        <FiFolder className="h-6 w-6 text-indigo-600" />
+      </div>
+    </div>
+  </div>
+  
+  {/* Total Services Card */}
+  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-600">Total Services</p>
+        <p className="text-2xl font-bold text-blue-600 mt-1">
+          {stats.totalServices.toLocaleString()}
+        </p>
+        <p className="text-xs text-gray-500 mt-2 flex items-center">
+          <FiTrendingUp className="h-3 w-3 mr-1" />
+          Avg: {stats.avgServices.toFixed(1)} per subcategory
+        </p>
+      </div>
+      <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+        <FiGrid className="h-6 w-6 text-blue-600" />
+      </div>
+    </div>
+  </div>
+  
+  {/* Total Gigs Card */}
+  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-600">Total Gigs</p>
+        <p className="text-2xl font-bold text-green-600 mt-1">
+          {stats.totalGigs.toLocaleString()}
+        </p>
+        <p className="text-xs text-gray-500 mt-2 flex items-center">
+          <FiTrendingUp className="h-3 w-3 mr-1" />
+          Avg: {stats.avgGigs.toFixed(1)} per subcategory
+        </p>
+      </div>
+      <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+        <FiBriefcase className="h-6 w-6 text-green-600" />
+      </div>
+    </div>
+  </div>
+  
+  {/* Categories Card */}
+  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm font-medium text-gray-600">Categories</p>
+      <p className="text-2xl font-bold text-purple-600 mt-1">
+        {/* Use the backend byCategory count if available, otherwise use categories.length */}
+        {safeNumber(
+          statsData?.data?.byCategory?.length || 
+          categories.length || 
+          0
+        ).toLocaleString()}
+      </p>
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">
+          With subcategories
+        </span>
+        {/* Show total categories from dropdown if different */}
+        {categories.length > 0 && categories.length !== (statsData?.data?.byCategory?.length || 0) && (
+          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">
+            {categories.length} total
+          </span>
+        )}
+      </div>
+    </div>
+    <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+      <FiFolderPlus className="h-6 w-6 text-purple-600" />
+    </div>
+  </div>
+</div>
+</div>
 
       {/* Bulk Actions */}
       {selectedSubcategories.length > 0 && (

@@ -290,7 +290,14 @@ subcategorySchema.post('save', async function (doc) {
     console.error('Error updating category stats:', error);
   }
 });
-
+subcategorySchema.post('save', async function (doc) {
+  try {
+    // This is handled by individual service/gig operations
+    // No automatic count updates here
+  } catch (error) {
+    console.error('Error in subcategory post-save:', error);
+  }
+});
 // Pre-delete middleware
 subcategorySchema.pre('findOneAndUpdate', async function () {
   const update = this.getUpdate();
@@ -332,8 +339,11 @@ subcategorySchema.statics.incrementServicesCount = async function(subcategoryId)
 };
 
 subcategorySchema.statics.decrementServicesCount = async function(subcategoryId) {
-  return this.findByIdAndUpdate(
-    subcategoryId,
+  return this.findOneAndUpdate(
+    { 
+      _id: subcategoryId,
+      servicesCount: { $gt: 0 } // Only decrement if > 0
+    },
     { 
       $inc: { servicesCount: -1 },
       $set: { lastUpdatedAt: new Date() }
@@ -341,6 +351,7 @@ subcategorySchema.statics.decrementServicesCount = async function(subcategoryId)
     { new: true }
   );
 };
+
 
 subcategorySchema.statics.incrementGigsCount = async function(subcategoryId) {
   return this.findByIdAndUpdate(
@@ -354,16 +365,27 @@ subcategorySchema.statics.incrementGigsCount = async function(subcategoryId) {
 };
 
 subcategorySchema.statics.decrementGigsCount = async function(subcategoryId) {
-  return this.findByIdAndUpdate(
-    subcategoryId,
+  const result = await this.findOneAndUpdate(
+    { 
+      _id: subcategoryId,
+      gigsCount: { $gt: 0 } // Ensure we don't go negative
+    },
     { 
       $inc: { gigsCount: -1 },
       $set: { lastUpdatedAt: new Date() }
     },
-    { new: true }
+    { 
+      new: true,
+      runValidators: true 
+    }
   );
+  
+  if (!result) {
+    console.warn(`Subcategory ${subcategoryId} gig count already at 0, skipping decrement`);
+  }
+  
+  return result;
 };
-
 // Query helpers
 subcategorySchema.query.active = function() {
   return this.where({ isActive: true, deletedAt: null });

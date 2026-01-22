@@ -5390,14 +5390,14 @@ const bulkUpdateSubcategories = async (req, res) => {
   }
 };
 
-// Get Subcategory Statistics
+// Updated getSubcategoryStats function
 const getSubcategoryStats = async (req, res) => {
   const requestId = uuidv4();
   
   try {
     // Generate cache key
     const cacheKey = generateCacheKey('admin:stats:subcategories', {
-      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+      timestamp: Math.floor(Date.now() / 60000)
     });
     
     // Try to get from cache
@@ -5412,75 +5412,133 @@ const getSubcategoryStats = async (req, res) => {
       });
     }
     
-    const stats = await Subcategory.aggregate([
-      { $match: { deletedAt: null } },
-      {
-        $facet: {
-          overview: [
-            {
-              $group: {
-                _id: null,
-                totalSubcategories: { $sum: 1 },
-                activeSubcategories: { $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] } },
-                totalServices: { $sum: '$servicesCount' },
-                totalGigs: { $sum: '$gigsCount' },
-                avgServices: { $avg: '$servicesCount' },
-                avgGigs: { $avg: '$gigsCount' }
-              }
-            }
-          ],
-          byCategory: [
-            {
-              $group: {
-                _id: '$category',
-                count: { $sum: 1 },
-                totalServices: { $sum: '$servicesCount' },
-                totalGigs: { $sum: '$gigsCount' }
-              }
-            },
-            { $sort: { count: -1 } },
-            { $limit: 10 }
-          ],
-          growth: [
-            {
-              $group: {
-                _id: {
-                  year: { $year: '$createdAt' },
-                  month: { $month: '$createdAt' }
-                },
-                count: { $sum: 1 }
-              }
-            },
-            { $sort: { '_id.year': 1, '_id.month': 1 } },
-            { $limit: 12 }
-          ]
-        }
-      }
+    // FIXED AGGREGATION: Use direct counts from services and gigs
+    const [subcategories, categoryStats] = await Promise.all([
+      Subcategory.find({ deletedAt: null })
+        .populate('category', 'name slug')
+        .select('name slug category servicesCount gigsCount isActive')
+        .lean(),
+      
+      // Get actual counts from services and gigs grouped by subcategory
+      Promise.all([
+        Service.aggregate([
+          { $match: { status: 'active', isActive: true, deletedAt: null } },
+          { $group: { _id: '$subcategory', count: { $sum: 1 } } }
+        ]),
+        Gig.aggregate([
+          { $match: { status: 'open', isActive: true, deletedAt: null } },
+          { $group: { _id: '$subcategory', count: { $sum: 1 } } }
+        ])
+      ])
     ]);
 
-    // Get category names for byCategory
-    const byCategory = stats[0]?.byCategory || [];
-    const categoryIds = byCategory.map(item => item._id).filter(id => id);
+    // Create maps for actual counts
+    const serviceCountMap = {};
+    const gigCountMap = {};
     
-    const categories = await Category.find({ _id: { $in: categoryIds } })
-      .select('name slug')
-      .lean();
+    // Process service counts
+    if (categoryStats[0]) {
+      categoryStats[0].forEach(item => {
+        if (item._id) {
+          serviceCountMap[item._id.toString()] = item.count;
+        }
+      });
+    }
     
-    const categoryMap = {};
-    categories.forEach(cat => {
-      categoryMap[cat._id.toString()] = cat;
+    // Process gig counts
+    if (categoryStats[1]) {
+      categoryStats[1].forEach(item => {
+        if (item._id) {
+          gigCountMap[item._id.toString()] = item.count;
+        }
+      });
+    }
+
+    // Update subcategories with actual counts
+    const updatedSubcategories = subcategories.map(sub => {
+      const subId = sub._id.toString();
+      const actualServices = serviceCountMap[subId] || 0;
+      const actualGigs = gigCountMap[subId] || 0;
+      
+      // Fix negative counts
+      const fixedServices = Math.max(0, actualServices);
+      const fixedGigs = Math.max(0, actualGigs);
+      
+      return {
+        ...sub,
+        servicesCount: fixedServices,
+        gigsCount: fixedGigs
+      };
     });
-    
-    const byCategoryWithNames = byCategory.map(item => ({
-      ...item,
-      category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
-    }));
+
+    // Calculate overview
+    const overview = {
+      totalSubcategories: updatedSubcategories.length,
+      activeSubcategories: updatedSubcategories.filter(s => s.isActive).length,
+      totalServices: updatedSubcategories.reduce((sum, sub) => sum + sub.servicesCount, 0),
+      totalGigs: updatedSubcategories.reduce((sum, sub) => sum + sub.gigsCount, 0),
+      avgServices: updatedSubcategories.length > 0 
+        ? updatedSubcategories.reduce((sum, sub) => sum + sub.servicesCount, 0) / updatedSubcategories.length
+        : 0,
+      avgGigs: updatedSubcategories.length > 0 
+        ? updatedSubcategories.reduce((sum, sub) => sum + sub.gigsCount, 0) / updatedSubcategories.length
+        : 0
+    };
+
+    // Group by category
+    const byCategoryMap = {};
+    updatedSubcategories.forEach(sub => {
+      const catId = sub.category?._id?.toString() || 'unknown';
+      
+      if (!byCategoryMap[catId]) {
+        byCategoryMap[catId] = {
+          _id: sub.category?._id || null,
+          count: 0,
+          totalServices: 0,
+          totalGigs: 0,
+          category: sub.category || { name: 'Unknown', slug: '' }
+        };
+      }
+      
+      byCategoryMap[catId].count += 1;
+      byCategoryMap[catId].totalServices += sub.servicesCount;
+      byCategoryMap[catId].totalGigs += sub.gigsCount;
+    });
+
+    const byCategory = Object.values(byCategoryMap).sort((a, b) => b.count - a.count);
+
+    // Get growth data
+    const growth = await Subcategory.aggregate([
+      { $match: { deletedAt: null } },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+      { $limit: 12 }
+    ]);
+
+    // Update database with corrected counts
+    for (const sub of updatedSubcategories) {
+      if (sub.servicesCount !== sub.servicesCount || sub.gigsCount !== sub.gigsCount) {
+        await Subcategory.findByIdAndUpdate(sub._id, {
+          servicesCount: Math.max(0, sub.servicesCount),
+          gigsCount: Math.max(0, sub.gigsCount)
+        });
+      }
+    }
 
     const response = {
       success: true,
       data: {
-        ...stats[0],
-        byCategory: byCategoryWithNames
+        overview: [overview],
+        byCategory,
+        growth
       },
       requestId,
       timestamp: new Date().toISOString()
