@@ -163,13 +163,26 @@ export const useAuthStore = create(
         localStorage.setItem('userInfo', JSON.stringify(updatedUser));
       },
       
-      // Enhanced logout function
       logout: async (isAdmin = false) => {
         set({ loading: true });
         
         try {
-          // Call comprehensive logout utility
-          await comprehensiveLogout();
+          // Call appropriate logout endpoint
+          const endpoint = isAdmin ? '/api/admin/logout' : '/api/auth/logout';
+          
+          await fetch(endpoint, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+          }).catch(() => {
+            // If main endpoint fails, try the other one
+            const fallbackEndpoint = isAdmin ? '/api/auth/logout' : '/api/admin/logout';
+            return fetch(fallbackEndpoint, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+            });
+          });
           
           // Clear all storage
           clearAllStorage();
@@ -183,16 +196,11 @@ export const useAuthStore = create(
             lastActivity: Date.now()
           });
           
-          // Dispatch logout event for other components
+          // Dispatch appropriate logout event
           const logoutEvent = new CustomEvent('auth-logout', { 
             detail: { isAdmin } 
           });
           window.dispatchEvent(logoutEvent);
-          
-          // If admin logout, also clear admin-specific state
-          if (isAdmin) {
-            window.dispatchEvent(new Event('admin-logout'));
-          }
           
           console.log(`${isAdmin ? 'Admin' : 'User'} logout successful`);
           
@@ -451,7 +459,7 @@ export const isUserEmailVerified = () => useAuthStore.getState().isEmailVerified
 // Export logout utilities
 export { comprehensiveLogout, clearAllStorage };
 
-// Activity tracker setup
+// store/useAuthStore.js
 if (typeof window !== 'undefined') {
   // Track user activity
   const trackActivity = () => {
@@ -464,10 +472,10 @@ if (typeof window !== 'undefined') {
     window.addEventListener(event, trackActivity, { passive: true });
   });
   
-  // Periodic session check
-  setInterval(() => {
-    useAuthStore.getState().checkSessionValidity();
-  }, 60000); // Check every minute
+  // Optional: Keep session check but make it less frequent (30 minutes)
+  // setInterval(() => {
+  //   useAuthStore.getState().checkSessionValidity();
+  // }, 30 * 60 * 1000); // Check every 30 minutes
   
   // Listen for storage events (for multi-tab sync)
   window.addEventListener('storage', (event) => {

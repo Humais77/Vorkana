@@ -1,10 +1,11 @@
-// api/auth.js
+// api/auth.js - Fix the missing functions and remove duplicates
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'; // Changed from 3000
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
 
-// Create axios instance with optimized configuration
 const axiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 30000,
@@ -20,94 +21,157 @@ const generateRequestId = () => {
   return `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 };
 
-// Request interceptor for logging and adding request ID
 axiosInstance.interceptors.request.use(
-  (config) => {
+  async (config) => {
     const requestId = generateRequestId();
     config.headers['X-Request-ID'] = requestId;
     
+    // SPECIAL HANDLING FOR LOGOUT: Don't try to refresh CSRF token
+    const isLogoutRequest = config.url === '/api/auth/logout' && config.method === 'post';
+    
+    if (isLogoutRequest) {
+      console.log('Logout request detected, using current CSRF token if available');
+      // Just use whatever CSRF token we have, don't try to refresh
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        if (config.data && typeof config.data === 'object') {
+          config.data.csrfToken = csrfToken;
+        }
+      }
+      return config;
+    }
+    
+    // Add CSRF token for other non-GET requests
+    if (config.method !== 'get' && config.method !== 'GET') {
+      // Check if token is expired
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        try {
+          await refreshCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token:', error.message);
+        }
+      }
+      
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        // Also add to body for form submissions
+        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
+          config.data.csrfToken = csrfToken;
+        }
+      }
+    }
+    
     if (DEBUG) {
-      console.group(`📤 Request: ${config.method?.toUpperCase() || 'GET'} ${config.url}`);
-      console.log('Headers:', config.headers);
-      console.log('Data:', config.data);
-      console.groupEnd();
+      console.log(`📤 Request: ${config.method?.toUpperCase()} ${config.url}`);
     }
     
     return config;
   },
   (error) => {
-    if (DEBUG) console.error('❌ Request Error:', error);
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for handling errors
+// Update response interceptor for logout
 axiosInstance.interceptors.response.use(
   (response) => {
-    if (DEBUG) {
-      console.group(`📥 Response: ${response.config.method?.toUpperCase() || 'GET'} ${response.config.url}`);
-      console.log('Status:', response.status);
-      console.log('Data:', response.data);
-      console.groupEnd();
+    // Update CSRF token from response
+    if (response.data?.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
     }
+    
+    if (DEBUG) {
+      console.log(`📥 Response: ${response.status} ${response.config.url}`);
+    }
+    
     return response;
   },
   async (error) => {
-    const originalRequest = error.config;
+    const isLogoutRequest = error.config?.url === '/api/auth/logout' && error.config?.method === 'post';
     
-    // Handle specific status codes
-    if (error.response) {
-      const { status, data } = error.response;
-      
-      if (DEBUG) {
-        console.group(`❌ Error: ${originalRequest.method?.toUpperCase() || 'GET'} ${originalRequest.url}`);
-        console.log('Status:', status);
-        console.log('Data:', data);
-        console.groupEnd();
-      }
-      
-      // Check if it's a login/register endpoint - don't redirect for auth errors
-      const isAuthEndpoint = originalRequest.url?.includes('/auth/login') || 
-                            originalRequest.url?.includes('/auth/register');
-      
-      if (status === 401 && !isAuthEndpoint && !originalRequest._retry) {
-        // Try to refresh token for expired sessions
-        originalRequest._retry = true;
-        
-        try {
-          await axiosInstance.post('/api/auth/refresh', {}, {
-            withCredentials: true,
-            headers: { 'X-Silent-Refresh': 'true' }
-          });
-          
-          // Retry original request after refresh
-          return axiosInstance(originalRequest);
-        } catch (refreshError) {
-          // Clear auth data on refresh failure
-          localStorage.removeItem('userInfo');
-          
-          // Only redirect if not already on auth pages
-          if (!window.location.pathname.includes('/signin') && 
-              !window.location.pathname.includes('/signup')) {
-            setTimeout(() => {
-              window.location.href = '/signin?session=expired';
-            }, 1000);
-          }
+    // SPECIAL HANDLING FOR LOGOUT 403: Clear everything and proceed
+    if (isLogoutRequest && error.response?.status === 403) {
+      console.log('Logout got 403, clearing auth data anyway');
+      clearAuthData();
+      // Return success response anyway to prevent lockout
+      return Promise.resolve({
+        data: {
+          success: true,
+          message: 'Logged out (security session cleared)',
+          csrfCleared: true
         }
+      });
+    }
+    
+    // Handle CSRF errors for non-logout requests
+    if (!isLogoutRequest && error.response?.status === 403 && 
+        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      console.log('CSRF token invalid, refreshing...');
+      
+      try {
+        // Try to refresh CSRF token
+        await refreshCSRFToken();
+        
+        // Retry original request
+        if (error.config) {
+          error.config.headers['X-CSRF-Token'] = csrfToken;
+          if (error.config.data && typeof error.config.data === 'object') {
+            error.config.data.csrfToken = csrfToken;
+          }
+          return axiosInstance(error.config);
+        }
+      } catch (refreshError) {
+        console.error('CSRF refresh failed:', refreshError);
+        // Clear auth and redirect to login
+        clearAuthData();
+        window.location.href = '/signin?csrf_error=true';
       }
-    } else if (error.request) {
-      // Network error
-      if (DEBUG) console.error('🌐 Network Error:', error.message);
-    } else {
-      // Request configuration error
-      if (DEBUG) console.error('⚙️ Request Setup Error:', error.message);
     }
     
     return Promise.reject(error);
   }
 );
 
-// Validation utilities
+// CSRF token functions
+const setCSRFToken = (token, expiresAt) => {
+  csrfToken = token;
+  csrfTokenExpiry = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+  
+  localStorage.setItem('csrfToken', token);
+  localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry);
+};
+
+const refreshCSRFToken = async () => {
+  try {
+    console.log('Refreshing CSRF token...');
+    const response = await axiosInstance.get('/api/csrf-token'); // Changed endpoint
+    if (response.data.success) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('CSRF token refreshed successfully');
+      return csrfToken;
+    }
+    throw new Error('Failed to refresh CSRF token');
+  } catch (error) {
+    console.error('Failed to refresh CSRF token:', error.message);
+    throw error;
+  }
+};
+
+const clearCSRFToken = () => {
+  csrfToken = null;
+  csrfTokenExpiry = 0;
+  localStorage.removeItem('csrfToken');
+  localStorage.removeItem('csrfTokenExpiry');
+};
+
+const clearAuthData = () => {
+  localStorage.removeItem('userInfo');
+  clearCSRFToken();
+};
+
+// Validation utilities (keep as is)
 export const validatePassword = (password) => {
   if (typeof password !== 'string') {
     return { valid: false, message: 'Password must be a string' };
@@ -168,57 +232,122 @@ export const validateName = (name) => {
 export const authAPI = {
   // Authentication
   login: async (userData) => {
-    try {
-      const response = await axiosInstance.post('/api/auth/login', userData);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { success: false, message: 'Login failed' };
+  try {
+    console.log('Starting login process...');
+    
+    // FIRST: Get CSRF token if not available
+    if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+      console.log('Getting CSRF token before login...');
+      try {
+        await refreshCSRFToken();
+        console.log('CSRF token obtained for login');
+      } catch (csrfError) {
+        console.warn('Failed to get CSRF token before login:', csrfError.message);
+        // Continue anyway - server will allow login without CSRF
+      }
     }
-  },
+    
+    // Add CSRF token to login request if we have it
+    const loginData = { ...userData };
+    if (csrfToken) {
+      loginData.csrfToken = csrfToken;
+    }
+    
+    console.log('Sending login request with CSRF token:', !!csrfToken);
+    const response = await axiosInstance.post('/api/auth/login', loginData);
+    
+    // Store CSRF token from response (new one generated by server)
+    if (response.data.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('New CSRF token stored from login response');
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Login API error:', error.response?.data || error.message);
+    throw error.response?.data || { success: false, message: 'Login failed' };
+  }
+},
   
   register: async (userData) => {
     try {
+      // Get CSRF token first
+      if (!csrfToken) {
+        await refreshCSRFToken();
+      }
+      
       const response = await axiosInstance.post('/api/auth/register', userData);
+      if (response.data.csrfToken) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Registration failed' };
     }
   },
-  
   logout: async () => {
     try {
-      await axiosInstance.post('/api/auth/logout');
-    } finally {
-      localStorage.removeItem('userInfo');
+      console.log('Attempting logout...');
+      
+      // Get current CSRF token for logout attempt
+      const currentToken = csrfToken;
+      
+      const response = await axiosInstance.post('/api/auth/logout', {
+        csrfToken: currentToken || undefined // Send token if we have it
+      });
+      
+      // Always clear auth data regardless of response
+      clearAuthData();
+      
+      console.log('Logout successful:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Logout API error:', error);
+      
+      // ALWAYS clear auth data even if API call fails
+      clearAuthData();
+      
+      // Return success anyway to prevent lockout
+      return {
+        success: true,
+        message: 'Logged out (local session cleared)',
+        localOnly: true
+      };
     }
   },
   
-  // Session management
+  // Session management - FIXED: Add checkSessionStatus
   refreshSession: async () => {
     try {
       const response = await axiosInstance.post('/api/auth/refresh');
+      if (response.data.csrfToken) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Session refresh failed' };
     }
   },
   
+  // ADD THIS FUNCTION: checkSessionStatus
   checkSessionStatus: async () => {
     try {
       const response = await axiosInstance.get('/api/auth/session/status');
       return response.data;
     } catch (error) {
-      throw error.response?.data || { success: false, message: 'Session check failed' };
+      // If server returns an error, assume session is not valid
+      return { 
+        success: false, 
+        authenticated: false,
+        message: 'Session check failed',
+        error: error.response?.data?.message || error.message
+      };
     }
   },
   
-  // Profile management
   getProfile: async () => {
     try {
       const response = await axiosInstance.get('/api/auth/profile');
-      if (response.data.success && response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Failed to fetch profile' };
@@ -226,7 +355,6 @@ export const authAPI = {
   },
   
   updateProfile: async (userData) => {
-    // Clean empty fields
     const cleanData = Object.fromEntries(
       Object.entries(userData).filter(([_, v]) => 
         v !== undefined && v !== null && v !== ''
@@ -235,11 +363,6 @@ export const authAPI = {
     
     try {
       const response = await axiosInstance.put('/api/auth/profile', cleanData);
-      
-      if (response.data.success && response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
-      }
-      
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Failed to update profile' };
@@ -286,7 +409,7 @@ export const authAPI = {
     }
   },
   
-  // Password recovery
+  // Password recovery - REMOVED DUPLICATES
   forgotPassword: async (email) => {
     try {
       const response = await axiosInstance.post('/api/auth/forgot-password', { email });
@@ -302,6 +425,9 @@ export const authAPI = {
         token,
         newPassword
       });
+      if (response.data.csrfToken) {
+        setCSRFToken(response.data.csrfToken);
+      }
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Failed to reset password' };
@@ -327,14 +453,41 @@ export const authAPI = {
         email,
         password
       });
-      
-      if (response.data.success && response.data.user) {
-        localStorage.setItem('userInfo', JSON.stringify(response.data.user));
+      if (response.data.csrfToken) {
+        setCSRFToken(response.data.csrfToken);
       }
-      
       return response.data;
     } catch (error) {
       throw error.response?.data || { success: false, message: 'Failed to reactivate account' };
+    }
+  },
+  
+  // CSRF token management - FIXED ENDPOINT
+  getCSRFToken: async () => {
+    try {
+      console.log('Getting CSRF token...');
+      const response = await axiosInstance.get('/api/csrf-token'); // Changed endpoint
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+        console.log('CSRF token received');
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get CSRF token:', error.response?.data || error.message);
+      throw error.response?.data || { success: false, message: 'Failed to get CSRF token' };
+    }
+  },
+  
+  refreshCSRFToken: async () => {
+    try {
+      const response = await axiosInstance.post('/api/auth/csrf-token/refresh');
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to refresh CSRF token:', error);
+      throw error.response?.data || { success: false, message: 'Failed to refresh CSRF token' };
     }
   },
   
@@ -390,7 +543,6 @@ export const authAPI = {
     }
   },
   
-  // Utility functions
   isAuthenticated: () => {
     try {
       const userInfo = localStorage.getItem('userInfo');
@@ -409,8 +561,12 @@ export const authAPI = {
     }
   },
   
-  clearAuthData: () => {
-    localStorage.removeItem('userInfo');
+  clearAuthData: clearAuthData,
+  
+  getCSRFTokenValue: () => csrfToken,
+  
+  hasValidCSRFToken: () => {
+    return csrfToken && Date.now() < parseInt(csrfTokenExpiry);
   },
   
   isEmailVerified: () => {
@@ -466,7 +622,7 @@ export const authAPI = {
   }
 };
 
-// User management API
+// User management API (keep as is)
 export const userAPI = {
   uploadProfilePicture: async (file) => {
     const formData = new FormData();

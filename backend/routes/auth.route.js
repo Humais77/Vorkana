@@ -27,7 +27,8 @@ const {
    terminateSession,
    terminateAllOtherSessions,
    refreshSession,
-   checkSessionStatus
+   checkSessionStatus,
+    refreshCSRFToken
 } = require("../controllers/auth.controller.js");
 const { 
   protect, 
@@ -357,5 +358,26 @@ router.get("/google/callback",
       }
     })(req, res, next);
   }
+);
+router.get("/csrf-token", (req, res) => {
+  const { csrfToken } = req;
+  if (csrfToken) {
+    res.json({
+      success: true,
+      csrfToken,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000
+    });
+  } else {
+    res.status(400).json({
+      success: false,
+      message: 'CSRF token not available'
+    });
+  }
+});
+
+// Refresh CSRF token (requires authentication)
+router.post("/csrf-token/refresh",
+  SessionMiddleware.authenticate,
+  refreshCSRFToken
 );
 module.exports = router;

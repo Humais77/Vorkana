@@ -1,5 +1,6 @@
 // services/session.service.js
 const Session = require('../models/session.model');
+const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const UAParser = require('ua-parser-js');
@@ -15,26 +16,30 @@ class SessionService {
      this.adminIdleTimeout = 60 * 60 * 1000;
   }
 
-  // Generate tokens
-  generateTokens(userId) {
-    const token = jwt.sign(
-      { 
-        id: userId, 
-        type: 'access',
-        iat: Math.floor(Date.now() / 1000)
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+  generateTokens(userId, role = 'user') {
+  const token = jwt.sign(
+    { 
+      id: userId, 
+      type: 'access',
+      role: role // Add role to token
+    },
+    process.env.JWT_SECRET,
+    { 
+      expiresIn: role === 'admin' ? '1h' : '3h' // Admin: 1 hour, Users: 3 hours
+    }
+  );
 
-    const refreshToken = crypto.randomBytes(64).toString('hex');
+  const refreshToken = crypto.randomBytes(64).toString('hex');
 
-    return { token, refreshToken };
-  }
-
+  return { token, refreshToken };
+}
   async createSession(userId, req, metadata = {}) {
     try {
-      const { token, refreshToken } = this.generateTokens(userId);
+      const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+      const { token, refreshToken } = this.generateTokens(userId, user.role);
       
       // Clean up old sessions
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -104,7 +109,8 @@ class SessionService {
         token,
         refreshToken,
         expiresAt: session.expiresAt,
-        idleTimeout: this.idleTimeout
+        idleTimeout: this.idleTimeout,
+        userRole: user.role
       };
 
     } catch (error) {

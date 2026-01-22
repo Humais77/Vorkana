@@ -1,18 +1,29 @@
-// security.js - Fix the mongo sanitization part
+// security.js - Add CSRF protection
 const helmet = require('helmet');
 const hpp = require('hpp');
+const CSRFMiddleware = require('./csrf.middleware');
 
 module.exports = function setupSecurity(app) {
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   
-  // Enhanced helmet configuration
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          imgSrc: ["'self'", "data:", "https:", "blob:"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+          connectSrc: ["'self'", process.env.FRONTEND_URL, process.env.API_URL],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+        }
+      },
       crossOriginResourcePolicy: { policy: "same-origin" },
       crossOriginOpenerPolicy: { policy: "same-origin" },
-      referrerPolicy: { policy: "no-referrer" },
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
       strictTransportSecurity: {
         maxAge: 31536000,
         includeSubDomains: true,
@@ -44,20 +55,23 @@ module.exports = function setupSecurity(app) {
     whitelist: ['page', 'limit', 'sort', 'category', 'price', 'rating', 'search']
   }));
 
-  // Custom MongoDB sanitization that doesn't modify req.query
+
+  // Apply CSRF protection to all routes except static files
+  app.use(CSRFMiddleware.attachCSRF);
+  app.use(CSRFMiddleware.requireCSRF);
+
+  // Custom MongoDB sanitization
   app.use((req, res, next) => {
     // Clean body, query, and params from MongoDB operators
     const sanitize = (obj) => {
       if (!obj || typeof obj !== 'object') return obj;
       
       Object.keys(obj).forEach(key => {
-        // Check if key starts with $ (MongoDB operator)
         if (key.startsWith('$')) {
           delete obj[key];
           return;
         }
         
-        // Recursively sanitize nested objects
         if (typeof obj[key] === 'object' && obj[key] !== null) {
           sanitize(obj[key]);
         }
@@ -66,15 +80,15 @@ module.exports = function setupSecurity(app) {
       return obj;
     };
     
-    // Create sanitized copies instead of modifying originals
     if (req.body) {
+      // Preserve CSRF token
+      const csrfToken = req.body.csrfToken;
       req.body = sanitize(JSON.parse(JSON.stringify(req.body)));
+      if (csrfToken) req.body.csrfToken = csrfToken;
     }
     
     if (req.query) {
-      // For query, we need to be careful since it's read-only
       const sanitizedQuery = sanitize(JSON.parse(JSON.stringify(req.query)));
-      // Apply sanitized query back safely
       Object.keys(req.query).forEach(key => {
         if (key.startsWith('$')) {
           delete req.query[key];
@@ -99,6 +113,8 @@ module.exports = function setupSecurity(app) {
     const clean = (obj) => {
       if (!obj || typeof obj !== 'object') return;
       for (const key in obj) {
+        if (key === 'csrfToken') continue; // Don't sanitize CSRF tokens
+        
         if (typeof obj[key] === 'string') {
           obj[key] = obj[key]
             .replace(/<\s*script/gi, '&lt;script')
@@ -146,12 +162,14 @@ module.exports = function setupSecurity(app) {
       for (const key in obj) {
         const currentPath = path ? `${path}.${key}` : key;
         
+        if (key === 'csrfToken') continue; // Skip CSRF token
+        
         if (obj[key] && typeof obj[key] === 'object') {
           checkObject(obj[key], currentPath);
         } else if (typeof obj[key] === 'string') {
           for (const pattern of dangerousPatterns) {
             if (pattern.test(obj[key])) {
-              console.warn(`[SECURITY] Injection attempt detected at ${currentPath}`);
+              console.warn('[SECURITY] Injection attempt detected at', currentPath);
               return res.status(400).json({
                 success: false,
                 message: 'Security violation detected',
@@ -163,7 +181,6 @@ module.exports = function setupSecurity(app) {
       }
     };
     
-    // Check input sources safely
     if (req.body && typeof req.body === 'object') {
       const bodyCopy = JSON.parse(JSON.stringify(req.body));
       checkObject(bodyCopy, 'body');
@@ -180,5 +197,16 @@ module.exports = function setupSecurity(app) {
     }
     
     next();
+  });
+
+
+  app.get('/api/csrf-token', (req, res) => {
+    const token = CSRFMiddleware.generateToken(req, res);
+    
+    res.json({
+      success: true,
+      csrfToken: token,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000
+    });
   });
 };
