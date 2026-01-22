@@ -3,7 +3,7 @@ const User = require('../models/user.model');
 const Session = require('../models/session.model');
 const jwt = require('jsonwebtoken');
 const { promisify } = require('util');
-
+const CSRFMiddleware = require('./csrf.middleware');
 class SessionMiddleware {
   constructor() {
     this.sessionService = SessionService;
@@ -125,7 +125,9 @@ class SessionMiddleware {
     req.token = sessionResult.token;
     req.sessionId = sessionResult.sessionId;
     req.isAdmin = user.role === 'admin';
-
+ if (!req.cookies?.csrfToken) {
+      CSRFMiddleware.generateToken(req, res);
+    }
     console.log(`✅ Authenticated: ${user.email}, Role: ${user.role}, Admin Route: ${isAdminRoute}, Is admin from token: ${sessionResult.isAdmin}`);
 
     next();
@@ -300,47 +302,56 @@ handleRefresh = async (req, res) => {
       });
     }
   };
- clearAuthCookies = (res) => {
-    const clearOpts = {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    };
-
-    res.clearCookie('token', clearOpts);
-    res.clearCookie('refreshToken', clearOpts);
-    res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
+ setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
+  const cookieConfig = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/'
   };
 
-  // Set cookies helper
-  setAuthCookies = (res, token, refreshToken) => {
-    const cookieConfig = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    };
+  // Access token (1 hour)
+  res.cookie('token', token, {
+    ...cookieConfig,
+    maxAge: 60 * 60 * 1000
+  });
 
-    // Access token (1 hour)
-    res.cookie('token', token, {
-      ...cookieConfig,
-      maxAge: 60 * 60 * 1000
-    });
+  // Refresh token (7 days)
+  res.cookie('refreshToken', refreshToken, {
+    ...cookieConfig,
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
 
-    // Refresh token (7 days)
-    res.cookie('refreshToken', refreshToken, {
+  // CSRF token if provided
+  if (csrfToken) {
+    res.cookie('csrfToken', csrfToken, {
       ...cookieConfig,
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 24 * 60 * 60 * 1000
     });
+  }
 
-    // Client-side auth flag
-    res.cookie('isAuthenticated', 'true', {
-      ...cookieConfig,
-      httpOnly: false,
-      maxAge: 60 * 60 * 1000
-    });
+  // Client-side auth flag
+  res.cookie('isAuthenticated', 'true', {
+    ...cookieConfig,
+    httpOnly: false,
+    maxAge: 60 * 60 * 1000
+  });
+};
+
+// Update clearAuthCookies
+clearAuthCookies = (res) => {
+  const clearOpts = {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
   };
+
+  res.clearCookie('token', clearOpts);
+  res.clearCookie('refreshToken', clearOpts);
+  res.clearCookie('csrfToken', clearOpts);
+  res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
+};
 
   // Handle session errors
   handleSessionError = (res, error) => {
@@ -382,5 +393,33 @@ handleRefresh = async (req, res) => {
     next();
   };
 }
+const requireCSRF = (req, res, next) => {
+  // Skip for safe methods
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
 
+  // Get token from headers or body
+  const csrfToken = req.headers['x-csrf-token'] || req.body?.csrfToken;
+  
+  if (!csrfToken) {
+    return res.status(403).json({
+      success: false,
+      message: 'CSRF token required',
+      code: 'CSRF_TOKEN_REQUIRED'
+    });
+  }
+
+  const validation = CSRFMiddleware.validateToken(req, csrfToken);
+  
+  if (!validation.valid) {
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID'
+    });
+  }
+
+  next();
+};
 module.exports = new SessionMiddleware();

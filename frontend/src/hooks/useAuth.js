@@ -91,17 +91,120 @@ const handleAuthError = (error, defaultMessage = 'Operation failed') => {
   
   return { errorMessage, errorCode };
 };
+export const useCSRF = () => {
+  const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthStore();
+  
+  const getCSRFToken = useQuery({
+    queryKey: ['csrfToken'],
+    queryFn: async () => {
+      try {
+        console.log('Fetching CSRF token...');
+        const response = await authAPI.getCSRFToken();
+        if (response.success) {
+          console.log('CSRF token fetched successfully');
+          return response.csrfToken;
+        }
+        console.error('Failed to get CSRF token:', response.message);
+        return null;
+      } catch (error) {
+        console.error('Error fetching CSRF token:', error.message);
+        // Don't throw error, return null to allow retry
+        return null;
+      }
+    },
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchOnReconnect: true,
+  });
+  
+  const refreshCSRF = useMutation({
+    mutationFn: authAPI.refreshCSRFToken,
+    onSuccess: (data) => {
+      if (data.success && data.csrfToken) {
+        queryClient.setQueryData(['csrfToken'], data.csrfToken);
+        toast.success('Security session refreshed');
+      }
+    },
+    onError: (error) => {
+      console.error('CSRF refresh error:', error);
+      toast.error('Security session refresh failed');
+    },
+  });
+  
+  const validateCSRF = useCallback(async () => {
+    try {
+      const token = authAPI.getCSRFTokenValue();
+      if (!token) {
+        console.log('No CSRF token available');
+        return false;
+      }
+      
+      const expiry = localStorage.getItem('csrfTokenExpiry');
+      const isValid = expiry && Date.now() < parseInt(expiry);
+      
+      console.log('CSRF validation:', { hasToken: !!token, isValid, expiry });
+      return !!token && isValid;
+    } catch (error) {
+      console.error('CSRF validation error:', error);
+      return false;
+    }
+  }, []);
+  
+  // Only set up periodic refresh if authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    const interval = setInterval(() => {
+      const expiry = localStorage.getItem('csrfTokenExpiry');
+      if (!expiry || Date.now() > parseInt(expiry) - 5 * 60 * 1000) {
+        console.log('Refreshing CSRF token due to expiry');
+        refreshCSRF.mutate();
+      }
+    }, 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [isAuthenticated, refreshCSRF]);
+  
+  return {
+    token: getCSRFToken.data,
+    isLoading: getCSRFToken.isLoading,
+    isError: getCSRFToken.isError,
+    error: getCSRFToken.error,
+    refetch: getCSRFToken.refetch,
+    refresh: refreshCSRF.mutate,
+    validate: validateCSRF,
+    hasToken: !!getCSRFToken.data,
+  };
+};
 
-// Authentication hooks
 export const useLogin = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   const setLoading = useAuthStore((state) => state.setLoading);
   const setError = useAuthStore((state) => state.setError);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
-    mutationFn: authAPI.login,
+    mutationFn: async (userData) => {
+      // Try to get CSRF token before login if not available
+      const hasToken = authAPI.getCSRFTokenValue();
+      if (!hasToken) {
+        console.log('No CSRF token, attempting to get one before login...');
+        try {
+          await authAPI.getCSRFToken();
+        } catch (error) {
+          console.warn('Failed to get CSRF token before login, continuing anyway:', error.message);
+        }
+      }
+      
+      return authAPI.login(userData);
+    },
     onMutate: () => {
       setLoading(true);
       setError(null);
@@ -111,9 +214,12 @@ export const useLogin = () => {
         setAuth(data.user);
         queryClient.invalidateQueries(['userProfile']);
         queryClient.invalidateQueries(['checkAuth']);
+        queryClient.invalidateQueries(['csrfToken']);
         
-        const message = data.message || 'Welcome back!';
-        toast.success(message);
+        // Refresh CSRF token after login
+        refetchCSRF();
+        
+        toast.success(data.message || 'Welcome back!');
         
         setTimeout(() => navigate('/dashboard'), 500);
       } else {
@@ -123,7 +229,8 @@ export const useLogin = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Invalid credentials');
+      console.error('Login error:', error);
+      const errorMessage = error.message || 'Invalid credentials';
       setError(errorMessage);
       toast.error(errorMessage);
     },
@@ -211,7 +318,7 @@ export const useRefreshSession = () => {
 export const useCheckSessionStatus = () => {
   return useQuery({
     queryKey: ['sessionStatus'],
-    queryFn: authAPI.checkSessionStatus,
+    queryFn: () => authAPI.checkSessionStatus(), // Add the queryFn
     staleTime: 30000,
     retry: 1,
     refetchOnWindowFocus: true,
@@ -257,6 +364,7 @@ export const useGetProfile = (options = {}) => {
 export const useUpdateProfile = () => {
   const setUser = useAuthStore((state) => state.setUser);
   const queryClient = useQueryClient();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: authAPI.updateProfile,
@@ -268,14 +376,19 @@ export const useUpdateProfile = () => {
         setUser(data.user);
         queryClient.invalidateQueries(['userProfile']);
         queryClient.invalidateQueries(['publicProfile', data.user._id]);
+        refetchCSRF();
         toast.success(data.message || 'Profile updated successfully');
       } else {
         toast.error(data.message || 'Failed to update profile');
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to update profile');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to update profile');
+      }
     },
     onSettled: () => {
       toast.dismiss();
@@ -283,8 +396,10 @@ export const useUpdateProfile = () => {
   });
 };
 
+// Updated useChangePassword hook
 export const useChangePassword = () => {
   const navigate = useNavigate();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: ({ currentPassword, newPassword }) => 
@@ -295,6 +410,7 @@ export const useChangePassword = () => {
     onSuccess: (data) => {
       if (data.success) {
         toast.success(data.message || 'Password changed successfully');
+        refetchCSRF();
         
         if (data.requiresReauth) {
           toast('Please login again with your new password', {
@@ -311,14 +427,19 @@ export const useChangePassword = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to change password');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to change password');
+      }
     },
     onSettled: () => {
       toast.dismiss();
     },
   });
 };
+
 
 // Email verification hooks
 export const useVerifyEmail = () => {
@@ -390,9 +511,9 @@ export const useCheckVerificationStatus = (email) => {
     staleTime: 30000,
   });
 };
-
-// Password recovery hooks
 export const useForgotPassword = () => {
+  const { refetch: refetchCSRF } = useCSRF();
+  
   return useMutation({
     mutationFn: authAPI.forgotPassword,
     onMutate: () => {
@@ -400,14 +521,19 @@ export const useForgotPassword = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
+        refetchCSRF();
         toast.success(data.message || 'Password reset email sent. Please check your inbox.');
       } else {
         toast.error(data.message || 'Failed to send reset email');
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to send reset email');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to send reset email');
+      }
     },
     onSettled: () => {
       toast.dismiss();
@@ -415,9 +541,11 @@ export const useForgotPassword = () => {
   });
 };
 
+// Updated useResetPassword hook
 export const useResetPassword = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   const navigate = useNavigate();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: ({ token, newPassword }) => 
@@ -427,6 +555,7 @@ export const useResetPassword = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
+        refetchCSRF();
         toast.success(data.message || 'Password reset successfully');
         
         if (data.user) {
@@ -440,8 +569,12 @@ export const useResetPassword = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to reset password');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to reset password');
+      }
     },
     onSettled: () => {
       toast.dismiss();
@@ -449,10 +582,11 @@ export const useResetPassword = () => {
   });
 };
 
-// Account management hooks
+// Updated useDeactivateAccount hook
 export const useDeactivateAccount = () => {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: ({ password, reason }) => 
@@ -462,6 +596,7 @@ export const useDeactivateAccount = () => {
     },
     onSuccess: (data) => {
       if (data.success) {
+        refetchCSRF();
         toast.success(data.message || 'Account deactivated successfully');
         
         if (data.reactivationDeadline) {
@@ -475,6 +610,7 @@ export const useDeactivateAccount = () => {
         
         setTimeout(() => {
           logout();
+          authAPI.clearAuthData();
           navigate('/');
         }, 2000);
       } else {
@@ -482,8 +618,12 @@ export const useDeactivateAccount = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to deactivate account');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to deactivate account');
+      }
     },
     onSettled: () => {
       toast.dismiss();
@@ -491,9 +631,11 @@ export const useDeactivateAccount = () => {
   });
 };
 
+// Updated useReactivateAccount hook
 export const useReactivateAccount = () => {
   const setAuth = useAuthStore((state) => state.setAuth);
   const navigate = useNavigate();
+  const { refetch: refetchCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: ({ email, password }) => 
@@ -504,6 +646,7 @@ export const useReactivateAccount = () => {
     onSuccess: (data) => {
       if (data.success) {
         setAuth(data.user);
+        refetchCSRF();
         toast.success(data.message || 'Account reactivated successfully');
         navigate('/dashboard');
       } else {
@@ -511,13 +654,86 @@ export const useReactivateAccount = () => {
       }
     },
     onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to reactivate account');
-      toast.error(errorMessage);
+      if (error.code === 'CSRF_TOKEN_INVALID') {
+        toast.error('Security validation failed. Please refresh the page.');
+        refetchCSRF();
+      } else {
+        toast.error(error.message || 'Failed to reactivate account');
+      }
     },
     onSettled: () => {
       toast.dismiss();
     },
   });
+};
+
+// CSRF Provider Component
+export const CSRFProvider = ({ children }) => {
+  const { token, isLoading, refetch } = useCSRF();
+  const { isAuthenticated } = useAuthStore();
+  
+  useEffect(() => {
+    // Get CSRF token on mount if authenticated
+    if (isAuthenticated && !token && !isLoading) {
+      refetch();
+    }
+  }, [isAuthenticated, token, isLoading, refetch]);
+  
+  // Listen for CSRF errors
+  useEffect(() => {
+    const handleCSRFError = (event) => {
+      if (event.detail?.code === 'CSRF_TOKEN_INVALID') {
+        refetch();
+        toast.error('Security session refreshed. Please try again.');
+      }
+    };
+    
+    window.addEventListener('csrf-error', handleCSRFError);
+    
+    return () => {
+      window.removeEventListener('csrf-error', handleCSRFError);
+    };
+  }, [refetch]);
+  
+  // Check CSRF token periodically
+  useEffect(() => {
+    if (isAuthenticated) {
+      const interval = setInterval(() => {
+        const expiry = localStorage.getItem('csrfTokenExpiry');
+        if (!expiry || Date.now() > parseInt(expiry) - 10 * 60 * 1000) {
+          refetch();
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+      
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, refetch]);
+  
+  return children;
+};
+
+// CSRF validation hook for forms
+export const useCSRFValidation = () => {
+  const { validate, hasToken } = useCSRF();
+  const [isValid, setIsValid] = useState(false);
+  
+  const checkCSRF = useCallback(async () => {
+    const valid = await validate();
+    setIsValid(valid);
+    return valid;
+  }, [validate]);
+  
+  useEffect(() => {
+    if (hasToken) {
+      checkCSRF();
+    }
+  }, [hasToken, checkCSRF]);
+  
+  return {
+    isValid,
+    checkCSRF,
+    hasToken
+  };
 };
 
 // Sessions management hooks

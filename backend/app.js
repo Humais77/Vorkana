@@ -9,7 +9,7 @@ const http = require('http');
 const compression = require('compression'); // ADD THIS
 const responseTime = require('response-time'); // ADD THIS
 const morgan = require('morgan'); // ADD THIS for logging
-
+const csrfRoutes = require('./routes/csrf.route');
 dotenv.config();
 
 // Validate environment variables
@@ -224,25 +224,24 @@ if (process.env.NODE_ENV === 'production') {
 // ==================== PASSPORT INITIALIZATION ====================
 
 app.use(passport.initialize());
-
-// ==================== ROUTES WITH PERFORMANCE HEADERS ====================
-
-// Health check with minimal overhead
+// Update health check endpoint
 app.get('/health', (req, res) => {
-  const start = Date.now();
+  const csrfStats = CSRFMiddleware.getTokenStats();
+  
   res.json({ 
     success: true, 
     message: 'API is healthy', 
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    version: '1.0.0',
+    csrf: {
+      enabled: true,
+      tokens: csrfStats.totalTokens,
+      activeSessions: csrfStats.activeSessions
+    },
     uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    dbStatus: 'connected' // You might want to check DB connection here
+    memory: process.memoryUsage()
   });
-  console.log(`Health check: ${Date.now() - start}ms`);
 });
-
 // Cache control middleware for GET routes
 const cacheControl = (seconds = 300) => (req, res, next) => {
   if (req.method === 'GET' && !req.path.includes('/api/auth')) {
@@ -266,6 +265,22 @@ app.use('/api/search', searchRoute);
 app.use('/api/popular-services', popularServicesRoute);
 app.use('/api/subscribe-email', subscribeRoute);
 app.use('/api/contact', contactRoutes); 
+app.use('/api/csrf', csrfRoutes);
+app.use((req, res, next) => {
+  // Add CSRF token to response headers for web clients
+  if (req.csrfToken) {
+    res.setHeader('X-CSRF-Token', req.csrfToken);
+  }
+  
+  // Add CSRF protection headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  next();
+});
+
+
 // Add this route to your Express server
 app.get('/api/proxy/image', async (req, res) => {
   try {
