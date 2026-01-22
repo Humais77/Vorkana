@@ -964,16 +964,27 @@ const UsersManagement = () => {
         />
       )}
       
-      {showDeleteModal && userToDelete && (
-        <DeleteConfirmationModal
-          userToDelete={userToDelete}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setUserToDelete(null);
-          }}
-          onConfirm={handleDeleteUser}
-        />
-      )}
+     {showDeleteModal && userToDelete && (
+  <DeleteConfirmationModal
+    item={userToDelete.type === 'single' 
+      ? { _id: userToDelete.id, name: 'Selected User' }
+      : { _id: 'bulk', name: `${userToDelete.ids.length} Users` }
+    }
+    isOpen={showDeleteModal}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+    }}
+    onDelete={handleDeleteUser}
+    type="user"
+    loading={userToDelete?.type === 'single' ? deleteUserMutation.isLoading : bulkUserMutation.isLoading}
+    dependencies={userToDelete?.type === 'single' ? {
+      services: 0, // You would need to fetch actual counts
+      gigs: 0,
+      orders: 0
+    } : {}}
+  />
+)}
     </div>
   );
 };

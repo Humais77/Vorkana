@@ -44,7 +44,7 @@ import {
 import { format } from 'date-fns';
 import ServiceEditModal from './ServiceEditModal';
 import ServiceDetailsModal from './ServiceDetailsModal';
-import ServiceDeleteModal from './ServiceDeleteModal';
+import DeleteConfirmationModal from '../DeleteConfirmationModal';
 
 // Service Table Row Component
 const ServiceTableRow = memo(({
@@ -329,6 +329,7 @@ const ServicesManagement = () => {
   const [selectedServices, setSelectedServices] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
@@ -480,24 +481,25 @@ const ServicesManagement = () => {
   }, [selectedService, updateServiceMutation, refetch, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast]);
 
   const handleDeleteService = useCallback(async (deleteOptions) => {
-    const loadingToastId = showServiceLoading('Deleting service...');
-    setDeletingServiceId(deleteOptions.id);
-    
-    try {
-      await deleteServiceMutation.mutateAsync(deleteOptions);
-      dismissServiceToast(loadingToastId);
-      showServiceSuccess('Service deleted successfully');
-      setShowDeleteModal(false);
-      setSelectedService(null);
-      setDeletingServiceId(null);
-      refetch();
-    } catch (error) {
-      dismissServiceToast(loadingToastId);
-      setDeletingServiceId(null);
-      showServiceError(error.response?.data?.message || 'Failed to delete service');
-      throw error;
-    }
-  }, [deleteServiceMutation, refetch, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast]);
+  const loadingToastId = showServiceLoading('Deleting service...');
+  setDeletingServiceId(deleteOptions.id);
+  
+  try {
+    await deleteServiceMutation.mutateAsync(deleteOptions);
+    dismissServiceToast(loadingToastId);
+    showServiceSuccess('Service deleted successfully');
+    setShowDeleteModal(false);
+    setSelectedService(null);
+    setForceDelete(false);
+    setDeletingServiceId(null);
+    refetch();
+  } catch (error) {
+    dismissServiceToast(loadingToastId);
+    setDeletingServiceId(null);
+    showServiceError(error.response?.data?.message || 'Failed to delete service');
+    throw error;
+  }
+}, [deleteServiceMutation, refetch, showServiceLoading, showServiceSuccess, showServiceError, dismissServiceToast]);
 
   const toggleFeature = useCallback(async (service) => {
     const loadingToastId = showServiceLoading(
@@ -582,9 +584,10 @@ const ServicesManagement = () => {
   }, []);
 
   const handleDelete = useCallback((service) => {
-    setSelectedService(service);
-    setShowDeleteModal(true);
-  }, []);
+  setSelectedService(service);
+  setForceDelete(false);
+  setShowDeleteModal(true);
+}, []);
 
   const refreshData = useCallback(() => {
     refetch();
@@ -1075,17 +1078,25 @@ const ServicesManagement = () => {
       )}
 
       {showDeleteModal && selectedService && (
-        <ServiceDeleteModal
-          service={selectedService}
-          isOpen={showDeleteModal}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setSelectedService(null);
-          }}
-          onDelete={handleDeleteService}
-          loading={isDeleting}
-        />
-      )}
+  <DeleteConfirmationModal
+    item={selectedService}
+    isOpen={showDeleteModal}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setSelectedService(null);
+      setForceDelete(false);
+    }}
+    onDelete={handleDeleteService}
+    type="service"
+    loading={deleteServiceMutation.isLoading || deletingServiceId === selectedService._id}
+    dependencies={{
+      orders: selectedService.ordersCount || 0,
+      reviews: selectedService.reviewsCount || 0
+    }}
+    forceDelete={forceDelete}
+    onForceDeleteChange={setForceDelete}
+  />
+)}
     </div>
   );
 };

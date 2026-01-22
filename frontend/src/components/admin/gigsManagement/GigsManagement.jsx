@@ -40,7 +40,8 @@ import {
 import { format } from 'date-fns';
 import GigEditModal from './GigEditModal';
 import GigViewModal from './GigViewModal';
-import GigDeleteModal from './GigDeleteModal';
+import DeleteConfirmationModal from '../DeleteConfirmationModal';
+
 
 // Gig Table Row Component
 const GigTableRow = memo(({ 
@@ -313,6 +314,7 @@ const GigsManagement = () => {
   const [selectedGigs, setSelectedGigs] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedGig, setSelectedGig] = useState(null);
@@ -446,31 +448,25 @@ const GigsManagement = () => {
   }, [selectedGig, updateGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const handleDeleteGig = useCallback(async (deleteOptions) => {
-    const loadingToastId = showGigLoading('Deleting gig...');
-    setDeletingGigId(deleteOptions.id);
-    
-    try {
-      await deleteGigMutation.mutateAsync({
-        id: deleteOptions.id,
-        options: {
-          permanent: deleteOptions.permanent || false,
-          force: deleteOptions.force || false
-        }
-      });
-      
-      dismissGigToast(loadingToastId);
-      showGigSuccess('Gig deleted successfully');
-      setShowDeleteModal(false);
-      setSelectedGig(null);
-      setDeletingGigId(null);
-      refetch();
-    } catch (error) {
-      dismissGigToast(loadingToastId);
-      setDeletingGigId(null);
-      showGigError(error.response?.data?.message || 'Failed to delete gig');
-      throw error;
-    }
-  }, [deleteGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
+  const loadingToastId = showGigLoading('Deleting gig...');
+  setDeletingGigId(deleteOptions.id);
+  
+  try {
+    await deleteGigMutation.mutateAsync(deleteOptions);
+    dismissGigToast(loadingToastId);
+    showGigSuccess('Gig deleted successfully');
+    setShowDeleteModal(false);
+    setSelectedGig(null);
+    setForceDelete(false);
+    setDeletingGigId(null);
+    refetch();
+  } catch (error) {
+    dismissGigToast(loadingToastId);
+    setDeletingGigId(null);
+    showGigError(error.response?.data?.message || 'Failed to delete gig');
+    throw error;
+  }
+}, [deleteGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -507,9 +503,11 @@ const GigsManagement = () => {
   }, []);
 
   const handleDelete = useCallback((gig) => {
-    setSelectedGig(gig);
-    setShowDeleteModal(true);
-  }, []);
+  setSelectedGig(gig);
+  setForceDelete(false);
+  setShowDeleteModal(true);
+}, []);
+
 
   const refreshData = useCallback(() => {
     refetch();
@@ -988,17 +986,25 @@ const GigsManagement = () => {
       )}
       
       {showDeleteModal && selectedGig && (
-        <GigDeleteModal
-          gig={selectedGig}
-          isOpen={showDeleteModal}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setSelectedGig(null);
-          }}
-          onDelete={handleDeleteGig}
-          loading={isDeleting}
-        />
-      )}
+  <DeleteConfirmationModal
+    item={selectedGig}
+    isOpen={showDeleteModal}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setSelectedGig(null);
+      setForceDelete(false);
+    }}
+    onDelete={handleDeleteGig}
+    type="gig"
+    loading={deleteGigMutation.isLoading || deletingGigId === selectedGig._id}
+    dependencies={{
+      bids: selectedGig.bids?.length || 0,
+      messages: selectedGig.messages?.length || 0
+    }}
+    forceDelete={forceDelete}
+    onForceDeleteChange={setForceDelete}
+  />
+)}
     </div>
   );
 };

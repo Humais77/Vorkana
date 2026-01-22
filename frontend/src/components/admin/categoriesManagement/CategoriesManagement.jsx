@@ -35,7 +35,7 @@ import {
 import { format } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
 import CategoryEditModal from './CategoryEditModal';
-import CategoryDeleteModal from './CategoryDeleteModal';
+import DeleteConfirmationModal from '../DeleteConfirmationModal';
 import CategoryDetailsModal from './CategoryDetailsModal';
 
 // Category Table Row Component
@@ -249,6 +249,7 @@ const CategoriesManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const [showCategoryDetails, setShowCategoryDetails] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
@@ -354,24 +355,26 @@ const CategoriesManagement = () => {
   }, [selectedCategory, updateCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
-    const loadingToastId = showCategoryLoading('Deleting category...');
-    setDeletingCategoryId(deleteOptions.id);
-    
-    try {
-      await deleteCategoryMutation.mutateAsync(deleteOptions);
-      dismissCategoryToast(loadingToastId);
-      showCategorySuccess('Category deleted successfully');
-      setShowDeleteModal(false);
-      setSelectedCategory(null);
-      setDeletingCategoryId(null);
-      refetch();
-    } catch (error) {
-      dismissCategoryToast(loadingToastId);
-      setDeletingCategoryId(null);
-      showCategoryError(error.response?.data?.message || 'Failed to delete category');
-      throw error;
-    }
-  }, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+  const loadingToastId = showCategoryLoading('Deleting category...');
+  setDeletingCategoryId(deleteOptions.id);
+  
+  try {
+    await deleteCategoryMutation.mutateAsync(deleteOptions);
+    dismissCategoryToast(loadingToastId);
+    showCategorySuccess('Category deleted successfully');
+    setShowDeleteModal(false);
+    setSelectedCategory(null);
+    setForceDelete(false);
+    setDeletingCategoryId(null);
+    refetch();
+  } catch (error) {
+    dismissCategoryToast(loadingToastId);
+    setDeletingCategoryId(null);
+    showCategoryError(error.response?.data?.message || 'Failed to delete category');
+    throw error;
+  }
+}, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
+
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -408,9 +411,11 @@ const CategoriesManagement = () => {
   }, []);
 
   const handleDelete = useCallback((category) => {
-    setSelectedCategory(category);
-    setShowDeleteModal(true);
-  }, []);
+  setSelectedCategory(category);
+  setForceDelete(false);
+  setShowDeleteModal(true);
+}, []);
+
 
   const refreshData = useCallback(() => {
     setSelectedCategories([]);
@@ -884,17 +889,26 @@ const CategoriesManagement = () => {
       )}
       
       {showDeleteModal && selectedCategory && (
-        <CategoryDeleteModal
-          category={selectedCategory}
-          isOpen={showDeleteModal}
-          onClose={() => {
-            setShowDeleteModal(false);
-            setSelectedCategory(null);
-          }}
-          onDelete={handleDeleteCategory}
-          loading={deleteCategoryMutation.isLoading}
-        />
-      )}
+  <DeleteConfirmationModal
+    item={selectedCategory}
+    isOpen={showDeleteModal}
+    onClose={() => {
+      setShowDeleteModal(false);
+      setSelectedCategory(null);
+      setForceDelete(false);
+    }}
+    onDelete={handleDeleteCategory}
+    type="category"
+    loading={deleteCategoryMutation.isLoading || deletingCategoryId === selectedCategory._id}
+    dependencies={{
+      services: selectedCategory.servicesCount || 0,
+      gigs: selectedCategory.gigsCount || 0,
+      subcategories: selectedCategory.subcategoriesCount || 0
+    }}
+    forceDelete={forceDelete}
+    onForceDeleteChange={setForceDelete}
+  />
+)}
     </div>
   );
 };
