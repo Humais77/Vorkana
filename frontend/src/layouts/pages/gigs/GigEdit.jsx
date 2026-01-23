@@ -195,7 +195,6 @@ const GigEdit = () => {
   const [deliverableInput, setDeliverableInput] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [versionConflict, setVersionConflict] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [versionConflict, setVersionConflict] = useState(false);
   const [conflictResolution, setConflictResolution] = useState({
@@ -204,10 +203,10 @@ const GigEdit = () => {
     serverData: null
   });
   const [conflictResolution, setConflictResolution] = useState({
-  show: false,
-  serverVersion: 1,
-  serverData: null
-});
+    show: false,
+    serverVersion: 1,
+    serverData: null
+  });
 
   // Refs
   const topContainerRef = useRef(null);
@@ -223,15 +222,15 @@ const GigEdit = () => {
     if (!subcategoriesData.data) return [];
     return subcategoriesData.data?.subcategories || subcategoriesData.data || [];
   }, [subcategoriesData.data]);
-  const currentGig = useMemo(() => {
-  if (!gigData) return null;
-  return gigData.gig || gigData.data || gigData;
-}, [gigData]);
 
-// Get current version - SIMILAR TO EDIT SERVICE
-const currentVersion = useMemo(() => {
-  return currentGig?.version || formData.version || 1;
-}, [currentGig, formData.version]);
+  const currentGig = useMemo(() => {
+    if (!gigData) return null;
+    return gigData.gig || gigData.data || gigData;
+  }, [gigData]);
+
+  // Get current version - OPTIMIZED
+  const currentVersion = useMemo(() => currentGig?.version || formData.version || 1,
+    [currentGig, formData.version]);
 
   const currentGig = useMemo(() => {
     if (!gigData) return null;
@@ -435,86 +434,54 @@ const currentVersion = useMemo(() => {
       'Your changes are being processed and will be visible across the platform shortly.'
     );
 
-    // Invalidate queries
-    queryClient.invalidateQueries({
-      queryKey: ['gig', id]
-    });
-    
-    queryClient.invalidateQueries({
-      queryKey: ['gigs']
-    });
-
-    // Reset form state
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-    hasPopulatedRef.current = false; // Allow re-population
-  }
-  
-  // Reset success flag when submission starts
-  return () => {
-    if (isSubmitting) {
-      hasProcessedSuccessRef.current = false;
-    }
-  };
-}, [updateSuccess, updatedGigData, id, queryClient, isSubmitting, showGigUpdateSuccess]);
-const handleRefreshGig = useCallback(async () => {
-  setIsRefreshing(true);
-  try {
-    // Invalidate and refetch
-    await queryClient.invalidateQueries({ queryKey: ['gig', id] });
-    const result = await refetchGig();
-    
-    // Reset populated flag to allow re-population
-    hasPopulatedRef.current = false;
-    
-    // Clear version conflict if it exists
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-    
-    showGigInfo('Gig data refreshed successfully!');
-    
-    return result;
-  } catch (error) {
-    showGigError('Failed to refresh gig data');
-    throw error;
-  } finally {
-    setIsRefreshing(false);
-  }
-}, [id, refetchGig, queryClient, showGigInfo, showGigError]);
-// Handle update errors
-useEffect(() => {
-  if (updateError) {
-    setIsSubmitting(false);
-    hasProcessedSuccessRef.current = false;
-    
-    const isOwner = currentUser && currentGig?.createdBy?._id === currentUser._id;
-    const isAdmin = currentUser?.role === 'admin';
-    
-    // Handle version conflict
-    if (updateError.code === 'VERSION_CONFLICT') {
-      setVersionConflict(true);
-      setConflictResolution({
-        show: true,
-        serverVersion: updateError.currentVersion || (currentVersion + 1),
-        serverData: null
+      // Batch query invalidations
+      queryClient.invalidateQueries({
+        queryKey: ['gig', id]
       });
-      
-      showGigError(updateError.message || 'Gig was modified by another user. Please refresh.');
-      
-      // Force refresh to get latest data
-      setTimeout(() => {
-        handleRefreshGig();
-      }, 1500);
+      queryClient.invalidateQueries({
+        queryKey: ['gigs']
+      });
     }
-    // Handle subcategory errors
-    else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
-      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-      showGigError('Subcategory validation failed');
-    } else {
-      showGigError(updateError.message || 'Failed to update gig');
+
+    // Cleanup function
+    return () => {
+      if (isSubmitting) {
+        hasProcessedSuccessRef.current = false;
+      }
+    };
+  }, [updateSuccess, updatedGigData, id, queryClient, isSubmitting, showGigUpdateSuccess]);
+
+  // Handle update errors - OPTIMIZED
+  useEffect(() => {
+    if (updateError) {
+      setIsSubmitting(false);
+      hasProcessedSuccessRef.current = false;
+
+      // Handle version conflict
+      if (updateError.code === 'VERSION_CONFLICT') {
+        setVersionConflict(true);
+        setConflictResolution({
+          show: true,
+          serverVersion: updateError.currentVersion || (currentVersion + 1),
+          serverData: null
+        });
+
+        showGigError(updateError.message || 'Gig was modified by another user. Please refresh.');
+
+        // Schedule refresh
+        setTimeout(() => {
+          handleRefreshGig();
+        }, 1500);
+      }
+      // Handle other errors
+      else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
+        setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
+        showGigError('Subcategory validation failed');
+      } else {
+        showGigError(updateError.message || 'Failed to update gig');
+      }
     }
-  }
-}, [updateError, currentUser, currentGig, currentVersion, showGigError, handleRefreshGig]);
+  }, [updateError, currentVersion, showGigError]);
 
   // Cleanup URL objects - OPTIMIZED
   useEffect(() => {
@@ -868,13 +835,13 @@ useEffect(() => {
     return;
   }
 
-  if (!validateForm()) {
-    setIsSubmitting(false);
-    return;
-  }
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
 
-  // Show loading toast
-  showGigLoading('Updating gig...');
+    // Show loading toast
+    showGigLoading('Updating gig...');
 
     try {
       // Prepare update data
@@ -953,40 +920,37 @@ useEffect(() => {
       version: formData.version || currentVersion // Include version
     };
 
-    console.log('Update data prepared:', updateData); // Debug log
+      // Create FormData
+      const formDataToSend = new FormData();
 
-    // Create FormData - Use the SAME approach as in gig.controller.js expects
-    const formDataToSend = new FormData();
-    
-    // Add ALL fields directly to FormData (not as JSON)
-    Object.keys(updateData).forEach(key => {
-      const value = updateData[key];
-      
-      if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
-          // For arrays, append each item separately
-          value.forEach((item, index) => {
-            formDataToSend.append(`${key}[${index}]`, item);
-          });
-        } else {
-          formDataToSend.append(key, value.toString());
-        }
-      }
-    });
-    
-    // Add thumbnail if new one is uploaded
-    if (thumbnailFile && thumbnailFile.file) {
-      formDataToSend.append('thumbnail', thumbnailFile.file);
-    }
-    
-    // Add new images
-    if (uploadedImages.length > 0) {
-      uploadedImages.forEach((img, index) => {
-        if (img.file) {
-          formDataToSend.append('images', img.file);
+      // Add ALL fields directly to FormData
+      Object.keys(updateData).forEach(key => {
+        const value = updateData[key];
+
+        if (value !== undefined && value !== null) {
+          if (Array.isArray(value)) {
+            value.forEach((item, index) => {
+              formDataToSend.append(`${key}[${index}]`, item);
+            });
+          } else {
+            formDataToSend.append(key, value.toString());
+          }
         }
       });
-    }
+
+      // Add thumbnail if new one is uploaded
+      if (thumbnailFile?.file) {
+        formDataToSend.append('thumbnail', thumbnailFile.file);
+      }
+
+      // Add new images
+      if (uploadedImages.length > 0) {
+        uploadedImages.forEach((img) => {
+          if (img.file) {
+            formDataToSend.append('images', img.file);
+          }
+        });
+      }
 
       // Call updateGig
       updateGig({
@@ -1145,9 +1109,53 @@ const handleManualResolve = useCallback((action) => {
       maximumFractionDigits: 2
     });
   }, []);
-// Version Conflict Resolution Component
-const VersionConflictResolution = () => {
-  if (!versionConflict && !conflictResolution.show) return null;
+
+  // Memoized render functions
+  const renderTopInfo = useMemo(() => (
+    <div className="max-w-6xl mx-auto mb-8">
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 md:p-8 shadow-lg border border-emerald-100">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="md:w-2/3">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
+                <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
+                  Edit Gig
+                </h1>
+                <p className="text-emerald-700 font-medium text-sm md:text-base">
+                  Update your project details
+                </p>
+              </div>
+            </div>
+            <p className="text-gray-600 text-sm md:text-base">
+              Make changes to your gig to keep it relevant and attractive to freelancers.
+            </p>
+          </div>
+          <div className="md:w-1/3 w-full">
+            <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
+                <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
+                Quick Tips
+              </h3>
+              <ul className="space-y-2 text-xs md:text-sm text-gray-600">
+                {QUICK_TIPS.map((tip, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), []);
+
+  const VersionConflictResolution = useMemo(() => {
+    if (!versionConflict && !conflictResolution.show) return null;
 
   return (
     <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
