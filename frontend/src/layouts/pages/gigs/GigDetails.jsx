@@ -54,7 +54,7 @@ import { useAuthStore } from '../../../store/useAuthStore';
 import { useGigStore } from '../../../store/useGigStore';
 import { useGig, useDeleteGig } from '../../../hooks/useGigs';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-
+import { DEFAULT_IMAGES } from '../../../utils/defaultImages';
 const GigDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -421,7 +421,7 @@ const GigDetails = () => {
     
     // Fallback to default image
     return {
-      url: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+      url:DEFAULT_IMAGES.GALLERY,
       type: 'default'
     };
   };
@@ -790,7 +790,7 @@ const GigDetails = () => {
                     <meta itemProp="url" content={`${window.location.origin}/profile/${gigUser?._id}`} />
                     <div className="relative">
                       <img
-                        src={gigUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                        src={gigUser?.picture ||  DEFAULT_IMAGES.PROFILE}
                         alt={gigUser?.name || 'Client'}
                         className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
                         itemProp="image"
@@ -1018,7 +1018,7 @@ const GigDetails = () => {
                           alt={`${gig.title} - Featured thumbnail`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+                            e.target.src =DEFAULT_IMAGES.GENERIC;
                           }}
                         />
                         <div className="absolute top-4 left-4">
@@ -1108,7 +1108,7 @@ const GigDetails = () => {
                               alt={`${gig.title} - Gallery Image ${activeImage + 1}`}
                               className="w-full h-full object-cover"
                               onError={(e) => {
-                                e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+                                e.target.src = DEFAULT_IMAGES.GALLERY;
                               }}
                             />
                             {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
@@ -1140,7 +1140,7 @@ const GigDetails = () => {
                                   alt={`Gallery ${index + 1}`}
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
-                                    e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
+                                    e.target.src = DEFAULT_IMAGES.GALLERY;
                                   }}
                                 />
                               </button>
@@ -1438,7 +1438,7 @@ const GigDetails = () => {
                     >
                       <div className="relative">
                         <img
-                          src={gigUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
+                          src={gigUser?.picture || DEFAULT_IMAGES.PROFILE}
                           alt={gigUser?.name || 'Client'}
                           className="w-12 h-12 rounded-full border-2 border-white group-hover:border-emerald-100 transition-colors"
                         />

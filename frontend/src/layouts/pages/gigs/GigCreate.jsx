@@ -20,19 +20,10 @@ import {
   Target,
   Clock,
   FileCheck,
-  LogIn,
-  AlertCircle,
-  Sparkles,
-  Briefcase,
-  Users,
-  Star,
-  Save,
-  ChevronDown,
   ArrowRight,
   Type,
   Package,
   Layers,
-  Lock,
   ArrowLeft,
   Zap
 } from "lucide-react";
@@ -45,7 +36,6 @@ import { useCreateGig } from "../../../hooks/useGigs";
 import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from "../../../components/SeoWrapper";
-import { isProfileCompleteEnough ,calculateProfileCompletion} from '../../../utils/profileUtils';
 
 // Static data outside component
 const GIG_CREATION_STRUCTURED_DATA = {
@@ -97,7 +87,8 @@ const STEPS = [
 const QUICK_TIPS = [
   "Be specific about your requirements",
   "Set a realistic budget for better matches",
-  "Verification ensures secure collaboration"
+  "Verification ensures secure collaboration",
+  "Our team will review your gig and contact you within 24 hours"
 ];
 
 const CURRENCY_OPTIONS = [
@@ -134,7 +125,7 @@ const GigCreate = () => {
   const { lastCreatedGigId, setLastCreatedGigId, clearLastCreatedGig } = useGigStore();
   const { categories: storedCategories, setCategories } = useCategoryStore();
 
-  // Initial form state - Ensure all values are strings, not undefined
+  // Initial form state
   const initialFormData = useMemo(() => ({
     title: "",
     fullName: currentUser?.name || currentUser?.fullName || "",
@@ -274,7 +265,7 @@ const GigCreate = () => {
         setActiveStep(5);
         setLastCreatedGigId(gigId);
 
-        toast.success(createdGigData.message || "Gig created successfully!");
+        toast.success(createdGigData.message || "Gig created successfully! Our team will contact you within 24 hours.");
 
         setTimeout(() => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -327,42 +318,7 @@ const GigCreate = () => {
     };
   }, [clearLastCreatedGig, resetGigMutation, uploadedImages, thumbnailFile]);
 
-  // Check profile completion
-  useEffect(() => {
-    if (currentUser) {
-      if (!isProfileCompleteEnough(currentUser, 70)) {
-        toast.error(
-          <div>
-            <div className="font-semibold mb-1">Profile Incomplete</div>
-            <div className="text-sm mb-2">
-              Your profile is {calculateProfileCompletion(currentUser)}% complete. 
-              You need at least 70% completion to publish gigs.
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => navigate('/profile')}
-                className="flex-1 bg-gray-900 text-white py-1.5 rounded text-xs font-medium hover:bg-black transition-colors"
-              >
-                Complete Profile
-              </button>
-              <button
-                onClick={() => toast.dismiss()}
-                className="flex-1 bg-gray-200 text-gray-800 py-1.5 rounded text-xs font-medium hover:bg-gray-300 transition-colors"
-              >
-                Continue Anyway
-              </button>
-            </div>
-          </div>,
-          {
-            duration: 8000,
-            id: 'profile-incomplete-warning',
-          }
-        );
-      }
-    }
-  }, [currentUser, navigate]);
-
-  // Handle input change - Fixed to ensure no undefined values
+  // Handle input change
   const handleInputChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     
@@ -830,7 +786,7 @@ const GigCreate = () => {
           <div className="md:w-2/3">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
-                <Briefcase className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                <FileText className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
                 <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
@@ -845,6 +801,10 @@ const GigCreate = () => {
             <p className="text-gray-600 mb-6 text-sm md:text-base">
               Fill out this form to post your gig. Our platform will match you with qualified freelancers
               who have the skills you need. The more details you provide, the better matches you'll get.
+              <br /><br />
+              <span className="font-semibold text-emerald-700">
+                After you create your gig, our team will review it and contact you within 24 hours to discuss your project requirements and help you find the perfect freelancer.
+              </span>
             </p>
           </div>
 
@@ -876,7 +836,7 @@ const GigCreate = () => {
       2: "Define your project scope with budget and category.",
       3: "Add detailed project requirements.",
       4: "Upload project images and thumbnail.",
-      5: "Your gig is ready to be published! Review your information before submitting."
+      5: "Your gig is ready! Our team will contact you within 24 hours."
     };
 
     return (
@@ -1008,7 +968,7 @@ const GigCreate = () => {
               <CheckCircle className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 md:mb-6 text-emerald-300" />
               <h3 className="text-xl md:text-2xl font-bold mb-4">Gig Created Successfully!</h3>
               <div className="text-emerald-100 mb-6 text-sm md:text-base">
-                Your gig is now live and visible to thousands of qualified freelancers.
+                Your gig has been submitted successfully! Our team will review it and contact you within 24 hours to discuss your project.
                 {createdGigId && (
                   <div className="mt-4 text-xs md:text-sm bg-white/10 rounded-lg p-2">
                     Gig ID: <span className="font-mono">{createdGigId}</span>
@@ -1018,10 +978,10 @@ const GigCreate = () => {
               <div className="bg-white/10 rounded-xl p-4">
                 <h4 className="font-bold mb-2">What happens next?</h4>
                 <ul className="text-sm space-y-1 text-left pl-4">
-                  <li>• Freelancers will start submitting proposals</li>
-                  <li>• You'll receive email notifications for new proposals</li>
-                  <li>• Review and compare freelancer profiles</li>
-                  <li>• Start conversations with your top choices</li>
+                  <li>• Our team will review your gig within 24 hours</li>
+                  <li>• We'll contact you to discuss your project requirements</li>
+                  <li>• We'll help you find the perfect freelancer for your project</li>
+                  <li>• You'll receive email notifications for updates</li>
                 </ul>
               </div>
             </div>
@@ -1057,7 +1017,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="fullName" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <User className="mr-2" size={14} />
-                  Full Name <span className="text-red-500">*</span>
+                  Full Name
                 </label>
                 <input
                   type="text"
@@ -1068,7 +1028,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="John Doe"
                   disabled={gigLoading}
-                  required
                 />
                 <p className="mt-2 text-xs text-gray-500">
                   Minimum 3 characters
@@ -1082,7 +1041,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="oauthEmail" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Mail className="mr-2" size={14} />
-                  Email Address <span className="text-red-500">*</span>
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -1093,7 +1052,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="your@email.com"
                   disabled={gigLoading}
-                  required
                 />
                 {errors.oauthEmail && (
                   <p className="mt-2 text-sm text-red-600">{errors.oauthEmail}</p>
@@ -1104,7 +1062,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="country" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Globe className="mr-2" size={14} />
-                  Country <span className="text-red-500">*</span>
+                  Country
                 </label>
                 <input
                   type="text"
@@ -1115,7 +1073,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="United States"
                   disabled={gigLoading}
-                  required
                 />
                 <p className="mt-2 text-xs text-gray-500">
                   Helps freelancers understand your time zone
@@ -1129,7 +1086,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="phone" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Phone className="mr-2" size={14} />
-                  Phone Number <span className="text-red-500">*</span>
+                  Phone Number
                 </label>
                 <input
                   type="tel"
@@ -1140,7 +1097,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="+1 234 567 8900"
                   disabled={gigLoading}
-                  required
                 />
                 <p className="mt-2 text-xs text-gray-500">
                   Only shared with freelancers you hire
@@ -1166,7 +1122,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="title" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Type className="mr-2" size={14} />
-                  Project Title <span className="text-red-500">*</span>
+                  Project Title
                 </label>
                 <input
                   type="text"
@@ -1177,7 +1133,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="e.g., Build a responsive e-commerce website"
                   disabled={gigLoading}
-                  required
                 />
                 <p className="mt-2 text-xs text-gray-500">
                   Be specific and descriptive (5-200 characters)
@@ -1191,7 +1146,7 @@ const GigCreate = () => {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label htmlFor="projectCategory" className="text-sm font-medium text-gray-700">
-                    Project Category <span className="text-red-500">*</span>
+                    Project Category
                   </label>
                   {categoryError && (
                     <button
@@ -1211,7 +1166,6 @@ const GigCreate = () => {
                     onChange={handleInputChange}
                     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                     disabled={categoryLoading || gigLoading}
-                    required
                   >
                     <option value="">Select a category</option>
                     {categoryLoading ? (
@@ -1237,7 +1191,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="subcategory" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Layers className="mr-2" size={14} />
-                  Subcategory {subcategories.length > 0 && <span className="text-red-500">*</span>}
+                  Subcategory {subcategories.length > 0 && <span className="text-gray-500"></span>}
                 </label>
                 <div className="relative">
                   <select
@@ -1247,7 +1201,6 @@ const GigCreate = () => {
                     onChange={handleInputChange}
                     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                     disabled={!formData.projectCategory || subcategoryLoading || gigLoading}
-                    required={subcategories.length > 0}
                   >
                     <option value="">
                       {subcategoryLoading ? 'Loading subcategories...' : 
@@ -1272,24 +1225,23 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="budget" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <DollarSign className="mr-2" size={14} />
-                  Budget (USD) <span className="text-red-500">*</span>
+                  Budget (USD)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
                   <input
                     type="number"
                     id="budget"
                     name="budget"
                     value={formData.budget || ''}
                     onChange={handleInputChange}
-                    className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+                    className="w-full p-3 md:p-4 pl-12 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="Enter your budget"
                     min="5"
                     max="100000"
                     step="0.01"
                     disabled={gigLoading}
-                    required
                   />
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
                 </div>
                 <div className="flex justify-between mt-2">
                   <p className="text-xs text-gray-500">
@@ -1309,7 +1261,7 @@ const GigCreate = () => {
               {/* Currency */}
               <div>
                 <label htmlFor="currency" className="text-sm font-medium text-gray-700 mb-2">
-                  Currency <span className="text-red-500">*</span>
+                  Currency
                 </label>
                 <select
                   id="currency"
@@ -1318,7 +1270,6 @@ const GigCreate = () => {
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white transition-all text-sm md:text-base"
                   disabled={gigLoading}
-                  required
                 >
                   {CURRENCY_OPTIONS.map(currency => (
                     <option key={currency.value} value={currency.value}>
@@ -1344,7 +1295,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="timeline" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Calendar className="mr-2" size={14} />
-                  Project Timeline <span className="text-red-500">*</span>
+                  Project Timeline
                 </label>
                 <input
                   type="text"
@@ -1355,7 +1306,6 @@ const GigCreate = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                   placeholder="e.g., 2 weeks, 1 month, ASAP"
                   disabled={gigLoading}
-                  required
                 />
                 <div className="mt-2 flex flex-col md:flex-row md:items-center gap-2">
                   <p className="text-xs md:text-sm text-gray-500">
@@ -1369,7 +1319,6 @@ const GigCreate = () => {
                       onChange={handleInputChange}
                       className="text-sm border border-gray-300 rounded-lg p-2"
                       disabled={gigLoading}
-                      required
                     >
                       {DELIVERY_TIME_UNITS.map(unit => (
                         <option key={unit.value} value={unit.value}>
@@ -1389,7 +1338,7 @@ const GigCreate = () => {
                 <fieldset>
                   <legend className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                     <MessageSquare className="mr-2" size={14} />
-                    Communication Preference <span className="text-red-500">*</span>
+                    Communication Preference
                   </legend>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3" role="radiogroup">
                     {COMMUNICATION_OPTIONS.map((method) => (
@@ -1402,7 +1351,6 @@ const GigCreate = () => {
                           onChange={handleInputChange}
                           className="sr-only disabled:cursor-not-allowed"
                           disabled={gigLoading}
-                          required
                         />
                         <div className={`
                           w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center
@@ -1424,7 +1372,7 @@ const GigCreate = () => {
               <div>
                 <fieldset>
                   <legend className="text-sm font-medium text-gray-700 mb-2">
-                    Urgency Level <span className="text-red-500">*</span>
+                    Urgency Level
                   </legend>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3" role="radiogroup">
                     {URGENCY_LEVELS.map((level) => (
@@ -1437,7 +1385,6 @@ const GigCreate = () => {
                           onChange={handleInputChange}
                           className="sr-only disabled:cursor-not-allowed"
                           disabled={gigLoading}
-                          required
                         />
                         <div className={`
                           w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm md:text-base text-center capitalize
@@ -1463,7 +1410,7 @@ const GigCreate = () => {
                 <fieldset>
                   <legend className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                     <Shield className="mr-2" size={14} />
-                    Gig Visibility <span className="text-red-500">*</span>
+                    Gig Visibility
                   </legend>
                   <div className="grid grid-cols-3 gap-2 md:gap-3" role="radiogroup">
                     {VISIBILITY_OPTIONS.map((visibility) => (
@@ -1476,7 +1423,6 @@ const GigCreate = () => {
                           onChange={handleInputChange}
                           className="sr-only disabled:cursor-not-allowed"
                           disabled={gigLoading}
-                          required
                         />
                         <div className={`
                           w-full px-3 py-2 md:px-4 md:py-3 rounded-lg border-2 transition-all text-sm text-center
@@ -1498,7 +1444,7 @@ const GigCreate = () => {
               {/* Project Description */}
               <div>
                 <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                  Project Description <span className="text-red-500">*</span>
+                  Project Description
                 </label>
                 <textarea
                   id="description"
@@ -1513,7 +1459,6 @@ const GigCreate = () => {
 • Preferred technologies/tools
 • Any examples or references"
                   disabled={gigLoading}
-                  required
                   maxLength="5000"
                 />
                 <div className="flex flex-col md:flex-row justify-between mt-2 gap-2">
@@ -1540,7 +1485,7 @@ const GigCreate = () => {
               {/* Required Skills */}
               <div>
                 <label htmlFor="skillsInput" className="text-sm font-medium text-gray-700 mb-2">
-                  Required Skills <span className="text-red-500">*</span>
+                  Required Skills
                 </label>
                 <div className="flex flex-col md:flex-row gap-2 mb-3">
                   <input
@@ -1588,7 +1533,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="deliverableInput" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Package className="mr-2" size={14} />
-                  Expected Deliverables <span className="text-red-500">*</span>
+                  Expected Deliverables
                 </label>
                 <div className="flex flex-col md:flex-row gap-2 mb-3">
                   <input
@@ -1719,7 +1664,7 @@ const GigCreate = () => {
 
               {/* Thumbnail */}
               <div>
-                <h3 className="text-lg font-medium text-gray-800 mb-4">Thumbnail <span className="text-red-500">*</span></h3>
+                <h3 className="text-lg font-medium text-gray-800 mb-4">Thumbnail</h3>
                 <div className="space-y-4">
                   <p className="text-gray-600 text-sm">
                     The thumbnail is required and will be displayed as the main image in gig listings.
@@ -1758,7 +1703,6 @@ const GigCreate = () => {
                         onChange={(e) => handleThumbnailUpload(e.target.files[0])}
                         className="hidden"
                         disabled={uploadingThumbnail || gigLoading}
-                        required
                       />
                       <label htmlFor="thumbnail-upload" className="cursor-pointer">
                         <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
@@ -1858,7 +1802,7 @@ const GigCreate = () => {
                 </>
               ) : (
                 <>
-                  <Save className="mr-2" size={20} />
+                  <FileText className="mr-2" size={20} />
                   Save as Draft
                 </>
               )}
@@ -1927,7 +1871,7 @@ const GigCreate = () => {
                       Gig Created Successfully!
                     </h2>
                     <p className="text-gray-600 text-base md:text-lg mb-8">
-                      Your gig is now live. Redirecting to your gig page...
+                      Your gig has been submitted successfully! Our team will review it and contact you within 24 hours to discuss your project.
                     </p>
                     <div className="w-20 h-1 bg-emerald-600 rounded-full mx-auto animate-pulse"></div>
                     <div className="mt-8">

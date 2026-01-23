@@ -2,53 +2,34 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import {
   Upload,
-  Globe,
-  Phone,
-  Mail,
-  User,
   DollarSign,
   Calendar,
+  ChevronDown,
   FileText,
-  MessageSquare,
   ChevronRight,
   Loader2,
   X,
   CheckCircle,
   Info,
-  Shield,
   Lightbulb,
-  Target,
-  Clock,
-  FileCheck,
-  LogIn,
-  AlertCircle,
-  Sparkles,
-  Briefcase,
-  Users,
-  Star,
-  Save,
-  ChevronDown,
-  ArrowRight,
   Type,
   Layers,
-  Lock,
-  Tag,
   CheckSquare,
-  HelpCircle,
   Zap,
   Plus,
   Trash2,
   ArrowLeft,
   Eye,
   Layers as LayersIcon,
-  Images as ImageIcon
+  Images as ImageIcon,
+  Briefcase,
+  HelpCircle
 } from 'lucide-react';
 import { useCreateService } from '../../../hooks/useServices.js';
 import { useParentCategories } from '../../../hooks/useCategories.js';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories.js';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore.js';
-import { isProfileCompleteEnough, calculateProfileCompletion } from '../../../utils/profileUtils.js';
 import { SeoWrapper } from '../../../components/SeoWrapper.jsx';
 
 // Structured Data for Service Creation
@@ -104,20 +85,12 @@ const QUICK_TIPS = [
   "Be specific about your service offerings",
   "Set competitive pricing for better visibility",
   "Add high-quality images for better appeal",
-  "Detailed descriptions increase conversions"
-];
-
-// Static platform stats
-const PLATFORM_STATS = [
-  { label: "50K+ Clients", sublabel: "Looking for services", icon: Users },
-  { label: "4.8/5 Rating", sublabel: "Service provider satisfaction", icon: Star },
-  { label: "No Fees", sublabel: "Listing is completely free", icon: Sparkles }
+  "Detailed descriptions increase conversions",
+  "Our team will review your service and contact you within 24 hours"
 ];
 
 // Allowed image types
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-
-// Thumbnail allowed types
 const ALLOWED_THUMBNAIL_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 // Currency options
@@ -143,14 +116,13 @@ const CreateService = () => {
   const createServiceMutation = useCreateService();
   const { user: currentUser } = useAuthStore();
   
-  // Initialize formData with all required fields as empty strings, not undefined
+  // Initialize formData
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     shortDescription: '',
     category: '',
     subcategory: '',
-    userLevel: 'new',
     price: '',
     currency: 'USD',
     deliveryTime: '',
@@ -161,14 +133,6 @@ const CreateService = () => {
     requirements: [],
     faqs: [],
     searchKeywords: [],
-    metaTitle: '',
-    metaDescription: '',
-    gigType: 'basic',
-    status: 'draft',
-    sellerLevel: 'new',
-    isFeatured: false,
-    isRecommended: false,
-    isPopular: false,
   });
 
   // Subcategory hook
@@ -228,9 +192,10 @@ const CreateService = () => {
     thumbnail: false,
   });
 
-  // Refs for file inputs
+  // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
+  const topContainerRef = useRef(null);
 
   // Structured data memoized
   const structuredData = useMemo(() => getServiceCreationStructuredData(), []);
@@ -249,41 +214,6 @@ const CreateService = () => {
     };
   }, [uploadedImages, thumbnailFile]);
 
-  // Check profile completion
-  useEffect(() => {
-    if (currentUser) {
-      if (!isProfileCompleteEnough(currentUser, 70)) {
-        toast.error(
-          <div>
-            <div className="font-semibold mb-1">Profile Incomplete</div>
-            <div className="text-sm mb-2">
-              Your profile is {calculateProfileCompletion(currentUser)}% complete. 
-              You need at least 70% completion to publish services.
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => navigate('/profile')}
-                className="flex-1 bg-gray-900 text-white py-1.5 rounded text-xs font-medium hover:bg-black transition-colors"
-              >
-                Complete Profile
-              </button>
-              <button
-                onClick={() => toast.dismiss()}
-                className="flex-1 bg-gray-200 text-gray-800 py-1.5 rounded text-xs font-medium hover:bg-gray-300 transition-colors"
-              >
-                Continue Anyway
-              </button>
-            </div>
-          </div>,
-          {
-            duration: 8000,
-            id: 'profile-incomplete-warning',
-          }
-        );
-      }
-    }
-  }, [currentUser, navigate]);
-
   // Reset subcategory when category changes
   useEffect(() => {
     if (formData.category) {
@@ -301,8 +231,6 @@ const CreateService = () => {
   // Handle service creation success
   useEffect(() => {
     if (createServiceMutation.isSuccess && createServiceMutation.data) {
-      console.log('Service creation success:', createServiceMutation.data);
-      
       let serviceId = null;
       
       // Try multiple ways to get the service ID
@@ -314,27 +242,32 @@ const CreateService = () => {
         serviceId = createServiceMutation.data._id;
       }
       
-      console.log('Extracted service ID:', serviceId);
-      
       if (serviceId) {
         setCreatedServiceId(serviceId);
         setSuccess(true);
         setActiveStep(5);
-        toast.success('Service created successfully!');
+        toast.success('Service created successfully! Our team will contact you within 24 hours.');
         
-        // Navigate to service page after delay
         setTimeout(() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          if (topContainerRef.current) {
+            topContainerRef.current.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 100);
+
+        const timer = setTimeout(() => {
           navigate(`/services/${serviceId}`);
-        }, 2000);
+        }, 3000);
+
+        return () => clearTimeout(timer);
       } else {
-        console.error('No service ID found in response:', createServiceMutation.data);
         toast.error('Service created but could not find ID. Please check your services list.');
-        navigate('/profile?tab=services');
+        navigate('/dashboard');
       }
     }
   }, [createServiceMutation.isSuccess, createServiceMutation.data, navigate]);
 
-  // Handle input change - FIXED: Always return string, never undefined
+  // Handle input change
   const handleInputChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     
@@ -343,7 +276,6 @@ const CreateService = () => {
     if (type === 'checkbox') {
       newValue = checked;
     } else if (type === 'number') {
-      // For number inputs, keep as string but allow empty
       newValue = value === '' ? '' : value;
     } else if (type === 'select-one') {
       newValue = value || '';
@@ -352,7 +284,6 @@ const CreateService = () => {
     } else if (name === 'shortDescription') {
       newValue = (value || '').slice(0, 250);
     } else {
-      // Always ensure it's a string, never undefined
       newValue = value || '';
     }
     
@@ -381,7 +312,6 @@ const CreateService = () => {
 
   // Validate field
   const validateField = useCallback((fieldName, value) => {
-    // For empty string values
     if (value === '') return false;
     
     const stringValue = String(value || '');
@@ -803,10 +733,6 @@ const CreateService = () => {
       submitFormData.append('revisions', formData.revisions || '1');
       submitFormData.append('status', status);
 
-      // Append optional fields with proper formatting
-      if (formData.metaTitle) submitFormData.append('metaTitle', formData.metaTitle);
-      if (formData.metaDescription) submitFormData.append('metaDescription', formData.metaDescription);
-      
       // Append arrays properly
       if (formData.tags?.length > 0) {
         formData.tags.forEach(tag => {
@@ -980,24 +906,11 @@ const CreateService = () => {
             <p className="text-gray-600 mb-6 text-sm md:text-base">
               Fill out this form to list your service. Our platform will showcase your skills to clients
               worldwide. The more details you provide, the better your chances of getting hired.
+              <br /><br />
+              <span className="font-semibold text-blue-700">
+                After you create your service, our team will review it and contact you within 24 hours to discuss your offerings and help you attract clients.
+              </span>
             </p>
-
-            <div className="flex flex-wrap gap-4 md:gap-6">
-              {PLATFORM_STATS.map((stat, index) => {
-                const Icon = stat.icon;
-                return (
-                  <div key={index} className="flex items-center gap-3">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
-                      <Icon className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-sm md:text-base">{stat.label}</div>
-                      <div className="text-xs md:text-sm text-gray-500">{stat.sublabel}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
 
           <div className="md:w-1/3 w-full">
@@ -1021,7 +934,7 @@ const CreateService = () => {
     </div>
   ), []);
 
-  // Render step content - Fixed controlled inputs
+  // Render step content
   const renderStepContent = useMemo(() => {
     switch (activeStep) {
       case 1:
@@ -1037,7 +950,7 @@ const CreateService = () => {
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Type className="mr-2" size={14} />
-                  Service Title <span className="text-red-500">*</span>
+                  Service Title
                 </label>
                 <input
                   type="text"
@@ -1046,12 +959,9 @@ const CreateService = () => {
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   placeholder="e.g., Professional Web Development Service"
-                  required
-                  aria-required="true"
-                  aria-describedby="title-help"
                 />
                 <div className="flex justify-between mt-2">
-                  <p id="title-help" className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Minimum 5 characters required
                   </p>
                   <span className={`text-xs ${(formData.title || '').length >= 5 ? 'text-green-600' : 'text-red-600'}`}>
@@ -1059,7 +969,7 @@ const CreateService = () => {
                   </span>
                 </div>
                 {errors.title && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.title}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.title}</p>
                 )}
               </div>
 
@@ -1068,7 +978,7 @@ const CreateService = () => {
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                     <LayersIcon className="mr-2" size={14} />
-                    Category <span className="text-red-500">*</span>
+                    Category
                   </label>
                   <div className="relative">
                     <select
@@ -1076,8 +986,6 @@ const CreateService = () => {
                       value={formData.category || ''}
                       onChange={handleInputChange}
                       className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                      required
-                      aria-required="true"
                       disabled={categoryLoading || createServiceMutation.isPending}
                     >
                       <option value="">Select a category</option>
@@ -1098,14 +1006,14 @@ const CreateService = () => {
                     </div>
                   </div>
                   {errors.category && (
-                    <p className="mt-2 text-sm text-red-600" role="alert">{errors.category}</p>
+                    <p className="mt-2 text-sm text-red-600">{errors.category}</p>
                   )}
                 </div>
 
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                     <Layers className="mr-2" size={14} />
-                    Subcategory <span className="text-red-500">*</span>
+                    Subcategory
                   </label>
                   <div className="relative">
                     <select
@@ -1113,8 +1021,6 @@ const CreateService = () => {
                       value={formData.subcategory || ''}
                       onChange={handleInputChange}
                       className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
-                      required
-                      aria-required="true"
                       disabled={!formData.category || subcategoryLoading || (subcategories || []).length === 0 || createServiceMutation.isPending}
                     >
                       <option value="">Select a subcategory</option>
@@ -1137,7 +1043,7 @@ const CreateService = () => {
                     </div>
                   </div>
                   {errors.subcategory && (
-                    <p className="mt-2 text-sm text-red-600" role="alert">{errors.subcategory}</p>
+                    <p className="mt-2 text-sm text-red-600">{errors.subcategory}</p>
                   )}
                 </div>
               </div>
@@ -1145,7 +1051,7 @@ const CreateService = () => {
               {/* Short Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Short Description <span className="text-red-500">*</span>
+                  Short Description
                 </label>
                 <textarea
                   name="shortDescription"
@@ -1154,17 +1060,13 @@ const CreateService = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   rows="3"
                   placeholder="Brief description of your service (appears in listings)."
-                  required
                   maxLength={250}
-                  aria-required="true"
-                  aria-describedby="short-desc-help short-desc-count"
                 />
                 <div className="flex justify-between mt-2">
-                  <p id="short-desc-help" className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Minimum 20 characters, maximum 250 characters
                   </p>
                   <span 
-                    id="short-desc-count"
                     className={`text-xs font-medium ${
                       !formData.shortDescription ? 'text-gray-500' :
                       (formData.shortDescription || '').length < 20 ? 'text-red-600' : 
@@ -1176,14 +1078,14 @@ const CreateService = () => {
                   </span>
                 </div>
                 {errors.shortDescription && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.shortDescription}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.shortDescription}</p>
                 )}
               </div>
 
               {/* Full Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Description <span className="text-red-500">*</span>
+                  Full Description
                 </label>
                 <textarea
                   name="description"
@@ -1192,17 +1094,13 @@ const CreateService = () => {
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-sm md:text-base"
                   rows="6"
                   placeholder="Detailed description of your service. Include what clients will get, your process, and any important details."
-                  required
                   maxLength={5000}
-                  aria-required="true"
-                  aria-describedby="desc-help desc-count"
                 />
                 <div className="flex justify-between mt-2">
-                  <p id="desc-help" className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Minimum 50 characters, maximum 5000 characters
                   </p>
                   <span 
-                    id="desc-count"
                     className={`text-xs font-medium ${
                       !formData.description ? 'text-gray-500' :
                       (formData.description || '').length < 50 ? 'text-red-600' : 
@@ -1214,7 +1112,7 @@ const CreateService = () => {
                   </span>
                 </div>
                 {errors.description && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.description}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.description}</p>
                 )}
               </div>
             </div>
@@ -1234,27 +1132,25 @@ const CreateService = () => {
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <DollarSign className="mr-2" size={14} />
-                  Price (USD) <span className="text-red-500">*</span>
+                  Price (USD)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
                   <input
                     type="number"
                     name="price"
                     value={formData.price || ''}
                     onChange={handleInputChange}
-                    className="w-full pl-10 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+                    className="w-full p-3 md:p-4 pl-12 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="Enter your price"
                     min="1"
                     max="100000"
                     step="0.01"
-                    required
-                    aria-required="true"
-                    aria-describedby="price-help"
+                    disabled={createServiceMutation.isPending}
                   />
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <p id="price-help" className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Minimum $1, maximum $100,000
                   </p>
                   {formData.price && (
@@ -1264,7 +1160,7 @@ const CreateService = () => {
                   )}
                 </div>
                 {errors.price && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.price}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.price}</p>
                 )}
               </div>
 
@@ -1278,7 +1174,6 @@ const CreateService = () => {
                   value={formData.currency || 'USD'}
                   onChange={handleInputChange}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
-                  aria-label="Select currency"
                 >
                   {CURRENCY_OPTIONS.map(currency => (
                     <option key={currency.value} value={currency.value}>
@@ -1292,7 +1187,7 @@ const CreateService = () => {
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Calendar className="mr-2" size={14} />
-                  Delivery Time <span className="text-red-500">*</span>
+                  Delivery Time
                 </label>
                 <div className="flex gap-3">
                   <input
@@ -1302,18 +1197,14 @@ const CreateService = () => {
                     onChange={handleInputChange}
                     className="flex-1 p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="e.g., 7"
-                    required
                     min="1"
                     max="365"
-                    aria-required="true"
-                    aria-describedby="delivery-help"
                   />
                   <select
                     name="deliveryTimeUnit"
                     value={formData.deliveryTimeUnit || 'days'}
                     onChange={handleInputChange}
                     className="p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white transition-all text-sm md:text-base"
-                    aria-label="Select delivery time unit"
                   >
                     {DELIVERY_TIME_UNITS.map(unit => (
                       <option key={unit.value} value={unit.value}>
@@ -1323,7 +1214,7 @@ const CreateService = () => {
                   </select>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <p id="delivery-help" className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Minimum 1 day, maximum 365 days
                   </p>
                   {formData.deliveryTime && (
@@ -1333,7 +1224,7 @@ const CreateService = () => {
                   )}
                 </div>
                 {errors.deliveryTime && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.deliveryTime}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.deliveryTime}</p>
                 )}
               </div>
 
@@ -1370,7 +1261,7 @@ const CreateService = () => {
               {/* Tags */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                  <Tag className="w-5 h-5 mr-2" />
+                  <FileText className="w-5 h-5 mr-2" />
                   Service Tags
                 </h3>
                 <div className="space-y-4">
@@ -1553,34 +1444,6 @@ const CreateService = () => {
                 </div>
               </div>
             </div>
-            
-            {Object.keys(errors).length > 0 && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-                <h3 className="text-red-800 font-bold mb-2 flex items-center">
-                  <AlertCircle className="mr-2" size={20} />
-                  Please fix the following errors:
-                </h3>
-                <ul className="text-red-600 list-disc pl-5">
-                  {Object.entries(errors).map(([field, message]) => (
-                    <li key={field} className="mb-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const element = document.querySelector(`[name="${field}"]`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            element.focus();
-                          }
-                        }}
-                        className="text-left hover:underline"
-                      >
-                        {message}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         );
 
@@ -1675,11 +1538,10 @@ const CreateService = () => {
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
                   <ImageIcon className="w-5 h-5 mr-2" />
-                  Thumbnail <span className="text-red-500 ml-1">*</span>
+                  Thumbnail
                 </h3>
                 <div className="space-y-4">
-                  <p className="text-gray-600 text-sm flex items-center">
-                    <AlertCircle className="w-4 h-4 mr-2 text-blue-500" />
+                  <p className="text-gray-600 text-sm">
                     The thumbnail is required and will be displayed as the main service image.
                   </p>
 
@@ -1696,7 +1558,6 @@ const CreateService = () => {
                           type="button"
                           onClick={removeThumbnail}
                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                          aria-label="Remove thumbnail"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -1718,7 +1579,6 @@ const CreateService = () => {
                         onChange={(e) => handleThumbnailUpload(e.target.files[0])}
                         className="hidden"
                         disabled={uploadingThumbnail || createServiceMutation.isPending}
-                        required
                       />
                       <label htmlFor="thumbnail-upload" className="cursor-pointer">
                         <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
@@ -1728,15 +1588,12 @@ const CreateService = () => {
                         <p className="text-gray-600 text-sm mb-2">
                           Recommended: 800×600 pixels, max 2MB
                         </p>
-                        <p className="text-red-500 text-xs">
-                          * Thumbnail is required for service listing
-                        </p>
                       </label>
                     </div>
                   )}
                 </div>
                 {errors.thumbnail && (
-                  <p className="mt-2 text-sm text-red-600" role="alert">{errors.thumbnail}</p>
+                  <p className="mt-2 text-sm text-red-600">{errors.thumbnail}</p>
                 )}
               </div>
 
@@ -1859,7 +1716,6 @@ const CreateService = () => {
             onClick={prevStep}
             className="px-6 md:px-8 py-3 md:py-4 text-gray-700 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isProcessing}
-            aria-label="Go back to previous step"
           >
             <ArrowLeft className="mr-2" size={20} />
             Back
@@ -1872,7 +1728,6 @@ const CreateService = () => {
             onClick={nextStep}
             className={`px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${activeStep > 1 ? 'ml-auto' : ''}`}
             disabled={isProcessing}
-            aria-label="Continue to next step"
           >
             Save & Continue
             <ChevronRight className="ml-2" size={20} />
@@ -1884,7 +1739,6 @@ const CreateService = () => {
               onClick={(e) => handleSubmit(e, 'draft')}
               disabled={isProcessing}
               className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Save service as draft"
             >
               {isProcessing ? (
                 <>
@@ -1893,7 +1747,7 @@ const CreateService = () => {
                 </>
               ) : (
                 <>
-                  <Save className="mr-2" size={20} />
+                  <FileText className="mr-2" size={20} />
                   Save as Draft
                 </>
               )}
@@ -1904,7 +1758,6 @@ const CreateService = () => {
               onClick={(e) => handleSubmit(e, 'active')}
               disabled={isProcessing}
               className="flex-1 px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:opacity-90 transition-opacity font-medium flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Publish service"
             >
               {isProcessing ? (
                 <>
@@ -1940,7 +1793,7 @@ const CreateService = () => {
       2: "Set your pricing, delivery time.",
       3: "Add features, requirements, and additional details.",
       4: "Upload images and add frequently asked questions.",
-      5: "Your service is ready to be published! Review your information before submitting."
+      5: "Your service is ready! Our team will contact you within 24 hours."
     };
 
     return (
@@ -2052,7 +1905,7 @@ const CreateService = () => {
               <CheckCircle className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 md:mb-6 text-blue-300" />
               <h3 className="text-xl md:text-2xl font-bold mb-4">Service Created Successfully!</h3>
               <div className="text-blue-100 mb-6 text-sm md:text-base">
-                Your service is now live and visible to thousands of potential clients.
+                Your service has been submitted successfully! Our team will review it and contact you within 24 hours to discuss your offerings.
                 {createdServiceId && (
                   <div className="mt-4 text-xs md:text-sm bg-white/10 rounded-lg p-2">
                     Service ID: <span className="font-mono">{createdServiceId}</span>
@@ -2067,16 +1920,16 @@ const CreateService = () => {
                     <li>✓ {uploadedImages.length} additional image{uploadedImages.length !== 1 ? 's' : ''}</li>
                   )}
                   <li>✓ Service information saved</li>
-                  <li>✓ Ready for clients to discover</li>
+                  <li>✓ Ready for our team to review</li>
                 </ul>
               </div>
               <div className="bg-white/10 rounded-xl p-4">
                 <h4 className="font-bold mb-2">What happens next?</h4>
                 <ul className="text-sm space-y-1 text-left pl-4">
-                  <li>• Clients will start discovering your service</li>
-                  <li>• You'll receive notifications for new orders</li>
-                  <li>• Manage your services from your dashboard</li>
-                  <li>• Build your reputation with client reviews</li>
+                  <li>• Our team will review your service within 24 hours</li>
+                  <li>• We'll contact you to discuss your service offerings</li>
+                  <li>• We'll help you optimize your service for better visibility</li>
+                  <li>• You'll receive email notifications for updates</li>
                 </ul>
               </div>
             </div>
@@ -2104,7 +1957,7 @@ const CreateService = () => {
       canonical={`${window.location.origin}/create-service`}
       structuredData={structuredData}
     >
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
+      <div ref={topContainerRef} className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
         {renderTopInfo}
 
         <div className="max-w-6xl mx-auto">
@@ -2127,21 +1980,20 @@ const CreateService = () => {
                       Service Created Successfully!
                     </h2>
                     <p className="text-gray-600 text-base md:text-lg mb-8">
-                      Your service is now live. Redirecting to your service page...
+                      Your service has been submitted successfully! Our team will review it and contact you within 24 hours to discuss your offerings.
                     </p>
                     <div className="w-20 h-1 bg-blue-600 rounded-full mx-auto animate-pulse"></div>
                     <div className="mt-8">
                       <button
                         onClick={() => navigate(`/services/${createdServiceId}`)}
                         className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                        aria-label="View your newly created service"
                       >
                         Go to Service Now
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={(e) => e.preventDefault()} className="p-6 md:p-8" aria-label="Service creation form">
+                  <form onSubmit={(e) => e.preventDefault()} className="p-6 md:p-8">
                     {/* Display API errors */}
                     {createServiceMutation.error && (
                       <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
