@@ -27,7 +27,7 @@ import { useGigs } from '../../../hooks/useGigs';
 import { useCategories } from '../../../hooks/useServices';
 import { toast } from 'react-hot-toast';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-
+import { DEFAULT_IMAGES } from '../../../utils/defaultImages';
 const GigListingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -725,8 +725,11 @@ const GigListingsPage = () => {
                           </>
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
-                            <ImageIcon className="w-12 h-12 mb-2" />
-                            <span className="text-sm">No image</span>
+                             <img
+                                                    src={DEFAULT_IMAGES.GENERIC}
+                                                    alt="Service placeholder"
+                                                    className="w-full h-full object-cover rounded-2xl"
+                                                        />
                           </div>
                         )}
                         

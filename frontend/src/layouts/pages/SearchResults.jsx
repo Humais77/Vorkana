@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { SeoWrapper } from '../../components/SeoWrapper';
 import { useSearchResults } from '../../hooks/useSearch';
-import toast from 'react-hot-toast';
+import { DEFAULT_IMAGES} from '../../utils/defaultImages';
 import SearchComponent from '../../components/Search/SearchComponent';
 
 const SearchResults = () => {
@@ -560,12 +560,12 @@ const SearchResults = () => {
                         {/* Thumbnail */}
                         <div className="relative h-48 overflow-hidden">
                           <img
-                            src={item.thumbnail || (item.images?.[0]?.url) || 'https://images.unsplash.com/photo-1551650975-87deedd944c3?ixlib=rb-1.2.1&auto=format&fit=crop&w=400&q=80'}
+                            src={item.thumbnail || (item.images?.[0]?.url) ||DEFAULT_IMAGES.GENERIC}
                             alt={item.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
                             onError={(e) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1551650975-87deedd944c3?ixlib=rb-1.2.1&auto=format&fit=crop&w=400&q=80';
+                              e.target.src = DEFAULT_IMAGES.GENERIC;
                             }}
                           />
                           {item.isFeatured && (

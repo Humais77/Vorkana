@@ -9,7 +9,7 @@ import { motion } from "framer-motion";
 import { usePopularCategories } from "../../hooks/useCategories";
 import { usePopularServicesByCategory } from "../../hooks/useServices";
 import { toast } from "react-hot-toast";
-
+import { DEFAULT_IMAGES, getGenericImage } from '../../utils/defaultImages';
 const PopularServicesPage = () => {
   const { categorySlug } = useParams();
   const navigate = useNavigate();
@@ -147,7 +147,7 @@ const PopularServicesPage = () => {
   // Get service image
   const getServiceImage = (service) => {
     return service.imageUrl || service.thumbnail?.url || 
-      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+     DEFAULT_IMAGES.GENERIC;
   };
 
   // Loading state
