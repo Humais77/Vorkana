@@ -8,8 +8,8 @@ import {
   User,
   DollarSign,
   Calendar,
-  History as HistoryIcon ,
-  AlertTriangle ,
+  History as HistoryIcon,
+  AlertTriangle,
   FileText,
   MessageSquare,
   ChevronRight,
@@ -36,7 +36,6 @@ import {
   Edit,
   Briefcase
 } from "lucide-react";
-import { useGigToast } from '../../../hooks/useGigToast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from "../../../store/useAuthStore";
 import { useGigStore } from "../../../store/useGigStore";
@@ -46,10 +45,9 @@ import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from "../../../components/SeoWrapper";
 import { isProfileCompleteEnough } from '../../../utils/profileUtils';
+import { useGigToast } from '../../../hooks/useGigToast';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-
-// Static data
+// Static data outside component
 const GIG_EDIT_STRUCTURED_DATA = {
   "@context": "https://schema.org",
   "@type": "WebPage",
@@ -124,11 +122,20 @@ const GigEdit = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const queryClient = useQueryClient();
-  
+
   // Zustand stores
-  const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
+  const { user: currentUser, isAuthenticated } = useAuthStore();
   const { setGigDetails } = useGigStore();
   const { categories: storedCategories, setCategories } = useCategoryStore();
+
+  // Gig Toast hook
+  const {
+    showGigLoading,
+    showGigUpdateSuccess,
+    showGigError,
+    showGigInfo,
+    dismissGigToast
+  } = useGigToast();
 
   // TanStack Query hooks
   const {
@@ -151,21 +158,8 @@ const GigEdit = () => {
     isSuccess: updateSuccess,
     data: updatedGigData
   } = useUpdateGig();
-  
-  const {
-    showGigLoading,
-    showGigUpdateSuccess,
-    showGigError,
-    showGigInfo,
-    dismissGigToast
-  } = useGigToast();
-  
-  const [shouldRedirect, setShouldRedirect] = useState({
-    toGigPage: false,
-    toDashboard: false
-  });
 
-  // Initial form state
+  // Initial form state - MEMOIZED
   const initialFormData = useMemo(() => ({
     title: "",
     fullName: "",
@@ -183,7 +177,8 @@ const GigEdit = () => {
     urgency: "medium",
     visibility: "public",
     skillsRequired: [],
-    deliverables: []
+    deliverables: [],
+    version: 1
   }), []);
 
   // Local state
@@ -198,21 +193,19 @@ const GigEdit = () => {
   const [deliverableInput, setDeliverableInput] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [versionConflict, setVersionConflict] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [versionConflict, setVersionConflict] = useState(false);
   const [conflictResolution, setConflictResolution] = useState({
-  show: false,
-  serverVersion: 1,
-  serverData: null
-});
+    show: false,
+    serverVersion: 1,
+    serverData: null
+  });
 
   // Refs
-  const imageUploadRef = useRef(null);
-  const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
   const hasPopulatedRef = useRef(false);
   const hasProcessedSuccessRef = useRef(false);
-  
+
   // Memoized values
   const subcategoriesData = useSubcategoriesByCategory(formData.projectCategory, {
     enabled: !!formData.projectCategory
@@ -222,80 +215,76 @@ const GigEdit = () => {
     if (!subcategoriesData.data) return [];
     return subcategoriesData.data?.subcategories || subcategoriesData.data || [];
   }, [subcategoriesData.data]);
+
   const currentGig = useMemo(() => {
-  if (!gigData) return null;
-  return gigData.gig || gigData.data || gigData;
-}, [gigData]);
+    if (!gigData) return null;
+    return gigData.gig || gigData.data || gigData;
+  }, [gigData]);
 
-// Get current version - SIMILAR TO EDIT SERVICE
-const currentVersion = useMemo(() => {
-  return currentGig?.version || formData.version || 1;
-}, [currentGig, formData.version]);
+  // Get current version - OPTIMIZED
+  const currentVersion = useMemo(() => currentGig?.version || formData.version || 1,
+    [currentGig, formData.version]);
 
-  const allErrors = useMemo(() => {
-  const errorMessages = { ...errors };
-  
-  // Convert all error messages to strings
-  if (gigError?.message) errorMessages.form = gigError.message.toString();
-  if (authError) errorMessages.form = authError.toString();
-  if (categoryError?.message) errorMessages.form = categoryError.message.toString();
-  if (updateError?.message) errorMessages.form = updateError.message.toString();
-  
-  return errorMessages;
-}, [errors, gigError, authError, categoryError, updateError]);
+  // All errors - OPTIMIZED
+  const allErrors = useMemo(() => ({
+    ...errors,
+    form: errors.form || gigError?.message || categoryError?.message || updateError?.message
+  }), [errors, gigError, categoryError, updateError]);
 
-  // Populate form with gig data
+  // Populate form with gig data - OPTIMIZED
   useEffect(() => {
-  if (currentGig && !hasPopulatedRef.current) {
-    hasPopulatedRef.current = true;
-    
-    // Check if user is owner
-    if (currentUser && currentGig.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
-      showGigError('You can only edit your own gigs');
-      navigate(`/gigs/${id}`);
-      return;
+    if (currentGig && !hasPopulatedRef.current) {
+      hasPopulatedRef.current = true;
+
+      // Check ownership - EARLY RETURN
+      if (currentUser && currentGig.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
+        showGigError('You can only edit your own gigs');
+        navigate(`/gigs/${id}`);
+        return;
+      }
+
+      // Create new form data object ONCE
+      const newFormData = {
+        title: currentGig.title || "",
+        fullName: currentGig.fullName || "",
+        oauthEmail: currentGig.oauthEmail || "",
+        country: currentGig.country || "",
+        phone: currentGig.phone || "",
+        projectCategory: currentGig.projectCategory?._id || currentGig.projectCategory || "",
+        subcategory: currentGig.subcategory?._id || currentGig.subcategory || "",
+        description: currentGig.description || "",
+        budget: currentGig.budget?.toString() || "",
+        currency: currentGig.currency || "USD",
+        timeline: currentGig.timeline || "",
+        timelineUnit: currentGig.timelineUnit || "days",
+        communication: currentGig.communication || "Email",
+        urgency: currentGig.urgency || "medium",
+        visibility: currentGig.visibility || "public",
+        skillsRequired: currentGig.skillsRequired || [],
+        deliverables: currentGig.deliverables || [],
+        version: currentGig.version || 1
+      };
+
+      setFormData(newFormData);
+
+      // Set existing images if they exist
+      if (currentGig.images && Array.isArray(currentGig.images)) {
+        setExistingImages(currentGig.images);
+      }
+
+      // Set existing thumbnail if it exists
+      if (currentGig.thumbnail) {
+        setExistingThumbnail(currentGig.thumbnail);
+      }
+
+      // Set gig details in store
+      setGigDetails(currentGig);
+
+      // Reset conflict states
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
     }
-
-    // Populate form with LATEST data - INCLUDING VERSION
-    setFormData({
-      title: currentGig.title || "",
-      fullName: currentGig.fullName || "",
-      oauthEmail: currentGig.oauthEmail || "",
-      country: currentGig.country || "",
-      phone: currentGig.phone || "",
-      projectCategory: currentGig.projectCategory?._id || currentGig.projectCategory || "",
-      subcategory: currentGig.subcategory?._id || currentGig.subcategory || "",
-      description: currentGig.description || "",
-      budget: currentGig.budget?.toString() || "",
-      currency: currentGig.currency || "USD",
-      timeline: currentGig.timeline || "",
-      timelineUnit: currentGig.timelineUnit || "days",
-      communication: currentGig.communication || "Email",
-      urgency: currentGig.urgency || "medium",
-      visibility: currentGig.visibility || "public",
-      skillsRequired: currentGig.skillsRequired || [],
-      deliverables: currentGig.deliverables || [],
-      version: currentGig.version || 1 // CRITICAL: Include version
-    });
-
-    // Set existing images
-    if (currentGig.images && Array.isArray(currentGig.images)) {
-      setExistingImages(currentGig.images);
-    }
-
-    // Set existing thumbnail
-    if (currentGig.thumbnail) {
-      setExistingThumbnail(currentGig.thumbnail);
-    }
-
-    // Set gig details in store
-    setGigDetails(currentGig);
-    
-    // Reset conflict states
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-  }
-}, [currentGig, currentUser, id, navigate, setGigDetails, showGigError]);
+  }, [currentGig, currentUser, id, navigate, setGigDetails, showGigError]);
 
   // Sync categories from query to store
   useEffect(() => {
@@ -304,167 +293,125 @@ const currentVersion = useMemo(() => {
     }
   }, [categoriesData, setCategories]);
 
+  // Handle successful update - OPTIMIZED
   useEffect(() => {
-  if (updateSuccess && updatedGigData && isSubmitting && !hasProcessedSuccessRef.current) {
-    console.log('Update successful, processing...');
-    hasProcessedSuccessRef.current = true;
-    
-    setIsSubmitting(false);
-    
-    // Show success toast with 5-second timer and description
-    showGigUpdateSuccess(
-      id,
-      'Gig Updated Successfully!',
-      'Your changes are being processed and will be visible across the platform shortly.'
-    );
+    if (updateSuccess && updatedGigData && isSubmitting && !hasProcessedSuccessRef.current) {
+      hasProcessedSuccessRef.current = true;
 
-    // Invalidate queries
-    queryClient.invalidateQueries({
-      queryKey: ['gig', id]
-    });
-    
-    queryClient.invalidateQueries({
-      queryKey: ['gigs']
-    });
+      // Optimized state updates
+      setIsSubmitting(false);
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+      hasPopulatedRef.current = false;
 
-    // Reset form state
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-    hasPopulatedRef.current = false; // Allow re-population
-  }
-  
-  // Reset success flag when submission starts
-  return () => {
-    if (isSubmitting) {
-      hasProcessedSuccessRef.current = false;
-    }
-  };
-}, [updateSuccess, updatedGigData, id, queryClient, isSubmitting, showGigUpdateSuccess]);
-const handleRefreshGig = useCallback(async () => {
-  setIsRefreshing(true);
-  try {
-    // Invalidate and refetch
-    await queryClient.invalidateQueries({ queryKey: ['gig', id] });
-    const result = await refetchGig();
-    
-    // Reset populated flag to allow re-population
-    hasPopulatedRef.current = false;
-    
-    // Clear version conflict if it exists
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-    
-    showGigInfo('Gig data refreshed successfully!');
-    
-    return result;
-  } catch (error) {
-    showGigError('Failed to refresh gig data');
-    throw error;
-  } finally {
-    setIsRefreshing(false);
-  }
-}, [id, refetchGig, queryClient, showGigInfo, showGigError]);
-// Handle update errors
-useEffect(() => {
-  if (updateError) {
-    setIsSubmitting(false);
-    hasProcessedSuccessRef.current = false;
-    
-    const isOwner = currentUser && currentGig?.createdBy?._id === currentUser._id;
-    const isAdmin = currentUser?.role === 'admin';
-    
-    // Handle version conflict
-    if (updateError.code === 'VERSION_CONFLICT') {
-      setVersionConflict(true);
-      setConflictResolution({
-        show: true,
-        serverVersion: updateError.currentVersion || (currentVersion + 1),
-        serverData: null
+      // Show success toast
+      showGigUpdateSuccess(
+        id,
+        'Gig Updated Successfully!',
+        'Your changes are being processed and will be visible across the platform shortly.'
+      );
+
+      // Batch query invalidations
+      queryClient.invalidateQueries({
+        queryKey: ['gig', id]
       });
-      
-      showGigError(updateError.message || 'Gig was modified by another user. Please refresh.');
-      
-      // Force refresh to get latest data
-      setTimeout(() => {
-        handleRefreshGig();
-      }, 1500);
+      queryClient.invalidateQueries({
+        queryKey: ['gigs']
+      });
     }
-    // Handle subcategory errors
-    else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
-      setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
-      showGigError('Subcategory validation failed');
-    } else {
-      showGigError(updateError.message || 'Failed to update gig');
-    }
-  }
-}, [updateError, currentUser, currentGig, currentVersion, showGigError, handleRefreshGig]);
 
-  // Cleanup URL objects
-  useEffect(() => {
+    // Cleanup function
     return () => {
-      uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-      if (thumbnailFile) {
-        URL.revokeObjectURL(thumbnailFile.preview);
+      if (isSubmitting) {
+        hasProcessedSuccessRef.current = false;
+      }
+    };
+  }, [updateSuccess, updatedGigData, id, queryClient, isSubmitting, showGigUpdateSuccess]);
+
+  // Handle update errors - OPTIMIZED
+  useEffect(() => {
+    if (updateError) {
+      setIsSubmitting(false);
+      hasProcessedSuccessRef.current = false;
+
+      // Handle version conflict
+      if (updateError.code === 'VERSION_CONFLICT') {
+        setVersionConflict(true);
+        setConflictResolution({
+          show: true,
+          serverVersion: updateError.currentVersion || (currentVersion + 1),
+          serverData: null
+        });
+
+        showGigError(updateError.message || 'Gig was modified by another user. Please refresh.');
+
+        // Schedule refresh
+        setTimeout(() => {
+          handleRefreshGig();
+        }, 1500);
+      }
+      // Handle other errors
+      else if (updateError.code === 'SUBCATEGORY_REQUIRED') {
+        setErrors(prev => ({ ...prev, subcategory: 'Please select a subcategory' }));
+        showGigError('Subcategory validation failed');
+      } else {
+        showGigError(updateError.message || 'Failed to update gig');
+      }
+    }
+  }, [updateError, currentVersion, showGigError]);
+
+  // Cleanup URL objects - OPTIMIZED
+  useEffect(() => {
+    const uploadedImagePreviews = uploadedImages;
+    const currentThumbnailFile = thumbnailFile;
+
+    return () => {
+      uploadedImagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+      if (currentThumbnailFile) {
+        URL.revokeObjectURL(currentThumbnailFile.preview);
       }
     };
   }, [uploadedImages, thumbnailFile]);
 
-  // Check profile completeness
+  // Check profile completeness - OPTIMIZED
   useEffect(() => {
     if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
       showGigError('Please complete your profile before editing gigs');
-      setShouldRedirect(prev => ({ ...prev, toDashboard: true }));
-    }
-  }, [currentUser, showGigError]);
-
-  // Handle redirects
-  useEffect(() => {
-    if (shouldRedirect.toGigPage) {
-      navigate(`/gig/${id}`);
-    }
-    if (shouldRedirect.toDashboard) {
       navigate('/dashboard');
     }
-  }, [shouldRedirect, id, navigate]);
+  }, [currentUser, navigate, showGigError]);
 
-const getCategoryName = useCallback(() => {
-  if (!formData.projectCategory) return "";
-  
-  const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
-    ? storedCategories
-    : (Array.isArray(categoriesData) ? categoriesData : []);
-  
-  const category = categoryList.find(c => c._id === formData.projectCategory);
-  
-  // Return only the name string, not the entire object
-  return category?.name || formData.projectCategory || "";
-}, [formData.projectCategory, storedCategories, categoriesData]);
+  // Memoized helper functions
+  const getCategoryName = useCallback(() => {
+    if (!formData.projectCategory) return "";
+    const categoryList = Array.isArray(storedCategories) && storedCategories.length > 0
+      ? storedCategories
+      : (Array.isArray(categoriesData) ? categoriesData : []);
+    const category = categoryList.find(c => c._id === formData.projectCategory);
+    return category?.name || "";
+  }, [formData.projectCategory, storedCategories, categoriesData]);
 
-// Update the getSubcategoryName function:
-const getSubcategoryName = useCallback(() => {
-  if (!formData.subcategory) return "";
-  
-  const subcategory = subcategories.find(s => s._id === formData.subcategory);
-  
-  // Return only the name string, not the entire object
-  return subcategory?.name || formData.subcategory || "";
-}, [formData.subcategory, subcategories]);
+  const getSubcategoryName = useCallback(() => {
+    if (!formData.subcategory) return "";
+    const subcategory = subcategories.find(s => s._id === formData.subcategory);
+    return subcategory?.name || "";
+  }, [formData.subcategory, subcategories]);
 
-  // Memoized handlers
+  // Optimized input change handler
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    
+
     // Update form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
-    
+
     // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
-    
+
     // If category changes, clear subcategory
     if (name === 'projectCategory' && value !== formData.projectCategory) {
       setFormData(prev => ({ ...prev, subcategory: "" }));
@@ -472,6 +419,7 @@ const getSubcategoryName = useCallback(() => {
     }
   }, [errors, formData.projectCategory, subcategoriesData]);
 
+  // Optimized form validation
   const validateForm = useCallback(() => {
     const newErrors = {};
 
@@ -507,33 +455,116 @@ const getSubcategoryName = useCallback(() => {
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories]);
 
+  // Optimized refresh gig handler
+  const handleRefreshGig = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Batch operations
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gig', id] }),
+        refetchGig()
+      ]);
+
+      // Reset states
+      hasPopulatedRef.current = false;
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+
+      showGigInfo('Gig data refreshed successfully!');
+    } catch (error) {
+      showGigError('Failed to refresh gig data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [id, refetchGig, queryClient, showGigInfo, showGigError]);
+
+  // Optimized conflict resolution
+  const handleManualResolve = useCallback((action) => {
+    switch (action) {
+      case 'keep_my_changes':
+        setFormData(prev => ({
+          ...prev,
+          version: conflictResolution.serverVersion
+        }));
+        setVersionConflict(false);
+        showGigInfo('Your changes will be applied on top of latest version');
+        break;
+
+      case 'use_server_changes':
+        if (conflictResolution.serverData) {
+          const serverGig = conflictResolution.serverData;
+
+          setFormData({
+            title: serverGig.title || "",
+            fullName: serverGig.fullName || "",
+            oauthEmail: serverGig.oauthEmail || "",
+            country: serverGig.country || "",
+            phone: serverGig.phone || "",
+            projectCategory: serverGig.projectCategory?._id || serverGig.projectCategory || "",
+            subcategory: serverGig.subcategory?._id || serverGig.subcategory || "",
+            description: serverGig.description || "",
+            budget: serverGig.budget?.toString() || "",
+            currency: serverGig.currency || "USD",
+            timeline: serverGig.timeline || "",
+            timelineUnit: serverGig.timelineUnit || "days",
+            communication: serverGig.communication || "Email",
+            urgency: serverGig.urgency || "medium",
+            visibility: serverGig.visibility || "public",
+            skillsRequired: serverGig.skillsRequired || [],
+            deliverables: serverGig.deliverables || [],
+            version: serverGig.version || 1
+          });
+
+          if (serverGig.images && Array.isArray(serverGig.images)) {
+            setExistingImages(serverGig.images);
+          }
+
+          if (serverGig.thumbnail) {
+            setExistingThumbnail(serverGig.thumbnail);
+          }
+        }
+
+        setVersionConflict(false);
+        setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+        hasPopulatedRef.current = false;
+        showGigInfo('Loaded latest version from server');
+        break;
+
+      case 'merge_changes':
+        showGigInfo('Manual merge required. Please refresh and edit again.');
+        handleRefreshGig();
+        break;
+    }
+  }, [conflictResolution, handleRefreshGig, showGigInfo]);
+
+  // Optimized image upload handler
   const handleImageUpload = useCallback(async (files) => {
     if (uploadingImages) return;
-    
+
     const newFiles = Array.from(files);
-    
+
     // Validate total image count
     const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
     if (totalImages > 10) {
       showGigError('Maximum 10 images allowed');
       return;
     }
-    
+
     // Validate each file
     for (const file of newFiles) {
       if (file.size > 5 * 1024 * 1024) {
         showGigError(`${file.name} exceeds 5MB limit`);
         return;
       }
-      
+
       if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
         showGigError(`${file.name} is not a valid image type`);
         return;
       }
     }
-    
+
     setUploadingImages(true);
-    
+
     try {
       const previewImages = newFiles.map(file => ({
         file,
@@ -543,11 +574,10 @@ const getSubcategoryName = useCallback(() => {
         type: file.type,
         isNew: true
       }));
-      
+
       setUploadedImages(prev => [...prev, ...previewImages]);
       showGigInfo(`${newFiles.length} image(s) added successfully`);
-    } catch (error) {
-      console.error('Error uploading images:', error);
+    } catch {
       showGigError('Failed to add images');
     } finally {
       setUploadingImages(false);
@@ -556,17 +586,17 @@ const getSubcategoryName = useCallback(() => {
 
   const handleThumbnailUpload = useCallback((file) => {
     if (uploadingThumbnail) return;
-    
+
     if (file.size > 5 * 1024 * 1024) {
       showGigError('Thumbnail exceeds 5MB limit');
       return;
     }
-    
+
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       showGigError('Invalid image type for thumbnail');
       return;
     }
-    
+
     setThumbnailFile({
       file,
       preview: URL.createObjectURL(file),
@@ -575,19 +605,65 @@ const getSubcategoryName = useCallback(() => {
       type: file.type,
       isNew: true
     });
-    
+
     showGigInfo('Thumbnail selected');
   }, [uploadingThumbnail, showGigError, showGigInfo]);
 
+  // Optimized CRUD handlers for skills and deliverables
+  const addSkill = useCallback(() => {
+    if (skillsInput.trim()) {
+      const skill = skillsInput.trim().substring(0, 50);
+      setFormData(prev => ({
+        ...prev,
+        skillsRequired: [...prev.skillsRequired, skill]
+      }));
+      setSkillsInput("");
+    }
+  }, [skillsInput]);
+
+  const removeSkill = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      skillsRequired: prev.skillsRequired.filter((_, i) => i !== index)
+    }));
+  }, []);
+
+  const addDeliverable = useCallback(() => {
+    if (deliverableInput.trim()) {
+      const deliverable = deliverableInput.trim().substring(0, 200);
+      setFormData(prev => ({
+        ...prev,
+        deliverables: [...prev.deliverables, deliverable]
+      }));
+      setDeliverableInput("");
+    }
+  }, [deliverableInput]);
+
+  const removeDeliverable = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      deliverables: prev.deliverables.filter((_, i) => i !== index)
+    }));
+  }, []);
+
+  // Optimized key press handler
+  const handleKeyPress = useCallback((e, type) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (type === 'skill') addSkill();
+      if (type === 'deliverable') addDeliverable();
+    }
+  }, [addSkill, addDeliverable]);
+
+  // Optimized image removal handlers
   const removeExistingImage = useCallback((index) => {
     const imageToRemove = existingImages[index];
     setExistingImages(prev => prev.filter((_, i) => i !== index));
-    
-    // If this was the thumbnail, clear it
+
     if (existingThumbnail && existingThumbnail.public_id === imageToRemove.public_id) {
       setExistingThumbnail(null);
     }
-    
+
     showGigInfo('Image removed');
   }, [existingImages, existingThumbnail, showGigInfo]);
 
@@ -602,249 +678,131 @@ const getSubcategoryName = useCallback(() => {
     if (thumbnailFile) {
       URL.revokeObjectURL(thumbnailFile.preview);
       setThumbnailFile(null);
-      showGigInfo('Thumbnail removed');
     } else if (existingThumbnail) {
       setExistingThumbnail(null);
-      showGigInfo('Thumbnail removed');
     }
+    showGigInfo('Thumbnail removed');
   }, [thumbnailFile, existingThumbnail, showGigInfo]);
 
-  const addSkill = useCallback(() => {
-    if (skillsInput.trim() && formData.skillsRequired.length < 10) {
-      const skill = skillsInput.trim().substring(0, 50);
-      setFormData(prev => ({
-        ...prev,
-        skillsRequired: [...prev.skillsRequired, skill]
-      }));
-      setSkillsInput("");
-    }
-  }, [skillsInput, formData.skillsRequired]);
-
-  const removeSkill = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      skillsRequired: prev.skillsRequired.filter((_, i) => i !== index)
-    }));
-  }, []);
-
-  const addDeliverable = useCallback(() => {
-    if (deliverableInput.trim() && formData.deliverables.length < 10) {
-      const deliverable = deliverableInput.trim().substring(0, 200);
-      setFormData(prev => ({
-        ...prev,
-        deliverables: [...prev.deliverables, deliverable]
-      }));
-      setDeliverableInput("");
-    }
-  }, [deliverableInput, formData.deliverables]);
-
-  const removeDeliverable = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      deliverables: prev.deliverables.filter((_, i) => i !== index)
-    }));
-  }, []);
-
-  const handleKeyPress = useCallback((e, type) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (type === 'skill') addSkill();
-      if (type === 'deliverable') addDeliverable();
-    }
-  }, [addSkill, addDeliverable]);
-
+  // Optimized submit handler
   const handleSubmit = useCallback(async (e) => {
-  e.preventDefault();
-  
-  // Prevent double submission
-  if (isSubmitting) return;
-  
-  setIsSubmitting(true);
-  setVersionConflict(false);
-  
-  if (!isAuthenticated) {
-    showGigError("Please sign in to update gigs");
-    setIsSubmitting(false);
-    return;
-  }
+    e.preventDefault();
 
-  if (!validateForm()) {
-    setIsSubmitting(false);
-    return;
-  }
+    if (isSubmitting) return;
 
-  // Show loading toast
-  showGigLoading('Updating gig...');
+    setIsSubmitting(true);
+    setVersionConflict(false);
 
-  try {
-    // Prepare update data with version - MAKE SURE ALL REQUIRED FIELDS ARE INCLUDED
-    const updateData = {
-      title: (formData.title || '').trim(),
-      fullName: formData.fullName || '',
-      oauthEmail: formData.oauthEmail || '',
-      country: formData.country || '',
-      phone: formData.phone || '',
-      projectCategory: formData.projectCategory,
-      subcategory: formData.subcategory || null,
-      description: (formData.description || '').trim(),
-      budget: parseFloat(formData.budget || 0),
-      currency: formData.currency || "USD",
-      timeline: formData.timeline || '',
-      timelineUnit: formData.timelineUnit || "days",
-      communication: formData.communication || "Email",
-      urgency: formData.urgency || "medium",
-      visibility: formData.visibility || "public",
-      skillsRequired: formData.skillsRequired || [],
-      deliverables: formData.deliverables || [],
-      version: formData.version || currentVersion // Include version
-    };
-
-    console.log('Update data prepared:', updateData); // Debug log
-
-    // Create FormData - Use the SAME approach as in gig.controller.js expects
-    const formDataToSend = new FormData();
-    
-    // Add ALL fields directly to FormData (not as JSON)
-    Object.keys(updateData).forEach(key => {
-      const value = updateData[key];
-      
-      if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
-          // For arrays, append each item separately
-          value.forEach((item, index) => {
-            formDataToSend.append(`${key}[${index}]`, item);
-          });
-        } else {
-          formDataToSend.append(key, value.toString());
-        }
-      }
-    });
-    
-    // Add thumbnail if new one is uploaded
-    if (thumbnailFile && thumbnailFile.file) {
-      formDataToSend.append('thumbnail', thumbnailFile.file);
+    if (!isAuthenticated) {
+      showGigError("Please sign in to update gigs");
+      setIsSubmitting(false);
+      return;
     }
-    
-    // Add new images
-    if (uploadedImages.length > 0) {
-      uploadedImages.forEach((img, index) => {
-        if (img.file) {
-          formDataToSend.append('images', img.file);
+
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Show loading toast
+    showGigLoading('Updating gig...');
+
+    try {
+      // Prepare update data
+      const updateData = {
+        title: (formData.title || '').trim(),
+        fullName: formData.fullName || '',
+        oauthEmail: formData.oauthEmail || '',
+        country: formData.country || '',
+        phone: formData.phone || '',
+        projectCategory: formData.projectCategory,
+        subcategory: formData.subcategory || null,
+        description: (formData.description || '').trim(),
+        budget: parseFloat(formData.budget || 0),
+        currency: formData.currency || "USD",
+        timeline: formData.timeline || '',
+        timelineUnit: formData.timelineUnit || "days",
+        communication: formData.communication || "Email",
+        urgency: formData.urgency || "medium",
+        visibility: formData.visibility || "public",
+        skillsRequired: formData.skillsRequired || [],
+        deliverables: formData.deliverables || [],
+        version: formData.version || currentVersion
+      };
+
+      // Create FormData
+      const formDataToSend = new FormData();
+
+      // Add ALL fields directly to FormData
+      Object.keys(updateData).forEach(key => {
+        const value = updateData[key];
+
+        if (value !== undefined && value !== null) {
+          if (Array.isArray(value)) {
+            value.forEach((item, index) => {
+              formDataToSend.append(`${key}[${index}]`, item);
+            });
+          } else {
+            formDataToSend.append(key, value.toString());
+          }
         }
       });
-    }
 
-    // Debug: Log what we're sending
-    console.log('FormData entries:');
-    for (let [key, value] of formDataToSend.entries()) {
-      console.log(key, value);
-    }
-
-    // Call updateGig with FormData
-    updateGig({
-      id: id,
-      data: formDataToSend,
-      headers: {
-        'Content-Type': 'multipart/form-data'
+      // Add thumbnail if new one is uploaded
+      if (thumbnailFile?.file) {
+        formDataToSend.append('thumbnail', thumbnailFile.file);
       }
-    });
 
-  } catch (error) {
-    console.error("Error in handleSubmit:", error);
-    dismissGigToast();
-    
-    // Handle specific errors
-    if (error.code === 'VERSION_CONFLICT') {
-      // This will be handled in the useEffect above
-      return;
-    } else if (error.message?.includes('SUBCATEGORY')) {
-      setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
-      showGigError('Please select a valid subcategory');
-    } else if (error.message?.includes('Category not found')) {
-      showGigError('Selected category no longer exists. Please refresh and select again.');
-    } else if (error.message?.includes('Validation failed')) {
-      // Extract validation errors from response
-      if (error.errors && Array.isArray(error.errors)) {
-        const fieldErrors = {};
-        error.errors.forEach(err => {
-          if (err.field && err.message) {
-            fieldErrors[err.field] = err.message;
+      // Add new images
+      if (uploadedImages.length > 0) {
+        uploadedImages.forEach((img) => {
+          if (img.file) {
+            formDataToSend.append('images', img.file);
           }
         });
-        setErrors(fieldErrors);
-        showGigError('Please check your input and try again.');
-      } else {
-        showGigError('Validation failed. Please check all required fields.');
       }
-    } else {
-      showGigError(error.message || 'Failed to update gig. Please try again.');
-    }
-    
-    setIsSubmitting(false);
-  }
-}, [formData, id, thumbnailFile, uploadedImages, validateForm, updateGig, isAuthenticated, currentVersion, isSubmitting, showGigLoading, showGigError, dismissGigToast]);
-const handleManualResolve = useCallback((action) => {
-  switch(action) {
-    case 'keep_my_changes':
-      // Keep user's changes, force update with server version + 1
-      setFormData(prev => ({
-        ...prev,
-        version: conflictResolution.serverVersion
-      }));
-      setVersionConflict(false);
-      showGigInfo('Your changes will be applied on top of latest version');
-      break;
-      
-    case 'use_server_changes':
-      // Discard user's changes, use server version
-      if (conflictResolution.serverData) {
-        const serverGig = conflictResolution.serverData;
-        
-        setFormData({
-          title: serverGig.title || "",
-          fullName: serverGig.fullName || "",
-          oauthEmail: serverGig.oauthEmail || "",
-          country: serverGig.country || "",
-          phone: serverGig.phone || "",
-          projectCategory: serverGig.projectCategory?._id || serverGig.projectCategory || "",
-          subcategory: serverGig.subcategory?._id || serverGig.subcategory || "",
-          description: serverGig.description || "",
-          budget: serverGig.budget?.toString() || "",
-          currency: serverGig.currency || "USD",
-          timeline: serverGig.timeline || "",
-          timelineUnit: serverGig.timelineUnit || "days",
-          communication: serverGig.communication || "Email",
-          urgency: serverGig.urgency || "medium",
-          visibility: serverGig.visibility || "public",
-          skillsRequired: serverGig.skillsRequired || [],
-          deliverables: serverGig.deliverables || [],
-          version: serverGig.version || 1
-        });
-        
-        if (serverGig.images && Array.isArray(serverGig.images)) {
-          setExistingImages(serverGig.images);
-        }
-        
-        if (serverGig.thumbnail) {
-          setExistingThumbnail(serverGig.thumbnail);
-        }
-      }
-      
-      setVersionConflict(false);
-      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-      hasPopulatedRef.current = false; // Allow re-population
-      showGigInfo('Loaded latest version from server');
-      break;
-      
-    case 'merge_changes':
-      // Show merge interface (simplified version)
-      showGigInfo('Manual merge required. Please refresh and edit again.');
-      handleRefreshGig();
-      break;
-  }
-}, [conflictResolution, handleRefreshGig, showGigInfo]);
-  
 
+      // Call updateGig
+      updateGig({
+        id: id,
+        data: formDataToSend,
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+    } catch (error) {
+      dismissGigToast();
+
+      if (error.code === 'VERSION_CONFLICT') {
+        return;
+      } else if (error.message?.includes('SUBCATEGORY')) {
+        setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
+        showGigError('Please select a valid subcategory');
+      } else if (error.message?.includes('Category not found')) {
+        showGigError('Selected category no longer exists. Please refresh and select again.');
+      } else if (error.message?.includes('Validation failed')) {
+        if (error.errors && Array.isArray(error.errors)) {
+          const fieldErrors = {};
+          error.errors.forEach(err => {
+            if (err.field && err.message) {
+              fieldErrors[err.field] = err.message;
+            }
+          });
+          setErrors(fieldErrors);
+          showGigError('Please check your input and try again.');
+        } else {
+          showGigError('Validation failed. Please check all required fields.');
+        }
+      } else {
+        showGigError(error.message || 'Failed to update gig. Please try again.');
+      }
+
+      setIsSubmitting(false);
+    }
+  }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateGig, isAuthenticated, currentVersion, isSubmitting, showGigLoading, showGigError, dismissGigToast]);
+
+  // Helper function
   const formatBudget = useCallback((budget) => {
     const num = parseFloat(budget);
     return isNaN(num) ? "0" : num.toLocaleString('en-US', {
@@ -852,64 +810,7 @@ const handleManualResolve = useCallback((action) => {
       maximumFractionDigits: 2
     });
   }, []);
-// Version Conflict Resolution Component
-const VersionConflictResolution = () => {
-  if (!versionConflict && !conflictResolution.show) return null;
 
-  return (
-    <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-      <div className="flex items-start">
-        <AlertTriangle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
-        <div className="flex-1">
-          <h3 className="font-semibold text-orange-800 mb-2">Version Conflict Detected</h3>
-          <p className="text-orange-700 mb-3">
-            This gig was modified by another user or in another tab. Your version: {formData.version}, Server version: {conflictResolution.serverVersion}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleRefreshGig}
-              disabled={isRefreshing}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
-            >
-              <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing...' : 'Refresh & Resolve'}
-            </button>
-            
-            {conflictResolution.serverData && (
-              <>
-                <button
-                  onClick={() => handleManualResolve('keep_my_changes')}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
-                >
-                  Keep My Changes
-                </button>
-                <button
-                  onClick={() => handleManualResolve('use_server_changes')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                >
-                  Use Server Version
-                </button>
-              </>
-            )}
-          </div>
-          
-          {conflictResolution.serverData && (
-            <div className="mt-4 p-3 bg-orange-100 rounded-lg">
-              <h4 className="font-medium text-orange-800 mb-2">Server Changes:</h4>
-              <ul className="text-sm text-orange-700 space-y-1">
-                <li>• Updated at: {new Date(conflictResolution.serverData.updatedAt).toLocaleString()}</li>
-                {conflictResolution.serverData.lastUpdatedBy && (
-                  <li>• Updated by: {conflictResolution.serverData.lastUpdatedBy.name || 'Another user'}</li>
-                )}
-                <li>• Version: {conflictResolution.serverData.version}</li>
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
   // Memoized render functions
   const renderTopInfo = useMemo(() => (
     <div className="max-w-6xl mx-auto mb-8">
@@ -954,6 +855,64 @@ const VersionConflictResolution = () => {
     </div>
   ), []);
 
+  const VersionConflictResolution = useMemo(() => {
+    if (!versionConflict && !conflictResolution.show) return null;
+
+    return (
+      <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+        <div className="flex items-start">
+          <AlertTriangle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
+          <div className="flex-1">
+            <h3 className="font-semibold text-orange-800 mb-2">Version Conflict Detected</h3>
+            <p className="text-orange-700 mb-3">
+              This gig was modified by another user or in another tab. Your version: {formData.version}, Server version: {conflictResolution.serverVersion}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleRefreshGig}
+                disabled={isRefreshing}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
+              >
+                <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing...' : 'Refresh & Resolve'}
+              </button>
+
+              {conflictResolution.serverData && (
+                <>
+                  <button
+                    onClick={() => handleManualResolve('keep_my_changes')}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                  >
+                    Keep My Changes
+                  </button>
+                  <button
+                    onClick={() => handleManualResolve('use_server_changes')}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                  >
+                    Use Server Version
+                  </button>
+                </>
+              )}
+            </div>
+
+            {conflictResolution.serverData && (
+              <div className="mt-4 p-3 bg-orange-100 rounded-lg">
+                <h4 className="font-medium text-orange-800 mb-2">Server Changes:</h4>
+                <ul className="text-sm text-orange-700 space-y-1">
+                  <li>• Updated at: {new Date(conflictResolution.serverData.updatedAt).toLocaleString()}</li>
+                  {conflictResolution.serverData.lastUpdatedBy && (
+                    <li>• Updated by: {conflictResolution.serverData.lastUpdatedBy.name || 'Another user'}</li>
+                  )}
+                  <li>• Version: {conflictResolution.serverData.version}</li>
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }, [versionConflict, conflictResolution, formData.version, handleRefreshGig, handleManualResolve, isRefreshing]);
+
   const renderRightPanel = useMemo(() => (
     <div className="lg:col-span-1">
       <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
@@ -966,100 +925,99 @@ const VersionConflictResolution = () => {
             Review your changes before updating. This preview shows how your gig will appear to others.
           </p>
         </div>
-{/* In your right panel preview section */}
-<div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-  <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
-    <HistoryIcon className="h-5 w-5" />
-    Version Information
-  </h3>
-  <div className="space-y-2 text-sm">
-    <div className="flex items-center justify-between">
-      <span className="text-emerald-100">Current Version:</span>
-      <span className="font-medium">{formData.version}</span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="text-emerald-100">Status:</span>
-      <span className="font-medium capitalize">{formData.status}</span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="text-emerald-100">Last Edited:</span>
-      <span className="font-medium">
-        {currentGig?.updatedAt ? 
-          new Date(currentGig.updatedAt).toLocaleDateString() : 
-          'Never'
-        }
-      </span>
-    </div>
-    {versionConflict && (
-      <div className="mt-3 p-2 bg-orange-500/20 rounded border border-orange-500/30">
-        <p className="text-orange-200 text-xs">
-          <AlertTriangle className="inline w-3 h-3 mr-1" />
-          Version conflict detected. Please resolve before saving.
-        </p>
-      </div>
-    )}
-  </div>
-</div>
+        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+          <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+            <HistoryIcon className="h-5 w-5" />
+            Version Information
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-emerald-100">Current Version:</span>
+              <span className="font-medium">{formData.version}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-emerald-100">Status:</span>
+              <span className="font-medium capitalize">{formData.status}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-emerald-100">Last Edited:</span>
+              <span className="font-medium">
+                {currentGig?.updatedAt ?
+                  new Date(currentGig.updatedAt).toLocaleDateString() :
+                  'Never'
+                }
+              </span>
+            </div>
+            {versionConflict && (
+              <div className="mt-3 p-2 bg-orange-500/20 rounded border border-orange-500/30">
+                <p className="text-orange-200 text-xs">
+                  <AlertTriangle className="inline w-3 h-3 mr-1" />
+                  Version conflict detected. Please resolve before saving.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="space-y-4">
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
             <h3 className="font-bold text-lg mb-3">Current Information</h3>
             <ul className="space-y-2 text-sm">
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Title:</span>
-              <span className="font-medium truncate max-w-[150px]">
-                {formData.title || 'Not set'}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Category:</span>
-              <span className="font-medium truncate max-w-[120px]">
-                {getCategoryName() || 'Not selected'}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Subcategory:</span>
-              <span className="font-medium truncate max-w-[120px]">
-                {getSubcategoryName() || 'Not selected'}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Budget:</span>
-              <span className="font-medium">
-                ${formatBudget(formData.budget)}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Timeline:</span>
-              <span className="font-medium">{formData.timeline || 'Not set'}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Urgency:</span>
-              <span className="font-medium capitalize">{formData.urgency}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Visibility:</span>
-              <span className="font-medium capitalize">{formData.visibility}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Skills:</span>
-              <span className="font-medium">
-                {Array.isArray(formData.skillsRequired) ? formData.skillsRequired.length : 0} added
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Deliverables:</span>
-              <span className="font-medium">
-                {Array.isArray(formData.deliverables) ? formData.deliverables.length : 0} added
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-emerald-100">Total Images:</span>
-              <span className="font-medium">
-                {(Array.isArray(existingImages) ? existingImages.length : 0) + 
-                 (Array.isArray(uploadedImages) ? uploadedImages.length : 0)}/10
-              </span>
-            </li>
-          </ul>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Title:</span>
+                <span className="font-medium truncate max-w-[150px]">
+                  {formData.title || 'Not set'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Category:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getCategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Subcategory:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getSubcategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Budget:</span>
+                <span className="font-medium">
+                  ${formatBudget(formData.budget)}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Timeline:</span>
+                <span className="font-medium">{formData.timeline || 'Not set'}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Urgency:</span>
+                <span className="font-medium capitalize">{formData.urgency}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Visibility:</span>
+                <span className="font-medium capitalize">{formData.visibility}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Skills:</span>
+                <span className="font-medium">
+                  {Array.isArray(formData.skillsRequired) ? formData.skillsRequired.length : 0} added
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Deliverables:</span>
+                <span className="font-medium">
+                  {Array.isArray(formData.deliverables) ? formData.deliverables.length : 0} added
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Total Images:</span>
+                <span className="font-medium">
+                  {(Array.isArray(existingImages) ? existingImages.length : 0) +
+                    (Array.isArray(uploadedImages) ? uploadedImages.length : 0)}/10
+                </span>
+              </li>
+            </ul>
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
@@ -1104,7 +1062,7 @@ const VersionConflictResolution = () => {
         </div>
       </div>
     </div>
-  ), [formData, getCategoryName, getSubcategoryName, formatBudget, existingImages, uploadedImages, thumbnailFile, currentVersion]);
+  ), [formData, getCategoryName, getSubcategoryName, formatBudget, existingImages, uploadedImages, thumbnailFile, currentVersion, currentGig, versionConflict]);
 
   // Loading state
   if (gigLoading || categoryLoading) {
@@ -1158,17 +1116,6 @@ const VersionConflictResolution = () => {
     );
   }
 
-  if (shouldRedirect.toGigPage || shouldRedirect.toDashboard) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 py-12 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 text-emerald-600 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <SeoWrapper
       title={`Edit ${formData.title} | Vorkana`}
@@ -1187,16 +1134,16 @@ const VersionConflictResolution = () => {
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div className="p-6 md:p-8">
-                  <VersionConflictResolution />
+                  {VersionConflictResolution}
 
                   {/* Error Messages */}
                   {allErrors.form && (
-  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-    <p className="text-red-600 font-medium">
-      {typeof allErrors.form === 'string' ? allErrors.form : 'An error occurred'}
-    </p>
-  </div>
-)}
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                      <p className="text-red-600 font-medium">
+                        {typeof allErrors.form === 'string' ? allErrors.form : 'An error occurred'}
+                      </p>
+                    </div>
+                  )}
 
                   {versionConflict && (
                     <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
@@ -1278,24 +1225,24 @@ const VersionConflictResolution = () => {
                               Subcategory {subcategories.length > 0 && '*'}
                             </label>
                             <select
-  id="subcategory"
-  name="subcategory"
-  value={formData.subcategory}
-  onChange={handleInputChange}
-  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-  disabled={!formData.projectCategory || subcategoriesData.isLoading}
-  required={subcategories.length > 0}
->
-  <option value="">
-    {subcategoriesData.isLoading ? 'Loading...' : 
-      subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
-  </option>
-  {subcategories.map((subcategory) => (
-    <option key={subcategory._id} value={subcategory._id}>
-      {subcategory.name} {/* Only render the name */}
-    </option>
-  ))}
-</select>
+                              id="subcategory"
+                              name="subcategory"
+                              value={formData.subcategory}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              disabled={!formData.projectCategory || subcategoriesData.isLoading}
+                              required={subcategories.length > 0}
+                            >
+                              <option value="">
+                                {subcategoriesData.isLoading ? 'Loading...' :
+                                  subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
+                              </option>
+                              {subcategories.map((subcategory) => (
+                                <option key={subcategory._id} value={subcategory._id}>
+                                  {subcategory.name}
+                                </option>
+                              ))}
+                            </select>
                             {errors.subcategory && (
                               <p className="mt-2 text-sm text-red-600">{errors.subcategory}</p>
                             )}
@@ -1870,27 +1817,27 @@ const VersionConflictResolution = () => {
                         Cancel
                       </button>
                       <button
-  type="submit"
-  disabled={isSubmitting || updateLoading}
-  className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
->
-  {isSubmitting || updateLoading ? (
-    <>
-      <Loader2 className="h-4 w-4 animate-spin" />
-      Updating Gig...
-    </>
-  ) : versionConflict ? (
-    <>
-      <AlertTriangle className="h-4 w-4" />
-      Version Conflict - Refresh Required
-    </>
-  ) : (
-    <>
-      <Save className="h-4 w-4" />
-      Update Gig (v{formData.version})
-    </>
-  )}
-</button>
+                        type="submit"
+                        disabled={isSubmitting || updateLoading}
+                        className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {isSubmitting || updateLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Updating Gig...
+                          </>
+                        ) : versionConflict ? (
+                          <>
+                            <AlertTriangle className="h-4 w-4" />
+                            Version Conflict - Refresh Required
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4" />
+                            Update Gig (v{formData.version})
+                          </>
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={handleRefreshGig}
@@ -1923,4 +1870,4 @@ const VersionConflictResolution = () => {
   );
 };
 
-export default GigEdit;
+export default React.memo(GigEdit);

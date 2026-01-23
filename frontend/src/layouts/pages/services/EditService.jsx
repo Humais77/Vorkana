@@ -41,20 +41,18 @@ import {
   ExternalLink,
   GitBranch,
   AlertTriangle,
-  History as HistoryIcon // Renamed import to avoid conflict
+  History as HistoryIcon
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService, useUpdateService } from '../../../hooks/useServices';
-import { useCategories, useParentCategories } from '../../../hooks/useCategories';
+import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { isProfileCompleteEnough } from '../../../utils/profileUtils';
 import { useServiceToast } from '../../../hooks/useServiceToast';
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-
-// Structured Data for Service Editing
+// Static data outside component
 const SERVICE_EDIT_STRUCTURED_DATA = {
   "@context": "https://schema.org",
   "@type": "WebPage",
@@ -93,7 +91,6 @@ const SERVICE_EDIT_STRUCTURED_DATA = {
   }
 };
 
-// Static data
 const QUICK_TIPS = [
   "Update clear and specific service details",
   "Keep images relevant and high-quality",
@@ -128,11 +125,11 @@ const STATUS_OPTIONS = [
 const EditService = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const queryClient = useQueryClient();
 
   // Zustand stores
-  const { user: currentUser, isAuthenticated, error: authError } = useAuthStore();
-  const queryClient = useQueryClient();
-  
+  const { user: currentUser, isAuthenticated } = useAuthStore();
+
   // Service Toast hook
   const {
     showServiceLoading,
@@ -141,7 +138,7 @@ const EditService = () => {
     showServiceInfo,
     dismissServiceToast
   } = useServiceToast();
-  
+
   // TanStack Query hooks
   const {
     data: serviceData,
@@ -164,7 +161,7 @@ const EditService = () => {
     data: updatedServiceData
   } = useUpdateService();
 
-  // Initial form state matching service model
+  // Initial form state - MEMOIZED
   const initialFormData = useMemo(() => ({
     title: "",
     description: "",
@@ -184,7 +181,7 @@ const EditService = () => {
     metaTitle: "",
     metaDescription: "",
     status: "active",
-    version: 1 // Add version field
+    version: 1
   }), []);
 
   // Local state
@@ -217,8 +214,6 @@ const EditService = () => {
   });
 
   // Refs
-  const imageUploadRef = useRef(null);
-  const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
   const hasPopulatedRef = useRef(false);
   const hasProcessedSuccessRef = useRef(false);
@@ -233,35 +228,35 @@ const EditService = () => {
     return subcategoriesData.data?.subcategories || subcategoriesData.data || [];
   }, [subcategoriesData.data]);
 
-  const allErrors = useMemo(() => ({
-    ...errors,
-    form: errors.form || serviceError?.message || authError || categoryError?.message || updateError?.message
-  }), [errors, serviceError, authError, categoryError, updateError]);
-
   const currentService = useMemo(() => {
     if (!serviceData) return null;
     return serviceData.service || serviceData.data || serviceData;
   }, [serviceData]);
 
-  // Get current version
-  const currentVersion = useMemo(() => {
-    return currentService?.version || formData.version || 1;
-  }, [currentService, formData.version]);
+  // Get current version - OPTIMIZED
+  const currentVersion = useMemo(() => currentService?.version || formData.version || 1, 
+    [currentService, formData.version]);
 
-  // Populate form when service data loads
+  // All errors - OPTIMIZED
+  const allErrors = useMemo(() => ({
+    ...errors,
+    form: errors.form || serviceError?.message || categoryError?.message || updateError?.message
+  }), [errors, serviceError, categoryError, updateError]);
+
+  // Populate form with service data - OPTIMIZED
   useEffect(() => {
     if (currentService && !hasPopulatedRef.current) {
       hasPopulatedRef.current = true;
-      
-      // Check if user is owner
+
+      // Check ownership - EARLY RETURN
       if (currentUser && currentService.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
         showServiceError('You can only edit your own services');
         navigate(`/services/${id}`);
         return;
       }
 
-      // Populate form
-      setFormData({
+      // Create new form data object ONCE
+      const newFormData = {
         title: currentService.title || "",
         description: currentService.description || "",
         shortDescription: currentService.shortDescription || "",
@@ -281,62 +276,67 @@ const EditService = () => {
         metaDescription: currentService.metaDescription || "",
         status: currentService.status || "active",
         version: currentService.version || 1
-      });
+      };
 
-      // Set existing images
+      setFormData(newFormData);
+
+      // Set existing images if they exist
       if (currentService.images && Array.isArray(currentService.images)) {
         setExistingImages(currentService.images);
       }
 
-      // Set existing thumbnail
+      // Set existing thumbnail if it exists
       if (currentService.thumbnail) {
         setExistingThumbnail(currentService.thumbnail);
       }
+
+      // Reset conflict states
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
     }
   }, [currentService, currentUser, id, navigate, showServiceError]);
 
+  // Handle successful update - OPTIMIZED
   useEffect(() => {
-  if (updateSuccess && updatedServiceData && isSubmitting && !hasProcessedSuccessRef.current) {
-    hasProcessedSuccessRef.current = true;
-    
-    setIsSubmitting(false);
-    
-    // Show success toast with 5-second timer and description
-    showServiceUpdateSuccess(
-      id,
-      'Service Updated Successfully!',
-      'Your changes are being processed and will be visible across the platform shortly.'
-    );
+    if (updateSuccess && updatedServiceData && isSubmitting && !hasProcessedSuccessRef.current) {
+      hasProcessedSuccessRef.current = true;
 
-    // Invalidate queries
-    queryClient.invalidateQueries({
-      queryKey: ['service', id]
-    });
-    
-    queryClient.invalidateQueries({
-      queryKey: ['services']
-    });
+      // Optimized state updates
+      setIsSubmitting(false);
+      setVersionConflict(false);
+      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+      hasPopulatedRef.current = false;
 
-    // Reset form state
-    setVersionConflict(false);
-    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-    hasPopulatedRef.current = false;
-  }
-  
-  // Reset success flag when submission starts
-  return () => {
-    if (isSubmitting) {
-      hasProcessedSuccessRef.current = false;
+      // Show success toast
+      showServiceUpdateSuccess(
+        id,
+        'Service Updated Successfully!',
+        'Your changes are being processed and will be visible across the platform shortly.'
+      );
+
+      // Batch query invalidations
+      queryClient.invalidateQueries({
+        queryKey: ['service', id]
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['services']
+      });
     }
-  };
-}, [updateSuccess, updatedServiceData, id, queryClient, isSubmitting, showServiceUpdateSuccess]);
 
-  // Handle update errors
+    // Cleanup function
+    return () => {
+      if (isSubmitting) {
+        hasProcessedSuccessRef.current = false;
+      }
+    };
+  }, [updateSuccess, updatedServiceData, id, queryClient, isSubmitting, showServiceUpdateSuccess]);
+
+  // Handle update errors - OPTIMIZED
   useEffect(() => {
     if (updateError) {
       setIsSubmitting(false);
       hasProcessedSuccessRef.current = false;
-      
+
       // Handle version conflict
       if (updateError.code === 'VERSION_CONFLICT') {
         setVersionConflict(true);
@@ -345,15 +345,15 @@ const EditService = () => {
           serverVersion: updateError.currentVersion || (currentVersion + 1),
           serverData: null
         });
-        
+
         showServiceError(updateError.message || 'Service was modified by another user. Please refresh.');
-        
-        // Force refresh to get latest data
+
+        // Schedule refresh
         setTimeout(() => {
           handleRefreshService();
         }, 1500);
       }
-      // Handle subcategory errors
+      // Handle other errors
       else if (updateError.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Please select a valid subcategory' }));
         showServiceError('Subcategory validation failed');
@@ -363,17 +363,20 @@ const EditService = () => {
     }
   }, [updateError, currentVersion, showServiceError]);
 
-  // Cleanup
+  // Cleanup URL objects - OPTIMIZED
   useEffect(() => {
+    const uploadedImagePreviews = uploadedImages;
+    const currentThumbnailFile = thumbnailFile;
+
     return () => {
-      uploadedImages.forEach(img => URL.revokeObjectURL(img.preview));
-      if (thumbnailFile) {
-        URL.revokeObjectURL(thumbnailFile.preview);
+      uploadedImagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+      if (currentThumbnailFile) {
+        URL.revokeObjectURL(currentThumbnailFile.preview);
       }
     };
   }, [uploadedImages, thumbnailFile]);
 
-  // Profile completion check
+  // Profile completion check - OPTIMIZED
   useEffect(() => {
     if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
       showServiceError('Please complete your profile before editing services');
@@ -381,7 +384,7 @@ const EditService = () => {
     }
   }, [currentUser, navigate, showServiceError]);
 
-  // Get category name for display
+  // Memoized helper functions
   const getCategoryName = useCallback(() => {
     if (!formData.category) return "";
     const categoryList = Array.isArray(categoriesData) ? categoriesData : [];
@@ -389,28 +392,27 @@ const EditService = () => {
     return category?.name || "";
   }, [formData.category, categoriesData]);
 
-  // Get subcategory name for display
   const getSubcategoryName = useCallback(() => {
     if (!formData.subcategory) return "";
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
   }, [formData.subcategory, subcategories]);
 
-  // Memoized handlers
+  // Optimized input change handler
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    
+
     // Update form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
-    
+
     // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
-    
+
     // If category changes, clear subcategory
     if (name === 'category' && value !== formData.category) {
       setFormData(prev => ({ ...prev, subcategory: "" }));
@@ -418,265 +420,7 @@ const EditService = () => {
     }
   }, [errors, formData.category, subcategoriesData]);
 
-  // Tag Management
-  const handleAddTag = useCallback(() => {
-    if (newTag.trim() && !formData.tags.includes(newTag.trim()) && formData.tags.length < 20) {
-      setFormData(prev => ({
-        ...prev,
-        tags: [...prev.tags, newTag.trim()]
-      }));
-      setNewTag("");
-      showServiceInfo('Tag added');
-    } else if (formData.tags.length >= 20) {
-      showServiceError('Maximum 20 tags allowed');
-    }
-  }, [newTag, formData.tags, showServiceInfo, showServiceError]);
-
-  const handleRemoveTag = useCallback((tagToRemove) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.filter(tag => tag !== tagToRemove)
-    }));
-    showServiceInfo('Tag removed');
-  }, [showServiceInfo]);
-
-  // Search Keywords Management
-  const handleAddKeyword = useCallback(() => {
-    if (newKeyword.trim() && !formData.searchKeywords.includes(newKeyword.trim()) && formData.searchKeywords.length < 20) {
-      setFormData(prev => ({
-        ...prev,
-        searchKeywords: [...prev.searchKeywords, newKeyword.trim()]
-      }));
-      setNewKeyword("");
-      showServiceInfo('Keyword added');
-    } else if (formData.searchKeywords.length >= 20) {
-      showServiceError('Maximum 20 keywords allowed');
-    }
-  }, [newKeyword, formData.searchKeywords, showServiceInfo, showServiceError]);
-
-  const handleRemoveKeyword = useCallback((keywordToRemove) => {
-    setFormData(prev => ({
-      ...prev,
-      searchKeywords: prev.searchKeywords.filter(keyword => keyword !== keywordToRemove)
-    }));
-    showServiceInfo('Keyword removed');
-  }, [showServiceInfo]);
-
-  // Features Management
-  const handleAddFeature = useCallback(() => {
-    if (newFeature.title.trim()) {
-      setFormData(prev => ({
-        ...prev,
-        features: [...prev.features, { ...newFeature }]
-      }));
-      setNewFeature({ title: "", description: "", included: true });
-      showServiceInfo('Feature added');
-    }
-  }, [newFeature, showServiceInfo]);
-
-  const handleRemoveFeature = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      features: prev.features.filter((_, i) => i !== index)
-    }));
-    showServiceInfo('Feature removed');
-  }, [showServiceInfo]);
-
-  // FAQs Management
-  const handleAddFAQ = useCallback(() => {
-    if (newFAQ.question.trim() && newFAQ.answer.trim()) {
-      setFormData(prev => ({
-        ...prev,
-        faqs: [...prev.faqs, { ...newFAQ }]
-      }));
-      setNewFAQ({ question: "", answer: "" });
-      showServiceInfo('FAQ added');
-    }
-  }, [newFAQ, showServiceInfo]);
-
-  const handleRemoveFAQ = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      faqs: prev.faqs.filter((_, i) => i !== index)
-    }));
-    showServiceInfo('FAQ removed');
-  }, [showServiceInfo]);
-
-  // Create a utility function to optimize images before upload
-  const optimizeImageBeforeUpload = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
-    return new Promise((resolve) => {
-      if (file.size < 500 * 1024) { // If already small (<500KB)
-        resolve(file);
-        return;
-      }
-
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-        
-        // Calculate new dimensions
-        if (width > maxWidth) {
-          height = Math.round(height * (maxWidth / width));
-          width = maxWidth;
-        }
-        if (height > maxHeight) {
-          width = Math.round(width * (maxHeight / height));
-          height = maxHeight;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        canvas.toBlob(
-          (blob) => {
-            const optimizedFile = new File([blob], file.name, {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            resolve(optimizedFile);
-          },
-          'image/jpeg',
-          quality
-        );
-      };
-      
-      img.src = URL.createObjectURL(file);
-    });
-  };
-
-  // Image upload handler
-  const handleImageUpload = useCallback(async (files) => {
-    if (uploadingImages) return;
-    
-    const newFiles = Array.from(files);
-    
-    // Validate total image count
-    const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
-    if (totalImages > 10) {
-      showServiceError('Maximum 10 images allowed');
-      return;
-    }
-    
-    setUploadingImages(true);
-    
-    try {
-      const optimizedFiles = await Promise.all(
-        newFiles.map(async (file) => {
-          // Skip optimization for already small files
-          if (file.size < 500 * 1024) {
-            return file;
-          }
-          
-          try {
-            return await optimizeImageBeforeUpload(file);
-          } catch (error) {
-            console.warn('Failed to optimize image, using original:', error);
-            return file;
-          }
-        })
-      );
-      
-      // Validate optimized files
-      for (const file of optimizedFiles) {
-        if (file.size > 2 * 1024 * 1024) { // Max 2MB after optimization
-          showServiceError(`${file.name} is too large after optimization`);
-          setUploadingImages(false);
-          return;
-        }
-      }
-      
-      const previewImages = optimizedFiles.map(file => ({
-        file,
-        preview: URL.createObjectURL(file),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        isNew: true
-      }));
-      
-      setUploadedImages(prev => [...prev, ...previewImages]);
-      showServiceInfo(`${newFiles.length} image(s) added successfully`);
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      showServiceError('Failed to add images');
-    } finally {
-      setUploadingImages(false);
-    }
-  }, [uploadingImages, existingImages, uploadedImages, showServiceError, showServiceInfo]);
-
-  const handleThumbnailUpload = useCallback((file) => {
-    if (uploadingThumbnail) return;
-    
-    if (file.size > 2 * 1024 * 1024) {
-      showServiceError('Thumbnail exceeds 2MB limit');
-      return;
-    }
-    
-    if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
-      showServiceError('Invalid image type for thumbnail');
-      return;
-    }
-    
-    setThumbnailFile({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      isNew: true
-    });
-    
-    showServiceInfo('Thumbnail selected');
-  }, [uploadingThumbnail, showServiceError, showServiceInfo]);
-
-  const removeExistingImage = useCallback((index) => {
-    const imageToRemove = existingImages[index];
-    setExistingImages(prev => prev.filter((_, i) => i !== index));
-    
-    // If this was the thumbnail, clear it
-    if (existingThumbnail && existingThumbnail.public_id === imageToRemove.public_id) {
-      setExistingThumbnail(null);
-    }
-    
-    showServiceInfo('Image removed');
-  }, [existingImages, existingThumbnail, showServiceInfo]);
-
-  const removeUploadedImage = useCallback((index) => {
-    const image = uploadedImages[index];
-    URL.revokeObjectURL(image.preview);
-    setUploadedImages(prev => prev.filter((_, i) => i !== index));
-    showServiceInfo('Image removed');
-  }, [uploadedImages, showServiceInfo]);
-
-  const removeThumbnail = useCallback(() => {
-    if (thumbnailFile) {
-      URL.revokeObjectURL(thumbnailFile.preview);
-      setThumbnailFile(null);
-      showServiceInfo('Thumbnail removed');
-    } else if (existingThumbnail) {
-      setExistingThumbnail(null);
-      showServiceInfo('Thumbnail removed');
-    }
-  }, [thumbnailFile, existingThumbnail, showServiceInfo]);
-
-  // Helper function to handle Enter key press
-  const handleKeyPress = useCallback((e, type) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      switch(type) {
-        case 'tag': handleAddTag(); break;
-        case 'keyword': handleAddKeyword(); break;
-        case 'feature': handleAddFeature(); break;
-        case 'faq': handleAddFAQ(); break;
-      }
-    }
-  }, [handleAddTag, handleAddKeyword, handleAddFeature, handleAddFAQ]);
-
+  // Optimized form validation
   const validateForm = useCallback(() => {
     const newErrors = {};
 
@@ -720,66 +464,33 @@ const EditService = () => {
     return Object.keys(newErrors).length === 0;
   }, [formData, subcategories, thumbnailFile, existingThumbnail]);
 
+  // Optimized refresh service handler
   const handleRefreshService = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      // Invalidate and refetch
-      await queryClient.invalidateQueries({ queryKey: ['service', id] });
-      const result = await refetchService();
-      
-      // Reset populated flag to allow re-population
+      // Batch operations
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['service', id] }),
+        refetchService()
+      ]);
+
+      // Reset states
       hasPopulatedRef.current = false;
-      
-      // Clear version conflict if it exists
       setVersionConflict(false);
       setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-      
+
       showServiceInfo('Service data refreshed successfully!');
-      
-      return result;
     } catch (error) {
       showServiceError('Failed to refresh service data');
-      throw error;
     } finally {
       setIsRefreshing(false);
     }
   }, [id, refetchService, queryClient, showServiceInfo, showServiceError]);
 
-  const handleResolveConflict = useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      await refetchService();
-      
-      // Get fresh data
-      const freshData = await queryClient.fetchQuery({
-        queryKey: ['service', id]
-      });
-      
-      const freshService = freshData.service || freshData.data || freshData;
-      
-      if (freshService) {
-        // Update conflict resolution with fresh data
-        setConflictResolution({
-          show: true,
-          serverVersion: freshService.version || 1,
-          serverData: freshService
-        });
-        
-        // Show comparison options
-        showServiceInfo('Latest version loaded. Please review changes.');
-      }
-    } catch (error) {
-      showServiceError('Failed to resolve conflict');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [id, refetchService, queryClient, showServiceInfo, showServiceError]);
-
-  // Add this function to handle manual conflict resolution
+  // Optimized conflict resolution
   const handleManualResolve = useCallback((action) => {
-    switch(action) {
+    switch (action) {
       case 'keep_my_changes':
-        // Keep user's changes, force update with server version + 1
         setFormData(prev => ({
           ...prev,
           version: conflictResolution.serverVersion
@@ -787,12 +498,11 @@ const EditService = () => {
         setVersionConflict(false);
         showServiceInfo('Your changes will be applied on top of latest version');
         break;
-        
+
       case 'use_server_changes':
-        // Discard user's changes, use server version
         if (conflictResolution.serverData) {
           const serverService = conflictResolution.serverData;
-          
+
           setFormData({
             title: serverService.title || "",
             description: serverService.description || "",
@@ -814,40 +524,288 @@ const EditService = () => {
             status: serverService.status || "active",
             version: serverService.version || 1
           });
-          
+
           if (serverService.images && Array.isArray(serverService.images)) {
             setExistingImages(serverService.images);
           }
-          
+
           if (serverService.thumbnail) {
             setExistingThumbnail(serverService.thumbnail);
           }
         }
-        
+
         setVersionConflict(false);
         setConflictResolution({ show: false, serverVersion: 1, serverData: null });
-        hasPopulatedRef.current = false; // Allow re-population
+        hasPopulatedRef.current = false;
         showServiceInfo('Loaded latest version from server');
         break;
-        
+
       case 'merge_changes':
-        // Show merge interface (simplified version)
         showServiceInfo('Manual merge required. Please refresh and edit again.');
         handleRefreshService();
         break;
     }
   }, [conflictResolution, handleRefreshService, showServiceInfo]);
 
-  // Update the handleSubmit function to include version
+  // Optimized image upload handler
+  const optimizeImageBeforeUpload = useCallback((file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      if (file.size < 500 * 1024) {
+        resolve(file);
+        return;
+      }
+
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round(height * (maxWidth / width));
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round(width * (maxHeight / height));
+          height = maxHeight;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            const optimizedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(optimizedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+
+      img.src = URL.createObjectURL(file);
+    });
+  }, []);
+
+  const handleImageUpload = useCallback(async (files) => {
+    if (uploadingImages) return;
+
+    const newFiles = Array.from(files);
+
+    // Validate total image count
+    const totalImages = existingImages.length + uploadedImages.length + newFiles.length;
+    if (totalImages > 10) {
+      showServiceError('Maximum 10 images allowed');
+      return;
+    }
+
+    setUploadingImages(true);
+
+    try {
+      const optimizedFiles = await Promise.all(
+        newFiles.map(async (file) => {
+          if (file.size < 500 * 1024) {
+            return file;
+          }
+
+          try {
+            return await optimizeImageBeforeUpload(file);
+          } catch {
+            return file;
+          }
+        })
+      );
+
+      // Validate optimized files
+      for (const file of optimizedFiles) {
+        if (file.size > 2 * 1024 * 1024) {
+          showServiceError(`${file.name} is too large after optimization`);
+          setUploadingImages(false);
+          return;
+        }
+      }
+
+      const previewImages = optimizedFiles.map(file => ({
+        file,
+        preview: URL.createObjectURL(file),
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        isNew: true
+      }));
+
+      setUploadedImages(prev => [...prev, ...previewImages]);
+      showServiceInfo(`${newFiles.length} image(s) added successfully`);
+    } catch {
+      showServiceError('Failed to add images');
+    } finally {
+      setUploadingImages(false);
+    }
+  }, [uploadingImages, existingImages, uploadedImages, showServiceError, showServiceInfo, optimizeImageBeforeUpload]);
+
+  const handleThumbnailUpload = useCallback((file) => {
+    if (uploadingThumbnail) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      showServiceError('Thumbnail exceeds 2MB limit');
+      return;
+    }
+
+    if (!ALLOWED_THUMBNAIL_TYPES.includes(file.type)) {
+      showServiceError('Invalid image type for thumbnail');
+      return;
+    }
+
+    setThumbnailFile({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isNew: true
+    });
+
+    showServiceInfo('Thumbnail selected');
+  }, [uploadingThumbnail, showServiceError, showServiceInfo]);
+
+  // Optimized CRUD handlers for tags, keywords, features, FAQs
+  const handleAddTag = useCallback(() => {
+    if (newTag.trim() && !formData.tags.includes(newTag.trim()) && formData.tags.length < 20) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }));
+      setNewTag("");
+      showServiceInfo('Tag added');
+    } else if (formData.tags.length >= 20) {
+      showServiceError('Maximum 20 tags allowed');
+    }
+  }, [newTag, formData.tags, showServiceInfo, showServiceError]);
+
+  const handleRemoveTag = useCallback((tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+    showServiceInfo('Tag removed');
+  }, [showServiceInfo]);
+
+  const handleAddKeyword = useCallback(() => {
+    if (newKeyword.trim() && !formData.searchKeywords.includes(newKeyword.trim()) && formData.searchKeywords.length < 20) {
+      setFormData(prev => ({
+        ...prev,
+        searchKeywords: [...prev.searchKeywords, newKeyword.trim()]
+      }));
+      setNewKeyword("");
+      showServiceInfo('Keyword added');
+    } else if (formData.searchKeywords.length >= 20) {
+      showServiceError('Maximum 20 keywords allowed');
+    }
+  }, [newKeyword, formData.searchKeywords, showServiceInfo, showServiceError]);
+
+  const handleRemoveKeyword = useCallback((keywordToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      searchKeywords: prev.searchKeywords.filter(keyword => keyword !== keywordToRemove)
+    }));
+    showServiceInfo('Keyword removed');
+  }, [showServiceInfo]);
+
+  const handleAddFeature = useCallback(() => {
+    if (newFeature.title.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        features: [...prev.features, { ...newFeature }]
+      }));
+      setNewFeature({ title: "", description: "", included: true });
+      showServiceInfo('Feature added');
+    }
+  }, [newFeature, showServiceInfo]);
+
+  const handleRemoveFeature = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      features: prev.features.filter((_, i) => i !== index)
+    }));
+    showServiceInfo('Feature removed');
+  }, [showServiceInfo]);
+
+  const handleAddFAQ = useCallback(() => {
+    if (newFAQ.question.trim() && newFAQ.answer.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        faqs: [...prev.faqs, { ...newFAQ }]
+      }));
+      setNewFAQ({ question: "", answer: "" });
+      showServiceInfo('FAQ added');
+    }
+  }, [newFAQ, showServiceInfo]);
+
+  const handleRemoveFAQ = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      faqs: prev.faqs.filter((_, i) => i !== index)
+    }));
+    showServiceInfo('FAQ removed');
+  }, [showServiceInfo]);
+
+  // Optimized key press handler
+  const handleKeyPress = useCallback((e, type) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      switch (type) {
+        case 'tag': handleAddTag(); break;
+        case 'keyword': handleAddKeyword(); break;
+        case 'feature': handleAddFeature(); break;
+        case 'faq': handleAddFAQ(); break;
+      }
+    }
+  }, [handleAddTag, handleAddKeyword, handleAddFeature, handleAddFAQ]);
+
+  // Optimized image removal handlers
+  const removeExistingImage = useCallback((index) => {
+    const imageToRemove = existingImages[index];
+    setExistingImages(prev => prev.filter((_, i) => i !== index));
+
+    if (existingThumbnail && existingThumbnail.public_id === imageToRemove.public_id) {
+      setExistingThumbnail(null);
+    }
+
+    showServiceInfo('Image removed');
+  }, [existingImages, existingThumbnail, showServiceInfo]);
+
+  const removeUploadedImage = useCallback((index) => {
+    const image = uploadedImages[index];
+    URL.revokeObjectURL(image.preview);
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+    showServiceInfo('Image removed');
+  }, [uploadedImages, showServiceInfo]);
+
+  const removeThumbnail = useCallback(() => {
+    if (thumbnailFile) {
+      URL.revokeObjectURL(thumbnailFile.preview);
+      setThumbnailFile(null);
+    } else if (existingThumbnail) {
+      setExistingThumbnail(null);
+    }
+    showServiceInfo('Thumbnail removed');
+  }, [thumbnailFile, existingThumbnail, showServiceInfo]);
+
+  // Optimized submit handler
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
-    // Prevent double submission
+
     if (isSubmitting) return;
-    
+
     setIsSubmitting(true);
     setVersionConflict(false);
-    
+
     if (!isAuthenticated) {
       showServiceError("Please sign in to update services");
       setIsSubmitting(false);
@@ -864,7 +822,7 @@ const EditService = () => {
       const updateData = {
         title: (formData.title || '').trim(),
         description: (formData.description || '').trim(),
-        shortDescription: formData.shortDescription?.trim() || 
+        shortDescription: formData.shortDescription?.trim() ||
           (formData.description ? formData.description.substring(0, 150) + '...' : ''),
         category: formData.category,
         subcategory: formData.subcategory || null,
@@ -884,46 +842,37 @@ const EditService = () => {
         version: formData.version || currentVersion
       };
 
-      // Show loading toast
       showServiceLoading('Updating service...');
 
       // Create FormData
       const formDataToSend = new FormData();
-      
-      // Add JSON data with version
       formDataToSend.append('data', JSON.stringify(updateData));
-      
-      // Add thumbnail if new one is uploaded
-      if (thumbnailFile && thumbnailFile.file) {
+
+      if (thumbnailFile?.file) {
         formDataToSend.append('thumbnail', thumbnailFile.file);
       }
-      
-      // Add new images
+
       if (uploadedImages.length > 0) {
-        uploadedImages.forEach((img, index) => {
+        uploadedImages.forEach((img) => {
           if (img.file) {
             formDataToSend.append('images', img.file);
           }
         });
       }
 
-      // Call updateService with version
-      await updateService({
+      // Call updateService
+      updateService({
         id: id,
         data: formDataToSend,
-        version: updateData.version,
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
 
     } catch (error) {
-      console.error("Error in handleSubmit:", error);
       dismissServiceToast();
-      
-      // Handle specific errors
+
       if (error.code === 'VERSION_CONFLICT') {
-        // This is handled in the useEffect above
         return;
       } else if (error.message?.includes('SUBCATEGORY')) {
         setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
@@ -935,20 +884,12 @@ const EditService = () => {
       } else {
         showServiceError(error.message || 'Failed to update service. Please try again.');
       }
-      
+
       setIsSubmitting(false);
     }
   }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, currentVersion, isSubmitting, showServiceLoading, showServiceError, dismissServiceToast]);
 
-  useEffect(() => {
-    // Refresh service data when component mounts
-    if (id && !serviceLoading) {
-      refetchService().then(() => {
-        console.log('Service data refreshed on mount');
-      });
-    }
-  }, [id, serviceLoading, refetchService]);
-
+  // Helper function
   const formatPrice = useCallback((price) => {
     const num = parseFloat(price);
     return isNaN(num) ? "0" : num.toLocaleString('en-US', {
@@ -957,8 +898,51 @@ const EditService = () => {
     });
   }, []);
 
-  // Version Conflict Resolution Component
-  const VersionConflictResolution = () => {
+  // Memoized render functions
+  const renderTopInfo = useMemo(() => (
+    <div className="max-w-6xl mx-auto mb-8">
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 md:p-8 shadow-lg border border-emerald-100">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="md:w-2/3">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
+                <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
+                  Edit Service
+                </h1>
+                <p className="text-emerald-700 font-medium text-sm md:text-base">
+                  Update your service details
+                </p>
+              </div>
+            </div>
+            <p className="text-gray-600 text-sm md:text-base">
+              Make changes to your service to keep it relevant and attractive to clients.
+            </p>
+          </div>
+          <div className="md:w-1/3 w-full">
+            <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
+                <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
+                Quick Tips
+              </h3>
+              <ul className="space-y-2 text-xs md:text-sm text-gray-600">
+                {QUICK_TIPS.map((tip, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), []);
+
+  const VersionConflictResolution = useMemo(() => {
     if (!versionConflict && !conflictResolution.show) return null;
 
     return (
@@ -972,14 +956,14 @@ const EditService = () => {
             </p>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={handleResolveConflict}
+                onClick={handleRefreshService}
                 disabled={isRefreshing}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2"
               >
                 <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                 {isRefreshing ? 'Refreshing...' : 'Refresh & Resolve'}
               </button>
-              
+
               {conflictResolution.serverData && (
                 <>
                   <button
@@ -997,7 +981,7 @@ const EditService = () => {
                 </>
               )}
             </div>
-            
+
             {conflictResolution.serverData && (
               <div className="mt-4 p-3 bg-orange-100 rounded-lg">
                 <h4 className="font-medium text-orange-800 mb-2">Server Changes:</h4>
@@ -1014,7 +998,145 @@ const EditService = () => {
         </div>
       </div>
     );
-  };
+  }, [versionConflict, conflictResolution, formData.version, handleRefreshService, handleManualResolve, isRefreshing]);
+
+  const renderRightPanel = useMemo(() => (
+    <div className="lg:col-span-1">
+      <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <Eye className="mr-3" size={20} />
+            <h2 className="text-xl font-bold">Service Preview</h2>
+          </div>
+          <div className="px-2 py-1 bg-emerald-800 text-emerald-100 text-xs rounded-full">
+            v{currentVersion}
+          </div>
+          <p className="text-emerald-100 text-sm">
+            Review your changes before updating. This preview shows how your service will appear to clients.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Current Information</h3>
+            <ul className="space-y-2 text-sm">
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Title:</span>
+                <span className="font-medium truncate max-w-[150px]">
+                  {formData.title || 'Not set'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Category:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getCategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Subcategory:</span>
+                <span className="font-medium truncate max-w-[120px]">
+                  {getSubcategoryName() || 'Not selected'}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Price:</span>
+                <span className="font-medium">
+                  ${formatPrice(formData.price)}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Delivery Time:</span>
+                <span className="font-medium">{formData.deliveryTime || 'Not set'} {formData.deliveryTimeUnit}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Status:</span>
+                <span className="font-medium capitalize">{formData.status}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Tags:</span>
+                <span className="font-medium">{formData.tags.length} added</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Features:</span>
+                <span className="font-medium">{formData.features.length} added</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-emerald-100">Total Images:</span>
+                <span className="font-medium">
+                  {existingImages.length + uploadedImages.length}/10
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Changes Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Form Fields Updated:</span>
+                <span className="font-medium">Multiple</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">New Images:</span>
+                <span className="font-medium">{uploadedImages.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">New Thumbnail:</span>
+                <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3">Update Tips</h3>
+            <ul className="space-y-2 text-sm text-emerald-100">
+              <li className="flex items-start gap-2">
+                <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>Update at least once a month to stay relevant</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>High-quality images increase engagement</span>
+              </li>
+            </ul>
+          </div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+            <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+              <GitBranch className="h-5 w-5" />
+              Version Information
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Current Version:</span>
+                <span className="font-medium">{formData.version}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Status:</span>
+                <span className="font-medium capitalize">{formData.status}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-100">Last Edited:</span>
+                <span className="font-medium">
+                  {currentService?.updatedAt ?
+                    new Date(currentService.updatedAt).toLocaleDateString() :
+                    'Never'
+                  }
+                </span>
+              </div>
+              {versionConflict && (
+                <div className="mt-3 p-2 bg-orange-500/20 rounded border border-orange-500/30">
+                  <p className="text-orange-200 text-xs">
+                    <AlertTriangle className="inline w-3 h-3 mr-1" />
+                    Version conflict detected. Please resolve before saving.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), [currentVersion, formData, getCategoryName, getSubcategoryName, formatPrice, existingImages.length, uploadedImages.length, thumbnailFile, currentService, versionConflict]);
 
   // Loading state
   if (serviceLoading || categoryLoading) {
@@ -1077,47 +1199,7 @@ const EditService = () => {
       structuredData={SERVICE_EDIT_STRUCTURED_DATA}
     >
       <div ref={topContainerRef} className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-8 md:py-12 px-4">
-        {/* Header */}
-        <div className="max-w-6xl mx-auto mb-8">
-          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 md:p-8 shadow-lg border border-emerald-100">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="md:w-2/3">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
-                    <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
-                      Edit Service
-                    </h1>
-                    <p className="text-emerald-700 font-medium text-sm md:text-base">
-                      Update your service details
-                    </p>
-                  </div>
-                </div>
-                <p className="text-gray-600 text-sm md:text-base">
-                  Make changes to your service to keep it relevant and attractive to clients.
-                </p>
-              </div>
-              <div className="md:w-1/3 w-full">
-                <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
-                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
-                    <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
-                    Quick Tips
-                  </h3>
-                  <ul className="space-y-2 text-xs md:text-sm text-gray-600">
-                    {QUICK_TIPS.map((tip, index) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
-                        <span>{tip}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {renderTopInfo}
 
         {/* Main Content */}
         <div className="max-w-6xl mx-auto">
@@ -1126,8 +1208,8 @@ const EditService = () => {
             <div className="lg:col-span-2">
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div className="p-6 md:p-8">
-                  <VersionConflictResolution />
-                  
+                  {VersionConflictResolution}
+
                   {/* Error Messages */}
                   {allErrors.form && (
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
@@ -1208,8 +1290,8 @@ const EditService = () => {
                               required={subcategories.length > 0}
                             >
                               <option value="">
-                                {subcategoriesData.isLoading ? 'Loading...' : 
-                                 subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
+                                {subcategoriesData.isLoading ? 'Loading...' :
+                                  subcategories.length > 0 ? 'Select a subcategory' : 'No subcategories'}
                               </option>
                               {subcategories.map((subcategory) => (
                                 <option key={subcategory._id} value={subcategory._id}>
@@ -1923,7 +2005,7 @@ const EditService = () => {
                         disabled={isSubmitting || updateLoading}
                         className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                       >
-                       {isSubmitting || updateLoading ? (
+                        {isSubmitting || updateLoading ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" />
                             Updating Service...
@@ -1963,145 +2045,7 @@ const EditService = () => {
               </div>
             </div>
 
-            {/* Right Panel - Preview & Info */}
-            <div className="lg:col-span-1">
-              <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
-                <div className="mb-6">
-                  <div className="flex items-center mb-4">
-                    <Eye className="mr-3" size={20} />
-                    <h2 className="text-xl font-bold">Service Preview</h2>
-                  </div>
-                  <div className="px-2 py-1 bg-emerald-800 text-emerald-100 text-xs rounded-full">
-                      v{currentVersion}
-                    </div>
-                  <p className="text-emerald-100 text-sm">
-                    Review your changes before updating. This preview shows how your service will appear to clients.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Current Information</h3>
-                    <ul className="space-y-2 text-sm">
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Title:</span>
-                        <span className="font-medium truncate max-w-[150px]">
-                          {formData.title || 'Not set'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Category:</span>
-                        <span className="font-medium truncate max-w-[120px]">
-                          {getCategoryName() || 'Not selected'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Subcategory:</span>
-                        <span className="font-medium truncate max-w-[120px]">
-                          {getSubcategoryName() || 'Not selected'}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Price:</span>
-                        <span className="font-medium">
-                          ${formatPrice(formData.price)}
-                        </span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Delivery Time:</span>
-                        <span className="font-medium">{formData.deliveryTime || 'Not set'} {formData.deliveryTimeUnit}</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Status:</span>
-                        <span className="font-medium capitalize">{formData.status}</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Tags:</span>
-                        <span className="font-medium">{formData.tags.length} added</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Features:</span>
-                        <span className="font-medium">{formData.features.length} added</span>
-                      </li>
-                      
-                      <li className="flex justify-between">
-                        <span className="text-emerald-100">Total Images:</span>
-                        <span className="font-medium">
-                          {existingImages.length + uploadedImages.length}/10
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Changes Summary</h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">Form Fields Updated:</span>
-                        <span className="font-medium">Multiple</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">New Images:</span>
-                        <span className="font-medium">{uploadedImages.length}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">New Thumbnail:</span>
-                        <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
-                      </div>
-                      
-                    </div>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3">Update Tips</h3>
-                    <ul className="space-y-2 text-sm text-emerald-100">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>Update at least once a month to stay relevant</span>
-                      </li>
-                     
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>High-quality images increase engagement</span>
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
-                      <GitBranch className="h-5 w-5" />
-                      Version Information
-                    </h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">Current Version:</span>
-                        <span className="font-medium">{formData.version}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">Status:</span>
-                        <span className="font-medium capitalize">{formData.status}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-emerald-100">Last Edited:</span>
-                        <span className="font-medium">
-                          {currentService?.updatedAt ? 
-                            new Date(currentService.updatedAt).toLocaleDateString() : 
-                            'Never'
-                          }
-                        </span>
-                      </div>
-                      {versionConflict && (
-                        <div className="mt-3 p-2 bg-orange-500/20 rounded border border-orange-500/30">
-                          <p className="text-orange-200 text-xs">
-                            <AlertTriangle className="inline w-3 h-3 mr-1" />
-                            Version conflict detected. Please resolve before saving.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {renderRightPanel}
           </div>
         </div>
       </div>
@@ -2109,4 +2053,4 @@ const EditService = () => {
   );
 };
 
-export default EditService;
+export default React.memo(EditService);
