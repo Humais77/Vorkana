@@ -37,8 +37,9 @@ import {
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { useAuthStore } from '../../../store/useAuthStore';
 import axios from 'axios';
-
+import { DEFAULT_IMAGES } from '../../../utils/defaultImages';
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+
 
 // Helper functions
 const formatDate = (dateString) => {
@@ -360,13 +361,13 @@ const PublicProfile = () => {
                 <div className="flex flex-col md:flex-row items-start gap-6 mb-6">
                   <div className="relative">
                     <img
-                      src={profile.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=256&q=80'}
-                      alt={profile.name}
-                      className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white shadow-lg object-cover"
-                      onError={(e) => {
-                        e.target.src = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=256&q=80';
-                      }}
-                    />
+  src={profile.picture || DEFAULT_IMAGES.PROFILE}
+  alt={profile.name}
+  className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white shadow-lg object-cover"
+  onError={(e) => {
+    e.target.src = DEFAULT_IMAGES.PROFILE;
+  }}
+/>
                     {isOnline && (
                       <div className="absolute bottom-2 right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
                     )}

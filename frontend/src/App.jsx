@@ -189,10 +189,11 @@ const App = () => {
 
               {/* Protected Routes */}
               <Route path="/gig/create" element={
-                <AuthProtectedRoute requireProfileCompletion={true}>
-                  <GigCreate />
-                </AuthProtectedRoute>
-              } />
+  <AuthProtectedRoute>
+    <GigCreate />
+  </AuthProtectedRoute>
+} />
+
               <Route path="/gig/:id" element={<GigDetails />} />
               <Route path="/edit-gig/:id" element={
                 <AuthProtectedRoute>
@@ -223,11 +224,11 @@ const App = () => {
                   <CreateService />
                 </AuthProtectedRoute>
               } />
-              <Route path="/edit-service/:id" element={
-                <AuthProtectedRoute>
-                  <EditService />
-                </AuthProtectedRoute>
-              } />
+              <Route path="/services/create" element={
+  <AuthProtectedRoute>
+    <CreateService />
+  </AuthProtectedRoute>
+} />
               <Route path="/services/:id" element={<ServiceDetails />} />
               <Route path="/services" element={<ServiceListingPage />} />
               <Route path="/what-are-services" element={<ServicesInfoPage />} />

@@ -51,7 +51,7 @@ import { Dialog } from '@headlessui/react';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useService ,useDeleteService } from '../../../hooks/useServices';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-
+import { DEFAULT_IMAGES, getGenericImage } from '../../../utils/defaultImages';
 // Helper functions
 const generateServiceStructuredData = (service, serviceUser, websiteUrl) => {
   if (!service || !websiteUrl) return null;
@@ -858,17 +858,25 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   >
                     <meta itemProp="url" content={`${window.location.origin}/profile/${serviceUser?._id}`} />
                     <div className="relative">
-                      {serviceUser?.picture ? (
-                      <img
-                        src={serviceUser?.picture || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'}
-                        alt={serviceUser?.name || 'Provider'}
-                        
-                      />
-                      ) : (
-  <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
-    <User className="h-8 w-8 text-gray-400" />
+                     {serviceUser?.picture ? (
+  <img
+    src={serviceUser.picture}
+    alt={serviceUser?.name || 'Provider'}
+    className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
+    onError={(e) => {
+      e.target.src = DEFAULT_IMAGES.PROFILE;
+    }}
+  />
+) : (
+  <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+    <img
+      src={DEFAULT_IMAGES.PROFILE}
+      alt="Default profile"
+      className="w-full h-full object-cover"
+    />
   </div>
 )}
+
                       {isOnline && (
                         <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" aria-label="User is online"></div>
                       )}
@@ -1070,15 +1078,21 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     <div className="mb-8">
                       <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
                         {thumbnailImage?.url ? (
-                        <img
-                          src={thumbnailImage?.url}
-                          alt={`${service.title} - Featured thumbnail`}
-                          className="w-full h-full object-cover"
-                        />
-                        ) : (
+  <img
+    src={thumbnailImage.url}
+    alt={`${service.title} - Featured thumbnail`}
+    className="w-full h-full object-cover"
+    onError={(e) => {
+      e.target.src = DEFAULT_IMAGES.GENERIC; // Changed from SERVICE to GENERIC
+    }}
+  />
+) : (
   <div className="w-full h-96 bg-gray-100 flex items-center justify-center rounded-2xl">
-    <ImageIcon className="h-16 w-16 text-gray-400" />
-    <span className="text-gray-500 mt-2">No image available</span>
+    <img
+      src={DEFAULT_IMAGES.GENERIC}
+      alt="Service placeholder"
+      className="w-full h-full object-cover rounded-2xl"
+    />
   </div>
 )}
                         <div className="absolute top-4 left-4">
@@ -1164,13 +1178,13 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                         <>
                           <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
                             <img
-                              src={galleryImages[activeImage]?.url}
-                              alt={`${service.title} - Gallery Image ${activeImage + 1}`}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-                              }}
-                            />
+  src={galleryImages[activeImage]?.url}
+  alt={`${service.title} - Gallery Image ${activeImage + 1}`}
+  className="w-full h-full object-cover"
+  onError={(e) => {
+    e.target.src = DEFAULT_IMAGES.GALLERY; 
+  }}
+/>
                             {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
                               <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
                                 {galleryImages[activeImage].width} × {galleryImages[activeImage].height}
@@ -1196,13 +1210,13 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                                 role="listitem"
                               >
                                 <img
-                                  src={image.url}
-                                  alt={`Gallery ${index + 1}`}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
-                                  }}
-                                />
+  src={image.url}
+  alt={`Gallery ${index + 1}`}
+  className="w-full h-full object-cover"
+  onError={(e) => {
+    e.target.src = DEFAULT_IMAGES.THUMBNAIL;
+  }}
+/>
                               </button>
                             ))}
                           </div>
