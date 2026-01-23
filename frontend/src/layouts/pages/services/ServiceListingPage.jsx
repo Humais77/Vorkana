@@ -1,7 +1,7 @@
 // src/pages/ServiceListingPage.jsx
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import PopularServices from "../../../components/services/PopularService";
+import PopularServices from "../../../components/services/PopularServicesPage";
 import {
   Search,
   Filter,
@@ -21,7 +21,7 @@ import {
 import { useServices, useSearchServices, useCategories } from "../../../hooks/useServices";
 import { toast } from "react-hot-toast";
 import { SeoWrapper } from "../../../components/SeoWrapper";
-
+import { DEFAULT_IMAGES } from '../../../utils/defaultImages';
 const ServiceListingPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -651,8 +651,11 @@ const ServiceListingPage = () => {
                           </>
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
-                            <ImageIcon className="w-12 h-12 mb-2" />
-                            <span className="text-sm">No image</span>
+                             <img
+                                                    src={DEFAULT_IMAGES.GENERIC}
+                                                    alt="Service placeholder"
+                                                    className="w-full h-full object-cover rounded-2xl"
+                                                        />
                           </div>
                         )}
                         

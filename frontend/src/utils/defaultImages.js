@@ -2,7 +2,7 @@
 import { buildImageUrl } from './cloudinaryFrontend';
 
 // Your main generic image (with text)
-const GENERIC_IMAGE_PUBLIC_ID = "bryf0fkycomkuigfxhd6";
+const GENERIC_IMAGE_PUBLIC_ID = "m3idugsicoefjpep6s6s";
 
 export const DEFAULT_IMAGES = {
   // PROFILE: Use a different image or keep as is

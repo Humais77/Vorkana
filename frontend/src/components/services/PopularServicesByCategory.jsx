@@ -8,7 +8,7 @@ import {
 import { motion } from "framer-motion";
 import { usePopularCategories } from "../../hooks/useCategories";
 import { usePopularServicesByCategory } from "../../hooks/useServices";
-
+import { DEFAULT_IMAGES} from '../../utils/defaultImages';
 const iconMap = {
   'web-development': <Globe className="w-8 h-8" />,
   'programming-tech': <Code className="w-8 h-8" />,
@@ -256,7 +256,7 @@ const PopularServicesByCategory = () => {
                     >
                       <div className="relative h-48 overflow-hidden rounded-t-xl">
                         <img
-                          src={service.imageUrl || service.thumbnail?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=512&h=384&fit=crop&q=80&auto=format'}
+                          src={service.imageUrl || service.thumbnail?.url || DEFAULT_IMAGES.GENERIC }
                           alt={service.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           loading="lazy"
