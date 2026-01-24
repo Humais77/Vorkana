@@ -3,6 +3,88 @@ import { adminAPI } from '../api/admin.js';
 import { useAdminStore } from '../store/useAdminStore.js';
 import { toast } from 'react-hot-toast';
 
+// CSRF Token Management
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
+
+const refreshCSRFToken = async () => {
+  try {
+    const response = await adminAPI.refreshCSRFToken();
+    if (response.data.success && response.data.csrfToken) {
+      csrfToken = response.data.csrfToken;
+      csrfTokenExpiry = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+      
+      localStorage.setItem('csrfToken', csrfToken);
+      localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry.toString());
+      
+      return csrfToken;
+    }
+  } catch (error) {
+    console.error('Failed to refresh CSRF token:', error);
+  }
+  return null;
+};
+
+const getCSRFToken = async () => {
+  // Check if token exists and is valid
+  if (csrfToken && Date.now() < parseInt(csrfTokenExpiry)) {
+    return csrfToken;
+  }
+  
+  // Try to get token from server
+  try {
+    const response = await adminAPI.getCSRFToken();
+    if (response.data.success && response.data.csrfToken) {
+      csrfToken = response.data.csrfToken;
+      csrfTokenExpiry = Date.now() + 24 * 60 * 60 * 1000;
+      
+      localStorage.setItem('csrfToken', csrfToken);
+      localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry.toString());
+      
+      return csrfToken;
+    }
+  } catch (error) {
+    console.error('Failed to get CSRF token:', error);
+  }
+  
+  return null;
+};
+
+// Enhanced API call wrapper with CSRF handling
+const withCSRF = async (apiCall, retryCount = 0) => {
+  try {
+    const token = await getCSRFToken();
+    
+    // Make the API call with CSRF token
+    const response = await apiCall(token);
+    
+    // Check if response contains a new CSRF token
+    if (response.data?.csrfToken) {
+      csrfToken = response.data.csrfToken;
+      localStorage.setItem('csrfToken', csrfToken);
+    }
+    
+    return response;
+  } catch (error) {
+    // Handle CSRF token errors specifically
+    if (error.response?.status === 403 && 
+        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      if (retryCount < 1) {
+        // Refresh CSRF token and retry once
+        console.log('CSRF token invalid, refreshing and retrying...');
+        await refreshCSRFToken();
+        return withCSRF(apiCall, retryCount + 1);
+      }
+      
+      // Max retries reached, throw error
+      throw new Error('CSRF token validation failed after retry');
+    }
+    
+    throw error;
+  }
+};
+
 export const useAdminDashboard = () => {
   const queryClient = useQueryClient();
   const { setDashboardStats, setSystemHealth } = useAdminStore();
@@ -11,7 +93,9 @@ export const useAdminDashboard = () => {
     queryKey: ['admin', 'dashboard'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getDashboardStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getDashboardStats(csrfToken);
+        });
         
         if (!response.data.success) {
           throw new Error(response.data.message || 'Failed to fetch stats');
@@ -120,10 +204,18 @@ export const useAdminDashboard = () => {
         return {
           success: true,
           data: dashboardData,
-          fullStats: stats // Keep full stats for other components
+          fullStats: stats,
+          csrfToken: response.data.csrfToken
         };
       } catch (error) {
         console.error('Dashboard fetch error:', error);
+
+        // Check if it's an authentication error
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          toast.error('Session expired. Please login again.');
+          window.location.href = '/admin/login';
+          throw error;
+        }
 
         // Fallback: zero everything
         const fallback = {
@@ -192,12 +284,20 @@ export const useAdminDashboard = () => {
         };
       }
     },
-    staleTime: 60000, // 1 minute
-    retry: 3,
+    staleTime: 60000,
+    retry: (failureCount, error) => {
+      // Don't retry on auth errors
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return false;
+      }
+      return failureCount < 3;
+    },
     retryDelay: 1000,
     refetchOnWindowFocus: true,
     onError: (error) => {
-      toast.error('Dashboard loading failed');
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
+        toast.error('Dashboard loading failed');
+      }
     }
   });
 };
@@ -209,10 +309,16 @@ export const useAdminUsers = (params = {}) => {
     queryKey: ['admin', 'users', params],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getUsers(params);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getUsers(params, csrfToken);
+        });
+        
         if (response.data.success) {
           setUsers(response.data);
-          return response.data;
+          return {
+            ...response.data,
+            csrfToken: response.data.csrfToken
+          };
         }
         throw new Error(response.data.message || 'Failed to fetch users');
       } catch (error) {
@@ -221,10 +327,15 @@ export const useAdminUsers = (params = {}) => {
       }
     },
     staleTime: 60000,
-    retry: 2,
+    retry: (failureCount, error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     keepPreviousData: true,
     onError: (error) => {
-      if (error.response?.status !== 401) {
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
         toast.error('Failed to load users');
       }
     }
@@ -240,20 +351,26 @@ export const useAdminCategories = (params = {}) => {
       console.log('[FETCH CATEGORIES] Params:', params);
       
       try {
-        // Add default admin parameters
-        const queryParams = {
-          ...params,
-          showAll: true,
-          isAdmin: true,
-          populate: true
-        };
+        const response = await withCSRF(async (csrfToken) => {
+          // Add default admin parameters
+          const queryParams = {
+            ...params,
+            showAll: true,
+            isAdmin: true,
+            populate: true
+          };
+          
+          return await adminAPI.getCategories(queryParams, csrfToken);
+        });
         
-        const response = await adminAPI.getCategories(queryParams);
         console.log('[FETCH CATEGORIES] Response success:', response.data?.success);
         
         if (response.data.success) {
           setCategories(response.data);
-          return response.data;
+          return {
+            ...response.data,
+            csrfToken: response.data.csrfToken
+          };
         }
         
         throw new Error(response.data.message || 'Failed to fetch categories');
@@ -262,12 +379,17 @@ export const useAdminCategories = (params = {}) => {
         throw error;
       }
     },
-    staleTime: 30000, // 30 seconds
-    gcTime: 60000, // 1 minute cache time
-    retry: 2,
+    staleTime: 30000,
+    gcTime: 60000,
+    retry: (failureCount, error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     retryDelay: 1000,
     keepPreviousData: true,
-    refetchOnWindowFocus: false, // Prevent unwanted refetches
+    refetchOnWindowFocus: false,
     onError: (error) => {
       console.error('Categories fetch error:', error);
       
@@ -278,12 +400,15 @@ export const useAdminCategories = (params = {}) => {
   });
 };
 
-
 export const useCreateUser = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (userData) => adminAPI.createUser(userData),
+    mutationFn: async (userData) => {
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.createUser(userData, csrfToken);
+      });
+    },
     onSuccess: (response) => {
       if (response.data.success) {
         toast.success('User created successfully');
@@ -335,8 +460,9 @@ export const useDeleteUser = () => {
       
       console.log('[USE DELETE USER] Calling API with:', { id, options });
       
-      // For admin delete, use the admin endpoint
-      return await adminAPI.deleteUser(id, options);
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.deleteUser(id, options, csrfToken);
+      });
     },
     onMutate: async (params) => {
       // Extract ID from params (could be string or object)
@@ -396,7 +522,10 @@ export const useUpdateUser = () => {
       console.log('[USE UPDATE USER] Updating user:', { id, data });
       
       try {
-        const response = await adminAPI.updateUser(id, data);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.updateUser(id, data, csrfToken);
+        });
+        
         console.log('[USE UPDATE USER] Update response:', response.data);
         return response;
       } catch (error) {
@@ -485,7 +614,11 @@ export const useCreateCategory = () => {
   return useMutation({
     mutationFn: async (categoryData) => {
       console.log('[CREATE CATEGORY] Sending data:', categoryData);
-      const response = await adminAPI.createCategory(categoryData);
+      
+      const response = await withCSRF(async (csrfToken) => {
+        return await adminAPI.createCategory(categoryData, csrfToken);
+      });
+      
       console.log('[CREATE CATEGORY] Response:', response.data);
       return response;
     },
@@ -585,7 +718,6 @@ export const useCreateCategory = () => {
   });
 };
 
-// Fix: Update Category Hook with version conflict handling
 export const useUpdateCategory = () => {
   const queryClient = useQueryClient();
 
@@ -597,7 +729,10 @@ export const useUpdateCategory = () => {
       const cleanData = { ...data };
       delete cleanData.__isOptimistic;
       
-      const response = await adminAPI.updateCategory(id, cleanData);
+      const response = await withCSRF(async (csrfToken) => {
+        return await adminAPI.updateCategory(id, cleanData, csrfToken);
+      });
+      
       console.log('[UPDATE CATEGORY] Response:', response.data);
       return response;
     },
@@ -685,7 +820,6 @@ export const useUpdateCategory = () => {
   });
 };
 
-// Fix: Delete Category Hook with immediate UI update
 export const useDeleteCategory = () => {
   const queryClient = useQueryClient();
 
@@ -705,7 +839,9 @@ export const useDeleteCategory = () => {
         force: String(force).toLowerCase()
       };
       
-      return await adminAPI.deleteCategory(id, params);
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.deleteCategory(id, params, csrfToken);
+      });
     },
     onMutate: async (deleteOptions) => {
       const { id } = deleteOptions;
@@ -776,7 +912,6 @@ export const useDeleteCategory = () => {
   });
 };
 
-// Fix: Add cache key generator for consistent queries
 const generateCategoryQueryKey = (params = {}) => {
   const baseKey = ['admin', 'categories'];
   
@@ -829,7 +964,9 @@ export const useRestoreCategory = () => {
       
       console.log('[USE RESTORE CATEGORY] Calling API with ID:', categoryId);
       
-      return await adminAPI.restoreCategory(categoryId);
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.restoreCategory(categoryId, csrfToken);
+      });
     },
     onMutate: async (id) => {
       console.log('[USE RESTORE CATEGORY] Optimistic update for category:', id);
@@ -898,12 +1035,13 @@ export const useRestoreCategory = () => {
   });
 };
 
-// Bulk restore categories hook
 export const useBulkRestoreCategories = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (ids) => adminAPI.bulkRestoreCategories(ids),
+    mutationFn: (ids) => withCSRF(async (csrfToken) => {
+      return await adminAPI.bulkRestoreCategories(ids, csrfToken);
+    }),
     onMutate: async (ids) => {
       await queryClient.cancelQueries(['admin', 'categories']);
       
@@ -958,11 +1096,13 @@ export const useAdminServices = (params = {}) => {
     queryKey: ['admin', 'services', params],
     queryFn: async () => {
       try {
-        // Always include full details for admin
-        const response = await adminAPI.getServices({
-          ...params,
-          includeFullDetails: true,
-          populateSubcategories: true
+        const response = await withCSRF(async (csrfToken) => {
+          // Always include full details for admin
+          return await adminAPI.getServices({
+            ...params,
+            includeFullDetails: true,
+            populateSubcategories: true
+          }, csrfToken);
         });
         
         if (response.data.success) {
@@ -993,11 +1133,16 @@ export const useAdminServices = (params = {}) => {
         throw error;
       }
     },
-    staleTime: 30000, // 30 seconds
-    retry: 2,
+    staleTime: 30000,
+    retry: (failureCount, error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     keepPreviousData: true,
     onError: (error) => {
-      if (error.response?.status !== 401) {
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
         toast.error('Failed to load services');
       }
     }
@@ -1012,7 +1157,10 @@ export const useRestoreService = () => {
       console.log('[USE RESTORE SERVICE] Restoring service:', id);
       
       try {
-        const response = await adminAPI.restoreService(id, data);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.restoreService(id, data, csrfToken);
+        });
+        
         console.log('[USE RESTORE SERVICE] Restore response:', response.data);
         return response;
       } catch (error) {
@@ -1070,12 +1218,13 @@ export const useRestoreService = () => {
   });
 };
 
-// Add bulk restore hook
 export const useBulkRestoreServices = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (ids) => adminAPI.bulkRestoreServices(ids),
+    mutationFn: (ids) => withCSRF(async (csrfToken) => {
+      return await adminAPI.bulkRestoreServices(ids, csrfToken);
+    }),
     onMutate: async (ids) => {
       await queryClient.cancelQueries(['admin', 'services']);
       
@@ -1122,7 +1271,6 @@ export const useBulkRestoreServices = () => {
   });
 };
 
-// Update useUpdateService for faster cache updates
 export const useUpdateService = () => {
   const queryClient = useQueryClient();
 
@@ -1131,7 +1279,10 @@ export const useUpdateService = () => {
       console.log('[USE UPDATE SERVICE] Updating service:', { id, data });
       
       try {
-        const response = await adminAPI.updateService(id, data);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.updateService(id, data, csrfToken);
+        });
+        
         console.log('[USE UPDATE SERVICE] Update response:', response.data);
         return response;
       } catch (error) {
@@ -1221,7 +1372,6 @@ export const useUpdateService = () => {
   });
 };
 
-// Add poll mechanism for real-time updates
 export const useServicePolling = (params = {}) => {
   const queryClient = useQueryClient();
   const [lastUpdate, setLastUpdate] = useState(Date.now());
@@ -1268,8 +1418,9 @@ export const useDeleteService = () => {
       
       console.log('[USE DELETE SERVICE] Deleting with:', { id, options });
       
-      // For admin delete, use the admin endpoint
-      return await adminAPI.deleteService(id, options);
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.deleteService(id, options, csrfToken);
+      });
     },
     onMutate: async (params) => {
       // Extract ID from params (could be string or object)
@@ -1314,7 +1465,9 @@ export const useBulkServiceOperations = () => {
 
   return useMutation({
     mutationFn: ({ ids, operation, data = {} }) => 
-      adminAPI.bulkUpdateServices({ ids, operation, data }),
+      withCSRF(async (csrfToken) => {
+        return await adminAPI.bulkUpdateServices({ ids, operation, data }, csrfToken);
+      }),
     onMutate: async ({ ids, operation, data }) => {
       await queryClient.cancelQueries(['admin', 'services']);
       
@@ -1361,13 +1514,15 @@ export const useBulkServiceOperations = () => {
   });
 };
 
-
 export const useCategoriesForDropdown = (includeSubcategories = true) => {
   return useQuery({
     queryKey: ['admin', 'categories', 'dropdown', includeSubcategories],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getCategoriesForDropdown(includeSubcategories);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getCategoriesForDropdown(includeSubcategories, csrfToken);
+        });
+        
         console.log('[CATEGORIES DROPDOWN] Response:', response.data);
         
         // Ensure data structure is consistent
@@ -1396,7 +1551,6 @@ export const useCategoriesForDropdown = (includeSubcategories = true) => {
       }
     },
     staleTime: 300000,
-    // Force refresh when includeSubcategories changes
     enabled: true,
   });
 };
@@ -1406,7 +1560,10 @@ export const useUsersForDropdown = (role = '') => {
     queryKey: ['admin', 'users', 'dropdown', role],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getUsersForDropdown(role);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getUsersForDropdown(role, csrfToken);
+        });
+        
         return response.data;
       } catch (error) {
         console.error('Users dropdown error:', error);
@@ -1416,13 +1573,16 @@ export const useUsersForDropdown = (role = '') => {
     staleTime: 300000,
   });
 };
+
 export const useBulkCategoryOperations = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ ids, operation, data = {} }) => {
       console.log('[BULK CATEGORY] Operation:', operation, 'IDs:', ids);
-      return await adminAPI.bulkUpdateCategories({ ids, operation, data });
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.bulkUpdateCategories({ ids, operation, data }, csrfToken);
+      });
     },
     onMutate: async ({ ids, operation, data }) => {
       console.log('[BULK CATEGORY] Optimistic update for:', ids);
@@ -1492,10 +1652,13 @@ export const useCreateService = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (formData) => adminApi.post('/api/services/admin/create', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+    mutationFn: (formData) => withCSRF(async (csrfToken) => {
+      return await adminApi.post('/api/services/admin/create', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'X-CSRF-Token': csrfToken
+        }
+      });
     }),
     onSuccess: (response) => {
       if (response.data.success) {
@@ -1517,7 +1680,10 @@ export const useServiceStats = () => {
     queryKey: ['admin', 'services', 'stats'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getServiceStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getServiceStats(csrfToken);
+        });
+        
         return response.data;
       } catch (error) {
         console.error('Service stats error:', error);
@@ -1529,7 +1695,6 @@ export const useServiceStats = () => {
   });
 };
 
-// KEEP THESE - These are for SEPARATE Subcategory management
 export const useAdminSubcategories = (params = {}) => {
   const setSubcategories = useAdminStore((state) => state.setSubcategories);
 
@@ -1537,7 +1702,10 @@ export const useAdminSubcategories = (params = {}) => {
     queryKey: ['admin', 'subcategories', params],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getSubcategories(params);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getSubcategories(params, csrfToken);
+        });
+        
         if (response.data.success) {
           setSubcategories(response.data);
           return response.data;
@@ -1552,7 +1720,7 @@ export const useAdminSubcategories = (params = {}) => {
     retry: 2,
     keepPreviousData: true,
     onError: (error) => {
-      if (error.response?.status !== 401) {
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
         toast.error('Failed to load subcategories');
       }
     }
@@ -1565,7 +1733,11 @@ export const useCreateSubcategory = () => {
   return useMutation({
     mutationFn: async (subcategoryData) => {
       console.log('[CREATE SUBCATEGORY] Sending data:', subcategoryData);
-      const response = await adminAPI.createSubcategory(subcategoryData);
+      
+      const response = await withCSRF(async (csrfToken) => {
+        return await adminAPI.createSubcategory(subcategoryData, csrfToken);
+      });
+      
       console.log('[CREATE SUBCATEGORY] Response:', response.data);
       return response;
     },
@@ -1706,7 +1878,10 @@ export const useUpdateSubcategory = () => {
       delete cleanData.__tempId;
       
       try {
-        const response = await adminAPI.updateSubcategory(id, cleanData);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.updateSubcategory(id, cleanData, csrfToken);
+        });
+        
         console.log('[USE UPDATE SUBCATEGORY] Response:', response.data);
         return response;
       } catch (error) {
@@ -1840,7 +2015,6 @@ export const useUpdateSubcategory = () => {
   });
 };
 
-// Update the deleteSubcategory hook
 export const useDeleteSubcategory = () => {
   const queryClient = useQueryClient();
 
@@ -1860,7 +2034,9 @@ export const useDeleteSubcategory = () => {
         force: String(force).toLowerCase()
       };
       
-      return await adminAPI.deleteSubcategory(id, params);
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.deleteSubcategory(id, params, csrfToken);
+      });
     },
     onMutate: async (deleteOptions) => {
       const { id } = deleteOptions;
@@ -1939,14 +2115,15 @@ export const useDeleteSubcategory = () => {
   });
 };
 
-// Fix the bulk operations hook too
 export const useBulkSubcategoryOperations = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ ids, operation, data = {} }) => {
       console.log('[BULK SUBCATEGORY] Operation:', operation, 'IDs:', ids);
-      return await adminAPI.bulkUpdateSubcategories({ ids, operation, data });
+      return await withCSRF(async (csrfToken) => {
+        return await adminAPI.bulkUpdateSubcategories({ ids, operation, data }, csrfToken);
+      });
     },
     onMutate: async ({ ids, operation, data }) => {
       console.log('[BULK SUBCATEGORY] Optimistic update for:', ids);
@@ -2009,12 +2186,15 @@ export const useBulkSubcategoryOperations = () => {
     }
   });
 };
+
 export const useBulkUserOperations = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ ids, operation, data = {} }) => 
-      adminAPI.bulkUpdateUsers({ ids, operation, data }),
+      withCSRF(async (csrfToken) => {
+        return await adminAPI.bulkUpdateUsers({ ids, operation, data }, csrfToken);
+      }),
     onMutate: async ({ ids, operation, data }) => {
       await queryClient.cancelQueries(['admin', 'users']);
       
@@ -2064,7 +2244,9 @@ export const useBulkUserOperations = () => {
 
 export const useExportUsers = () => {
   return useMutation({
-    mutationFn: (format = 'csv') => adminAPI.exportUsers(format),
+    mutationFn: (format = 'csv') => withCSRF(async (csrfToken) => {
+      return await adminAPI.exportUsers(format, csrfToken);
+    }),
     onSuccess: () => {
       toast.success('Export started successfully');
     },
@@ -2076,7 +2258,9 @@ export const useExportUsers = () => {
 
 export const useExportCategories = () => {
   return useMutation({
-    mutationFn: (format = 'csv') => adminAPI.exportCategories(format),
+    mutationFn: (format = 'csv') => withCSRF(async (csrfToken) => {
+      return await adminAPI.exportCategories(format, csrfToken);
+    }),
     onSuccess: () => {
       toast.success('Categories export started successfully');
     },
@@ -2088,7 +2272,9 @@ export const useExportCategories = () => {
 
 export const useExportSubcategories = () => {
   return useMutation({
-    mutationFn: (format = 'csv') => adminAPI.exportSubcategories(format),
+    mutationFn: (format = 'csv') => withCSRF(async (csrfToken) => {
+      return await adminAPI.exportSubcategories(format, csrfToken);
+    }),
     onSuccess: () => {
       toast.success('Subcategories export started successfully');
     },
@@ -2100,7 +2286,9 @@ export const useExportSubcategories = () => {
 
 export const useExportServices = () => {
   return useMutation({
-    mutationFn: (format = 'csv') => adminAPI.exportServices(format),
+    mutationFn: (format = 'csv') => withCSRF(async (csrfToken) => {
+      return await adminAPI.exportServices(format, csrfToken);
+    }),
     onSuccess: () => {
       toast.success('Services export started successfully');
     },
@@ -2112,7 +2300,9 @@ export const useExportServices = () => {
 
 export const useExportGigs = () => {
   return useMutation({
-    mutationFn: (format = 'csv') => adminAPI.exportGigs(format),
+    mutationFn: (format = 'csv') => withCSRF(async (csrfToken) => {
+      return await adminAPI.exportGigs(format, csrfToken);
+    }),
     onSuccess: () => {
       toast.success('Gigs export started successfully');
     },
@@ -2127,7 +2317,10 @@ export const useCategoryStats = () => {
     queryKey: ['admin', 'categories', 'stats'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getCategoryStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getCategoryStats(csrfToken);
+        });
+        
         return response.data;
       } catch (error) {
         console.error('Category stats error:', error);
@@ -2139,13 +2332,14 @@ export const useCategoryStats = () => {
   });
 };
 
-// In useAdminDashboard.js - Fix the useSubcategoryStats hook
 export const useSubcategoryStats = () => {
   return useQuery({
     queryKey: ['admin', 'subcategories', 'stats'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getSubcategoryStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getSubcategoryStats(csrfToken);
+        });
         
         if (response.data.success) {
           const statsData = response.data.data;
@@ -2229,7 +2423,9 @@ export const useSystemHealth = () => {
     queryKey: ['admin', 'system', 'health'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getSystemHealth();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getSystemHealth(csrfToken);
+        });
         
         if (response.data.success) {
           const healthData = response.data.data || {};
@@ -2274,9 +2470,9 @@ export const useSystemHealth = () => {
         };
       }
     },
-    staleTime: 10000, // 10 seconds for system health
+    staleTime: 10000,
     retry: 1,
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 30000,
     refetchOnWindowFocus: true,
     onError: (error) => {
       console.error('Failed to fetch system health:', error);
@@ -2291,7 +2487,9 @@ export const useRecentActivities = (limit = 10) => {
     queryKey: ['admin', 'dashboard', 'activities', limit],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getRecentActivity(limit);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getRecentActivity(limit, csrfToken);
+        });
         
         if (response.data.success) {
           const activities = response.data.data || [];
@@ -2352,22 +2550,25 @@ export const useRecentActivities = (limit = 10) => {
         };
       }
     },
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
     retry: 1,
-    refetchInterval: 60000, // Refetch every minute
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
-    enabled: true, // Always enabled
+    enabled: true,
     onError: (error) => {
       console.error('Failed to fetch recent activities:', error);
     }
   });
 };
+
 export const usePlatformMetrics = () => {
   return useQuery({
     queryKey: ['admin', 'platform', 'metrics'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getDashboardStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getDashboardStats(csrfToken);
+        });
         
         if (response.data.success) {
           const stats = response.data.data;
@@ -2437,7 +2638,9 @@ export const useCategoryDistribution = () => {
     queryKey: ['admin', 'categories', 'distribution'],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getCategoryStats();
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getCategoryStats(csrfToken);
+        });
         
         if (response.data.success) {
           const stats = response.data.data;
@@ -2477,12 +2680,11 @@ export const useCategoryDistribution = () => {
         };
       }
     },
-    staleTime: 120000, // 2 minutes
+    staleTime: 120000,
     retry: 1
   });
 };
 
-// Refresh dashboard manually
 export const useRefreshDashboard = () => {
   const queryClient = useQueryClient();
   
@@ -2503,12 +2705,16 @@ export const useRefreshDashboard = () => {
     }
   });
 };
+
 export const useChartData = (chartType, timeRange = '7d') => {
   return useQuery({
     queryKey: ['admin', 'dashboard', 'charts', chartType, timeRange],
     queryFn: async () => {
       try {
-        const response = await adminAPI.getChartData(chartType, timeRange);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getChartData(chartType, timeRange, csrfToken);
+        });
+        
         return response.data;
       } catch (error) {
         console.error('Chart data error:', error);
@@ -2532,7 +2738,10 @@ export const useSubcategoriesByCategory = (categoryId, params = {}) => {
           return { success: true, data: [], count: 0 };
         }
         
-        const response = await adminAPI.getSubcategoriesDropdown(categoryId, params);
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getSubcategoriesDropdown(categoryId, params, csrfToken);
+        });
+        
         console.log('[HOOK DEBUG] API Response:', response);
         
         // Check response structure
@@ -2565,7 +2774,9 @@ export const useRepairCategoryCounts = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => adminAPI.repairCategoryCounts(),
+    mutationFn: () => withCSRF(async (csrfToken) => {
+      return await adminAPI.repairCategoryCounts(csrfToken);
+    }),
     onMutate: () => {
       toast.loading('Repairing category counts...', {
         id: 'repair-counts'
@@ -2619,4 +2830,116 @@ export const useRepairAllCounts = () => {
     isError: repairCategory.isError || repairSubcategory.isError,
     error: repairCategory.error || repairSubcategory.error
   };
+};
+
+// Additional production-ready hooks
+export const useAdminAuth = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (credentials) => {
+      return await adminAPI.adminLogin(credentials);
+    },
+    onSuccess: (response) => {
+      if (response.data.success) {
+        // Store admin token
+        localStorage.setItem('adminToken', response.data.token);
+        localStorage.setItem('adminRefreshToken', response.data.refreshToken);
+        localStorage.setItem('adminCsrfToken', response.data.csrfToken);
+        
+        toast.success('Admin login successful');
+        
+        // Invalidate all admin queries
+        queryClient.invalidateQueries(['admin']);
+      } else {
+        toast.error(response.data.message || 'Login failed');
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Login failed');
+    }
+  });
+};
+
+export const useAdminLogout = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => withCSRF(async (csrfToken) => {
+      return await adminAPI.adminLogout(csrfToken);
+    }),
+    onMutate: () => {
+      // Clear all admin-related localStorage items
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminRefreshToken');
+      localStorage.removeItem('adminCsrfToken');
+      localStorage.removeItem('csrfToken');
+      localStorage.removeItem('csrfTokenExpiry');
+      
+      // Clear all admin queries from cache
+      queryClient.removeQueries(['admin']);
+      
+      toast.success('Logged out successfully');
+    },
+    onSuccess: () => {
+      window.location.href = '/admin/login';
+    },
+    onError: (error) => {
+      console.error('Logout error:', error);
+      // Still redirect even if logout API fails
+      window.location.href = '/admin/login';
+    }
+  });
+};
+
+export const useAdminPermissions = () => {
+  return useQuery({
+    queryKey: ['admin', 'permissions'],
+    queryFn: async () => {
+      try {
+        const response = await withCSRF(async (csrfToken) => {
+          return await adminAPI.getPermissions(csrfToken);
+        });
+        
+        return response.data;
+      } catch (error) {
+        console.error('Permissions error:', error);
+        return { 
+          success: false, 
+          data: [],
+          error: error.message 
+        };
+      }
+    },
+    staleTime: 300000,
+  });
+};
+
+// Error boundary and retry configuration
+const defaultQueryOptions = {
+  staleTime: 30000,
+  gcTime: 60000,
+  retry: (failureCount, error) => {
+    // Don't retry on authentication errors
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      return false;
+    }
+    // Retry up to 3 times for other errors
+    return failureCount < 3;
+  },
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: true,
+};
+
+// Export CSRF utilities for use in other components
+export const csrf = {
+  getToken: getCSRFToken,
+  refreshToken: refreshCSRFToken,
+  clearToken: () => {
+    csrfToken = null;
+    csrfTokenExpiry = 0;
+    localStorage.removeItem('csrfToken');
+    localStorage.removeItem('csrfTokenExpiry');
+  }
 };

@@ -1,84 +1,157 @@
-// gigs.js - Updated for cookie-based authentication
+// gigs.js - Production-ready with CSRF protection
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+
+// CSRF token management
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
   withCredentials: true,
 });
 
+// Request ID generator
+const generateRequestId = () => {
+  return `gig_req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+// Request interceptor with CSRF handling
 axiosInstance.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    const requestId = generateRequestId();
+    config.headers['X-Request-ID'] = requestId;
     
+    // Handle FormData content type
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
     
-    config.headers['X-Request-ID'] = `gig_req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get' && config.method !== 'GET') {
+      // Check if token is expired
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        try {
+          await refreshCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token:', error.message);
+        }
+      }
+      
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        // Also add to body for form submissions
+        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
+          config.data.csrfToken = csrfToken;
+        }
+      }
+    }
+    
+    if (DEBUG) {
+      console.log(`📤 Gigs Request: ${config.method?.toUpperCase()} ${config.url}`);
+    }
     
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('Gigs request error:', error);
+    return Promise.reject(error);
+  }
 );
+
+// Response interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
-    if (response.data && response.data.success !== undefined) {
-      return response.data;
-    }
-    return {
-      success: true,
-      data: response.data,
-      status: response.status
-    };
-  },
-  (error) => {
-    if (!error.response) {
-      return Promise.reject({
-        success: false,
-        message: 'Network error. Please check your connection.',
-        code: 'NETWORK_ERROR',
-        status: 0
-      });
+    // Update CSRF token from response
+    if (response.data?.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
     }
     
-    if (error.response.status === 401) {
+    if (DEBUG) {
+      console.log(`📥 Gigs Response: ${response.status} ${response.config.url}`);
+    }
+    
+    return response;
+  },
+  async (error) => {
+    // Handle CSRF errors
+    if (error.response?.status === 403 && 
+        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      console.log('CSRF token invalid, refreshing...');
+      
+      try {
+        // Try to refresh CSRF token
+        await refreshCSRFToken();
+        
+        // Retry original request
+        if (error.config) {
+          error.config.headers['X-CSRF-Token'] = csrfToken;
+          if (error.config.data && typeof error.config.data === 'object') {
+            error.config.data.csrfToken = csrfToken;
+          }
+          return axiosInstance(error.config);
+        }
+      } catch (refreshError) {
+        console.error('CSRF refresh failed:', refreshError);
+        // Clear auth and redirect to login
+        clearAuthData();
+        window.location.href = '/signin?csrf_error=true';
+      }
+    }
+    
+    // Handle authentication errors
+    if (error.response?.status === 401) {
       localStorage.removeItem('userInfo');
       if (window.location.pathname !== '/signin' && 
           window.location.pathname !== '/signup') {
         window.location.href = '/signin?redirect=' + encodeURIComponent(window.location.pathname);
       }
-      
-      return Promise.reject({
-        success: false,
-        message: 'Session expired. Please login again.',
-        code: 'SESSION_EXPIRED',
-        status: 401
-      });
     }
     
-    if (error.response.status === 500) {
-      return Promise.reject({
-        success: false,
-        message: 'Server error. Please try again later.',
-        code: 'SERVER_ERROR',
-        status: 500,
-        data: error.response.data
-      });
-    }
-    
-    return Promise.reject(error.response.data || {
-      success: false,
-      message: error.message,
-      status: error.response.status
-    });
+    return Promise.reject(error);
   }
 );
 
+// CSRF token management functions
+const setCSRFToken = (token, expiresAt) => {
+  csrfToken = token;
+  csrfTokenExpiry = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+  
+  localStorage.setItem('csrfToken', token);
+  localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry);
+};
+
+const refreshCSRFToken = async () => {
+  try {
+    console.log('Refreshing CSRF token for gigs API...');
+    const response = await axiosInstance.get('/api/csrf/token');
+    if (response.data.success) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('CSRF token refreshed successfully');
+      return csrfToken;
+    }
+    throw new Error('Failed to refresh CSRF token');
+  } catch (error) {
+    console.error('Failed to refresh CSRF token:', error.message);
+    throw error;
+  }
+};
+
+const clearAuthData = () => {
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('csrfToken');
+  localStorage.removeItem('csrfTokenExpiry');
+};
+
+// Helper function to clean parameters
 const cleanParams = (params) => {
   const cleaned = {};
   
@@ -112,7 +185,9 @@ const cleanParams = (params) => {
   return cleaned;
 };
 
+// Main gigs API functions
 export const gigsAPI = {
+  // Get all gigs
   getAll: async (params = {}) => {
     try {
       const defaultParams = {
@@ -158,17 +233,19 @@ export const gigsAPI = {
       
       return {
         success: true,
-        data: response.data || response.gigs || [],
-        pagination: response.pagination || {
+        data: response.data?.data || response.data || [],
+        pagination: response.data?.pagination || {
           page: parseInt(cleanedParams.page) || 1,
           limit: parseInt(cleanedParams.limit) || 12,
-          total: response.total || 0,
-          totalPages: Math.ceil((response.total || 0) / (parseInt(cleanedParams.limit) || 12))
+          total: response.data?.total || 0,
+          totalPages: Math.ceil((response.data?.total || 0) / (parseInt(cleanedParams.limit) || 12))
         },
-        ...response
+        ...response.data
       };
       
     } catch (error) {
+      console.error('Get all gigs error:', error);
+      
       if (error.code === 'SERVER_ERROR' || error.status === 500) {
         return {
           success: false,
@@ -184,10 +261,16 @@ export const gigsAPI = {
         };
       }
       
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load gigs',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
+  // Get gig by ID
   getById: async (id) => {
     try {
       if (!id || id === 'undefined' || id === 'null') {
@@ -210,12 +293,14 @@ export const gigsAPI = {
       
       return {
         success: true,
-        data: response.data || response.gig,
-        gig: response.data || response.gig,
-        ...response
+        data: response.data?.data || response.data,
+        gig: response.data?.data || response.data,
+        ...response.data
       };
       
     } catch (error) {
+      console.error('Get gig by ID error:', error);
+      
       if (error.status === 500 || error.code === 'SERVER_ERROR') {
         return {
           success: false,
@@ -251,10 +336,16 @@ export const gigsAPI = {
         };
       }
       
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load gig',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
+  // Get gigs by subcategory
   getBySubcategory: async (subcategoryId, params = {}) => {
     try {
       const defaultParams = {
@@ -280,18 +371,20 @@ export const gigsAPI = {
       
       return {
         success: true,
-        data: response.data || [],
-        subcategory: response.subcategory,
-        pagination: response.pagination || {
+        data: response.data?.data || [],
+        subcategory: response.data?.subcategory,
+        pagination: response.data?.pagination || {
           page: parseInt(cleanedParams.page) || 1,
           limit: parseInt(cleanedParams.limit) || 12,
-          total: response.total || 0,
-          totalPages: Math.ceil((response.total || 0) / (parseInt(cleanedParams.limit) || 12))
+          total: response.data?.total || 0,
+          totalPages: Math.ceil((response.data?.total || 0) / (parseInt(cleanedParams.limit) || 12))
         },
-        ...response
+        ...response.data
       };
       
     } catch (error) {
+      console.error('Get gigs by subcategory error:', error);
+      
       if (error.code === 'SERVER_ERROR' || error.status === 500) {
         return {
           success: false,
@@ -308,73 +401,16 @@ export const gigsAPI = {
         };
       }
       
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load gigs',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
-  uploadImages: async (gigId, files) => {
-    try {
-      const formData = new FormData();
-      
-      if (Array.isArray(files)) {
-        files.forEach(file => {
-          formData.append('images', file);
-        });
-      } else if (files) {
-        formData.append('images', files);
-      }
-      
-      const response = await axiosInstance.post(`/api/gigs/${gigId}/images/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return response;
-      
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to upload images');
-    }
-  },
-  
-  removeImage: async (gigId, publicId) => {
-    try {
-      const encodedId = encodeURIComponent(publicId);
-      const response = await axiosInstance.delete(`/api/gigs/${gigId}/images/${encodedId}`);
-      return response;
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to remove image');
-    }
-  },
-  
-  setThumbnail: async (gigId, publicId) => {
-    try {
-      const encodedId = encodeURIComponent(publicId);
-      const response = await axiosInstance.put(`/api/gigs/${gigId}/thumbnail/${encodedId}`);
-      return response;
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to set thumbnail');
-    }
-  },
-  
-  uploadThumbnail: async (gigId, file) => {
-    try {
-      const formData = new FormData();
-      formData.append('thumbnail', file);
-      
-      const response = await axiosInstance.post(`/api/gigs/${gigId}/thumbnail/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return response;
-      
-    } catch (error) {
-      throw new Error(error.response?.data?.message || 'Failed to upload thumbnail');
-    }
-  },
-
+  // Create gig
   create: async (formData) => {
     try {
       const config = {
@@ -382,25 +418,36 @@ export const gigsAPI = {
         timeout: 60000
       };
       
+      // Handle FormData
       if (formData instanceof FormData) {
         delete config.headers['Content-Type'];
+        
+        // Add CSRF token to FormData
+        if (csrfToken) {
+          formData.append('csrfToken', csrfToken);
+        }
+      } else if (csrfToken) {
+        // Add CSRF token to JSON data
+        formData.csrfToken = csrfToken;
       }
       
       const response = await axiosInstance.post('/api/gigs', formData, config);
       
       return {
         success: true,
-        data: response.data,
-        message: response.message || 'Gig created successfully',
-        ...response
+        data: response.data?.data || response.data,
+        message: response.data?.message || 'Gig created successfully',
+        ...response.data
       };
       
     } catch (error) {
+      console.error('Create gig error:', error);
+      
       if (error.status === 400) {
         throw {
-          message: error.message || 'Validation failed',
-          errors: error.errors,
-          code: error.code || 'VALIDATION_ERROR',
+          message: error.response?.data?.message || 'Validation failed',
+          errors: error.response?.data?.errors,
+          code: error.response?.data?.code || 'VALIDATION_ERROR',
           status: 400
         };
       }
@@ -413,24 +460,48 @@ export const gigsAPI = {
         };
       }
       
-      throw error;
+      if (error.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to create gig',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
+  // Update gig
   update: async (id, gigData) => {
     try {
       const config = {
         headers: {}
       };
       
+      // Handle FormData
       if (gigData instanceof FormData) {
         delete config.headers['Content-Type'];
+        
+        // Add CSRF token to FormData
+        if (csrfToken) {
+          gigData.append('csrfToken', csrfToken);
+        }
+      } else if (csrfToken) {
+        // Add CSRF token to JSON data
+        gigData.csrfToken = csrfToken;
       }
       
       const response = await axiosInstance.put(`/api/gigs/${id}`, gigData, config);
       
       // Ensure subcategory and category are populated
-      if (response.data && response.data.data) {
+      if (response.data?.data) {
         const populatedResponse = await axiosInstance.get(`/api/gigs/${id}`, {
           params: {
             includeSubcategory: true,
@@ -442,27 +513,30 @@ export const gigsAPI = {
         return {
           success: true,
           data: populatedResponse.data?.data || populatedResponse.data,
-          message: response.message || 'Gig updated successfully',
-          ...populatedResponse
+          message: response.data?.message || 'Gig updated successfully',
+          ...populatedResponse.data
         };
       }
       
-      return response;
+      return response.data;
+      
     } catch (error) {
+      console.error('Update gig error:', error);
+      
       if (error.status === 409) {
         throw {
           message: 'This gig was modified by another user. Please refresh and try again.',
           code: 'VERSION_CONFLICT',
           status: 409,
-          currentVersion: error.currentVersion
+          currentVersion: error.response?.data?.currentVersion
         };
       }
       
       if (error.status === 400) {
         throw {
-          message: error.message || 'Validation failed',
-          errors: error.errors,
-          code: error.code || 'VALIDATION_ERROR',
+          message: error.response?.data?.message || 'Validation failed',
+          errors: error.response?.data?.errors,
+          code: error.response?.data?.code || 'VALIDATION_ERROR',
           status: 400
         };
       }
@@ -475,10 +549,25 @@ export const gigsAPI = {
         };
       }
       
-      throw error;
+      if (error.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to update gig',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
+  // Delete gig
   delete: async (id, options = {}) => {
     try {
       console.log('[GIGS API] Deleting gig with ID:', id);
@@ -510,31 +599,68 @@ export const gigsAPI = {
       }
       
       const config = {
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        params: options
       };
       
-      // Use the regular gigs endpoint (cookies handle auth)
-      const response = await axiosInstance.delete(`/api/gigs/${gigId}`, {
-        params: options,
-        ...config
-      });
+      // Add CSRF token for delete request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
       
-      return response;
+      const response = await axiosInstance.delete(`/api/gigs/${gigId}`, config);
+      
+      return response.data;
       
     } catch (error) {
       console.error('[GIGS API] Delete error:', error);
-      throw error;
+      
+      if (error.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to delete gig',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
+  // Search gigs
+  search: async (params = {}) => {
+    try {
+      const cleanedParams = cleanParams(params);
+      const response = await axiosInstance.get('/api/gigs/search', {
+        params: cleanedParams
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Search gigs error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to search gigs',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  // Get gig stats
   getStats: async () => {
     try {
       const response = await axiosInstance.get('/api/gigs/stats');
-      return response;
+      return response.data;
       
     } catch (error) {
+      console.error('Get gig stats error:', error);
       return {
         success: false,
         data: {
@@ -553,28 +679,199 @@ export const gigsAPI = {
     }
   },
   
+  // Restore gig
   restore: async (id) => {
     try {
-      const response = await axiosInstance.patch(`/api/gigs/${id}/restore`);
-      return response;
+      const config = {};
+      
+      // Add CSRF token for restore request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.patch(`/api/gigs/${id}/restore`, config);
+      return response.data;
+      
     } catch (error) {
+      console.error('Restore gig error:', error);
+      
+      if (error.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to restore gig',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  // Image management
+  uploadImages: async (gigId, files) => {
+    try {
+      const formData = new FormData();
+      
+      if (Array.isArray(files)) {
+        files.forEach(file => {
+          formData.append('images', file);
+        });
+      } else if (files) {
+        formData.append('images', files);
+      }
+      
+      // Add CSRF token
+      if (csrfToken) {
+        formData.append('csrfToken', csrfToken);
+      }
+      
+      const response = await axiosInstance.post(`/api/gigs/${gigId}/images/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Upload images error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to upload images',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  removeImage: async (gigId, publicId) => {
+    try {
+      const encodedId = encodeURIComponent(publicId);
+      const config = {};
+      
+      // Add CSRF token
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.delete(`/api/gigs/${gigId}/images/${encodedId}`, config);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Remove image error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to remove image',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  setThumbnail: async (gigId, publicId) => {
+    try {
+      const encodedId = encodeURIComponent(publicId);
+      const config = {};
+      
+      // Add CSRF token
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.put(`/api/gigs/${gigId}/thumbnail/${encodedId}`, config);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Set thumbnail error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to set thumbnail',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  uploadThumbnail: async (gigId, file) => {
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+      
+      // Add CSRF token
+      if (csrfToken) {
+        formData.append('csrfToken', csrfToken);
+      }
+      
+      const response = await axiosInstance.post(`/api/gigs/${gigId}/thumbnail/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Upload thumbnail error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to upload thumbnail',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  // Export gigs
+  exportGigs: async (params = {}) => {
+    try {
+      const cleanedParams = cleanParams(params);
+      const response = await axiosInstance.get('/api/gigs/export', {
+        params: cleanedParams,
+        responseType: 'blob'
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Export gigs error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to export gigs',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  // CSRF token management
+  getCSRFToken: async () => {
+    try {
+      const response = await axiosInstance.get('/api/csrf/token');
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get CSRF token:', error);
       throw error;
     }
   },
   
-  // Search gigs
-  search: async (params = {}) => {
-    try {
-      const cleanedParams = cleanParams(params);
-      const response = await axiosInstance.get('/api/gigs/search', {
-        params: cleanedParams
-      });
-      
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  }
+  refreshCSRFToken: async () => {
+    return refreshCSRFToken();
+  },
+  
+  hasValidCSRFToken: () => {
+    return csrfToken && Date.now() < parseInt(csrfTokenExpiry);
+  },
+  
+  clearAuthData: clearAuthData
 };
 
 // Export axios instance for other services

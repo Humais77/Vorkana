@@ -8,99 +8,6 @@ const { ipKeyGenerator } = require('express-rate-limit');
 
 const tokenBlacklist = new Set();
 
-const protect = async (req, res, next) => {
-  try {
-    let token;
-    
-    // Check for token in cookies first (HTTP-only)
-    if (req.cookies?.token) {
-      token = req.cookies.token;
-    }
-    // Fallback to Authorization header for API clients
-    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }else if (req.query?.token && process.env.NODE_ENV === 'development') {
-      token = req.query.token;
-    }
-    
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Not authorized, no token'
-      });
-    }
-    
-    if (tokenBlacklist.has(token)) {
-      // Clear invalid token cookies
-      clearAuthCookies(res);
-      return res.status(401).json({
-        success: false,
-        message: 'Token has been revoked'
-      });
-    }
-    
-    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
-    
-    const user = await User.findById(decoded.id);
-    if (!user) {
-      clearAuthCookies(res);
-      return res.status(401).json({
-        success: false,
-        message: 'User no longer exists'
-      });
-    }
-    
-    if (!user.isActive) {
-      clearAuthCookies(res);
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated'
-      });
-    }
-    
-    req.user = user;
-    next();
-    
-  } catch (error) {
-    // Clear cookies on any JWT error
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      clearAuthCookies(res);
-    }
-    
-    console.error('Protect middleware error:', error.name, error.message);
-    
-    if (error.name === 'JsonWebTokenError') {
-      if (error.message.includes('invalid signature')) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid token signature'
-        });
-      }
-      if (error.message.includes('invalid token')) {
-        return res.status(401).json({
-          success: false,
-          message: 'Malformed token'
-        });
-      }
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token'
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired'
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Authentication error'
-    });
-  }
-};
 
 // Add clearAuthCookies function
 const clearAuthCookies = (res) => {
@@ -525,7 +432,6 @@ const errorLogger = (err, req, res, next) => {
 };
 
 module.exports = {
-  protect,
   authorize,
   adminOnly,
   userOnly,

@@ -1,42 +1,152 @@
-// services.js - Updated for cookie-based authentication
+// services.js - Production-ready with CSRF protection
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+
+// CSRF token management
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
 
 // Create axios instance with cookie support
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 30000, // Increased timeout
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
   withCredentials: true, // IMPORTANT: Enables cookie sending
 });
 
-// Request interceptor - simplified for cookies
+// Request ID generator
+const generateRequestId = () => {
+  return `service_req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+// Request interceptor with CSRF handling
 axiosInstance.interceptors.request.use(
-  (config) => {
-    // Add request ID for tracking
-    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  async (config) => {
+    const requestId = generateRequestId();
+    config.headers['X-Request-ID'] = requestId;
+    
+    // Handle FormData content type
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get' && config.method !== 'GET') {
+      // Check if token is expired
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        try {
+          await refreshCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token:', error.message);
+        }
+      }
+      
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        // Also add to body for form submissions
+        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
+          config.data.csrfToken = csrfToken;
+        }
+      }
+    }
+    
+    if (DEBUG) {
+      console.log(`📤 Services Request: ${config.method?.toUpperCase()} ${config.url}`);
+    }
+    
     return config;
   },
   (error) => {
+    console.error('Services request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for cookie-based auth
+// CSRF token management functions
+const setCSRFToken = (token, expiresAt) => {
+  csrfToken = token;
+  csrfTokenExpiry = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+  
+  localStorage.setItem('csrfToken', token);
+  localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry);
+};
+
+const refreshCSRFToken = async () => {
+  try {
+    console.log('Refreshing CSRF token for services API...');
+    const response = await axiosInstance.get('/api/csrf/token');
+    if (response.data.success) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('CSRF token refreshed successfully');
+      return csrfToken;
+    }
+    throw new Error('Failed to refresh CSRF token');
+  } catch (error) {
+    console.error('Failed to refresh CSRF token:', error.message);
+    throw error;
+  }
+};
+
+const clearAuthData = () => {
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('csrfToken');
+  localStorage.removeItem('csrfTokenExpiry');
+};
+
+// Response interceptor with CSRF handling
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Update CSRF token from response
+    if (response.data?.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+    }
+    
+    if (DEBUG) {
+      console.log(`📥 Services Response: ${response.status} ${response.config.url}`);
+    }
+    
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     
+    // Handle CSRF errors
+    if (error.response?.status === 403 && 
+        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      console.log('CSRF token invalid, refreshing...');
+      
+      try {
+        // Try to refresh CSRF token
+        await refreshCSRFToken();
+        
+        // Retry original request
+        if (originalRequest) {
+          originalRequest.headers['X-CSRF-Token'] = csrfToken;
+          if (originalRequest.data && typeof originalRequest.data === 'object') {
+            originalRequest.data.csrfToken = csrfToken;
+          }
+          return axiosInstance(originalRequest);
+        }
+      } catch (refreshError) {
+        console.error('CSRF refresh failed:', refreshError);
+        // Clear auth and redirect to login
+        clearAuthData();
+        window.location.href = '/signin?csrf_error=true';
+      }
+    }
+    
     // Handle 401 - Token expired or invalid
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest?._retry) {
       originalRequest._retry = true;
       
       // Skip refresh for auth endpoints
-      const isAuthEndpoint = originalRequest.url.includes('/api/auth/');
+      const isAuthEndpoint = originalRequest.url?.includes('/api/auth/');
       
       if (isAuthEndpoint) {
         return Promise.reject(error);
@@ -44,7 +154,7 @@ axiosInstance.interceptors.response.use(
       
       try {
         // Try to refresh token via cookie
-        await axiosInstance.post('/api/auth/refresh', {
+        await axiosInstance.post('/api/auth/refresh', {}, {
           withCredentials: true
         });
         
@@ -417,6 +527,11 @@ export const servicesAPI = {
         }
       }
       
+      // Add CSRF token to FormData
+      if (csrfToken) {
+        formData.append('csrfToken', csrfToken);
+      }
+      
       const response = await axiosInstance.post('/api/services', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -428,7 +543,8 @@ export const servicesAPI = {
           success: true,
           message: response.data.message || 'Service created successfully',
           service: response.data.service || response.data.data,
-          serviceId: response.data.service?._id || response.data.data?._id
+          serviceId: response.data.service?._id || response.data.data?._id,
+          csrfToken: response.data.csrfToken
         };
       }
       
@@ -437,6 +553,15 @@ export const servicesAPI = {
     } catch (error) {
       console.error('Create service error:', error);
       console.error('Error details:', error.response?.data);
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
       
       let errorMessage = 'Failed to create service';
       if (error.response) {
@@ -491,8 +616,15 @@ export const servicesAPI = {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+      // Handle FormData vs JSON data
       if (updateData instanceof FormData) {
         console.log('Sending FormData to update service');
+        
+        // Add CSRF token to FormData
+        if (csrfToken) {
+          updateData.append('csrfToken', csrfToken);
+        }
+        
         response = await axiosInstance.put(`/api/services/${id}`, updateData, {
           headers: {
             'Content-Type': 'multipart/form-data',
@@ -502,7 +634,14 @@ export const servicesAPI = {
         });
       } else {
         console.log('Sending JSON data to update service');
-        response = await axiosInstance.put(`/api/services/${id}`, updateData, {
+        
+        // Add CSRF token to JSON data
+        const dataWithCSRF = {
+          ...updateData,
+          ...(csrfToken ? { csrfToken } : {})
+        };
+        
+        response = await axiosInstance.put(`/api/services/${id}`, dataWithCSRF, {
           signal: controller.signal,
           timeout: 30000
         });
@@ -518,7 +657,8 @@ export const servicesAPI = {
           message: response.data.message || 'Service updated successfully',
           service: response.data.service || response.data.data,
           thumbnailUpdated: response.data.thumbnailUpdated || false,
-          imagesUpdated: response.data.imagesUpdated || false
+          imagesUpdated: response.data.imagesUpdated || false,
+          csrfToken: response.data.csrfToken
         };
       }
       
@@ -527,6 +667,15 @@ export const servicesAPI = {
     } catch (error) {
       console.error('Update service error:', error);
       console.error('Error response:', error.response?.data);
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
       
       if (error.code === 'ECONNABORTED' || error.name === 'AbortError') {
         throw new Error('Request timeout. Please try a smaller update.');
@@ -566,19 +715,37 @@ export const servicesAPI = {
   
   delete: async (id, options = {}) => {
     try {
-      const queryString = new URLSearchParams(options).toString();
-      const response = await axiosInstance.delete(`/api/services/${id}${queryString ? '?' + queryString : ''}`);
+      const config = {
+        params: options
+      };
+      
+      // Add CSRF token for delete request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.delete(`/api/services/${id}`, config);
       
       if (response.data && response.data.success) {
         return {
           success: true,
-          message: response.data.message || 'Service deleted successfully'
+          message: response.data.message || 'Service deleted successfully',
+          csrfToken: response.data.csrfToken
         };
       }
       
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       let errorMessage = 'Failed to delete service';
       if (error.response) {
         const { status, data } = error.response;
@@ -600,9 +767,25 @@ export const servicesAPI = {
   
   restore: async (id) => {
     try {
-      const response = await axiosInstance.patch(`/api/services/${id}/restore`);
+      const config = {};
+      
+      // Add CSRF token for restore request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.patch(`/api/services/${id}/restore`, config);
       return response.data;
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to restore service');
     }
   },
@@ -757,13 +940,29 @@ export const servicesAPI = {
   
   togglePopularStatus: async (serviceId, isPopular) => {
     try {
-      const response = await axiosInstance.patch(`/api/services/${serviceId}/popular`, {
+      const data = {
         isPopular
-      });
+      };
+      
+      // Add CSRF token
+      if (csrfToken) {
+        data.csrfToken = csrfToken;
+      }
+      
+      const response = await axiosInstance.patch(`/api/services/${serviceId}/popular`, data);
       
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to update popular status');
     }
   },
@@ -783,7 +982,6 @@ export const servicesAPI = {
       throw new Error(error.response?.data?.message || 'Failed to get similar services');
     }
   },
-  
   
   getStats: async (filters = {}) => {
     try {
@@ -815,6 +1013,11 @@ export const servicesAPI = {
         formData.append('images', files);
       }
       
+      // Add CSRF token
+      if (csrfToken) {
+        formData.append('csrfToken', csrfToken);
+      }
+      
       const response = await axiosInstance.post(`/api/services/${serviceId}/images`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -824,6 +1027,15 @@ export const servicesAPI = {
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to upload images');
     }
   },
@@ -831,9 +1043,25 @@ export const servicesAPI = {
   removeImage: async (serviceId, publicId) => {
     try {
       const encodedId = encodeURIComponent(publicId);
-      const response = await axiosInstance.delete(`/api/services/${serviceId}/images/${encodedId}`);
+      const config = {};
+      
+      // Add CSRF token
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.delete(`/api/services/${serviceId}/images/${encodedId}`, config);
       return response.data;
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to remove image');
     }
   },
@@ -841,9 +1069,25 @@ export const servicesAPI = {
   setThumbnail: async (serviceId, publicId) => {
     try {
       const encodedId = encodeURIComponent(publicId);
-      const response = await axiosInstance.put(`/api/services/${serviceId}/thumbnail/${encodedId}`);
+      const config = {};
+      
+      // Add CSRF token
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.put(`/api/services/${serviceId}/thumbnail/${encodedId}`, config);
       return response.data;
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to set thumbnail');
     }
   },
@@ -852,6 +1096,11 @@ export const servicesAPI = {
     try {
       const formData = new FormData();
       formData.append('thumbnail', file);
+      
+      // Add CSRF token
+      if (csrfToken) {
+        formData.append('csrfToken', csrfToken);
+      }
       
       const response = await axiosInstance.post(`/api/services/${serviceId}/thumbnail`, formData, {
         headers: {
@@ -862,21 +1111,46 @@ export const servicesAPI = {
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to upload thumbnail');
     }
   },
   
   bulkOperation: async (ids, operation, data = {}) => {
     try {
-      const response = await axiosInstance.post('/api/services/admin/bulk', {
+      const requestData = {
         ids,
         operation,
         data
-      });
+      };
+      
+      // Add CSRF token
+      if (csrfToken) {
+        requestData.csrfToken = csrfToken;
+      }
+      
+      const response = await axiosInstance.post('/api/services/admin/bulk', requestData);
       
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to perform bulk operation');
     }
   },
@@ -891,10 +1165,18 @@ export const servicesAPI = {
       return response.data;
       
     } catch (error) {
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
       throw new Error(error.response?.data?.message || 'Failed to export services');
     }
   },
-  
   
   getCategories: async () => {
     try {
@@ -909,6 +1191,31 @@ export const servicesAPI = {
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to fetch categories');
     }
-  }
+  },
+  
+  // CSRF token management
+  getCSRFToken: async () => {
+    try {
+      const response = await axiosInstance.get('/api/csrf/token');
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get CSRF token:', error);
+      throw error;
+    }
+  },
+  
+  refreshCSRFToken: async () => {
+    return refreshCSRFToken();
+  },
+  
+  hasValidCSRFToken: () => {
+    return csrfToken && Date.now() < parseInt(csrfTokenExpiry);
+  },
+  
+  clearAuthData: clearAuthData
 };
+
 export { axiosInstance };

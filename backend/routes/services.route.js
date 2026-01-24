@@ -18,7 +18,7 @@ const {
   handleMulterError,
   processUploadToCloudinary 
 } = require('../middleware/upload.middleware.js');
-
+const CSRFMiddleware = require('../middleware/csrf.middleware');
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -81,6 +81,7 @@ router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
 // Get my services
 router.get('/my-services', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   validateQuery, 
   controller.getMyServices
@@ -133,6 +134,7 @@ router.get('/subcategory/slug/:slug',
 // Create service with Cloudinary uploads
 router.post('/', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   uploadWithThumbnail, 
   handleMulterError, 
@@ -143,6 +145,7 @@ router.post('/',
 // Update my service
 router.put('/:id', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   uploadWithThumbnail,
   handleMulterError, 
@@ -153,6 +156,7 @@ router.put('/:id',
 // Delete my service
 router.delete('/:id', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   controller.deleteService
 );
@@ -167,6 +171,7 @@ router.patch('/:id/restore',
 // Upload additional images to my service (Cloudinary)
 router.post('/:id/images', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   imageUploadLimiter, 
   upload.array('images', 10), 
   handleMulterError, 
@@ -176,6 +181,7 @@ router.post('/:id/images',
 // Remove specific image from my service (Cloudinary)
 router.delete('/:id/images/:publicId', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   controller.removeImage
 );
@@ -183,6 +189,7 @@ router.delete('/:id/images/:publicId',
 // Set existing image as thumbnail for my service
 router.put('/:id/thumbnail/:publicId', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   serviceLimiter, 
   controller.setThumbnail
 );
@@ -190,6 +197,7 @@ router.put('/:id/thumbnail/:publicId',
 // Upload new thumbnail for my service (Cloudinary)
 router.post('/:id/thumbnail', 
    SessionMiddleware.authenticate, 
+   CSRFMiddleware.requireCSRF,
   imageUploadLimiter, 
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 

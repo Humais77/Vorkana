@@ -9,6 +9,7 @@ const {
   validateQuery ,
 } = require('../middleware/validators/category.validator.js');
 const SessionMiddleware = require("../middleware/session.middleware");
+const CSRFMiddleware = require("../middleware/csrf.middleware");
 const mongoose = require('mongoose');
 const cache = require('../utils/cache');
 const timeout = (ms) => {
@@ -97,21 +98,21 @@ router.get('/health', async (req, res) => {
 
 router.get('/', publicLimiter, optionalAuth, validateQuery, controller.getCategories);
 // Bulk operations
-router.post('/bulk',  SessionMiddleware.authenticate, adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
+router.post('/bulk',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, bulkOperationLimiter, validateBulk, controller.bulkUpdateCategories);
 
 // Stats and export
-router.get('/stats',  SessionMiddleware.authenticate, adminOnly, timeout(10000), controller.getCategoryStats);
-router.get('/export',  SessionMiddleware.authenticate, adminOnly, adminLimiter, validateQuery, controller.exportCategories);
+router.get('/stats',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, timeout(10000), controller.getCategoryStats);
+router.get('/export',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, validateQuery, controller.exportCategories);
 
 // Repair counts
-router.get('/repair-counts/status',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.repairCategoryCounts);
+router.get('/repair-counts/status',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, controller.repairCategoryCounts);
 router.get('/search', publicLimiter, optionalAuth, validateQuery, controller.searchCategories);
 router.get('/:id', publicLimiter, optionalAuth, controller.getCategoryById);
 
 // ========== ADMIN  SESSIONMIDDLEWARE.AUTHENTICATEED ROUTES (cookies required) ==========
-router.post('/',  SessionMiddleware.authenticate, adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
-router.put('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
-router.delete('/:id',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.deleteCategory);
-router.patch('/:id/restore',  SessionMiddleware.authenticate, adminOnly, adminLimiter, controller.restoreCategory);
+router.post('/',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, createLimiter, validateCreate, controller.createCategory);
+router.put('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, updateLimiter, validateUpdate, controller.updateCategory);
+router.delete('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, controller.deleteCategory);
+router.patch('/:id/restore',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF,  adminOnly, adminLimiter, controller.restoreCategory);
 
 module.exports = router;
