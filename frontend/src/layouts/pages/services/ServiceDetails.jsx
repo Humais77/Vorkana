@@ -42,7 +42,8 @@ import {
   ShieldCheck,
   Timer,
   Edit,
-  Trash2
+  Trash2,
+  Mail
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -192,7 +193,8 @@ const ServiceDetails = () => {
     refetch 
   } = useService(id);
   const deleteServiceMutation = useDeleteService();
-useEffect(() => {
+
+  useEffect(() => {
     // Check if we're coming from edit with refresh flag
     if (location.state?.refresh) {
       // Clear any cached data for this service
@@ -207,16 +209,17 @@ useEffect(() => {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, id, queryClient, refetch, navigate, location.pathname]);
+
   // Local state
-const [activeImage, setActiveImage] = useState(0);
-const [viewCount, setViewCount] = useState(0);
-const [imageViewMode, setImageViewMode] = useState('thumbnail');
-const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-const [isDeleting, setIsDeleting] = useState(false);
-const [deleteOptions, setDeleteOptions] = useState({
-  permanent: false,
-  force: false
-});
+  const [activeImage, setActiveImage] = useState(0);
+  const [viewCount, setViewCount] = useState(0);
+  const [imageViewMode, setImageViewMode] = useState('thumbnail');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteOptions, setDeleteOptions] = useState({
+    permanent: false,
+    force: false
+  });
 
   // Helper functions
   const handleShare = async () => {
@@ -274,200 +277,185 @@ const [deleteOptions, setDeleteOptions] = useState({
       minimumFractionDigits: 0,
     }).format(price);
   };
-const handleDeleteClick = () => {
-  // If admin, show options dialog
-  if (user?.role === 'admin') {
+
+  const handleDeleteClick = () => {
+    // If admin, show options dialog
+    if (user?.role === 'admin') {
+      setDeleteOptions({
+        permanent: false,
+        force: false
+      });
+      setShowDeleteDialog(true);
+    } else {
+      // Regular user - direct delete
+      setDeleteOptions({
+        permanent: false,
+        force: false
+      });
+      handleConfirmDelete();
+    }
+  };
+
+  const isOwner = () => {
+    if (!service || !user) return false;
+    
+    // Check all possible user ID fields
+    const possibleUserIds = [
+      service.createdBy?._id,
+      service.createdBy, // If it's just a string ID
+      service.creatorDetails?._id,
+      service.userId,
+      service.user?._id
+    ];
+    
+    const userId = user._id.toString();
+    
+    return possibleUserIds.some(id => {
+      if (!id) return false;
+      if (typeof id === 'string') return id === userId;
+      if (typeof id === 'object' && id.toString) return id.toString() === userId;
+      return false;
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!service || !user) {
+      toast.error('You must be logged in to delete services');
+      return;
+    }
+
+    const isOwnerCheck = isOwner();
+    const isAdmin = user.role === 'admin';
+
+    if (!isOwnerCheck && !isAdmin) {
+      toast.error('You can only delete your own services');
+      return;
+    }
+
+    setIsDeleting(true);
+    
+    try {
+      await deleteServiceMutation.mutateAsync({
+        id: service._id,
+        options: {
+          permanent: deleteOptions.permanent || false,
+          force: deleteOptions.force || false
+        }
+      });
+
+      toast.success('Service deleted successfully');
+      
+      // Redirect after delay
+      setTimeout(() => {
+        navigate('/profile?tab=services');
+      }, 1500);
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete service');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  const handlePermanentDelete = () => {
     setDeleteOptions({
-      permanent: false,
-      force: false
+      permanent: true,
+      force: true
     });
     setShowDeleteDialog(true);
-  } else {
-    // Regular user - direct delete
-    setDeleteOptions({
-      permanent: false,
-      force: false
-    });
-    handleConfirmDelete();
-  }
-};
-const isOwner = () => {
-  if (!service || !user) return false;
-  
-  // Check all possible user ID fields
-  const possibleUserIds = [
-    service.createdBy?._id,
-    service.createdBy, // If it's just a string ID
-    service.creatorDetails?._id,
-    service.userId,
-    service.user?._id
-  ];
-  
-  const userId = user._id.toString();
-  
-  return possibleUserIds.some(id => {
-    if (!id) return false;
-    if (typeof id === 'string') return id === userId;
-    if (typeof id === 'object' && id.toString) return id.toString() === userId;
-    return false;
-  });
-};
-const handleConfirmDelete = async () => {
-  if (!service || !user) {
-    toast.error('You must be logged in to delete services');
-    return;
-  }
+  };
 
-  const isOwnerCheck = isOwner();
-  const isAdmin = user.role === 'admin';
-
-  if (!isOwnerCheck && !isAdmin) {
-    toast.error('You can only delete your own services');
-    return;
-  }
-
-  setIsDeleting(true);
-  
-  try {
-    await deleteServiceMutation.mutateAsync({
-      id: service._id,
-      options: {
-        permanent: deleteOptions.permanent || false,
-        force: deleteOptions.force || false
-      }
-    });
-
-    toast.success('Service deleted successfully');
-    
-    // Redirect after delay
-    setTimeout(() => {
-      navigate('/profile?tab=services');
-    }, 1500);
-  } catch (error) {
-    toast.error(error.message || 'Failed to delete service');
-  } finally {
-    setIsDeleting(false);
-    setShowDeleteDialog(false);
-  }
-};
-
-const handlePermanentDelete = () => {
-  setDeleteOptions({
-    permanent: true,
-    force: true
-  });
-  setShowDeleteDialog(true);
-};
-
-const handleRestoreService = async () => {
-  try {
-    // You'll need to add a restore API endpoint
-    const response = await servicesAPI.restore(service._id);
-    if (response.success) {
-      toast.success('Service restored successfully');
-      refetch();
-      setDeleteStatus(null);
-    }
-  } catch (error) {
-    toast.error('Failed to restore service');
-  }
-};
-
-const renderDeleteDialog = () => (
-  <Dialog
-    open={showDeleteDialog}
-    onClose={() => setShowDeleteDialog(false)}
-    className="relative z-50"
-  >
-    <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-    
-    <div className="fixed inset-0 flex items-center justify-center p-4">
-      <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-xl">
-        <Dialog.Title className="text-2xl font-bold text-gray-900 mb-4">
-          {deleteOptions.permanent ? 'Permanently Delete Service?' : 'Delete Service?'}
-        </Dialog.Title>
-        
-        <Dialog.Description className="text-gray-600 mb-6">
-          {deleteOptions.permanent ? (
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
-                <div>
-                  <p className="font-semibold text-red-800">Warning: This action cannot be undone!</p>
-                  <p className="text-sm text-red-700 mt-1">
-                    All service data including images, reviews, and orders will be permanently deleted.
-                  </p>
+  const renderDeleteDialog = () => (
+    <Dialog
+      open={showDeleteDialog}
+      onClose={() => setShowDeleteDialog(false)}
+      className="relative z-50"
+    >
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+      
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-xl">
+          <Dialog.Title className="text-2xl font-bold text-gray-900 mb-4">
+            {deleteOptions.permanent ? 'Permanently Delete Service?' : 'Delete Service?'}
+          </Dialog.Title>
+          
+          <Dialog.Description className="text-gray-600 mb-6">
+            {deleteOptions.permanent ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                  <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-red-800">Warning: This action cannot be undone!</p>
+                    <p className="text-sm text-red-700 mt-1">
+                      All service data including images, reviews, and orders will be permanently deleted.
+                    </p>
+                  </div>
                 </div>
+                <p>Are you sure you want to permanently delete this service?</p>
               </div>
-              <p>Are you sure you want to permanently delete this service?</p>
-            </div>
-          ) : (
-            <p>This service will be deactivated but can be restored later from your dashboard.</p>
-          )}
-        </Dialog.Description>
-
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={() => setShowDeleteDialog(false)}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
-            disabled={isDeleting}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirmDelete}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
-            disabled={isDeleting}
-          >
-            {isDeleting ? (
-              <>
-                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Deleting...
-              </>
             ) : (
-              <>
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                {deleteOptions.permanent ? 'Permanently Delete' : 'Delete Service'}
-              </>
+              <p>This service will be deactivated but can be restored later from your dashboard.</p>
             )}
-          </button>
-        </div>
-        
-        {/* Admin-only permanent delete option */}
-        {user?.role === 'admin' && !deleteOptions.permanent && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          </Dialog.Description>
+
+          <div className="flex justify-end space-x-4">
             <button
-              onClick={handlePermanentDelete}
-              className="w-full px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-900 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+              onClick={() => setShowDeleteDialog(false)}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+              disabled={isDeleting}
             >
-              <AlertTriangle className="h-4 w-4" />
-              Permanent Delete (Admin Only)
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  {deleteOptions.permanent ? 'Permanently Delete' : 'Delete Service'}
+                </>
+              )}
             </button>
           </div>
-        )}
-      </Dialog.Panel>
-    </div>
-  </Dialog>
-);
-const formatRevisions = (revisions) => {
-  if (revisions === 0) return 'No revisions';
-  if (revisions === 1) return '1 revision';
-  return `${revisions} revisions`;
-};
+          
+          {/* Admin-only permanent delete option */}
+          {user?.role === 'admin' && !deleteOptions.permanent && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={handlePermanentDelete}
+                className="w-full px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-900 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Permanent Delete (Admin Only)
+              </button>
+            </div>
+          )}
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
 
-const getDeliverySpeed = (deliveryTime, unit) => {
-  const days = unit === 'hours' ? deliveryTime / 24 : unit === 'weeks' ? deliveryTime * 7 : deliveryTime;
-  if (days < 1) return 'Express (Under 1 day)';
-  if (days <= 3) return 'Fast (1-3 days)';
-  if (days <= 7) return 'Standard (3-7 days)';
-  return 'Extended (Over 7 days)';
-};
+  const formatRevisions = (revisions) => {
+    if (revisions === 0) return 'No revisions';
+    if (revisions === 1) return '1 revision';
+    return `${revisions} revisions`;
+  };
 
-const calculateCompletionRate = (completedOrders, totalOrders) => {
-  if (!totalOrders || totalOrders === 0) return 'N/A';
-  const rate = (completedOrders / totalOrders) * 100;
-  return `${Math.round(rate)}%`;
-};
+  const getDeliverySpeed = (deliveryTime, unit) => {
+    const days = unit === 'hours' ? deliveryTime / 24 : unit === 'weeks' ? deliveryTime * 7 : deliveryTime;
+    if (days < 1) return 'Express (Under 1 day)';
+    if (days <= 3) return 'Fast (1-3 days)';
+    if (days <= 7) return 'Standard (3-7 days)';
+    return 'Extended (Over 7 days)';
+  };
+
   const getStatusColor = (status) => {
     const STATUS_COLORS = {
       active: 'bg-green-100 text-green-800 border-green-200',
@@ -725,7 +713,8 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
           {JSON.stringify(structuredData[1])}
         </script>
       )}
-  {renderDeleteDialog()}
+      {renderDeleteDialog()}
+      
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
         {/* Breadcrumb */}
         <div className="bg-white border-b border-gray-200">
@@ -765,17 +754,40 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                 </span>
               </nav>
               
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
-                aria-label="Refresh service details"
-              >
-                Refresh Page
-              </button>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleRefresh}
+                  className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
+                  aria-label="Refresh service details"
+                >
+                  Refresh Page
+                </button>
+
+                {/* Edit and Delete buttons for owner/admin */}
+                {(user?.role === 'admin' || isOwner()) && (
+                  <>
+                    <Link
+                      to={`/edit-service/${service._id}`}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
+                      aria-label="Edit service"
+                    >
+                      <Edit className="h-4 w-4" />
+                      Edit
+                    </Link>
+                    <button
+                      onClick={handleDeleteClick}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
+                      aria-label="Delete service"
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-          
-
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -802,80 +814,57 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                           FEATURED
                         </span>
                       )}
-                     
                     </div>
                   </div>
+                  
                   <div className="flex items-center space-x-3">
-
-  <button
-    onClick={handleShare}
-    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-    aria-label="Share this service"
-  >
-    <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
-  </button>
-  <button
-    onClick={handleReport}
-    className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
-    aria-label="Report this service"
-  >
-    <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
-  </button>
-  
-  {/* Edit and Delete buttons for owner/admin */}
-  {(user?.role === 'admin' || isOwner()) && (
-    <>
-      <Link
-        to={`/edit-service/${service._id}`}
-        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
-        aria-label="Edit service"
-      >
-        <Edit className="h-4 w-4" />
-        Edit
-      </Link>
-      <button
-        onClick={handleDeleteClick}
-        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
-        aria-label="Delete service"
-        disabled={isDeleting}
-      >
-        <Trash2 className="h-4 w-4" />
-        {isDeleting ? 'Deleting...' : 'Delete'}
-      </button>
-    </>
-  )}
-</div>
+                    <button
+                      onClick={handleShare}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      aria-label="Share this service"
+                    >
+                      <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={handleReport}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      aria-label="Report this service"
+                    >
+                      <Flag className="h-6 w-6 text-gray-400" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                {/* Enhanced User Info - Now Clickable */}
+
+                {/* Enhanced Client Profile Section - Same as Gig Details */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                   <Link 
                     to={`/profile/${serviceUser?._id}`}
                     className="flex items-center space-x-4 group cursor-pointer flex-1"
-                    aria-label={`View ${serviceUser?.name || 'Provider'}'s profile`}
+                    aria-label={`View ${serviceUser?.name || 'Client'}'s profile`}
                     itemProp="provider"
                     itemScope
                     itemType="https://schema.org/Person"
                   >
                     <meta itemProp="url" content={`${window.location.origin}/profile/${serviceUser?._id}`} />
                     <div className="relative">
-                     {serviceUser?.picture ? (
-  <img
-    src={serviceUser.picture}
-    alt={serviceUser?.name || 'Provider'}
-    className="w-16 h-16 rounded-full border-4 border-white shadow-lg"
-    onError={(e) => {
-      e.target.src = DEFAULT_IMAGES.PROFILE;
-    }}
-  />
-) : (
-  <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-    <img
-      src={DEFAULT_IMAGES.PROFILE}
-      alt="Default profile"
-      className="w-full h-full object-cover"
-    />
-  </div>
-)}
+                      {serviceUser?.picture ? (
+                        <img
+                          src={serviceUser.picture}
+                          alt={serviceUser?.name || 'Client'}
+                          className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
+                          onError={(e) => {
+                            e.target.src = DEFAULT_IMAGES.PROFILE;
+                          }}
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                          <img
+                            src={DEFAULT_IMAGES.PROFILE}
+                            alt="Default profile"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
 
                       {isOnline && (
                         <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" aria-label="User is online"></div>
@@ -887,62 +876,79 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors" itemProp="name">
-                          {serviceUser?.name}
-                        </span>
-                         
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors" itemProp="name">
+                            {serviceUser?.name}
+                          </span>
+                          {serviceUser?.email && (
+                            <span className="flex items-center text-sm text-gray-600 bg-white/50 px-2 py-1 rounded-lg">
+                              <Mail className="h-4 w-4 mr-1 flex-shrink-0" />
+                              <span className="truncate max-w-[200px]">{serviceUser.email}</span>
+                            </span>
+                          )}
+                        </div>
+                        {serviceUser?.rating && (
+                          <div className="flex items-center">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`h-4 w-4 ${
+                                  i < Math.floor(serviceUser.rating)
+                                    ? 'text-yellow-400 fill-yellow-400'
+                                    : serviceUser.rating % 1 !== 0 && i === Math.floor(serviceUser.rating)
+                                    ? 'text-yellow-400 fill-yellow-400'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                            <span className="ml-2 font-semibold">{serviceUser.rating.toFixed(1)}</span>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Enhanced User Details */}
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm text-gray-600 mb-3">
                         {serviceUser?.occupation && (
                           <span className="flex items-center" itemProp="jobTitle">
                             <Briefcase className="h-4 w-4 mr-1" aria-hidden="true" />
-                            {serviceUser.occupation}
+                            <span className="truncate">{serviceUser.occupation}</span>
                           </span>
                         )}
                         
                         {serviceUser?.country && (
                           <span className="flex items-center" itemProp="address" itemScope itemType="https://schema.org/PostalAddress">
                             <MapPin className="h-4 w-4 mr-1" aria-hidden="true" />
-                            {serviceUser.city ? (
-                              <>
-                                <meta itemProp="addressLocality" content={serviceUser.city} />
-                                <meta itemProp="addressCountry" content={serviceUser.country} />
-                                {serviceUser.city}, {serviceUser.country}
-                              </>
-                            ) : (
-                              <meta itemProp="addressCountry" content={serviceUser.country} />
-                            )}
+                            <span className="truncate">
+                              {serviceUser.city ? `${serviceUser.city}, ${serviceUser.country}` : serviceUser.country}
+                            </span>
                           </span>
                         )}
-                        
                         
                         {serviceUser?.education && (
                           <span className="flex items-center">
                             <GraduationCap className="h-4 w-4 mr-1" aria-hidden="true" />
-                            {serviceUser.education}
+                            <span className="truncate">{serviceUser.education}</span>
                           </span>
                         )}
                         
                         {serviceUser?.languages && serviceUser.languages.length > 0 && (
                           <span className="flex items-center">
                             <Languages className="h-4 w-4 mr-1" aria-hidden="true" />
-                            {serviceUser.languages.length} language{serviceUser.languages.length !== 1 ? 's' : ''}
+                            <span>{serviceUser.languages.length} language{serviceUser.languages.length !== 1 ? 's' : ''}</span>
                           </span>
                         )}
                         
-                        {serviceUser?.createdAt && (
+                        {serviceUser?.accountAge && (
                           <span className="flex items-center">
                             <Calendar className="h-4 w-4 mr-1" aria-hidden="true" />
-                            Member for {accountAge}
+                            <span>Member for {serviceUser.accountAge}</span>
                           </span>
                         )}
                       </div>
                       
                       {/* User Stats */}
-                      <div className="flex flex-wrap gap-4 mt-3">
+                      <div className="flex flex-wrap gap-4">
                         {serviceUser?.completedOrders !== undefined && (
                           <div className="flex items-center gap-1">
                             <Activity className="h-4 w-4 text-gray-400" aria-hidden="true" />
@@ -971,7 +977,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                         )}
                       </div>
                       
-                      
                       {/* View Profile Link */}
                       <div className="mt-2">
                         <span className="text-emerald-600 text-sm font-medium group-hover:text-emerald-700 flex items-center gap-1">
@@ -982,7 +987,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     </div>
                   </Link>
                 </div>
-                
 
                 {/* Price & Delivery Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -1003,7 +1007,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                       <p className="text-sm text-gray-500" itemProp="priceCurrency" content={service.currency || "USD"}>
                         Base price for this service
                       </p>
-                      
                     </div>
                   </div>
 
@@ -1078,23 +1081,23 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     <div className="mb-8">
                       <div className="relative h-96 rounded-2xl overflow-hidden mb-4">
                         {thumbnailImage?.url ? (
-  <img
-    src={thumbnailImage.url}
-    alt={`${service.title} - Featured thumbnail`}
-    className="w-full h-full object-cover"
-    onError={(e) => {
-      e.target.src = DEFAULT_IMAGES.GENERIC; // Changed from SERVICE to GENERIC
-    }}
-  />
-) : (
-  <div className="w-full h-96 bg-gray-100 flex items-center justify-center rounded-2xl">
-    <img
-      src={DEFAULT_IMAGES.GENERIC}
-      alt="Service placeholder"
-      className="w-full h-full object-cover rounded-2xl"
-    />
-  </div>
-)}
+                          <img
+                            src={thumbnailImage.url}
+                            alt={`${service.title} - Featured thumbnail`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.src = DEFAULT_IMAGES.GENERIC;
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-96 bg-gray-100 flex items-center justify-center rounded-2xl">
+                            <img
+                              src={DEFAULT_IMAGES.GENERIC}
+                              alt="Service placeholder"
+                              className="w-full h-full object-cover rounded-2xl"
+                            />
+                          </div>
+                        )}
                         <div className="absolute top-4 left-4">
                           <span className="px-3 py-1 bg-emerald-600 text-white text-xs rounded-full">
                             <CheckCircle className="inline h-3 w-3 mr-1" aria-hidden="true" />
@@ -1178,13 +1181,13 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                         <>
                           <div className="relative h-96 rounded-2xl overflow-hidden mb-6">
                             <img
-  src={galleryImages[activeImage]?.url}
-  alt={`${service.title} - Gallery Image ${activeImage + 1}`}
-  className="w-full h-full object-cover"
-  onError={(e) => {
-    e.target.src = DEFAULT_IMAGES.GALLERY; 
-  }}
-/>
+                              src={galleryImages[activeImage]?.url}
+                              alt={`${service.title} - Gallery Image ${activeImage + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.src = DEFAULT_IMAGES.GALLERY; 
+                              }}
+                            />
                             {galleryImages[activeImage]?.width && galleryImages[activeImage]?.height && (
                               <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
                                 {galleryImages[activeImage].width} × {galleryImages[activeImage].height}
@@ -1210,13 +1213,13 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                                 role="listitem"
                               >
                                 <img
-  src={image.url}
-  alt={`Gallery ${index + 1}`}
-  className="w-full h-full object-cover"
-  onError={(e) => {
-    e.target.src = DEFAULT_IMAGES.THUMBNAIL;
-  }}
-/>
+                                  src={image.url}
+                                  alt={`Gallery ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.src = DEFAULT_IMAGES.THUMBNAIL;
+                                  }}
+                                />
                               </button>
                             ))}
                           </div>
@@ -1244,15 +1247,15 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                   )}
                 </div>
 
-                {/* Description */}
+                {/* Description - Fixed overflow */}
                 <div className="mb-8">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                     <FileText className="h-6 w-6 text-emerald-600" aria-hidden="true" />
                     Service Description
                   </h2>
                   <div className="prose max-w-none">
-                    <div className="bg-gray-50 rounded-xl p-6">
-                      <p className="text-gray-700 whitespace-pre-line leading-relaxed" itemProp="description">
+                    <div className="bg-gray-50 rounded-xl p-6 overflow-hidden">
+                      <p className="text-gray-700 whitespace-pre-line leading-relaxed break-words" itemProp="description">
                         {service.description}
                       </p>
                       {service.shortDescription && (
@@ -1261,7 +1264,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                             <BookOpen className="h-4 w-4 text-gray-400" aria-hidden="true" />
                             <h3 className="font-medium text-gray-900">Short Description</h3>
                           </div>
-                          <p className="text-gray-600">{service.shortDescription}</p>
+                          <p className="text-gray-600 break-words">{service.shortDescription}</p>
                         </div>
                       )}
                     </div>
@@ -1382,38 +1385,40 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     </div>
                   </div>
                 )}
-<div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
-  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-    <FileText className="h-5 w-5 text-gray-600" />
-    Service Metadata
-  </h4>
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-    {service.metaTitle && (
-      <div>
-        <span className="text-gray-500">Meta Title:</span>
-        <p className="text-gray-800 font-medium">{service.metaTitle}</p>
-      </div>
-    )}
-    {service.metaDescription && (
-      <div>
-        <span className="text-gray-500">Meta Description:</span>
-        <p className="text-gray-800">{service.metaDescription}</p>
-      </div>
-    )}
-    {service.searchKeywords && service.searchKeywords.length > 0 && (
-      <div className="md:col-span-2">
-        <span className="text-gray-500">Search Keywords:</span>
-        <div className="flex flex-wrap gap-2 mt-1">
-          {service.searchKeywords.map((keyword, index) => (
-            <span key={index} className="px-2 py-1 bg-white text-gray-700 text-xs rounded border">
-              {keyword}
-            </span>
-          ))}
-        </div>
-      </div>
-    )}
-  </div>
-</div>
+
+                <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-gray-600" />
+                    Service Metadata
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    {service.metaTitle && (
+                      <div>
+                        <span className="text-gray-500">Meta Title:</span>
+                        <p className="text-gray-800 font-medium">{service.metaTitle}</p>
+                      </div>
+                    )}
+                    {service.metaDescription && (
+                      <div>
+                        <span className="text-gray-500">Meta Description:</span>
+                        <p className="text-gray-800">{service.metaDescription}</p>
+                      </div>
+                    )}
+                    {service.searchKeywords && service.searchKeywords.length > 0 && (
+                      <div className="md:col-span-2">
+                        <span className="text-gray-500">Search Keywords:</span>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {service.searchKeywords.map((keyword, index) => (
+                            <span key={index} className="px-2 py-1 bg-white text-gray-700 text-xs rounded border">
+                              {keyword}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Last Updated */}
                 <footer className="pt-6 border-t border-gray-200">
                   <div className="flex flex-wrap justify-between items-center gap-4">
@@ -1449,8 +1454,7 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
 
             {/* Right Column - Service Info & Actions */}
             <aside className="lg:col-span-1">
-              <div className=" top-8 space-y-8">
-
+              <div className="top-8 space-y-8">
                 {/* Service Quick Stats */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
                   <h3 className="text-xl font-bold text-gray-900 mb-6">Service Stats</h3>
@@ -1480,35 +1484,35 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     )}
                   </div>
                 </div>
+
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
-  <h3 className="text-xl font-bold text-gray-900 mb-6">Additional Details</h3>
-  <div className="space-y-5">
-    {/* Delivery Speed */}
-    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-      <span className="text-gray-600">Delivery Speed</span>
-      <span className="font-semibold text-gray-900">
-        {getDeliverySpeed(service.deliveryTime, service.deliveryTimeUnit)}
-      </span>
-    </div>
-    
-    {/* Revisions Details */}
-    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-      <span className="text-gray-600">Revisions Policy</span>
-      <span className="font-semibold text-gray-900">
-        {formatRevisions(service.revisions)}
-      </span>
-    </div>
-    
-    
-    {/* Version */}
-    {service.version !== undefined && (
-      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-        <span className="text-gray-600">Version</span>
-        <span className="font-semibold text-gray-900">v{service.version}</span>
-      </div>
-    )}
-  </div>
-</div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-6">Additional Details</h3>
+                  <div className="space-y-5">
+                    {/* Delivery Speed */}
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Delivery Speed</span>
+                      <span className="font-semibold text-gray-900">
+                        {getDeliverySpeed(service.deliveryTime, service.deliveryTimeUnit)}
+                      </span>
+                    </div>
+                    
+                    {/* Revisions Details */}
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-gray-600">Revisions Policy</span>
+                      <span className="font-semibold text-gray-900">
+                        {formatRevisions(service.revisions)}
+                      </span>
+                    </div>
+                    
+                    {/* Version */}
+                    {service.version !== undefined && (
+                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span className="text-gray-600">Version</span>
+                        <span className="font-semibold text-gray-900">v{service.version}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 {/* Category & Tags */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
@@ -1553,7 +1557,6 @@ const calculateCompletionRate = (completedOrders, totalOrders) => {
                     )}
                   </div>
                 </div>
-
 
                 {/* Safety Tips */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
