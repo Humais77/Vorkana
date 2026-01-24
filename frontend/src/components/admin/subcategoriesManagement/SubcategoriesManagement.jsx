@@ -1,4 +1,4 @@
-// SubcategoriesManagement.jsx - Professional UI Update
+// SubcategoriesManagement.jsx - UPDATED with same design as Categories
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
 import { 
   useAdminSubcategories, 
@@ -32,13 +32,35 @@ import {
   FiLoader,
   FiGrid,
   FiHash,
-  FiFolderPlus
+  FiFolderPlus,
+  FiBarChart2,
+  FiPackage,
+  FiUsers,
+  FiActivity,
+  FiDatabase,
+  FiPercent,
+  FiTrendingDown,
+  FiLayers
 } from 'react-icons/fi';
 import { format } from 'date-fns';
-import SubcategoryCreateModal from './SubcategoryCreateModal';
-import SubcategoryEditModal from './SubcategoryEditModal';
-import DeleteConfirmationModal from '../DeleteConfirmationModal';
-import SubcategoryDetailsModal from './SubcategoryDetailsModal';
+
+// Debounce hook for search
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  const timerRef = React.useRef();
+
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(timerRef.current);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
 
 // Subcategory Table Row Component
 const SubcategoryTableRow = memo(({ 
@@ -64,7 +86,8 @@ const SubcategoryTableRow = memo(({
 
   const isUpdating = isUpdatingId === subcategory._id;
   const isDeleting = isDeletingId === subcategory._id;
- const safeNumber = (value, defaultValue = 0) => {
+  
+  const safeNumber = (value, defaultValue = 0) => {
     if (value === undefined || value === null) return defaultValue;
     const num = Number(value);
     return isNaN(num) ? defaultValue : Math.max(0, num);
@@ -73,6 +96,7 @@ const SubcategoryTableRow = memo(({
   // Safely get services and gigs counts
   const servicesCount = safeNumber(subcategory.servicesCount);
   const gigsCount = safeNumber(subcategory.gigsCount);
+  
   return (
     <React.Fragment>
       <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
@@ -236,9 +260,16 @@ const SubcategoryTableRow = memo(({
 
 SubcategoryTableRow.displayName = 'SubcategoryTableRow';
 
+// Import modal components (they should exist in your project)
+import SubcategoryCreateModal from './SubcategoryCreateModal';
+import SubcategoryEditModal from './SubcategoryEditModal';
+import DeleteConfirmationModal from '../DeleteConfirmationModal';
+import SubcategoryDetailsModal from './SubcategoryDetailsModal';
+
 // Main Component
 const SubcategoriesManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms debounce
   const [filters, setFilters] = useState({
     category: '',
     status: '',
@@ -270,7 +301,7 @@ const SubcategoriesManagement = () => {
   } = useAdminSubcategories({
     page,
     limit,
-    search: searchTerm,
+    search: debouncedSearchTerm, // Use debounced search term
     ...filters
   });
   
@@ -283,7 +314,8 @@ const SubcategoriesManagement = () => {
   const bulkOperationsMutation = useBulkSubcategoryOperations();
   const exportSubcategoriesMutation = useExportSubcategories();
   const { data: statsData } = useSubcategoryStats();
-const backendStats = statsData?.data?.overview || {};
+  
+  const backendStats = statsData?.data?.overview || {};
   const subcategories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
@@ -295,17 +327,6 @@ const backendStats = statsData?.data?.overview || {};
     dismissSubcategoryToast
   } = useSubcategoryToast();
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm !== '') {
-        setPage(1);
-        refetch();
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, refetch]);
-
   const categoriesMap = useMemo(() => {
     return categories.reduce((map, cat) => {
       map[cat._id] = cat;
@@ -316,12 +337,15 @@ const backendStats = statsData?.data?.overview || {};
   const handleSearch = useCallback((e) => {
     e.preventDefault();
     setPage(1);
+    setSelectedSubcategories([]);
+    setExpandedSubcategories([]);
     refetch();
   }, [refetch]);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
+    setSelectedSubcategories([]);
   }, []);
 
   const handleBulkAction = useCallback(async (action) => {
@@ -340,24 +364,24 @@ const backendStats = statsData?.data?.overview || {};
 
       await bulkOperationsMutation.mutateAsync(bulkData);
       setSelectedSubcategories([]);
-      refetch();
       dismissSubcategoryToast(loadingToastId);
       showSubcategorySuccess(`${selectedSubcategories.length} subcategories updated successfully`);
     } catch (error) {
       dismissSubcategoryToast(loadingToastId);
       showSubcategoryError(error.response?.data?.message || 'Failed to perform bulk action');
     }
-  }, [selectedSubcategories, bulkOperationsMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
-// Utility functions
-const safeNumber = (value, defaultValue = 0) => {
-  if (value === undefined || value === null) return defaultValue;
-  const num = Number(value);
-  return isNaN(num) ? defaultValue : Math.max(0, num);
-};
+  }, [selectedSubcategories, bulkOperationsMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, showSubcategoryWarning, dismissSubcategoryToast]);
 
-const formatNumber = (value) => {
-  return safeNumber(value).toLocaleString('en-US');
-};
+  const safeNumber = (value, defaultValue = 0) => {
+    if (value === undefined || value === null) return defaultValue;
+    const num = Number(value);
+    return isNaN(num) ? defaultValue : Math.max(0, num);
+  };
+
+  const formatNumber = (value) => {
+    return safeNumber(value).toLocaleString('en-US');
+  };
+
   const handleUpdateSubcategory = useCallback(async (subcategoryData) => {
     if (!selectedSubcategory) return;
     
@@ -384,26 +408,25 @@ const formatNumber = (value) => {
   }, [selectedSubcategory, updateSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
   const handleDeleteSubcategory = useCallback(async (deleteOptions) => {
-  const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
-  setDeletingSubcategoryId(deleteOptions.id);
-  
-  try {
-    await deleteSubcategoryMutation.mutateAsync(deleteOptions);
-    dismissSubcategoryToast(loadingToastId);
-    showSubcategorySuccess('Subcategory deleted successfully');
-    setShowDeleteModal(false);
-    setSelectedSubcategory(null);
-    setForceDelete(false);
-    setDeletingSubcategoryId(null);
-    refetch();
-  } catch (error) {
-    dismissSubcategoryToast(loadingToastId);
-    setDeletingSubcategoryId(null);
-    showSubcategoryError(error.response?.data?.message || 'Failed to delete subcategory');
-    throw error;
-  }
-}, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
-
+    const loadingToastId = showSubcategoryLoading('Deleting subcategory...');
+    setDeletingSubcategoryId(deleteOptions.id);
+    
+    try {
+      await deleteSubcategoryMutation.mutateAsync(deleteOptions);
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory deleted successfully');
+      setShowDeleteModal(false);
+      setSelectedSubcategory(null);
+      setForceDelete(false);
+      setDeletingSubcategoryId(null);
+      refetch();
+    } catch (error) {
+      dismissSubcategoryToast(loadingToastId);
+      setDeletingSubcategoryId(null);
+      showSubcategoryError(error.response?.data?.message || 'Failed to delete subcategory');
+      throw error;
+    }
+  }, [deleteSubcategoryMutation, refetch, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -440,11 +463,10 @@ const formatNumber = (value) => {
   }, []);
 
   const handleDelete = useCallback((subcategory) => {
-  setSelectedSubcategory(subcategory);
-  setForceDelete(false);
-  setShowDeleteModal(true);
-}, []);
-
+    setSelectedSubcategory(subcategory);
+    setForceDelete(false);
+    setShowDeleteModal(true);
+  }, []);
 
   const refreshData = useCallback(() => {
     setSelectedSubcategories([]);
@@ -476,44 +498,38 @@ const formatNumber = (value) => {
       showSubcategoryError('Failed to export subcategories');
     }
   }, [exportSubcategoriesMutation, showSubcategoryLoading, showSubcategorySuccess, showSubcategoryError, dismissSubcategoryToast]);
-const stats = useMemo(() => {
-  // Log for debugging
-  console.log('[DEBUG] Categories data:', {
-    categoriesCount: categories.length,
-    categoriesSample: categories.slice(0, 3).map(c => ({
-      name: c.name,
-      id: c._id,
-      allowSubcategories: c.allowSubcategories
-    })),
-    backendByCategory: statsData?.data?.byCategory,
-    backendByCategoryCount: statsData?.data?.byCategory?.length
-  });
-  
-  // Calculate categories with subcategories from backend
-  const categoriesWithSubcategories = statsData?.data?.byCategory?.length || 0;
-  
-  return {
-    // Subcategories stats
-    total: backendStats.totalSubcategories || pagination.total || subcategories.length,
-    active: backendStats.activeSubcategories || subcategories.filter(s => s.isActive).length,
-    inactive: subcategories.filter(s => !s.isActive).length,
+
+  const stats = useMemo(() => {
+    const backendOverview = Array.isArray(backendStats) ? backendStats[0] || {} : backendStats;
     
-    // Content stats
-    totalServices: Math.max(0, backendStats.totalServices || 
-      subcategories.reduce((sum, sub) => sum + (Math.max(0, sub.servicesCount || 0)), 0)),
-    totalGigs: Math.max(0, backendStats.totalGigs || 
-      subcategories.reduce((sum, sub) => sum + (Math.max(0, sub.gigsCount || 0)), 0)),
+    // Calculate derived stats
+    const total = safeNumber(backendOverview.totalSubcategories || pagination.total);
+    const active = safeNumber(backendOverview.activeSubcategories || subcategories.filter(s => s.isActive).length);
     
-    // Categories - prioritize categories with subcategories from backend
-    totalCategories: categoriesWithSubcategories > 0 ? categoriesWithSubcategories : categories.length,
-    categoriesWithSubcategories: categoriesWithSubcategories,
-    totalAllCategories: categories.length,
-    
-    // Additional metrics
-    avgServices: Math.max(0, backendStats.avgServices || 0),
-    avgGigs: Math.max(0, backendStats.avgGigs || 0)
-  };
-}, [backendStats, statsData, subcategories, pagination.total, categories]);
+    return {
+      // Subcategories stats
+      total: total,
+      active: active,
+      inactive: total - active,
+      
+      // Content stats - using backend data
+      totalServices: Math.max(0, safeNumber(backendOverview.totalServices)),
+      totalGigs: Math.max(0, safeNumber(backendOverview.totalGigs)),
+      
+      // Average stats
+      avgServices: safeNumber(backendOverview.avgServices, 0).toFixed(1),
+      avgGigs: safeNumber(backendOverview.avgGigs, 0).toFixed(1),
+      
+      // Category distribution
+      categoriesWithSubcategories: safeNumber(statsData?.data?.byCategory?.length || 0),
+      totalCategories: safeNumber(categories.length),
+      
+      // Performance metrics
+      utilizationRate: total > 0 ? ((active / total) * 100).toFixed(1) : 0,
+      serviceDensity: total > 0 ? (safeNumber(backendOverview.totalServices) / total).toFixed(2) : 0,
+      gigDensity: total > 0 ? (safeNumber(backendOverview.totalGigs) / total).toFixed(2) : 0
+    };
+  }, [backendStats, statsData, subcategories, pagination.total, categories]);
 
   const isCreating = createSubcategoryMutation.isLoading;
   const isUpdating = updateSubcategoryMutation.isLoading;
@@ -539,7 +555,7 @@ const stats = useMemo(() => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Subcategory Management</h1>
-          <p className="text-gray-600 mt-1">Organize and manage subcategories within categories</p>
+          <p className="text-gray-600 mt-1">Organize and manage content subcategories</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
@@ -578,102 +594,105 @@ const stats = useMemo(() => {
         </div>
       </div>
 
-      {/* Stats Cards */}
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-  {/* Total Subcategories Card */}
-  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-600">Total Subcategories</p>
-        <p className="text-2xl font-bold text-gray-900 mt-1">
-          {stats.total.toLocaleString()}
-        </p>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
-            {stats.active} active
-          </span>
-          {stats.inactive > 0 && (
-            <span className="text-xs px-2 py-1 bg-red-100 text-red-800 rounded-full">
-              {stats.inactive} inactive
-            </span>
-          )}
+      {/* Enhanced Stats Cards - Same design as Categories */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Subcategories Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Subcategories</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`text-xs px-2 py-1 rounded-full ${stats.active > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  {stats.active} active
+                </span>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                  {stats.categoriesWithSubcategories} categories
+                </span>
+              </div>
+            </div>
+            <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <FiFolder className="h-6 w-6 text-indigo-600" />
+            </div>
+          </div>
+        </div>
+        
+        {/* Active Status Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Status</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Utilization</span>
+                  <span className="font-semibold">{stats.utilizationRate}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                  <div 
+                    className="bg-green-500 h-1.5 rounded-full" 
+                    style={{ width: `${Math.min(100, stats.utilizationRate)}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
+              <FiActivity className="h-6 w-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+        
+        {/* Content Distribution Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Content Distribution</p>
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Services</span>
+                  <span className="text-sm font-bold text-blue-600">{stats.totalServices}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Gigs</span>
+                  <span className="text-sm font-bold text-purple-600">{stats.totalGigs}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                  <span>Service Density</span>
+                  <span>{stats.serviceDensity} per subcategory</span>
+                </div>
+              </div>
+            </div>
+            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <FiPackage className="h-6 w-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+        
+        {/* Performance Metrics Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Performance</p>
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <FiTrendingUp className="h-4 w-4 text-green-500" />
+                  <span className="text-sm">Avg: {stats.avgServices} services</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <FiTrendingDown className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm">Avg: {stats.avgGigs} gigs</span>
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Across {stats.categoriesWithSubcategories} categories
+                </div>
+              </div>
+            </div>
+            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <FiBarChart2 className="h-6 w-6 text-purple-600" />
+            </div>
+          </div>
         </div>
       </div>
-      <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
-        <FiFolder className="h-6 w-6 text-indigo-600" />
-      </div>
-    </div>
-  </div>
-  
-  {/* Total Services Card */}
-  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-600">Total Services</p>
-        <p className="text-2xl font-bold text-blue-600 mt-1">
-          {stats.totalServices.toLocaleString()}
-        </p>
-        <p className="text-xs text-gray-500 mt-2 flex items-center">
-          <FiTrendingUp className="h-3 w-3 mr-1" />
-          Avg: {stats.avgServices.toFixed(1)} per subcategory
-        </p>
-      </div>
-      <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-        <FiGrid className="h-6 w-6 text-blue-600" />
-      </div>
-    </div>
-  </div>
-  
-  {/* Total Gigs Card */}
-  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-600">Total Gigs</p>
-        <p className="text-2xl font-bold text-green-600 mt-1">
-          {stats.totalGigs.toLocaleString()}
-        </p>
-        <p className="text-xs text-gray-500 mt-2 flex items-center">
-          <FiTrendingUp className="h-3 w-3 mr-1" />
-          Avg: {stats.avgGigs.toFixed(1)} per subcategory
-        </p>
-      </div>
-      <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-        <FiBriefcase className="h-6 w-6 text-green-600" />
-      </div>
-    </div>
-  </div>
-  
-  {/* Categories Card */}
-  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-  <div className="flex items-center justify-between">
-    <div>
-      <p className="text-sm font-medium text-gray-600">Categories</p>
-      <p className="text-2xl font-bold text-purple-600 mt-1">
-        {/* Use the backend byCategory count if available, otherwise use categories.length */}
-        {safeNumber(
-          statsData?.data?.byCategory?.length || 
-          categories.length || 
-          0
-        ).toLocaleString()}
-      </p>
-      <div className="flex items-center gap-2 mt-2">
-        <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">
-          With subcategories
-        </span>
-        {/* Show total categories from dropdown if different */}
-        {categories.length > 0 && categories.length !== (statsData?.data?.byCategory?.length || 0) && (
-          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">
-            {categories.length} total
-          </span>
-        )}
-      </div>
-    </div>
-    <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-      <FiFolderPlus className="h-6 w-6 text-purple-600" />
-    </div>
-  </div>
-</div>
-</div>
 
       {/* Bulk Actions */}
       {selectedSubcategories.length > 0 && (
@@ -757,7 +776,7 @@ const stats = useMemo(() => {
 
         {/* Advanced Filters */}
         {showFilters && (
-          <div className="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
               <select
@@ -800,6 +819,21 @@ const stats = useMemo(() => {
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
                 <option value="order">Order</option>
+                <option value="servicesCount">Services Count</option>
+                <option value="gigsCount">Gigs Count</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort Order</label>
+              <select
+                value={filters.sortOrder}
+                onChange={(e) => handleFilterChange('sortOrder', e.target.value)}
+                disabled={isTableLoading}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
               </select>
             </div>
           </div>
@@ -867,8 +901,16 @@ const stats = useMemo(() => {
             <FiFolder className="h-16 w-16 text-gray-300 mx-auto mb-4" />
             <h3 className="mt-4 text-lg font-semibold text-gray-900">No subcategories found</h3>
             <p className="mt-2 text-gray-500 max-w-md mx-auto">
-              Try adjusting your search or filter criteria to find what you're looking for.
+              {searchTerm || Object.values(filters).some(f => f !== '' && f !== null) 
+                ? "Try adjusting your search or filter criteria to find what you're looking for."
+                : "No subcategories available. Create your first subcategory to get started."}
             </p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              Create First Subcategory
+            </button>
           </div>
         )}
 
@@ -972,6 +1014,7 @@ const stats = useMemo(() => {
       {showSubcategoryDetails && selectedSubcategory && (
         <SubcategoryDetailsModal
           subcategory={selectedSubcategory}
+          stats={stats} // Pass stats to modal
           isOpen={showSubcategoryDetails}
           onClose={() => {
             setShowSubcategoryDetails(false);
@@ -983,26 +1026,26 @@ const stats = useMemo(() => {
         />
       )}
       
-     {showDeleteModal && selectedSubcategory && (
-  <DeleteConfirmationModal
-    item={selectedSubcategory}
-    isOpen={showDeleteModal}
-    onClose={() => {
-      setShowDeleteModal(false);
-      setSelectedSubcategory(null);
-      setForceDelete(false);
-    }}
-    onDelete={handleDeleteSubcategory}
-    type="subcategory"
-    loading={deleteSubcategoryMutation.isLoading || deletingSubcategoryId === selectedSubcategory._id}
-    dependencies={{
-      services: selectedSubcategory.servicesCount || 0,
-      gigs: selectedSubcategory.gigsCount || 0
-    }}
-    forceDelete={forceDelete}
-    onForceDeleteChange={setForceDelete}
-  />
-)}
+      {showDeleteModal && selectedSubcategory && (
+        <DeleteConfirmationModal
+          item={selectedSubcategory}
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedSubcategory(null);
+            setForceDelete(false);
+          }}
+          onDelete={handleDeleteSubcategory}
+          type="subcategory"
+          loading={deleteSubcategoryMutation.isLoading || deletingSubcategoryId === selectedSubcategory._id}
+          dependencies={{
+            services: selectedSubcategory.servicesCount || 0,
+            gigs: selectedSubcategory.gigsCount || 0
+          }}
+          forceDelete={forceDelete}
+          onForceDeleteChange={setForceDelete}
+        />
+      )}
     </div>
   );
 };
