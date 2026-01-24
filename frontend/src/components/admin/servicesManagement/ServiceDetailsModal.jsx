@@ -1,4 +1,4 @@
-// ServiceDetails.jsx - Updated with proper error handling
+// ServiceDetailsModal.jsx - Fixed with proper error handling and default formatPrice
 import React from 'react';
 import { 
   FiX, FiPackage, FiInfo, FiCalendar, FiBarChart2, FiEye,
@@ -10,6 +10,22 @@ import {
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 
+// Default formatPrice function
+const defaultFormatPrice = (price, currency = 'USD') => {
+  if (price === undefined || price === null) return '$0.00';
+  
+  const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+  
+  if (isNaN(numPrice)) return '$0.00';
+  
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(numPrice);
+};
+
 const ServiceDetailsModal = ({ 
   service, 
   isOpen, 
@@ -19,8 +35,8 @@ const ServiceDetailsModal = ({
   onDuplicate,
   categoriesMap = {},
   usersMap = {},
-  formatPrice,
-  onError, // Add these props for error handling
+  formatPrice = defaultFormatPrice, // Use default if not provided
+  onError,
   onSuccess
 }) => {
   if (!isOpen || !service) return null;
@@ -56,15 +72,26 @@ const ServiceDetailsModal = ({
 
   const handleDuplicate = async () => {
     try {
-      await onDuplicate(service);
+      if (onDuplicate) {
+        await onDuplicate(service);
+      } else {
+        console.warn('onDuplicate function not provided');
+        if (onSuccess) onSuccess('Duplicate functionality not available');
+      }
     } catch (error) {
+      console.error('Duplicate error:', error);
       if (onError) onError(error);
     }
   };
 
   const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    if (onSuccess) onSuccess('ID copied to clipboard');
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      if (onSuccess) onSuccess('ID copied to clipboard');
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
   };
 
   // Get category and subcategory with fallbacks
@@ -80,17 +107,64 @@ const ServiceDetailsModal = ({
                     service.createdBy || 
                     { name: 'Unknown User', email: '', picture: null };
 
+  // Ensure safe access to service properties
+  const safeService = {
+    _id: service._id || '',
+    title: service.title || 'Untitled Service',
+    description: service.description || 'No description provided.',
+    status: service.status || 'draft',
+    price: service.price || 0,
+    currency: service.currency || 'USD',
+    deliveryTime: service.deliveryTime || 0,
+    deliveryTimeUnit: service.deliveryTimeUnit || 'days',
+    revisions: service.revisions || 0,
+    ordersCount: service.ordersCount || 0,
+    rating: service.rating || 0,
+    views: service.views || 0,
+    likes: service.likes || 0,
+    reviewsCount: service.reviewsCount || 0,
+    thumbnail: service.thumbnail || {},
+    images: service.images || [],
+    tags: service.tags || [],
+    features: service.features || [],
+    requirements: service.requirements || [],
+    faqs: service.faqs || [],
+    searchKeywords: service.searchKeywords || [],
+    metaTitle: service.metaTitle || service.title || '',
+    metaDescription: service.metaDescription || service.shortDescription || '',
+    slug: service.slug || '',
+    version: service.version || 1,
+    createdAt: service.createdAt,
+    updatedAt: service.updatedAt,
+    publishedAt: service.publishedAt,
+    deletedAt: service.deletedAt,
+    isFeatured: Boolean(service.isFeatured),
+    isPopular: Boolean(service.isPopular),
+    isRecommended: Boolean(service.isRecommended),
+    isActive: Boolean(service.isActive)
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-gray-50 to-gray-100">
           <div className="flex items-center space-x-3">
-            {service.thumbnail?.url ? (
+            {safeService.thumbnail?.url ? (
               <img 
-                src={service.thumbnail.url} 
-                alt={service.title}
+                src={safeService.thumbnail.url} 
+                alt={safeService.title}
                 className="h-12 w-12 rounded-lg object-cover border border-gray-200"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.parentElement.innerHTML = `
+                    <div class="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+                      <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
+                    </div>
+                  `;
+                }}
               />
             ) : (
               <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
@@ -99,12 +173,12 @@ const ServiceDetailsModal = ({
             )}
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Service Details</h3>
-              <p className="text-sm text-gray-500">ID: {service._id}</p>
+              <p className="text-sm text-gray-500">ID: {safeService._id}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => copyToClipboard(service._id)}
+              onClick={() => copyToClipboard(safeService._id)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-1"
               title="Copy ID"
             >
@@ -126,30 +200,30 @@ const ServiceDetailsModal = ({
             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">{service.title}</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">{safeService.title}</h2>
                   <div className="flex flex-wrap gap-2 mb-3">
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${getStatusColor(service.status)}`}>
-                      {service.status ? service.status.charAt(0).toUpperCase() + service.status.slice(1) : 'Draft'}
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${getStatusColor(safeService.status)}`}>
+                      {safeService.status ? safeService.status.charAt(0).toUpperCase() + safeService.status.slice(1) : 'Draft'}
                     </span>
-                    {service.isFeatured && (
+                    {safeService.isFeatured && (
                       <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-semibold border border-purple-200">
                         <FiStar className="inline h-3 w-3 mr-1" />
                         Featured
                       </span>
                     )}
-                    {service.isPopular && (
+                    {safeService.isPopular && (
                       <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-semibold border border-orange-200">
                         <FiTrendingUp className="inline h-3 w-3 mr-1" />
                         Popular
                       </span>
                     )}
-                    {service.isRecommended && (
+                    {safeService.isRecommended && (
                       <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold border border-blue-200">
                         <FiCheck className="inline h-3 w-3 mr-1" />
                         Recommended
                       </span>
                     )}
-                    {service.isActive && (
+                    {safeService.isActive && (
                       <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold border border-green-200">
                         <FiCheckCircle className="inline h-3 w-3 mr-1" />
                         Active
@@ -157,19 +231,29 @@ const ServiceDetailsModal = ({
                     )}
                   </div>
                   <div className="text-gray-600">
-                    <p className="text-lg">{formatPrice(service.price, service.currency)}</p>
+                    <p className="text-lg">{formatPrice(safeService.price, safeService.currency)}</p>
                     <p className="text-sm">
-                      Delivery: {service.deliveryTime} {service.deliveryTimeUnit || 'days'} • 
-                      Revisions: {service.revisions}
+                      Delivery: {safeService.deliveryTime} {safeService.deliveryTimeUnit} • 
+                      Revisions: {safeService.revisions}
                     </p>
                   </div>
                 </div>
-                {service.thumbnail?.url && (
+                {safeService.thumbnail?.url && (
                   <div className="flex-shrink-0">
                     <img 
-                      src={service.thumbnail.url} 
-                      alt={service.title}
+                      src={safeService.thumbnail.url} 
+                      alt={safeService.title}
                       className="h-32 w-32 rounded-lg object-cover border border-gray-200 shadow-sm"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.parentElement.innerHTML = `
+                          <div class="h-32 w-32 bg-indigo-100 rounded-lg border border-gray-200 shadow-sm flex items-center justify-center">
+                            <svg class="h-12 w-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                            </svg>
+                          </div>
+                        `;
+                      }}
                     />
                   </div>
                 )}
@@ -182,7 +266,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Price</p>
-                    <p className="text-xl font-bold text-gray-900">{formatPrice(service.price, service.currency)}</p>
+                    <p className="text-xl font-bold text-gray-900">{formatPrice(safeService.price, safeService.currency)}</p>
                   </div>
                   <FiDollarSign className="h-6 w-6 text-green-500" />
                 </div>
@@ -193,7 +277,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Orders</p>
-                    <p className="text-xl font-bold text-gray-900">{service.ordersCount || 0}</p>
+                    <p className="text-xl font-bold text-gray-900">{safeService.ordersCount}</p>
                   </div>
                   <FiShoppingCart className="h-6 w-6 text-blue-500" />
                 </div>
@@ -204,7 +288,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Rating</p>
-                    <p className="text-xl font-bold text-gray-900">{service.rating?.toFixed(1) || '0.0'}</p>
+                    <p className="text-xl font-bold text-gray-900">{safeService.rating.toFixed(1)}</p>
                   </div>
                   <FiStar className="h-6 w-6 text-yellow-500" />
                 </div>
@@ -215,7 +299,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Views</p>
-                    <p className="text-xl font-bold text-gray-900">{service.views || 0}</p>
+                    <p className="text-xl font-bold text-gray-900">{safeService.views}</p>
                   </div>
                   <FiEye className="h-6 w-6 text-purple-500" />
                 </div>
@@ -226,7 +310,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Likes</p>
-                    <p className="text-xl font-bold text-gray-900">{service.likes || 0}</p>
+                    <p className="text-xl font-bold text-gray-900">{safeService.likes}</p>
                   </div>
                   <FiHeart className="h-6 w-6 text-red-500" />
                 </div>
@@ -237,7 +321,7 @@ const ServiceDetailsModal = ({
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-sm text-gray-600">Reviews</p>
-                    <p className="text-xl font-bold text-gray-900">{service.reviewsCount || 0}</p>
+                    <p className="text-xl font-bold text-gray-900">{safeService.reviewsCount}</p>
                   </div>
                   <FiMessageSquare className="h-6 w-6 text-teal-500" />
                 </div>
@@ -256,15 +340,15 @@ const ServiceDetailsModal = ({
                     Description
                   </h4>
                   <div className="prose max-w-none">
-                    <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto">
                       <p className="text-gray-700 whitespace-pre-line">
-                        {service.description || 'No description provided.'}
+                        {safeService.description}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Category & Subcategory - FIXED */}
+                {/* Category & Subcategory */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                     <FiGrid className="h-5 w-5 mr-2 text-gray-500" />
@@ -307,7 +391,7 @@ const ServiceDetailsModal = ({
 
               {/* Right Column */}
               <div className="space-y-6">
-                {/* Service Creator - FIXED */}
+                {/* Service Creator */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                     <FiUsers className="h-5 w-5 mr-2 text-gray-500" />
@@ -319,6 +403,16 @@ const ServiceDetailsModal = ({
                         src={createdBy.picture}
                         alt={createdBy.name}
                         className="h-12 w-12 rounded-full border border-gray-200"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.parentElement.innerHTML = `
+                            <div class="h-12 w-12 bg-indigo-100 rounded-full flex items-center justify-center">
+                              <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                              </svg>
+                            </div>
+                          `;
+                        }}
                       />
                     ) : (
                       <div className="h-12 w-12 bg-indigo-100 rounded-full flex items-center justify-center">
@@ -326,8 +420,8 @@ const ServiceDetailsModal = ({
                       </div>
                     )}
                     <div className="flex-1">
-                      <p className="font-medium">{createdBy.name || 'Unknown User'}</p>
-                      <p className="text-sm text-gray-500">{createdBy.email || ''}</p>
+                      <p className="font-medium">{createdBy.name}</p>
+                      <p className="text-sm text-gray-500">{createdBy.email}</p>
                       {createdBy.role && (
                         <p className="text-xs text-gray-400 mt-1">Role: {createdBy.role}</p>
                       )}
@@ -355,14 +449,14 @@ const ServiceDetailsModal = ({
                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-sm text-gray-600">Delivery Time</p>
                       <p className="text-lg font-bold text-gray-900">
-                        {service.deliveryTime} {service.deliveryTimeUnit || 'days'}
+                        {safeService.deliveryTime} {safeService.deliveryTimeUnit}
                       </p>
                     </div>
                     
                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <p className="text-sm text-gray-600">Revisions</p>
                       <p className="text-lg font-bold text-gray-900">
-                        {service.revisions || 0}
+                        {safeService.revisions}
                       </p>
                     </div>
                   </div>
@@ -377,22 +471,22 @@ const ServiceDetailsModal = ({
                   <div className="space-y-3">
                     <div className="flex justify-between items-center pb-3 border-b border-gray-100">
                       <span className="text-gray-600">Created</span>
-                      <span className="font-medium">{formatDate(service.createdAt)}</span>
+                      <span className="font-medium">{formatDate(safeService.createdAt)}</span>
                     </div>
                     <div className="flex justify-between items-center pb-3 border-b border-gray-100">
                       <span className="text-gray-600">Last Updated</span>
-                      <span className="font-medium">{formatDate(service.updatedAt)}</span>
+                      <span className="font-medium">{formatDate(safeService.updatedAt)}</span>
                     </div>
-                    {service.publishedAt && (
+                    {safeService.publishedAt && (
                       <div className="flex justify-between items-center pb-3 border-b border-gray-100">
                         <span className="text-gray-600">Published</span>
-                        <span className="font-medium">{formatDate(service.publishedAt)}</span>
+                        <span className="font-medium">{formatDate(safeService.publishedAt)}</span>
                       </div>
                     )}
-                    {service.deletedAt && (
+                    {safeService.deletedAt && (
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Deleted</span>
-                        <span className="font-medium text-red-600">{formatDate(service.deletedAt)}</span>
+                        <span className="font-medium text-red-600">{formatDate(safeService.deletedAt)}</span>
                       </div>
                     )}
                   </div>
@@ -401,14 +495,14 @@ const ServiceDetailsModal = ({
             </div>
 
             {/* Tags */}
-            {service.tags && service.tags.length > 0 && (
+            {safeService.tags.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiTag className="h-5 w-5 mr-2 text-gray-500" />
                   Tags
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {service.tags.map((tag, index) => (
+                  {safeService.tags.map((tag, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center px-3 py-2 rounded-lg text-sm bg-indigo-50 text-indigo-700 border border-indigo-100 font-medium"
@@ -421,14 +515,14 @@ const ServiceDetailsModal = ({
             )}
 
             {/* Features Section */}
-            {service.features && service.features.length > 0 && (
+            {safeService.features.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiZap className="h-5 w-5 mr-2 text-gray-500" />
                   Features
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {service.features.map((feature, index) => (
+                  {safeService.features.map((feature, index) => (
                     <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center mb-2">
                         {feature.included !== false ? (
@@ -448,14 +542,14 @@ const ServiceDetailsModal = ({
             )}
 
             {/* Requirements */}
-            {service.requirements && service.requirements.length > 0 && (
+            {safeService.requirements.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiSettings className="h-5 w-5 mr-2 text-gray-500" />
                   Requirements
                 </h4>
                 <div className="space-y-3">
-                  {service.requirements.map((requirement, index) => (
+                  {safeService.requirements.map((requirement, index) => (
                     <div key={index} className="flex items-start space-x-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                       <FiCheckCircle className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
                       <div>
@@ -468,14 +562,14 @@ const ServiceDetailsModal = ({
             )}
 
             {/* FAQs */}
-            {service.faqs && service.faqs.length > 0 && (
+            {safeService.faqs.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiMessageSquare className="h-5 w-5 mr-2 text-gray-500" />
                   Frequently Asked Questions
                 </h4>
                 <div className="space-y-4">
-                  {service.faqs.map((faq, index) => (
+                  {safeService.faqs.map((faq, index) => (
                     <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <h5 className="font-medium text-gray-900 mb-2 flex items-center">
                         <FiAward className="h-4 w-4 mr-2 text-indigo-500" />
@@ -489,14 +583,14 @@ const ServiceDetailsModal = ({
             )}
 
             {/* Search Keywords */}
-            {service.searchKeywords && service.searchKeywords.length > 0 && (
+            {safeService.searchKeywords.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiCode className="h-5 w-5 mr-2 text-gray-500" />
                   Search Keywords
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {service.searchKeywords.map((keyword, index) => (
+                  {safeService.searchKeywords.map((keyword, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200"
@@ -509,19 +603,29 @@ const ServiceDetailsModal = ({
             )}
 
             {/* Images/Gallery */}
-            {service.images && service.images.length > 0 && (
+            {safeService.images.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
                   <FiDownload className="h-5 w-5 mr-2 text-gray-500" />
                   Service Images
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
-                  {service.images.slice(0, 6).map((img, index) => (
+                  {safeService.images.slice(0, 6).map((img, index) => (
                     <div key={index} className="relative group">
                       <img
                         src={img.url || img}
                         alt={`Service image ${index + 1}`}
                         className="w-full h-32 object-cover rounded-lg border border-gray-200"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.parentElement.innerHTML = `
+                            <div class="w-full h-32 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                              <svg class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                          `;
+                        }}
                       />
                       <a
                         href={img.url || img}
@@ -533,9 +637,9 @@ const ServiceDetailsModal = ({
                       </a>
                     </div>
                   ))}
-                  {service.images.length > 6 && (
+                  {safeService.images.length > 6 && (
                     <div className="flex items-center justify-center bg-gray-100 rounded-lg border border-gray-200">
-                      <span className="text-gray-600">+{service.images.length - 6} more</span>
+                      <span className="text-gray-600">+{safeService.images.length - 6} more</span>
                     </div>
                   )}
                 </div>
@@ -551,11 +655,11 @@ const ServiceDetailsModal = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Meta Title</p>
-                  <p className="font-medium">{service.metaTitle || service.title}</p>
+                  <p className="font-medium">{safeService.metaTitle}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Meta Description</p>
-                  <p className="text-gray-700">{service.metaDescription || service.shortDescription}</p>
+                  <p className="text-gray-700 line-clamp-2">{safeService.metaDescription}</p>
                 </div>
               </div>
             </div>
@@ -564,8 +668,8 @@ const ServiceDetailsModal = ({
 
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="text-sm text-gray-500">
-            Service ID: {service._id} • Slug: {service.slug} • Version: {service.version || 1}
+          <div className="text-sm text-gray-500 truncate">
+            Service ID: {safeService._id} • Slug: {safeService.slug} • Version: {safeService.version}
           </div>
           <div className="flex space-x-3">
             <button

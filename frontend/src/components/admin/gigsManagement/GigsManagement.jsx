@@ -1,5 +1,5 @@
-// GigManagement.jsx - Professional UI Update
-import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
+// GigsManagement.jsx - Professional UI Update with All Fixes
+import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { 
   useGigs,
   useUpdateGig,
@@ -35,13 +35,70 @@ import {
   FiDownload,
   FiTrendingUp,
   FiUsers,
-  FiAlertCircle
+  FiAlertCircle,
+  FiPercent,
+  FiActivity,
+  FiCalendar,
+  FiTarget,
+  FiBarChart2,
+  FiPackage,
+  FiMessageSquare,
+  FiStar,
+  FiHeart
 } from 'react-icons/fi';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import GigEditModal from './GigEditModal';
 import GigViewModal from './GigViewModal';
 import DeleteConfirmationModal from '../DeleteConfirmationModal';
 
+// Stat Card Component
+const StatCard = memo(({ title, value, icon: Icon, color, trend, subtitle, loading }) => {
+  const getColorClasses = (color) => {
+    const colors = {
+      indigo: 'bg-indigo-100 text-indigo-600',
+      green: 'bg-green-100 text-green-600',
+      blue: 'bg-blue-100 text-blue-600',
+      purple: 'bg-purple-100 text-purple-600',
+      orange: 'bg-orange-100 text-orange-600',
+      red: 'bg-red-100 text-red-600',
+      yellow: 'bg-yellow-100 text-yellow-600',
+      gray: 'bg-gray-100 text-gray-600'
+    };
+    return colors[color] || colors.indigo;
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow h-full">
+      <div className="flex items-start justify-between h-full">
+        <div className="flex-1">
+          <p className="text-xs font-medium text-gray-600 mb-1 truncate">{title}</p>
+          <div className="flex items-baseline gap-2 mb-1">
+            {loading ? (
+              <div className="h-7 w-20 bg-gray-100 rounded animate-pulse"></div>
+            ) : (
+              <>
+                <p className="text-xl font-bold text-gray-900 truncate">{value}</p>
+                {trend && (
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${trend.value > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {trend.value > 0 ? '↑' : '↓'} {Math.abs(trend.value)}%
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          {subtitle && (
+            <p className="text-xs text-gray-500 truncate">{subtitle}</p>
+          )}
+        </div>
+        <div className={`h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 ml-2 ${getColorClasses(color)}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+StatCard.displayName = 'StatCard';
 
 // Gig Table Row Component
 const GigTableRow = memo(({ 
@@ -56,7 +113,8 @@ const GigTableRow = memo(({
   onOpenActionMenu,
   actionMenuId,
   isUpdatingId,
-  isDeletingId
+  isDeletingId,
+  containerRef
 }) => {
   const getStatusColor = (status) => {
     const colors = {
@@ -82,25 +140,51 @@ const GigTableRow = memo(({
 
   const isUpdating = isUpdatingId === gig._id;
   const isDeleting = isDeletingId === gig._id;
+  const actionMenuRef = useRef(null);
+
+  // Handle action menu position
+  const getActionMenuPosition = () => {
+    if (!actionMenuRef.current || !containerRef.current) return {};
+    
+    const menuRect = actionMenuRef.current.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const rowRect = actionMenuRef.current.closest('tr').getBoundingClientRect();
+    
+    // Check if menu would overflow bottom
+    const spaceBelow = containerRect.bottom - rowRect.bottom;
+    const menuHeight = 200; // Approximate menu height
+    
+    if (spaceBelow < menuHeight && rowRect.top > menuHeight) {
+      // Position above if there's not enough space below
+      return { bottom: '100%', top: 'auto' };
+    }
+    
+    // Default position below
+    return { top: '100%', bottom: 'auto' };
+  };
+
+  const actionMenuStyle = actionMenuId === gig._id ? getActionMenuPosition() : {};
 
   return (
     <React.Fragment>
       <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-        <td className="px-6 py-4">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => onToggleSelect(gig._id)}
-            disabled={isDeleting}
-            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-          />
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelect(gig._id)}
+              disabled={isDeleting}
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+          </div>
         </td>
-        <td className="px-6 py-4">
-          <div className="flex items-center">
+        <td className="px-4 py-3">
+          <div className="flex items-center min-w-0">
             <button
               onClick={() => !isDeleting && onToggleExpand(gig._id)}
               disabled={isDeleting}
-              className="p-1 hover:bg-gray-100 rounded mr-3 disabled:opacity-50"
+              className="p-1 hover:bg-gray-100 rounded mr-2 flex-shrink-0 disabled:opacity-50"
             >
               {isExpanded ? (
                 <FiChevronLeft className="h-4 w-4 text-gray-500 rotate-270" />
@@ -108,68 +192,68 @@ const GigTableRow = memo(({
                 <FiChevronRight className="h-4 w-4 text-gray-500" />
               )}
             </button>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 {isUpdating && (
-                  <FiLoader className="h-3 w-3 animate-spin text-blue-500" />
+                  <FiLoader className="h-3 w-3 animate-spin text-blue-500 flex-shrink-0" />
                 )}
-                <p className="text-sm font-medium text-gray-900">{gig.title}</p>
+                <p className="text-sm font-medium text-gray-900 truncate">{gig.title}</p>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 truncate mt-0.5">
                 {gig.projectCategory?.name || 'No category'}
               </div>
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-gray-400 truncate mt-0.5">
                 By {gig.createdBy?.name || 'Unknown'}
               </div>
             </div>
           </div>
         </td>
-        <td className="px-6 py-4">
+        <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(gig.status)}`}>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(gig.status)} truncate`}>
               {gig.status.replace('_', ' ').toUpperCase()}
             </span>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getUrgencyColor(gig.urgency)}`}>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getUrgencyColor(gig.urgency)} truncate`}>
               {gig.urgency.toUpperCase()}
             </span>
           </div>
         </td>
-        <td className="px-6 py-4">
+        <td className="px-4 py-3">
           <div className="text-sm text-gray-900">
             <div className="flex items-center gap-1">
-              <FiDollarSign className="h-4 w-4 text-gray-400" />
-              <span className="font-medium">
+              <FiDollarSign className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="font-medium truncate">
                 ${(gig.budget || 0).toLocaleString()}
               </span>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              <FiClock className="h-3 w-3 inline mr-1" />
+            <div className="text-xs text-gray-500 truncate mt-0.5">
+              <FiClock className="h-3 w-3 inline mr-1 flex-shrink-0" />
               {gig.timeline || 0} {gig.timelineUnit || 'days'}
             </div>
           </div>
         </td>
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center">
-              <FiUser className="h-4 w-4 text-gray-600" />
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-7 w-7 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <FiUser className="h-3.5 w-3.5 text-gray-600" />
             </div>
-            <div>
-              <div className="text-sm font-medium">{gig.createdBy?.name || 'Unknown'}</div>
-              <div className="text-xs text-gray-500">{gig.createdBy?.email || ''}</div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">{gig.createdBy?.name || 'Unknown'}</div>
+              <div className="text-xs text-gray-500 truncate">{gig.createdBy?.email || ''}</div>
             </div>
           </div>
         </td>
-        <td className="px-6 py-4">
-          <div className="text-sm text-gray-500">
+        <td className="px-4 py-3">
+          <div className="text-sm text-gray-500 truncate">
             {gig.createdAt ? format(new Date(gig.createdAt), 'MMM d, yyyy') : 'N/A'}
           </div>
         </td>
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-2">
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-1" ref={actionMenuRef}>
             <button
               onClick={() => !isDeleting && onView(gig)}
               disabled={isDeleting}
-              className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex-shrink-0"
               title="View Details"
             >
               <FiEye className="h-4 w-4" />
@@ -177,7 +261,7 @@ const GigTableRow = memo(({
             <button
               onClick={() => !isDeleting && onEdit(gig)}
               disabled={isDeleting || isUpdating}
-              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
               title="Edit Gig"
             >
               {isUpdating ? (
@@ -187,11 +271,11 @@ const GigTableRow = memo(({
               )}
             </button>
             
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <button
                 onClick={() => !isDeleting && onOpenActionMenu(actionMenuId === gig._id ? null : gig._id)}
                 disabled={isDeleting}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <FiMoreVertical className="h-4 w-4" />
               </button>
@@ -199,11 +283,14 @@ const GigTableRow = memo(({
               {actionMenuId === gig._id && !isDeleting && (
                 <>
                   <div 
-                    className="fixed inset-0 z-10"
+                    className="fixed inset-0 z-40"
                     onClick={() => onOpenActionMenu(null)}
                   />
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 py-1">
-                    <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                  <div 
+                    className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1"
+                    style={actionMenuStyle}
+                  >
+                    <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
                       Quick Actions
                     </div>
                     <div className="py-1">
@@ -213,10 +300,10 @@ const GigTableRow = memo(({
                             onOpenActionMenu(null);
                             // Handle close gig
                           }}
-                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
                         >
-                          <FiLock className="h-4 w-4 mr-3" />
-                          Close Gig
+                          <FiLock className="h-4 w-4 mr-2 flex-shrink-0" />
+                          <span className="truncate">Close Gig</span>
                         </button>
                       ) : (
                         <button
@@ -224,10 +311,10 @@ const GigTableRow = memo(({
                             onOpenActionMenu(null);
                             // Handle open gig
                           }}
-                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
                         >
-                          <FiUnlock className="h-4 w-4 mr-3" />
-                          Open Gig
+                          <FiUnlock className="h-4 w-4 mr-2 flex-shrink-0" />
+                          <span className="truncate">Open Gig</span>
                         </button>
                       )}
                       
@@ -238,10 +325,10 @@ const GigTableRow = memo(({
                           onDelete(gig);
                           onOpenActionMenu(null);
                         }}
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                       >
-                        <FiTrash2 className="h-4 w-4 mr-3" />
-                        Delete Gig
+                        <FiTrash2 className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">Delete Gig</span>
                       </button>
                     </div>
                   </div>
@@ -254,38 +341,42 @@ const GigTableRow = memo(({
       
       {isExpanded && (
         <tr>
-          <td colSpan="7" className="px-6 py-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Description</h4>
-                <p className="text-sm text-gray-700">
-                  {gig.description?.substring(0, 150) || 'No description'}
-                  {gig.description?.length > 150 && '...'}
-                </p>
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Details</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <FiUsers className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm">{gig.bids?.length || 0} bids</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Visibility:</span> {gig.visibility}
-                  </div>
+          <td colSpan="7" className="px-4 py-3 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</h4>
+                <div className="relative">
+                  <p className="text-sm text-gray-700 line-clamp-3 pr-4">
+                    {gig.description || 'No description available'}
+                  </p>
+                  {gig.description && gig.description.length > 150 && (
+                    <div className="absolute bottom-0 right-0 bg-gradient-to-l from-gray-50 to-transparent pl-4">
+                      <span className="text-xs text-gray-400">...</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Skills</h4>
-                <div className="flex flex-wrap gap-1">
-                  {gig.skillsRequired?.slice(0, 3).map((skill, idx) => (
-                    <span key={idx} className="px-2 py-1 text-xs bg-gray-100 rounded border border-gray-200">
-                      {skill}
-                    </span>
-                  ))}
-                  {(!gig.skillsRequired || gig.skillsRequired.length === 0) && (
-                    <span className="text-sm text-gray-400">No skills specified</span>
-                  )}
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Details</h4>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <FiUsers className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="text-sm truncate">{gig.bids?.length || 0} bids</span>
+                  </div>
+                  <div className="text-sm truncate">
+                    <span className="text-gray-500">Visibility:</span> {gig.visibility}
+                  </div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2 mb-1.5">Skills</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {gig.skillsRequired?.slice(0, 3).map((skill, idx) => (
+                      <span key={idx} className="px-2 py-0.5 text-xs bg-gray-100 rounded border border-gray-200 truncate">
+                        {skill}
+                      </span>
+                    ))}
+                    {(!gig.skillsRequired || gig.skillsRequired.length === 0) && (
+                      <span className="text-sm text-gray-400">No skills specified</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -301,6 +392,7 @@ GigTableRow.displayName = 'GigTableRow';
 // Main Component
 const GigsManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState({
     status: '',
     category: '',
@@ -322,7 +414,10 @@ const GigsManagement = () => {
   const [expandedGigs, setExpandedGigs] = useState([]);
   const [updatingGigId, setUpdatingGigId] = useState(null);
   const [deletingGigId, setDeletingGigId] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
+  const searchTimeoutRef = useRef(null);
+  const tableContainerRef = useRef(null);
   const limit = 20;
   
   const { 
@@ -344,7 +439,7 @@ const GigsManagement = () => {
   const deleteMultipleMutation = useDeleteMultipleGigs();
   const updateStatusMutation = useUpdateMultipleGigsStatus();
   const exportGigsMutation = useExportGigs();
-  const { data: gigStatsData } = useGigStats();
+  const { data: gigStatsData, isLoading: statsLoadingData } = useGigStats();
   
   const { data: categoriesData } = useCategoriesForDropdown();
   const { data: usersData } = useUsersForDropdown();
@@ -366,22 +461,31 @@ const GigsManagement = () => {
   const categories = categoriesData?.data || [];
   const users = usersData?.data || [];
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm !== '') {
-        setPage(1);
-        refetch();
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, refetch]);
-
+  // Handle manual search
   const handleSearch = useCallback((e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setPage(1);
-    refetch();
-  }, [refetch]);
+    setSearchTerm(searchInput);
+  }, [searchInput]);
+
+  // Handle search input change without auto-search
+  const handleSearchChange = useCallback((value) => {
+    setSearchInput(value);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+  }, []);
+
+  // Clear search
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setSearchTerm('');
+    setPage(1);
+  }, []);
+
+  useEffect(() => {
+    setStatsLoading(statsLoadingData);
+  }, [statsLoadingData]);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -448,25 +552,25 @@ const GigsManagement = () => {
   }, [selectedGig, updateGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const handleDeleteGig = useCallback(async (deleteOptions) => {
-  const loadingToastId = showGigLoading('Deleting gig...');
-  setDeletingGigId(deleteOptions.id);
-  
-  try {
-    await deleteGigMutation.mutateAsync(deleteOptions);
-    dismissGigToast(loadingToastId);
-    showGigSuccess('Gig deleted successfully');
-    setShowDeleteModal(false);
-    setSelectedGig(null);
-    setForceDelete(false);
-    setDeletingGigId(null);
-    refetch();
-  } catch (error) {
-    dismissGigToast(loadingToastId);
-    setDeletingGigId(null);
-    showGigError(error.response?.data?.message || 'Failed to delete gig');
-    throw error;
-  }
-}, [deleteGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
+    const loadingToastId = showGigLoading('Deleting gig...');
+    setDeletingGigId(deleteOptions.id);
+    
+    try {
+      await deleteGigMutation.mutateAsync(deleteOptions);
+      dismissGigToast(loadingToastId);
+      showGigSuccess('Gig deleted successfully');
+      setShowDeleteModal(false);
+      setSelectedGig(null);
+      setForceDelete(false);
+      setDeletingGigId(null);
+      refetch();
+    } catch (error) {
+      dismissGigToast(loadingToastId);
+      setDeletingGigId(null);
+      showGigError(error.response?.data?.message || 'Failed to delete gig');
+      throw error;
+    }
+  }, [deleteGigMutation, refetch, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -503,11 +607,10 @@ const GigsManagement = () => {
   }, []);
 
   const handleDelete = useCallback((gig) => {
-  setSelectedGig(gig);
-  setForceDelete(false);
-  setShowDeleteModal(true);
-}, []);
-
+    setSelectedGig(gig);
+    setForceDelete(false);
+    setShowDeleteModal(true);
+  }, []);
 
   const refreshData = useCallback(() => {
     refetch();
@@ -544,19 +647,78 @@ const GigsManagement = () => {
     }
   }, [exportGigsMutation, filters, searchTerm, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
+  // Calculate enhanced stats
   const stats = useMemo(() => {
     const gigStats = gigStatsData?.data?.overview?.[0] || {};
+    const byStatus = gigStatsData?.data?.byStatus || [];
+    const byCategory = gigStatsData?.data?.byCategory || [];
+    const growth = gigStatsData?.data?.growth || [];
+    
+    // Calculate percentages
+    const totalGigs = gigStats.totalGigs || gigs.length;
+    const openGigs = gigStats.openGigs || gigs.filter(g => g.status === 'open').length;
+    const inProgressGigs = gigStats.inProgressGigs || gigs.filter(g => g.status === 'in_progress').length;
+    const completedGigs = gigStats.completedGigs || gigs.filter(g => g.status === 'completed').length;
+    const avgBudget = gigStats.avgBudget || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0);
+    
+    // Calculate completion rate
+    const completionRate = totalGigs > 0 ? ((completedGigs / totalGigs) * 100) : 0;
+    
+    // Calculate average timeline
+    const avgTimeline = gigs.length > 0 ? 
+      gigs.reduce((sum, g) => sum + (g.timeline || 0), 0) / gigs.length : 0;
+    
+    // Calculate urgency distribution
+    const urgencyCounts = {
+      urgent: gigs.filter(g => g.urgency === 'urgent').length,
+      high: gigs.filter(g => g.urgency === 'high').length,
+      medium: gigs.filter(g => g.urgency === 'medium').length,
+      low: gigs.filter(g => g.urgency === 'low').length
+    };
+    
+    // Calculate recent growth (last 7 days)
+    const sevenDaysAgo = subDays(new Date(), 7);
+    const recentGigs = gigs.filter(g => new Date(g.createdAt) >= sevenDaysAgo).length;
+    const growthRate = totalGigs > 0 ? ((recentGigs / totalGigs) * 100) : 0;
     
     return {
-      total: pagination.total || gigs.length,
-      open: gigStats.openGigs || gigs.filter(g => g.status === 'open').length,
-      inProgress: gigStats.inProgressGigs || gigs.filter(g => g.status === 'in_progress').length,
-      completed: gigStats.completedGigs || gigs.filter(g => g.status === 'completed').length,
+      // Overview stats
+      total: totalGigs,
+      open: openGigs,
+      inProgress: inProgressGigs,
+      completed: completedGigs,
+      cancelled: gigStats.cancelledGigs || gigs.filter(g => g.status === 'cancelled').length,
+      assigned: gigStats.assignedGigs || gigs.filter(g => g.status === 'assigned').length,
+      closed: gigStats.closedGigs || gigs.filter(g => g.status === 'closed').length,
+      
+      // Financial stats
       totalBudget: gigStats.totalBudget || gigs.reduce((sum, g) => sum + (g.budget || 0), 0),
-      avgBudget: gigStats.avgBudget || (gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.budget || 0), 0) / gigs.length : 0),
-      totalBids: gigStats.totalBids || gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0)
+      avgBudget: avgBudget,
+      maxBudget: gigStats.maxBudget || Math.max(...gigs.map(g => g.budget || 0), 0),
+      minBudget: gigStats.minBudget || Math.min(...gigs.map(g => g.budget || 0), 0),
+      
+      // Performance stats
+      completionRate: completionRate.toFixed(1),
+      avgTimeline: avgTimeline.toFixed(1),
+      totalBids: gigStats.totalBids || gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0),
+      avgBids: gigs.length > 0 ? gigs.reduce((sum, g) => sum + (g.bids?.length || 0), 0) / gigs.length : 0,
+      
+      // Urgency stats
+      urgentGigs: urgencyCounts.urgent,
+      highUrgencyGigs: urgencyCounts.high,
+      mediumUrgencyGigs: urgencyCounts.medium,
+      lowUrgencyGigs: urgencyCounts.low,
+      
+      // Growth stats
+      recentGrowth: recentGigs,
+      growthRate: growthRate.toFixed(1),
+      monthlyGrowth: growth.length,
+      
+      // Category stats
+      topCategory: byCategory[0] || null,
+      categoriesWithGigs: byCategory.length
     };
-  }, [gigs, pagination.total, gigStatsData]);
+  }, [gigs, gigStatsData]);
 
   const isUpdating = updateGigMutation.isLoading;
   const isDeleting = deleteGigMutation.isLoading;
@@ -578,140 +740,201 @@ const GigsManagement = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gig Management</h1>
-          <p className="text-gray-600 mt-1">Manage projects and freelance opportunities</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Gig Management</h1>
+          <p className="text-gray-600 text-sm mt-0.5">Manage projects and freelance opportunities</p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={exportGigs}
             disabled={isExporting || isTableLoading}
-            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 transition-colors"
+            className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1.5 text-sm font-medium disabled:opacity-50 transition-colors"
           >
             {isExporting ? (
               <>
-                <FiLoader className="h-4 w-4 animate-spin" />
-                Exporting...
+                <FiLoader className="h-3.5 w-3.5 animate-spin" />
+                <span>Exporting...</span>
               </>
             ) : (
               <>
-                <FiDownload className="h-4 w-4" />
-                Export
+                <FiDownload className="h-3.5 w-3.5" />
+                <span>Export</span>
               </>
             )}
           </button>
           <button
             onClick={refreshData}
             disabled={isRefetching || isBulkOperating || isTableLoading}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50 transition-colors"
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-sm font-medium text-gray-700 disabled:opacity-50 transition-colors"
           >
-            <FiRefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-            Refresh
+            <FiRefreshCw className={`h-3.5 w-3.5 ${isRefetching ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
           <button
             onClick={() => window.open('/admin/gig/create', '_blank')}
-            className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1.5 text-sm font-medium transition-colors"
           >
-            <FiPlus className="h-4 w-4" />
-            Create Gig
+            <FiPlus className="h-3.5 w-3.5" />
+            <span>Create Gig</span>
           </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Gigs</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
-            </div>
-            <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <FiBriefcase className="h-6 w-6 text-indigo-600" />
-            </div>
-          </div>
-        </div>
+      {/* Enhanced Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard
+          title="Total Gigs"
+          value={stats.total?.toLocaleString() || '0'}
+          icon={FiBriefcase}
+          color="indigo"
+          subtitle={`${stats.open} open`}
+          loading={statsLoading}
+        />
         
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Open Gigs</p>
-              <p className="text-2xl font-bold text-green-600 mt-1">{stats.open}</p>
-            </div>
-            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <FiUnlock className="h-6 w-6 text-green-600" />
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="Open Gigs"
+          value={stats.open?.toLocaleString() || '0'}
+          icon={FiUnlock}
+          color="green"
+          subtitle={`${stats.urgentGigs} urgent`}
+          loading={statsLoading}
+        />
         
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">In Progress</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{stats.inProgress}</p>
-            </div>
-            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FiClock className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="In Progress"
+          value={stats.inProgress?.toLocaleString() || '0'}
+          icon={FiActivity}
+          color="blue"
+          subtitle={`${stats.assigned} assigned`}
+          loading={statsLoading}
+        />
         
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Budget</p>
-              <p className="text-2xl font-bold text-purple-600 mt-1">
-                ${(stats.totalBudget || 0).toLocaleString()}
-              </p>
-            </div>
-            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <FiDollarSign className="h-6 w-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
+        <StatCard
+          title="Completed"
+          value={stats.completed?.toLocaleString() || '0'}
+          icon={FiCheckCircle}
+          color="gray"
+          subtitle={`${stats.completionRate}% rate`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Total Budget"
+          value={`$${(stats.totalBudget || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          icon={FiDollarSign}
+          color="purple"
+          subtitle={`Avg: $${(stats.avgBudget || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Avg Timeline"
+          value={`${stats.avgTimeline || 0}d`}
+          icon={FiClock}
+          color="orange"
+          subtitle={`${stats.totalBids || 0} bids`}
+          loading={statsLoading}
+        />
+      </div>
+
+      {/* Additional Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard
+          title="Cancelled"
+          value={stats.cancelled?.toLocaleString() || '0'}
+          icon={FiXCircle}
+          color="red"
+          subtitle={`${((stats.cancelled / stats.total) * 100 || 0).toFixed(1)}%`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Recent Growth"
+          value={stats.recentGrowth?.toLocaleString() || '0'}
+          icon={FiTrendingUp}
+          color="green"
+          subtitle={`7d (${stats.growthRate}%)`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Categories"
+          value={stats.categoriesWithGigs?.toLocaleString() || '0'}
+          icon={FiPackage}
+          color="blue"
+          subtitle={stats.topCategory ? stats.topCategory._id : 'None'}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Avg Bids/Gig"
+          value={stats.avgBids?.toFixed(1) || '0.0'}
+          icon={FiUsers}
+          color="purple"
+          subtitle={`${stats.totalBids || 0} total`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="High Urgency"
+          value={stats.highUrgencyGigs?.toLocaleString() || '0'}
+          icon={FiAlertCircle}
+          color="orange"
+          subtitle={`${stats.urgentGigs} urgent`}
+          loading={statsLoading}
+        />
+        
+        <StatCard
+          title="Closed"
+          value={stats.closed?.toLocaleString() || '0'}
+          icon={FiLock}
+          color="yellow"
+          subtitle="Archived gigs"
+          loading={statsLoading}
+        />
       </div>
 
       {/* Bulk Actions */}
       {selectedGigs.length > 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <FiBriefcase className="h-5 w-5 text-indigo-600" />
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <FiBriefcase className="h-4 w-4 text-indigo-600" />
               </div>
               <div>
-                <p className="font-medium text-indigo-900">
+                <p className="font-medium text-indigo-900 text-sm">
                   {selectedGigs.length} gig{selectedGigs.length > 1 ? 's' : ''} selected
                 </p>
-                <p className="text-sm text-indigo-600">Choose an action to perform</p>
+                <p className="text-xs text-indigo-600">Choose an action to perform</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               <button
                 onClick={() => handleBulkAction('open')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                className="px-2.5 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-medium hover:bg-green-200 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
               >
-                <FiCheckCircle className="h-4 w-4" />
+                <FiCheckCircle className="h-3.5 w-3.5" />
                 Open
               </button>
               <button
                 onClick={() => handleBulkAction('close')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                className="px-2.5 py-1.5 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-medium hover:bg-yellow-200 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
               >
-                <FiXCircle className="h-4 w-4" />
+                <FiXCircle className="h-3.5 w-3.5" />
                 Close
               </button>
               <button
                 onClick={() => handleBulkAction('delete')}
                 disabled={isBulkOperating}
-                className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                className="px-2.5 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
               >
-                <FiTrash2 className="h-4 w-4" />
+                <FiTrash2 className="h-3.5 w-3.5" />
                 Delete
               </button>
             </div>
@@ -720,49 +943,60 @@ const GigsManagement = () => {
       )}
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <form onSubmit={handleSearch} className="flex-1">
             <div className="relative">
-              <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <input
                 type="text"
                 placeholder="Search gigs by title, description, or skills..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-full pl-9 pr-24 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
-              {searchTerm && (
+              <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                    title="Clear search"
+                  >
+                    <FiX className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  type="submit"
+                  disabled={isTableLoading}
+                  className="px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Search"
                 >
-                  <FiX className="h-4 w-4" />
+                  Search
                 </button>
-              )}
+              </div>
             </div>
           </form>
           
           <button
             onClick={() => setShowFilters(!showFilters)}
             disabled={isBulkOperating}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-sm font-medium text-gray-700 disabled:opacity-50 transition-colors flex-shrink-0"
           >
             <FiFilter className="h-4 w-4" />
-            Filters
+            <span>Filters</span>
           </button>
         </div>
 
         {/* Advanced Filters */}
         {showFilters && (
-          <div className="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
+                className="w-full px-2.5 py-2 border border-gray-300 rounded text-sm bg-white"
               >
                 <option value="">All Status</option>
                 <option value="open">Open</option>
@@ -775,11 +1009,11 @@ const GigsManagement = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Category</label>
               <select
                 value={filters.category}
                 onChange={(e) => handleFilterChange('category', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
+                className="w-full px-2.5 py-2 border border-gray-300 rounded text-sm bg-white"
               >
                 <option value="">All Categories</option>
                 {categories.map(cat => (
@@ -789,36 +1023,37 @@ const GigsManagement = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Budget Range</label>
-              <div className="flex gap-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Budget Range</label>
+              <div className="flex gap-1.5">
                 <input
                   type="number"
                   placeholder="Min"
                   value={filters.minBudget}
                   onChange={(e) => handleFilterChange('minBudget', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  className="w-full px-2.5 py-2 border border-gray-300 rounded text-sm"
                 />
                 <input
                   type="number"
                   placeholder="Max"
                   value={filters.maxBudget}
                   onChange={(e) => handleFilterChange('maxBudget', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  className="w-full px-2.5 py-2 border border-gray-300 rounded text-sm"
                 />
               </div>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Sort By</label>
               <select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
+                className="w-full px-2.5 py-2 border border-gray-300 rounded text-sm bg-white"
               >
                 <option value="createdAt">Date Created</option>
                 <option value="budget">Budget</option>
                 <option value="title">Title</option>
                 <option value="updatedAt">Last Updated</option>
+                <option value="timeline">Timeline</option>
               </select>
             </div>
           </div>
@@ -826,36 +1061,38 @@ const GigsManagement = () => {
       </div>
 
       {/* Gigs Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden" ref={tableContainerRef}>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="w-12 px-6 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedGigs.length === gigs.length && gigs.length > 0}
-                    onChange={toggleSelectAll}
-                    disabled={isBulkOperating}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
+                <th className="w-10 px-4 py-2.5">
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedGigs.length === gigs.length && gigs.length > 0}
+                      onChange={toggleSelectAll}
+                      disabled={isBulkOperating}
+                      className="h-3.5 w-3.5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[200px]">
                   Gig Details
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[120px]">
                   Status & Urgency
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[120px]">
                   Budget & Timeline
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[150px]">
                   Provider
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[100px]">
                   Created
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">
                   Actions
                 </th>
               </tr>
@@ -876,6 +1113,7 @@ const GigsManagement = () => {
                   actionMenuId={actionMenu}
                   isUpdatingId={updatingGigId}
                   isDeletingId={deletingGigId}
+                  containerRef={tableContainerRef}
                 />
               ))}
             </tbody>
@@ -884,32 +1122,34 @@ const GigsManagement = () => {
 
         {/* Empty State */}
         {gigs.length === 0 && !isTableLoading && (
-          <div className="text-center py-16">
-            <FiBriefcase className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="mt-4 text-lg font-semibold text-gray-900">No gigs found</h3>
-            <p className="mt-2 text-gray-500 max-w-md mx-auto">
-              Try adjusting your search or filter criteria to find what you're looking for.
+          <div className="text-center py-12">
+            <FiBriefcase className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+            <h3 className="mt-2 text-base font-semibold text-gray-900">No gigs found</h3>
+            <p className="mt-1 text-gray-500 text-sm max-w-md mx-auto">
+              {searchTerm || Object.values(filters).some(v => v) 
+                ? 'Try adjusting your search or filter criteria to find what you\'re looking for.'
+                : 'No gigs available. Create your first gig to get started.'}
             </p>
           </div>
         )}
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="text-sm text-gray-700">
+          <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="text-xs text-gray-700">
                 Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
                 <span className="font-medium">{Math.min(page * limit, pagination.total)}</span> of{' '}
                 <span className="font-medium">{pagination.total}</span> gigs
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1 || isBulkOperating}
-                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
+                  className="px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-xs transition-colors"
                 >
-                  <FiChevronLeft className="h-4 w-4" />
-                  Previous
+                  <FiChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
                 </button>
                 
                 <div className="flex items-center gap-1">
@@ -930,9 +1170,9 @@ const GigsManagement = () => {
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
                         disabled={isBulkOperating}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium min-w-[40px] ${
+                        className={`px-2.5 py-1.5 rounded text-xs font-medium min-w-[36px] transition-colors ${
                           page === pageNum
-                            ? 'bg-indigo-600 text-white'
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
                         }`}
                       >
@@ -945,10 +1185,10 @@ const GigsManagement = () => {
                 <button
                   onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
                   disabled={page === pagination.totalPages || isBulkOperating}
-                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-sm"
+                  className="px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1 text-xs transition-colors"
                 >
-                  Next
-                  <FiChevronRight className="h-4 w-4" />
+                  <span>Next</span>
+                  <FiChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -986,25 +1226,25 @@ const GigsManagement = () => {
       )}
       
       {showDeleteModal && selectedGig && (
-  <DeleteConfirmationModal
-    item={selectedGig}
-    isOpen={showDeleteModal}
-    onClose={() => {
-      setShowDeleteModal(false);
-      setSelectedGig(null);
-      setForceDelete(false);
-    }}
-    onDelete={handleDeleteGig}
-    type="gig"
-    loading={deleteGigMutation.isLoading || deletingGigId === selectedGig._id}
-    dependencies={{
-      bids: selectedGig.bids?.length || 0,
-      messages: selectedGig.messages?.length || 0
-    }}
-    forceDelete={forceDelete}
-    onForceDeleteChange={setForceDelete}
-  />
-)}
+        <DeleteConfirmationModal
+          item={selectedGig}
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedGig(null);
+            setForceDelete(false);
+          }}
+          onDelete={handleDeleteGig}
+          type="gig"
+          loading={deleteGigMutation.isLoading || deletingGigId === selectedGig._id}
+          dependencies={{
+            bids: selectedGig.bids?.length || 0,
+            messages: selectedGig.messages?.length || 0
+          }}
+          forceDelete={forceDelete}
+          onForceDeleteChange={setForceDelete}
+        />
+      )}
     </div>
   );
 };
