@@ -19,57 +19,78 @@ const generateCacheKey = (prefix, params) => {
   return crypto.createHash('md5').update(key).digest('hex');
 };
 
-// Enhanced sanitization with advanced SQL injection protection
+// Enhanced sanitization with security layers
 const enhancedSanitizeSearchInput = (value) => {
   if (typeof value !== 'string') return value;
   
-  // Remove all SQL injection patterns
-  const sqlPatterns = [
+  // Primary security: Remove all dangerous patterns
+  const dangerousPatterns = [
+    // SQL injection
     /'|"|`/g,
     /;/g,
     /--/g,
-    /\b(?:OR|AND|SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|UNION|JOIN|EXEC|EXECUTE|DECLARE|MERGE)\b/gi,
+    /\b(?:OR|AND|SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|UNION|JOIN|EXEC|EXECUTE|DECLARE|MERGE|TRUNCATE)\b/gi,
     /\(.*?\)/g,
+    
+    // NoSQL injection
+    /\$.*\(/g,
+    /\{\s*\"\$.*\"/g,
+    
+    // XSS patterns
+    /javascript:/gi,
+    /data:/gi,
+    /vbscript:/gi,
+    /on\w+\s*=/gi,
+    /<\s*script/gi,
+    /<\/\s*script/gi,
+    /<\s*iframe/gi,
+    /<\/\s*iframe/gi,
+    /<\s*object/gi,
+    /<\/\s*object/gi,
+    /<\s*embed/gi,
+    /<\/\s*embed/gi,
+    /<\s*applet/gi,
+    /<\s*style/gi,
+    /<\/\s*style/gi,
+    /expression\s*\(/gi,
+    
+    // Command injection
+    /\|\|/g,
+    /&&/g,
+    /\|\s*\w+/g,
+    /\$\s*\(/g,
+    /`.*`/g,
+    
+    // Path traversal
+    /\.\.\//g,
+    /\.\.\\/g,
+    /\/etc\/passwd/gi,
+    /\/proc\//gi,
+    /C:\\/gi,
+    
+    // Special characters that could cause issues
+    /\\/g,
     /\$\{.*?\}/g,
-    /\\/g
+    /%[0-9a-fA-F]{2}/g
   ];
   
   let sanitized = value;
-  sqlPatterns.forEach(pattern => {
+  dangerousPatterns.forEach(pattern => {
     sanitized = sanitized.replace(pattern, '');
   });
   
-  // Advanced injection pattern detection
-  const advancedInjectionPatterns = [
-    /\bOR\s+['"]?\d+['"]?\s*=\s*['"]?\d+['"]?/i,
-    /\bAND\s+['"]?\d+['"]?\s*=\s*['"]?\d+['"]?/i,
-    /'.*?'.*?'/,
-    /\$\{.*\}/,
-    /<.*>.*<\/.*>/,
-    /javascript:/i,
-    /data:/i,
-    /eval\s*\(/i
-  ];
-  
-  advancedInjectionPatterns.forEach(pattern => {
-    if (pattern.test(sanitized)) {
-      console.warn(`Advanced injection attempt detected: ${sanitized}`);
-      return '';
-    }
-  });
-  
-  // Remove any remaining special characters
-  sanitized = sanitized.replace(/[^a-zA-Z0-9\s\-_+@.,&()]/g, '');
+  // Remove any remaining special characters (keep only safe ones)
+  sanitized = sanitized.replace(/[^a-zA-Z0-9\s\-_+@.,&()!?:/\\[\]\u0600-\u06FF\u4e00-\u9fff\uac00-\ud7af]/g, '');
   
   // Trim and limit length
   sanitized = sanitized.trim();
-  if (sanitized.length < 2) return '';
-  if (sanitized.length > 200) sanitized = sanitized.substring(0, 200);
+  if (sanitized.length < 1) return '';
+  if (sanitized.length > 500) sanitized = sanitized.substring(0, 500);
   
   return sanitized;
 };
 
-// Advanced query cleaning with semantic analysis
+// Advanced query cleaning with multiple security layers
 const cleanSearchParams = (params, user) => {
   const cleaned = {};
   
@@ -95,42 +116,103 @@ const cleanSearchParams = (params, user) => {
     'revisions', 'min_reviews', 'max_reviews',
     'experience_level', 'pro_level',
     'language', 'timezone',
-    'sort_by', 'sort_order'
+    'sort_by', 'sort_order', 'order',
+    'min_orders', 'max_orders',
+    'response_time', 'min_response_time', 'max_response_time',
+    'completion_rate', 'min_completion', 'max_completion',
+    'online_status', 'availability',
+    'level', 'tier', 'badge',
+    'with_offers', 'with_extras',
+    'min_views', 'max_views',
+    'min_likes', 'max_likes',
+    'last_active', 'active_within',
+    'video_call', 'phone_support', 'file_support',
+    'source_language', 'target_language',
+    'file_format', 'output_format',
+    'platform', 'software', 'tool',
+    'color', 'style', 'theme',
+    'format', 'size', 'duration',
+    'resolution', 'aspect_ratio',
+    'file_size', 'word_count',
+    'pages', 'slides',
+    'industry', 'niche', 'audience',
+    'age_group', 'gender',
+    'frequency', 'schedule',
+    'timeframe', 'deadline',
+    'project_size', 'complexity',
+    'team_size', 'collaboration',
+    'privacy', 'confidentiality',
+    'license', 'rights', 'ownership',
+    'support_duration', 'warranty',
+    'refund_policy', 'revision_policy',
+    'communication', 'updates',
+    'milestones', 'phases',
+    'deposit', 'payment_plan',
+    'escrow', 'payment_method',
+    'verified', 'certified', 'accredited',
+    'awards', 'recognition',
+    'portfolio', 'samples',
+    'testimonials', 'case_studies',
+    'education', 'certification',
+    'experience_years', 'min_experience',
+    'client_types', 'project_types',
+    'business_size', 'company_type'
   ];
   
+  // Rate limiting check (simplified - you'd want a proper rate limiter)
+  if (params && Object.keys(params).length > 50) {
+    throw new Error('Too many parameters');
+  }
+  
   Object.keys(params).forEach(key => {
-    if (!allowedParams.includes(key) && !key.startsWith('x-')) {
+    // Check if parameter is allowed
+    if (!allowedParams.includes(key) && !key.startsWith('filter_') && !key.startsWith('x-')) {
       return;
     }
     
     let value = params[key];
     
+    // Handle null/undefined/empty values
     if (value === null || value === undefined || value === '' || 
         value === 'null' || value === 'undefined') {
       return;
     }
     
+    // Decode URI components safely
     if (typeof value === 'string') {
       try {
         value = decodeURIComponent(value);
       } catch (e) {
+        console.warn(`Failed to decode URI component for key ${key}: ${e.message}`);
         return;
       }
       
-      // Enhanced security validation
+      // Enhanced security validation based on parameter type
       if (key === 'query' || key === 'q' || key === 'search') {
+        const originalValue = value;
         value = enhancedSanitizeSearchInput(value);
-        if (!value || value.length < 2) {
+        
+        // Check if sanitization removed too much (possible attack)
+        if (value.length === 0 && originalValue.length > 2) {
+          console.warn(`Possible attack detected in search query: ${originalValue}`);
           return;
         }
         
-        // Detect search intent
+        if (!value || value.length < 1) {
+          return;
+        }
+        
+        // Detect search intent with improved patterns
         const intentKeywords = {
-          urgent: /\b(urgent|asap|immediate|fast|quick|rush)\b/i,
-          cheap: /\b(cheap|budget|low cost|affordable|inexpensive)\b/i,
-          premium: /\b(premium|professional|expert|top|best|quality)\b/i,
-          beginner: /\b(beginner|newbie|starter|basic|simple)\b/i,
-          complex: /\b(complex|advanced|custom|enterprise|sophisticated)\b/i
+          urgent: /\b(urgent|asap|immediate|fast|quick|rush|emergency|instant|soon|today)\b/i,
+          cheap: /\b(cheap|budget|low[-\s]?cost|affordable|inexpensive|economical|discount|deal|bargain)\b/i,
+          premium: /\b(premium|professional|expert|top|best|quality|elite|advanced|master|specialist)\b/i,
+          beginner: /\b(beginner|newbie|starter|basic|simple|easy|entry[-\s]?level|novice)\b/i,
+          complex: /\b(complex|advanced|custom|enterprise|sophisticated|detailed|comprehensive|extensive)\b/i,
+          bulk: /\b(bulk|multiple|package|bundle|volume|wholesale|recurring|subscription)\b/i,
+          custom: /\b(custom|personalized|tailored|bespoke|made[-\s]?to[-\s]?order|unique)\b/i,
+          fix: /\b(fix|repair|debug|troubleshoot|solve|resolve|correct|improve|optimize)\b/i,
+          create: /\b(create|build|develop|design|make|produce|generate|craft)\b/i
         };
         
         for (const [intent, pattern] of Object.entries(intentKeywords)) {
@@ -139,32 +221,64 @@ const cleanSearchParams = (params, user) => {
           }
         }
         
-      } else if (key === 'location' || key === 'country' || key === 'city') {
+        // Detect search modifiers
+        if (/\bnot\b|\bwithout\b|\b-\b/i.test(value)) {
+          cleaned.has_exclusions = true;
+        }
+        
+        if (/\bor\b|\beither\b|\balternative\b/i.test(value)) {
+          cleaned.has_alternatives = true;
+        }
+        
+      } else if (key.includes('location') || key.includes('country') || key.includes('city')) {
         // Sanitize location-based parameters
         value = sanitizeHtml(value, { allowedTags: [] }).trim();
         if (value.length > 100) value = value.substring(0, 100);
         
-      } else if (key === 'skills' || key === 'tags' || key === 'keywords') {
+      } else if (key.includes('email') || key.includes('url') || key.includes('website')) {
+        // Extra sanitization for sensitive fields
+        value = sanitizeHtml(value, { allowedTags: [] }).trim();
+        value = value.replace(/[^a-zA-Z0-9@.\-_:/?#\[\]@!$&'()*+,;=\s]/g, '');
+        
+      } else if (key.includes('script') || key.includes('code') || key.includes('html')) {
+        // Extra sanitization for code-related fields
+        value = sanitizeHtml(value, { allowedTags: [] }).trim();
+        value = value.replace(/[<>]/g, '');
+        
+      } else if (key.includes('phone') || key.includes('mobile') || key.includes('tel')) {
+        // Phone number validation
+        value = value.replace(/[^0-9+\-()\s]/g, '');
+        if (value.length > 20) value = value.substring(0, 20);
+        
+      } else if (key === 'skills' || key === 'tags' || key === 'keywords' || 
+                 key === 'tools' || key === 'technologies' || key === 'languages') {
         // Handle array parameters with advanced sanitization
-        const items = typeof value === 'string' ? value.split(',').map(item => item.trim()) : value;
-        const sanitizedItems = items.map(item => 
-          enhancedSanitizeSearchInput(item)
-        ).filter(item => item && item.length >= 2);
+        const items = typeof value === 'string' ? value.split(',').map(item => item.trim()) : 
+                     Array.isArray(value) ? value : [value];
+        
+        const sanitizedItems = items.map(item => {
+          const sanitized = enhancedSanitizeSearchInput(item.toString());
+          return sanitized && sanitized.length >= 1 ? sanitized : null;
+        }).filter(item => item !== null);
         
         if (sanitizedItems.length > 0) {
           cleaned[key] = sanitizedItems;
           
           // Add skill similarity boost if user has matching skills
-          if (user && user.skills && key === 'skills') {
+          if (user && user.skills && (key === 'skills' || key === 'technologies')) {
             const userSkills = Array.isArray(user.skills) ? user.skills : [user.skills];
             const matchingSkills = sanitizedItems.filter(skill => 
-              userSkills.some(userSkill => 
-                userSkill.toLowerCase().includes(skill.toLowerCase()) ||
-                skill.toLowerCase().includes(userSkill.toLowerCase())
-              )
+              userSkills.some(userSkill => {
+                const userSkillLower = userSkill.toLowerCase();
+                const searchSkillLower = skill.toLowerCase();
+                return userSkillLower.includes(searchSkillLower) ||
+                       searchSkillLower.includes(userSkillLower) ||
+                       userSkillLower === searchSkillLower;
+              })
             );
             if (matchingSkills.length > 0) {
               cleaned['skill_match_boost'] = true;
+              cleaned['matching_skills_count'] = matchingSkills.length;
             }
           }
         }
@@ -172,19 +286,25 @@ const cleanSearchParams = (params, user) => {
       }
     }
     
-    // Type conversion with validation
+    // Type conversion with validation and bounds checking
     if (value === 'true' || value === 'false') {
       cleaned[key] = value === 'true';
     } else if (!isNaN(value) && value !== '' && typeof value !== 'object') {
       const num = parseFloat(value);
       if (!isNaN(num) && isFinite(num)) {
         // Additional validation based on parameter type
-        if (key.includes('price') || key.includes('budget')) {
-          if (num >= 0 && num <= 1000000) cleaned[key] = num;
+        if (key.includes('price') || key.includes('budget') || key.includes('cost')) {
+          if (num >= 0 && num <= 10000000) cleaned[key] = num; // $10M max
         } else if (key.includes('rating')) {
           if (num >= 0 && num <= 5) cleaned[key] = num;
-        } else if (key.includes('reviews')) {
-          if (num >= 0 && num <= 100000) cleaned[key] = num;
+        } else if (key.includes('reviews') || key.includes('orders')) {
+          if (num >= 0 && num <= 1000000) cleaned[key] = Math.floor(num); // Must be integer
+        } else if (key.includes('time') || key.includes('days') || key.includes('hours')) {
+          if (num >= 0 && num <= 3650) cleaned[key] = num; // 10 years max
+        } else if (key.includes('percentage') || key.includes('rate')) {
+          if (num >= 0 && num <= 100) cleaned[key] = num;
+        } else if (key.includes('count') || key.includes('quantity') || key.includes('number')) {
+          if (num >= 0 && num <= 10000) cleaned[key] = Math.floor(num);
         } else {
           cleaned[key] = num;
         }
@@ -193,6 +313,18 @@ const cleanSearchParams = (params, user) => {
       }
     } else if (isValidObjectId(value)) {
       cleaned[key] = value;
+    } else if (Array.isArray(value)) {
+      // Handle array values
+      const sanitizedArray = value.map(item => {
+        if (typeof item === 'string') {
+          return enhancedSanitizeSearchInput(item);
+        }
+        return item;
+      }).filter(item => item !== null && item !== undefined && item !== '');
+      
+      if (sanitizedArray.length > 0) {
+        cleaned[key] = sanitizedArray;
+      }
     } else {
       cleaned[key] = value;
     }
@@ -206,343 +338,194 @@ const cleanSearchParams = (params, user) => {
     if (!cleaned.currency && user.currency) {
       cleaned.user_currency = user.currency;
     }
-    if (user.role === 'admin') {
+    if (!cleaned.language && user.language) {
+      cleaned.user_language = user.language;
+    }
+    if (user.role === 'admin' || user.role === 'moderator') {
       cleaned.admin_view = true;
     }
+    
+    // Add user preferences for personalization
+    if (user.preferences) {
+      if (user.preferences.defaultSort && !cleaned.sort_by) {
+        cleaned.sort_by = user.preferences.defaultSort;
+      }
+      if (user.preferences.resultsPerPage && !cleaned.limit) {
+        cleaned.limit = user.preferences.resultsPerPage;
+      }
+    }
   }
+  
+  // Set defaults for missing required parameters
+  if (!cleaned.page) cleaned.page = 1;
+  if (!cleaned.limit) cleaned.limit = 48;
+  if (!cleaned.sort_by) cleaned.sort_by = 'relevance';
+  if (!cleaned.order) cleaned.order = 'desc';
   
   return cleaned;
 };
 
-// Validate ObjectId
+// Validate ObjectId with enhanced checks
 const isValidObjectId = (id) => {
-  return id && mongoose.Types.ObjectId.isValid(id) && 
-         id.match(/^[0-9a-fA-F]{24}$/);
+  if (!id || typeof id !== 'string') return false;
+  
+  // Check format
+  if (!id.match(/^[0-9a-fA-F]{24}$/)) return false;
+  
+  // Additional check for invalid ObjectIds
+  try {
+    const objectId = new mongoose.Types.ObjectId(id);
+    return objectId.toString() === id;
+  } catch (error) {
+    return false;
+  }
 };
 
-// Escape regex special characters
+// Escape regex special characters with enhanced handling
 const escapeRegex = (string) => {
   if (typeof string !== 'string') return string;
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
-
-// Build advanced search filter
-const buildSearchFilter = async (params, searchType, user) => {
-  const filter = {};
-  const { 
-    query, q, search,
-    min_price, max_price, minPrice, maxPrice,
-    min_rating, max_rating, minRating, maxRating,
-    category, category_id, categoryId,
-    subcategory, subcategory_id, subcategoryId,
-    seller, seller_id, sellerId, createdBy,
-    currency, urgency, budget, timeline,
-    skills, skills_required, tags, keywords,
-    featured, popular, recommended, trending,
-    has_images, has_attachments, has_packages, has_video,
-    status, visibility, is_active,
-    created_after, created_before,
-    updated_after, updated_before,
-    include_inactive, show_all,
-    delivery_time, deliveryTime,
-    revisions, min_reviews, max_reviews,
-    experience_level, pro_level,
-    language, timezone, location,
-    country, city,
-    intent_urgent, intent_cheap, intent_premium, 
-    intent_beginner, intent_complex,
-    skill_match_boost,
-    user_country, user_currency,
-    admin_view
-  } = params;
   
-  const searchQuery = query || q || search;
+  // First, escape special regex characters
+  let escaped = string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   
-  // Base filter for active items
-  if (searchType === 'services') {
-    filter.status = 'active';
-    filter.isActive = true;
-    filter.deletedAt = null;
-  } else if (searchType === 'gigs') {
-    filter.status = 'open';
-    filter.isActive = true;
-    filter.deletedAt = null;
-    filter.visibility = 'public';
+  // Additional security: limit length
+  if (escaped.length > 200) {
+    escaped = escaped.substring(0, 200);
   }
   
-  // Category filter with hierarchy support
-  const categoryParam = category || category_id || categoryId;
+  return escaped;
+};
+
+const buildSearchFilter = async (params, searchType, user) => {
+  const filter = {};
+  
+  // Base filter conditions
+  const conditions = [];
+  
+  // Status condition
+  if (searchType === 'services') {
+    conditions.push({ status: 'active' });
+    conditions.push({ isActive: true });
+    conditions.push({ deletedAt: null });
+  } else if (searchType === 'gigs') {
+    conditions.push({ status: 'open' });
+    conditions.push({ isActive: true });
+    conditions.push({ deletedAt: null });
+    conditions.push({ visibility: 'public' });
+  }
+  
+  // Category filter
+  const categoryParam = params.category || params.category_id || params.categoryId;
   if (categoryParam && isValidObjectId(categoryParam)) {
-    if (searchType === 'services') {
-      filter.category = new mongoose.Types.ObjectId(categoryParam);
-    } else if (searchType === 'gigs') {
-      filter.projectCategory = new mongoose.Types.ObjectId(categoryParam);
-    }
-    
-    // If user has preference for this category, boost results
-    if (user && user.preferences && user.preferences.favoriteCategories) {
-      if (user.preferences.favoriteCategories.includes(categoryParam)) {
-        filter.category_boost = true;
-      }
-    }
+    const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
+    conditions.push({ [categoryField]: new mongoose.Types.ObjectId(categoryParam) });
   }
   
   // Subcategory filter
-  const subcategoryParam = subcategory || subcategory_id || subcategoryId;
+  const subcategoryParam = params.subcategory || params.subcategory_id || params.subcategoryId;
   if (subcategoryParam && isValidObjectId(subcategoryParam)) {
-    filter.subcategory = new mongoose.Types.ObjectId(subcategoryParam);
+    conditions.push({ subcategory: new mongoose.Types.ObjectId(subcategoryParam) });
   }
   
-  // Seller/creator filter with rating consideration
-  const sellerParam = seller || seller_id || sellerId || createdBy;
-  if (sellerParam && isValidObjectId(sellerParam)) {
-    filter.createdBy = new mongoose.Types.ObjectId(sellerParam);
-    
-    // If filtering by seller, optionally include their rating
-    if (min_rating || max_rating) {
-      // This would require a more complex aggregation
-      // For now, we'll filter after query execution
-    }
-  }
-  
-  // Advanced price/budget filter with currency conversion
-  const priceMin = min_price || minPrice;
-  const priceMax = max_price || maxPrice;
+  // Price filter
+  const priceMin = params.min_price || params.minPrice;
+  const priceMax = params.max_price || params.maxPrice;
   const priceField = searchType === 'services' ? 'price' : 'budget';
   
   if (priceMin !== undefined || priceMax !== undefined) {
-    filter[priceField] = {};
-    if (priceMin !== undefined) filter[priceField].$gte = parseFloat(priceMin);
-    if (priceMax !== undefined) filter[priceField].$lte = parseFloat(priceMax);
+    const priceCondition = {};
+    if (priceMin !== undefined) priceCondition.$gte = parseFloat(priceMin);
+    if (priceMax !== undefined) priceCondition.$lte = parseFloat(priceMax);
+    conditions.push({ [priceField]: priceCondition });
   }
   
-  // Apply intent-based filtering
-  if (intent_urgent) {
-    if (searchType === 'services') {
-      filter.deliveryTime = { $lte: 3 }; // 3 days or less for urgent
-    } else if (searchType === 'gigs') {
-      filter.urgency = { $in: ['urgent', 'high'] };
-    }
-  }
-  
-  if (intent_cheap) {
-    const cheapThreshold = searchType === 'services' ? 50 : 100;
-    filter[priceField] = { ...filter[priceField], $lte: cheapThreshold };
-  }
-  
-  if (intent_premium) {
-    filter.$or = [
-      { isFeatured: true },
-      { rating: { $gte: 4.5 } },
-      { 'createdBy.accountType': 'premium' }
-    ];
-  }
-  
-  // Rating filter with review count consideration
-  const ratingMin = min_rating || minRating;
-  const ratingMax = max_rating || maxRating;
+  // Rating filter
+  const ratingMin = params.min_rating || params.minRating;
+  const ratingMax = params.max_rating || params.maxRating;
   if (ratingMin !== undefined || ratingMax !== undefined) {
-    filter.rating = {};
-    if (ratingMin !== undefined) filter.rating.$gte = parseFloat(ratingMin);
-    if (ratingMax !== undefined) filter.rating.$lte = parseFloat(ratingMax);
+    const ratingCondition = {};
+    if (ratingMin !== undefined) ratingCondition.$gte = parseFloat(ratingMin);
+    if (ratingMax !== undefined) ratingCondition.$lte = parseFloat(ratingMax);
+    conditions.push({ rating: ratingCondition });
   }
   
-  // Review count filter
-  if (min_reviews !== undefined || max_reviews !== undefined) {
-    filter.reviewsCount = {};
-    if (min_reviews !== undefined) filter.reviewsCount.$gte = parseInt(min_reviews);
-    if (max_reviews !== undefined) filter.reviewsCount.$lte = parseInt(max_reviews);
-  }
-  
-  // Location-based filtering (if seller location is available)
-  if (country || city || location) {
-    // This requires seller location data in the model
-    // For now, we'll implement this through aggregation
-  }
-  
-  // Language filter
-  if (language) {
-    // This requires language data in the model
-  }
-  
-  // Experience level filter
-  if (experience_level) {
-    const levels = Array.isArray(experience_level) ? experience_level : [experience_level];
-    filter['createdBy.level'] = { $in: levels.map(l => l.toLowerCase()) };
-  }
-  
-  // Pro level filter
-  if (pro_level === true || pro_level === 'true') {
-    filter['createdBy.accountType'] = { $in: ['premium', 'business', 'pro'] };
-  }
-  
-  // Boolean filters
-  if (featured !== undefined) filter.isFeatured = featured === true || featured === 'true';
-  if (popular !== undefined) filter.isPopular = popular === true || popular === 'true';
-  if (recommended !== undefined) filter.isRecommended = recommended === true || recommended === 'true';
-  if (trending !== undefined) {
-    // Trending items have high view/like ratio in recent period
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    filter.createdAt = { $gte: thirtyDaysAgo };
-    filter.$expr = { 
-      $gte: [
-        { $divide: ['$views', { $add: [1, { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 86400000] }] }] },
-        10 // Minimum views per day
-      ]
-    };
-  }
-  
-  // Existence filters
-  if (has_images === true || has_images === 'true') {
-    filter.images = { $exists: true, $ne: [] };
-  }
-  if (has_attachments === true || has_attachments === 'true' && searchType === 'gigs') {
-    filter.attachments = { $exists: true, $ne: [] };
-  }
-  if (has_packages === true || has_packages === 'true' && searchType === 'services') {
-    filter.packages = { $exists: true, $ne: [] };
-  }
-  if (has_video === true || has_video === 'true') {
-    filter.hasVideo = true;
-  }
-  
-  // Revisions filter (for services)
-  if (revisions !== undefined && searchType === 'services') {
-    if (revisions === 'unlimited') {
-      filter.revisions = { $gte: 99 };
-    } else {
-      const revNum = parseInt(revisions);
-      if (!isNaN(revNum)) {
-        filter.revisions = { $gte: revNum };
-      }
+  // Delivery time filter
+  const deliveryParam = params.delivery_time || params.deliveryTime;
+  if (deliveryParam !== undefined && deliveryParam !== '' && searchType === 'services') {
+    const deliveryNumber = Number(deliveryParam);
+    if (!isNaN(deliveryNumber)) {
+      conditions.push({ deliveryTime: { $lte: deliveryNumber } });
     }
   }
   
-  const deliveryParam = delivery_time || deliveryTime;
-if (deliveryParam !== undefined && deliveryParam !== '') {
-  if (searchType === 'services') {
-    // Ensure deliveryParam is a string/number, not an object
-    if (typeof deliveryParam === 'string') {
-      if (deliveryParam.includes('-')) {
-        const [min, max] = deliveryParam.split('-').map(Number);
-        if (!isNaN(min) && !isNaN(max)) {
-          filter.deliveryTime = { $gte: min, $lte: max };
-        }
-      } else if (deliveryParam === 'express') {
-        filter.deliveryTime = { $lte: 3 };
-      } else if (deliveryParam === 'standard') {
-        filter.deliveryTime = { $gte: 4, $lte: 14 };
-      } else if (deliveryParam === 'extended') {
-        filter.deliveryTime = { $gte: 15 };
-      } else {
-        // Parse as number
-        const deliveryNumber = Number(deliveryParam);
-        if (!isNaN(deliveryNumber)) {
-          filter.deliveryTime = deliveryNumber;
-        }
-      }
-    } else if (typeof deliveryParam === 'number') {
-      filter.deliveryTime = deliveryParam;
-    }
-  }
-}
-  
-  // Currency filter with user preference
-  const currencyParam = currency || user_currency;
+  // Currency filter
+  const currencyParam = params.currency;
   if (currencyParam && typeof currencyParam === 'string') {
-    filter.currency = currencyParam.toUpperCase();
+    conditions.push({ currency: currencyParam.toUpperCase() });
   }
   
-  // Urgency filter (for gigs)
-  if (urgency && searchType === 'gigs') {
-    filter.urgency = urgency.toLowerCase();
-  }
-  
-  // Skills filter with similarity scoring
-  const skillsParam = skills || skills_required;
+  // Skills filter
+  const skillsParam = params.skills || params.skills_required;
   if (skillsParam) {
     const skillsArray = Array.isArray(skillsParam) ? skillsParam : skillsParam.split(',');
     const sanitizedSkills = skillsArray.map(skill => 
-      sanitizeHtml(skill.trim().toLowerCase(), { allowedTags: [] })
+      skill.trim().toLowerCase()
     ).filter(skill => skill.length > 0);
     
     if (sanitizedSkills.length > 0) {
-      if (searchType === 'services') {
-        filter.tags = { $in: sanitizedSkills };
-      } else if (searchType === 'gigs') {
-        filter.skillsRequired = { $in: sanitizedSkills };
-      }
-      
-      // Add skill match boost if requested
-      if (skill_match_boost) {
-        filter.skill_match_boost = true;
-      }
+      const skillField = searchType === 'services' ? 'tags' : 'skillsRequired';
+      conditions.push({ [skillField]: { $in: sanitizedSkills } });
     }
   }
   
-  // Tags/keywords filter with fuzzy matching option
-  const tagsParam = tags || keywords;
+  // Tags/keywords filter
+  const tagsParam = params.tags || params.keywords;
   if (tagsParam && searchType === 'services') {
     const tagsArray = Array.isArray(tagsParam) ? tagsParam : tagsParam.split(',');
-    const sanitizedTags = tagsArray.map(tag => 
-      sanitizeHtml(tag.trim().toLowerCase(), { allowedTags: [] })
-    ).filter(tag => tag.length > 0);
+    const sanitizedTags = tagsArray.map(tag => tag.trim().toLowerCase()).filter(tag => tag.length > 0);
     
     if (sanitizedTags.length > 0) {
-      filter.tags = { $in: sanitizedTags };
+      conditions.push({ tags: { $in: sanitizedTags } });
     }
   }
   
-  // Timeline filter (for gigs)
-  if (timeline && searchType === 'gigs') {
-    const timelineStr = timeline.toString().toLowerCase();
-    if (timelineStr === 'short') {
-      filter.timelineUnit = 'days';
-      filter.$expr = { $lte: ['$timeline', 7] };
-    } else if (timelineStr === 'medium') {
-      filter.timeline = { $gte: 8, $lte: 30 };
-    } else if (timelineStr === 'long') {
-      filter.timeline = { $gt: 30 };
-    }
+  // Boolean filters
+  if (params.featured === true || params.featured === 'true') {
+    conditions.push({ isFeatured: true });
   }
   
-  // Date filters
-  const addDateFilter = (field, date, operator) => {
-    if (date) {
-      const parsedDate = new Date(date);
-      if (!isNaN(parsedDate.getTime())) {
-        filter[field] = filter[field] || {};
-        filter[field][operator] = parsedDate;
-      }
-    }
-  };
-  
-  addDateFilter('createdAt', created_after, '$gte');
-  addDateFilter('createdAt', created_before, '$lte');
-  addDateFilter('updatedAt', updated_after, '$gte');
-  addDateFilter('updatedAt', updated_before, '$lte');
-  
-  // Status filter (override defaults if specified)
-  if (status && searchType === 'services') {
-    filter.status = status;
+  if (params.has_video === true || params.has_video === 'true') {
+    conditions.push({ 
+      $or: [
+        { videoUrl: { $exists: true, $ne: null } },
+        { hasVideo: true }
+      ]
+    });
   }
   
-  // Visibility filter (for gigs)
-  if (visibility && searchType === 'gigs') {
-    filter.visibility = visibility;
+  if (params.has_images === true || params.has_images === 'true') {
+    conditions.push({ 
+      images: { $exists: true, $ne: [] }
+    });
   }
   
-  // Include inactive items if requested (admin only)
-  if ((include_inactive === true || include_inactive === 'true') && admin_view) {
-    delete filter.isActive;
-    delete filter.status;
+  // Seller filter
+  const sellerParam = params.seller || params.seller_id || params.sellerId || params.createdBy;
+  if (sellerParam && isValidObjectId(sellerParam)) {
+    conditions.push({ createdBy: new mongoose.Types.ObjectId(sellerParam) });
+  }
+  
+  // Combine all conditions
+  if (conditions.length === 1) {
+    Object.assign(filter, conditions[0]);
+  } else if (conditions.length > 1) {
+    filter.$and = conditions;
   }
   
   return filter;
 };
 
-// Advanced sort options with user-based personalization
+// Advanced sort options with performance optimizations
 const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
   const sort = sortParam || 'relevance';
   const sortOrder = params.order || 'desc';
@@ -552,13 +535,9 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
   let sortConfig = {};
   
   if (hasTextSearch && (sort.toLowerCase() === 'relevance' || !sort)) {
-    // Text search relevance with additional factors
+    // Text search relevance - MongoDB will handle this
     sortConfig = { 
-      score: { $meta: 'textScore' },
-      isFeatured: -1,
-      rating: -1,
-      reviewsCount: -1,
-      createdAt: -1 
+      score: { $meta: 'textScore' }
     };
   } else {
     switch(sort.toLowerCase()) {
@@ -569,7 +548,6 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
           rating: -1,
           reviewsCount: -1,
           views: -1,
-          likes: -1,
           createdAt: -1 
         };
         break;
@@ -615,8 +593,7 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
         sortConfig = { 
           views: -1,
           likes: -1,
-          rating: -1,
-          isPopular: -1
+          rating: -1
         };
         break;
       
@@ -625,23 +602,20 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
         break;
       
       case 'trending':
-        // Calculate trending score based on recent engagement
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        // Simple trending based on views and recency
         sortConfig = { 
-          trendingScore: -1,
           views: -1,
-          likes: -1
+          likes: -1,
+          createdAt: -1
         };
         break;
       
       case 'recommended':
         if (user) {
-          // Personalized recommendations based on user history
+          // Personalized recommendations
           sortConfig = {
             isRecommended: -1,
             'createdBy.rating': -1,
-            'createdBy.completedOrders': -1,
             rating: -1
           };
         } else {
@@ -653,14 +627,12 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
         sortConfig = { 
           'createdBy.rating': -1,
           'createdBy.completedOrders': -1,
-          rating: -1,
-          reviewsCount: -1
+          rating: -1
         };
         break;
       
       default:
         sortConfig = { 
-          score: hasTextSearch ? { $meta: 'textScore' } : undefined,
           isFeatured: -1,
           rating: -1,
           reviewsCount: -1,
@@ -669,7 +641,7 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
     }
   }
   
-  // Apply sort order to all fields
+  // Apply sort order
   if (orderValue === 1) {
     Object.keys(sortConfig).forEach(key => {
       if (typeof sortConfig[key] === 'number') {
@@ -678,17 +650,10 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
     });
   }
   
-  // Remove undefined values
-  Object.keys(sortConfig).forEach(key => {
-    if (sortConfig[key] === undefined) {
-      delete sortConfig[key];
-    }
-  });
-  
   return sortConfig;
 };
 
-// Advanced text search query builder
+// Text search query builder with performance optimizations
 const buildTextSearchQuery = (searchQuery, searchType, params) => {
   const { fuzzy = 'false', exact = 'false' } = params;
   const sanitizedQuery = searchQuery.trim();
@@ -705,13 +670,13 @@ const buildTextSearchQuery = (searchQuery, searchType, params) => {
   }
   
   if (fuzzy === 'true' || sanitizedQuery.split(' ').length === 1) {
-    // Fuzzy search for single words or when explicitly requested
+    // Use regex for fuzzy matching
     const escapedQuery = escapeRegex(sanitizedQuery);
     const searchRegex = new RegExp(escapedQuery, 'i');
     
     const searchFields = searchType === 'services' 
-      ? ['title', 'description', 'shortDescription', 'tags', 'searchKeywords']
-      : ['title', 'description', 'skillsRequired', 'deliverables'];
+      ? ['title', 'description', 'shortDescription', 'tags']
+      : ['title', 'description', 'skillsRequired'];
     
     return {
       $or: searchFields.map(field => ({
@@ -730,181 +695,172 @@ const buildTextSearchQuery = (searchQuery, searchType, params) => {
   };
 };
 
-// Get user-based personalized recommendations
+// Get user personalization data
 const getUserPersonalization = async (userId, searchType) => {
   if (!userId) return null;
   
   try {
     const user = await User.findById(userId)
-      .select('preferences searchHistory favorites skills country currency')
+      .select('preferences searchHistory favorites skills country currency language')
       .lean();
     
     if (!user) return null;
     
-    const personalization = {
-      preferredCategories: [],
-      preferredSkills: [],
-      locationBias: null,
-      currencyPreference: null,
-      pastSearches: [],
-      favoriteSellers: []
+    return {
+      preferredCategories: user.preferences?.favoriteCategories || [],
+      preferredSkills: [
+        ...(user.preferences?.favoriteSkills || []),
+        ...(Array.isArray(user.skills) ? user.skills : [user.skills]).filter(Boolean)
+      ],
+      locationBias: user.country,
+      currencyPreference: user.currency,
+      languagePreference: user.language,
+      pastSearches: user.searchHistory?.slice(-10).map(h => h.query).filter(Boolean) || []
     };
-    
-    // Extract preferences
-    if (user.preferences) {
-      if (user.preferences.favoriteCategories) {
-        personalization.preferredCategories = user.preferences.favoriteCategories;
-      }
-      if (user.preferences.favoriteSkills) {
-        personalization.preferredSkills = user.preferences.favoriteSkills;
-      }
-    }
-    
-    // Extract skills
-    if (user.skills && Array.isArray(user.skills)) {
-      personalization.preferredSkills = [
-        ...personalization.preferredSkills,
-        ...user.skills
-      ];
-    }
-    
-    // Location bias
-    if (user.country) {
-      personalization.locationBias = user.country;
-    }
-    
-    // Currency preference
-    if (user.currency) {
-      personalization.currencyPreference = user.currency;
-    }
-    
-    // Search history (last 10 searches)
-    if (user.searchHistory && Array.isArray(user.searchHistory)) {
-      personalization.pastSearches = user.searchHistory
-        .slice(-10)
-        .map(history => history.query)
-        .filter(Boolean);
-    }
-    
-    return personalization;
   } catch (error) {
     console.error('Error getting user personalization:', error);
     return null;
   }
 };
 
-// Build personalized search boost
-const buildPersonalizedBoost = (filter, personalization, searchType, searchQuery) => {
-  const boostedFilter = { ...filter };
-  const boostConditions = [];
-  
-  if (!personalization) return filter;
-  
-  // Category boost
-  if (personalization.preferredCategories && personalization.preferredCategories.length > 0) {
-    const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
-    boostConditions.push({
-      [categoryField]: { $in: personalization.preferredCategories }
-    });
-  }
-  
-  // Skill boost
-  if (personalization.preferredSkills && personalization.preferredSkills.length > 0) {
-    const skillField = searchType === 'services' ? 'tags' : 'skillsRequired';
-    const skillConditions = personalization.preferredSkills.map(skill => ({
-      [skillField]: { 
-        $elemMatch: { 
-          $regex: new RegExp(escapeRegex(skill), 'i') 
-        } 
-      }
-    }));
-    
-    if (skillConditions.length > 0) {
-      boostConditions.push({ $or: skillConditions });
-    }
-  }
-  
-  // Past search relevance boost
-  if (personalization.pastSearches && personalization.pastSearches.length > 0) {
-    const searchTerms = personalization.pastSearches.join(' ');
-    const searchRegex = new RegExp(
-      personalization.pastSearches.map(term => escapeRegex(term)).join('|'),
-      'i'
-    );
-    
-    boostConditions.push({
-      $or: [
-        { title: { $regex: searchRegex } },
-        { description: { $regex: searchRegex } },
-        searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-      ]
-    });
-  }
-  
-  // If we have boost conditions, add them as $or to the filter
-  if (boostConditions.length > 0) {
-    if (!boostedFilter.$or) {
-      boostedFilter.$or = [];
-    }
-    boostedFilter.$or.push(...boostConditions);
-    
-    // Ensure we don't have too many conditions
-    if (boostedFilter.$or.length > 10) {
-      boostedFilter.$or = boostedFilter.$or.slice(0, 10);
-    }
-  }
-  
-  return boostedFilter;
-};
-
-// Advanced aggregation pipeline for search
+// Build aggregation pipeline with performance optimizations
 const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, searchQuery, personalization) => {
   const pipeline = [];
   
-  // Match stage
-  pipeline.push({ $match: filter });
+  // Match stage - handle $and array properly
+  let matchStage = {};
+  if (filter.$and && filter.$and.length > 0) {
+    matchStage = { $and: filter.$and };
+  } else {
+    matchStage = filter;
+  }
   
-  // Lookup creator details
-  const creatorLookup = {
+  // Remove any empty conditions
+  if (matchStage.$and) {
+    matchStage.$and = matchStage.$and.filter(cond => 
+      cond && Object.keys(cond).length > 0 && !(cond.$and && cond.$and.length === 0)
+    );
+    if (matchStage.$and.length === 0) {
+      delete matchStage.$and;
+    }
+  }
+  
+  if (Object.keys(matchStage).length > 0) {
+    pipeline.push({ $match: matchStage });
+  }
+  
+  // Lookup creator details with performance optimizations
+  pipeline.push({
     $lookup: {
       from: 'users',
-      localField: 'createdBy',
-      foreignField: '_id',
+      let: { creatorId: '$createdBy' },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ['$_id', '$$creatorId'] },
+            isActive: true,
+            registrationStatus: 'verified'
+          }
+        },
+        {
+          $project: {
+            name: 1,
+            username: 1,
+            picture: 1,
+            rating: 1,
+            completedOrders: 1,
+            responseRate: 1,
+            responseTime: 1,
+            accountType: 1,
+            level: 1,
+            country: 1,
+            languages: 1,
+            skills: 1,
+            joinedAt: 1,
+            lastSeenAt: 1
+          }
+        }
+      ],
       as: 'creatorDetails'
     }
-  };
-  pipeline.push(creatorLookup);
+  });
   
-  // Unwind creator
-  pipeline.push({ $unwind: { path: '$creatorDetails', preserveNullAndEmptyArrays: true } });
+  pipeline.push({ 
+    $unwind: { 
+      path: '$creatorDetails',
+      preserveNullAndEmptyArrays: true 
+    } 
+  });
   
   // Lookup category
-  const categoryLookup = {
+  const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
+  pipeline.push({
     $lookup: {
       from: 'categories',
-      localField: searchType === 'services' ? 'category' : 'projectCategory',
-      foreignField: '_id',
+      let: { categoryId: `$${categoryField}` },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ['$_id', '$$categoryId'] },
+            isActive: true,
+            deletedAt: null
+          }
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            icon: 1,
+            description: 1,
+            isSubcategory: 1
+          }
+        }
+      ],
       as: 'categoryDetails'
     }
-  };
-  pipeline.push(categoryLookup);
+  });
   
-  // Unwind category
-  pipeline.push({ $unwind: { path: '$categoryDetails', preserveNullAndEmptyArrays: true } });
+  pipeline.push({ 
+    $unwind: { 
+      path: '$categoryDetails',
+      preserveNullAndEmptyArrays: true 
+    } 
+  });
   
   // Lookup subcategory if exists
   pipeline.push({
     $lookup: {
       from: 'subcategories',
-      localField: 'subcategory',
-      foreignField: '_id',
+      let: { subcategoryId: '$subcategory' },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ['$_id', '$$subcategoryId'] },
+            isActive: true,
+            deletedAt: null
+          }
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            icon: 1,
+            description: 1
+          }
+        }
+      ],
       as: 'subcategoryDetails'
     }
   });
   
-  pipeline.push({ $unwind: { path: '$subcategoryDetails', preserveNullAndEmptyArrays: true } });
+  pipeline.push({ 
+    $unwind: { 
+      path: '$subcategoryDetails',
+      preserveNullAndEmptyArrays: true 
+    } 
+  });
   
-  // Add computed fields
+  // Add computed scores
   pipeline.push({
     $addFields: {
       // Calculate engagement score
@@ -913,26 +869,21 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
           { $multiply: ['$views', 0.1] },
           { $multiply: ['$likes', 0.5] },
           { $multiply: ['$reviewsCount', 1] },
-          { $multiply: ['$rating', 10] }
-        ]
-      },
-      
-      // Calculate freshness score
-      freshnessScore: {
-        $divide: [
-          { $subtract: [new Date(), '$createdAt'] },
-          86400000 // milliseconds in a day
+          { $multiply: [{ $ifNull: ['$rating', 0] }, 10] }
         ]
       },
       
       // Calculate seller reliability score
       sellerScore: {
         $cond: {
-          if: { $gt: ['$creatorDetails.completedOrders', 0] },
+          if: { $and: [
+            { $ifNull: ['$creatorDetails.rating', false] },
+            { $gt: ['$creatorDetails.completedOrders', 0] }
+          ]},
           then: {
             $add: [
               { $multiply: ['$creatorDetails.rating', 20] },
-              { $multiply: ['$creatorDetails.responseRate', 0.1] },
+              { $multiply: [{ $ifNull: ['$creatorDetails.responseRate', 0] }, 0.1] },
               { $multiply: [{ $divide: ['$creatorDetails.completedOrders', 100] }, 5] }
             ]
           },
@@ -940,36 +891,17 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
         }
       },
       
-      // Personalization score
-      personalizationScore: personalization ? {
-        $cond: [
-          {
-            $or: [
-              { $in: ['$category', personalization.preferredCategories] },
-              { $in: ['$projectCategory', personalization.preferredCategories] },
-              {
-                $gt: [
-                  {
-                    $size: {
-                      $setIntersection: [
-                        '$tags',
-                        personalization.preferredSkills
-                      ]
-                    }
-                  },
-                  0
-                ]
-              }
-            ]
-          },
-          100,
-          0
+      // Calculate freshness score (higher for newer items)
+      freshnessScore: {
+        $divide: [
+          { $subtract: [new Date(), { $ifNull: ['$createdAt', new Date()] }] },
+          86400000 // milliseconds in a day
         ]
-      } : 0
+      }
     }
   });
   
-  // Calculate relevance score
+  // Add text match score if we have a search query
   if (searchQuery) {
     pipeline.push({
       $addFields: {
@@ -981,24 +913,25 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
               $add: [
                 {
                   $cond: [
-                    { $regexMatch: { input: '$title', regex: new RegExp(escapeRegex(searchQuery), 'i') } },
+                    { 
+                      $regexMatch: { 
+                        input: '$title', 
+                        regex: new RegExp(escapeRegex(searchQuery), 'i') 
+                      } 
+                    },
                     50,
                     0
                   ]
                 },
                 {
                   $cond: [
-                    { $regexMatch: { input: '$description', regex: new RegExp(escapeRegex(searchQuery), 'i') } },
+                    { 
+                      $regexMatch: { 
+                        input: '$description', 
+                        regex: new RegExp(escapeRegex(searchQuery), 'i') 
+                      } 
+                    },
                     20,
-                    0
-                  ]
-                },
-                {
-                  $cond: [
-                    searchType === 'services' 
-                      ? { $in: [searchQuery.toLowerCase(), '$tags'] }
-                      : { $in: [searchQuery.toLowerCase(), '$skillsRequired'] },
-                    30,
                     0
                   ]
                 }
@@ -1010,41 +943,76 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
     });
   }
   
+  // Add personalization score if available
+  if (personalization) {
+    pipeline.push({
+      $addFields: {
+        personalizationScore: {
+          $cond: [
+            {
+              $or: [
+                { $in: [`$${categoryField}`, personalization.preferredCategories] },
+                {
+                  $gt: [
+                    {
+                      $size: {
+                        $setIntersection: [
+                          { $ifNull: ['$tags', []] },
+                          personalization.preferredSkills
+                        ]
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            100,
+            0
+          ]
+        }
+      }
+    });
+  }
+  
   // Calculate final relevance score
+  const relevanceScoreFields = [
+    { $ifNull: ['$textMatchScore', 0] },
+    { $multiply: ['$engagementScore', 0.3] },
+    { $multiply: [{ $subtract: [100, { $min: ['$freshnessScore', 100] }] }, 0.2] },
+    { $multiply: ['$sellerScore', 0.2] },
+    { $cond: [{ $eq: ['$isFeatured', true] }, 50, 0] },
+    { $cond: [{ $eq: ['$isRecommended', true] }, 30, 0] },
+    { $cond: [{ $eq: ['$isPopular', true] }, 20, 0] }
+  ];
+  
+  if (personalization) {
+    relevanceScoreFields.push({ $multiply: ['$personalizationScore', 0.3] });
+  }
+  
   pipeline.push({
     $addFields: {
       relevanceScore: {
-        $add: [
-          { $ifNull: ['$textMatchScore', 0] },
-          { $multiply: ['$engagementScore', 0.3] },
-          { $multiply: [{ $subtract: [100, { $min: ['$freshnessScore', 100] }] }, 0.2] },
-          { $multiply: ['$sellerScore', 0.2] },
-          { $multiply: ['$personalizationScore', 0.3] },
-          { $cond: [{ $eq: ['$isFeatured', true] }, 50, 0] },
-          { $cond: [{ $eq: ['$isRecommended', true] }, 30, 0] },
-          { $cond: [{ $eq: ['$isPopular', true] }, 20, 0] }
-        ]
+        $add: relevanceScoreFields
       }
     }
   });
   
-  // Sort stage
-  if (sortOptions.relevanceScore) {
+  // Sort stage - prioritize relevance score if available in sort options
+  if (sortOptions.score || sortOptions.relevanceScore) {
     pipeline.push({ $sort: { relevanceScore: -1 } });
+  } else if (Object.keys(sortOptions).length > 0) {
+    pipeline.push({ $sort: sortOptions });
   } else {
-    // Convert sort options to aggregation sort format
-    const sortStage = {};
-    Object.keys(sortOptions).forEach(key => {
-      sortStage[key] = sortOptions[key];
-    });
-    pipeline.push({ $sort: sortStage });
+    // Default sort by relevance
+    pipeline.push({ $sort: { relevanceScore: -1 } });
   }
   
   // Skip and limit
   pipeline.push({ $skip: skip });
   pipeline.push({ $limit: limit });
   
-  // Project final fields
+  // Project final fields with optimizations
   const projectStage = {
     $project: {
       // Basic fields
@@ -1085,26 +1053,25 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
       
       // Formatted fields
       priceFormatted: {
-        $concat: [
-          { $ifNull: ['$currency', 'USD'] },
-          ' ',
-          { $toString: { $round: [{ $ifNull: ['$price', '$budget', 0] }, 2] } }
-        ]
+        $cond: {
+          if: { $or: [{ $ifNull: ['$price', false] }, { $ifNull: ['$budget', false] }] },
+          then: {
+            $concat: [
+              { $ifNull: ['$currency', 'USD'] },
+              ' ',
+              { 
+                $toString: { 
+                  $round: [
+                    { $ifNull: ['$price', '$budget', 0] }, 
+                    2
+                  ] 
+                } 
+              }
+            ]
+          },
+          else: 'Price on request'
+        }
       },
-      deliveryFormatted: searchType === 'services' ? {
-        $concat: [
-          { $toString: { $ifNull: ['$deliveryTime', 0] } },
-          ' ',
-          { $ifNull: ['$deliveryTimeUnit', 'days'] }
-        ]
-      } : null,
-      timelineFormatted: searchType === 'gigs' ? {
-        $concat: [
-          { $toString: { $ifNull: ['$timeline', 'N/A'] } },
-          ' ',
-          { $ifNull: ['$timelineUnit', 'days'] }
-        ]
-      } : null,
       
       // Creator details
       seller: {
@@ -1115,21 +1082,23 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
           $cond: {
             if: '$creatorDetails.picture',
             then: '$creatorDetails.picture',
-            else: {
-              $concat: [
-                'https://ui-avatars.com/api/?name=',
-                { $substrCP: [{ $ifNull: ['$creatorDetails.name', 'Anonymous'] }, 0, 1] },
-                '&background=random'
-              ]
-            }
+            else: null
           }
         },
         rating: '$creatorDetails.rating',
         completedOrders: '$creatorDetails.completedOrders',
         responseRate: '$creatorDetails.responseRate',
         responseTime: '$creatorDetails.responseTime',
-        isPro: { $eq: ['$creatorDetails.accountType', 'pro'] },
-        level: '$creatorDetails.level'
+        isPro: { 
+          $in: [
+            '$creatorDetails.accountType', 
+            ['premium', 'business', 'pro']
+          ] 
+        },
+        level: '$creatorDetails.level',
+        country: '$creatorDetails.country',
+        joinedAt: '$creatorDetails.joinedAt',
+        lastSeenAt: '$creatorDetails.lastSeenAt'
       },
       
       // Category details
@@ -1138,7 +1107,8 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
         name: '$categoryDetails.name',
         slug: '$categoryDetails.slug',
         icon: '$categoryDetails.icon',
-        description: '$categoryDetails.description'
+        description: '$categoryDetails.description',
+        isSubcategory: '$categoryDetails.isSubcategory'
       },
       
       // Subcategory details
@@ -1159,9 +1129,30 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
       // Short description
       descriptionShort: {
         $cond: {
-          if: { $gt: [{ $strLenCP: { $ifNull: ['$description', ''] } }, 150] },
+          if: { $and: [
+            { $ifNull: ['$description', false] },
+            { $gt: [{ $strLenCP: '$description' }, 150] }
+          ]},
           then: { $concat: [{ $substrCP: ['$description', 0, 150] }, '...'] },
           else: '$description'
+        }
+      },
+      
+      // Delivery info
+      deliveryInfo: {
+        $cond: {
+          if: { $and: [
+            { $ifNull: ['$deliveryTime', false] },
+            { $ifNull: ['$deliveryTimeUnit', false] }
+          ]},
+          then: {
+            $concat: [
+              { $toString: '$deliveryTime' },
+              ' ',
+              '$deliveryTimeUnit'
+            ]
+          },
+          else: null
         }
       }
     }
@@ -1172,7 +1163,7 @@ const buildAggregationPipeline = (filter, sortOptions, skip, limit, searchType, 
   return pipeline;
 };
 
-// Get related data with advanced analytics
+// Get related search data
 const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId, userId) => {
   const relatedData = {
     categories: [],
@@ -1180,11 +1171,9 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
     suggestions: [],
     topSellers: [],
     trendingItems: [],
-    frequentlyBought: [],
     analytics: {
       queryComplexity: 'simple',
-      estimatedResults: 0,
-      popularFilters: []
+      estimatedResults: 0
     }
   };
   
@@ -1197,7 +1186,7 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
         words.length <= 3 ? 'moderate' : 'complex';
     }
     
-    // Get related categories with popularity score
+    // Get related categories
     if (searchQuery && searchQuery.length >= 2) {
       const searchRegex = new RegExp(escapeRegex(searchQuery), 'i');
       
@@ -1206,26 +1195,58 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
           $match: {
             $or: [
               { name: { $regex: searchRegex } },
-              { description: { $regex: searchRegex } },
-              { metaKeywords: { $regex: searchRegex } }
+              { description: { $regex: searchRegex } }
             ],
             isActive: true,
-            deletedAt: null
+            deletedAt: null,
+            isSubcategory: false
+          }
+        },
+        {
+          $lookup: {
+            from: 'services',
+            let: { categoryId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$category', '$$categoryId'] },
+                  status: 'active',
+                  isActive: true,
+                  deletedAt: null
+                }
+              },
+              { $count: 'serviceCount' }
+            ],
+            as: 'serviceStats'
+          }
+        },
+        {
+          $lookup: {
+            from: 'gigs',
+            let: { categoryId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$projectCategory', '$$categoryId'] },
+                  status: 'open',
+                  isActive: true,
+                  deletedAt: null,
+                  visibility: 'public'
+                }
+              },
+              { $count: 'gigCount' }
+            ],
+            as: 'gigStats'
           }
         },
         {
           $addFields: {
-            popularityScore: {
-              $add: [
-                { $multiply: ['$servicesCount', 0.5] },
-                { $multiply: ['$gigsCount', 0.3] },
-                { $cond: [{ $eq: ['$featured', true] }, 100, 0] },
-                { $cond: [{ $eq: ['$popular', true] }, 50, 0] }
-              ]
-            }
+            servicesCount: { $ifNull: [{ $arrayElemAt: ['$serviceStats.serviceCount', 0] }, 0] },
+            gigsCount: { $ifNull: [{ $arrayElemAt: ['$gigStats.gigCount', 0] }, 0] },
+            totalItems: { $add: ['$servicesCount', '$gigsCount'] }
           }
         },
-        { $sort: { popularityScore: -1 } },
+        { $sort: { totalItems: -1 } },
         { $limit: 8 },
         {
           $project: {
@@ -1235,215 +1256,50 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
             description: 1,
             servicesCount: 1,
             gigsCount: 1,
-            featured: 1,
-            popular: 1,
-            popularityScore: 1
+            totalItems: 1
           }
         }
       ]);
     }
     
-    // Get subcategories with hierarchical context
+    // Get subcategories for the category
     if (categoryId && isValidObjectId(categoryId)) {
-      relatedData.subcategories = await Subcategory.aggregate([
-        {
-          $match: {
-            category: new mongoose.Types.ObjectId(categoryId),
-            isActive: true,
-            deletedAt: null
-          }
-        },
-        {
-          $lookup: {
-            from: 'services',
-            localField: '_id',
-            foreignField: 'subcategory',
-            as: 'serviceStats'
-          }
-        },
-        {
-          $lookup: {
-            from: 'gigs',
-            localField: '_id',
-            foreignField: 'subcategory',
-            as: 'gigStats'
-          }
-        },
-        {
-          $addFields: {
-            activeServices: {
-              $size: {
-                $filter: {
-                  input: '$serviceStats',
-                  as: 'service',
-                  cond: {
-                    $and: [
-                      { $eq: ['$$service.status', 'active'] },
-                      { $eq: ['$$service.isActive', true] },
-                      { $eq: ['$$service.deletedAt', null] }
-                    ]
-                  }
-                }
-              }
-            },
-            activeGigs: {
-              $size: {
-                $filter: {
-                  input: '$gigStats',
-                  as: 'gig',
-                  cond: {
-                    $and: [
-                      { $eq: ['$$gig.status', 'open'] },
-                      { $eq: ['$$gig.isActive', true] },
-                      { $eq: ['$$gig.deletedAt', null] }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        { $sort: { order: 1, name: 1 } },
-        { $limit: 10 },
-        {
-          $project: {
-            name: 1,
-            slug: 1,
-            description: 1,
-            icon: 1,
-            order: 1,
-            activeServices: 1,
-            activeGigs: 1
-          }
-        }
-      ]);
+      relatedData.subcategories = await Subcategory.find({
+        category: new mongoose.Types.ObjectId(categoryId),
+        isActive: true,
+        deletedAt: null
+      })
+      .select('name slug icon description order')
+      .sort({ order: 1, name: 1 })
+      .limit(10)
+      .lean();
     }
     
-    // Get personalized suggestions based on user history
-    if (userId && searchQuery && searchQuery.length >= 2) {
-      try {
-        const user = await User.findById(userId)
-          .select('searchHistory preferences')
-          .lean();
-        
-        if (user && user.searchHistory && user.searchHistory.length > 0) {
-          // Find similar past searches
-          const pastQueries = user.searchHistory
-            .map(h => h.query)
-            .filter(q => q && q.length >= 3);
-          
-          if (pastQueries.length > 0) {
-            const Model = searchType === 'services' ? Service : Gig;
-            const searchRegex = new RegExp(
-              pastQueries.map(q => escapeRegex(q)).join('|'),
-              'i'
-            );
-            
-            const personalizedSuggestions = await Model.find({
-              $or: [
-                { title: { $regex: searchRegex } },
-                { description: { $regex: searchRegex } }
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: searchType === 'services' ? 'active' : 'open'
-            })
-            .select('title slug price rating thumbnail')
-            .sort({ rating: -1, createdAt: -1 })
-            .limit(5)
-            .lean();
-            
-            if (personalizedSuggestions.length > 0) {
-              relatedData.personalizedSuggestions = personalizedSuggestions.map(item => ({
-                ...item,
-                reason: 'Based on your search history'
-              }));
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error getting personalized suggestions:', error);
-      }
-    }
+    // Get trending items
+    const Model = searchType === 'services' ? Service : Gig;
+    const statusFilter = searchType === 'services' ? 'active' : 'open';
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    // Get trending items in this category
     if (categoryId && isValidObjectId(categoryId)) {
-      const Model = searchType === 'services' ? Service : Gig;
       const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
       relatedData.trendingItems = await Model.find({
         [categoryField]: new mongoose.Types.ObjectId(categoryId),
         isActive: true,
         deletedAt: null,
-        status: searchType === 'services' ? 'active' : 'open',
+        status: statusFilter,
         createdAt: { $gte: thirtyDaysAgo }
       })
-      .select('title slug price rating views likes thumbnail')
+      .select('title slug price budget rating views likes thumbnail')
       .sort({ views: -1, likes: -1 })
       .limit(5)
       .lean();
     }
     
-    // Get frequently bought together items (simplified)
-    if (searchQuery && searchQuery.length >= 3) {
-      const Model = searchType === 'services' ? Service : Gig;
-      
-      // Find items with similar tags/skills
-      const similarItems = await Model.find({
-        $or: [
-          { title: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } },
-          searchType === 'services' 
-            ? { tags: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } }
-            : { skillsRequired: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } }
-        ],
-        isActive: true,
-        deletedAt: null,
-        status: searchType === 'services' ? 'active' : 'open'
-      })
-      .select('tags skillsRequired')
-      .limit(20)
-      .lean();
-      
-      // Extract common tags/skills
-      const allTags = similarItems.flatMap(item => 
-        searchType === 'services' ? item.tags || [] : item.skillsRequired || []
-      );
-      
-      const tagFrequency = {};
-      allTags.forEach(tag => {
-        tagFrequency[tag] = (tagFrequency[tag] || 0) + 1;
-      });
-      
-      const commonTags = Object.entries(tagFrequency)
-        .filter(([_, count]) => count > 1)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([tag]) => tag);
-      
-      if (commonTags.length > 0) {
-        const frequentlyBought = await Model.find({
-          [searchType === 'services' ? 'tags' : 'skillsRequired']: { $in: commonTags },
-          isActive: true,
-          deletedAt: null,
-          status: searchType === 'services' ? 'active' : 'open'
-        })
-        .select('title slug price rating thumbnail')
-        .sort({ rating: -1, reviewsCount: -1 })
-        .limit(5)
-        .lean();
-        
-        if (frequentlyBought.length > 0) {
-          relatedData.frequentlyBought = frequentlyBought;
-        }
-      }
-    }
-    
-    // Get top sellers with advanced metrics
+    // Get top sellers for this search
     if (searchQuery && searchQuery.length >= 2) {
       const searchRegex = new RegExp(escapeRegex(searchQuery), 'i');
-      const Model = searchType === 'services' ? Service : Gig;
       
       const matchingItems = await Model.find({
         $or: [
@@ -1452,166 +1308,24 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
         ],
         isActive: true,
         deletedAt: null,
-        status: searchType === 'services' ? 'active' : 'open'
+        status: statusFilter
       })
       .select('createdBy')
-      .limit(100)
+      .limit(50)
       .lean();
       
       const creatorIds = [...new Set(matchingItems.map(item => item.createdBy).filter(Boolean))];
       
       if (creatorIds.length > 0) {
-        relatedData.topSellers = await User.aggregate([
-          {
-            $match: {
-              _id: { $in: creatorIds },
-              isActive: true,
-              registrationStatus: 'verified'
-            }
-          },
-          {
-            $lookup: {
-              from: searchType === 'services' ? 'services' : 'gigs',
-              localField: '_id',
-              foreignField: 'createdBy',
-              as: 'items'
-            }
-          },
-          {
-            $addFields: {
-              totalItems: { $size: '$items' },
-              avgRating: { $avg: '$items.rating' },
-              successRate: {
-                $cond: {
-                  if: { $gt: ['$completedOrders', 0] },
-                  then: {
-                    $multiply: [
-                      { $divide: ['$completedOrders', { $add: ['$completedOrders', 5] }] },
-                      100
-                    ]
-                  },
-                  else: 0
-                }
-              },
-              sellerScore: {
-                $add: [
-                  { $multiply: ['$rating', 20] },
-                  { $multiply: ['$responseRate', 0.5] },
-                  { $multiply: [{ $divide: ['$completedOrders', 10] }, 2] },
-                  { $multiply: [{ $subtract: [100, { $min: ['$responseTime', 48] }] }, 0.5] }
-                ]
-              }
-            }
-          },
-          { $sort: { sellerScore: -1 } },
-          { $limit: 6 },
-          {
-            $project: {
-              name: 1,
-              username: 1,
-              picture: 1,
-              rating: 1,
-              completedOrders: 1,
-              responseRate: 1,
-              responseTime: 1,
-              accountType: 1,
-              level: 1,
-              bio: 1,
-              totalItems: 1,
-              avgRating: 1,
-              successRate: 1,
-              sellerScore: 1
-            }
-          }
-        ]);
-      }
-    }
-    
-    // Get popular filters for this search
-    if (searchQuery) {
-      const Model = searchType === 'services' ? Service : Gig;
-      
-      // Get price distribution
-      const priceStats = await Model.aggregate([
-        {
-          $match: {
-            $or: [
-              { title: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } },
-              { description: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } }
-            ],
-            isActive: true,
-            deletedAt: null,
-            status: searchType === 'services' ? 'active' : 'open'
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            avgPrice: { $avg: searchType === 'services' ? '$price' : '$budget' },
-            minPrice: { $min: searchType === 'services' ? '$price' : '$budget' },
-            maxPrice: { $max: searchType === 'services' ? '$price' : '$budget' },
-            count: { $sum: 1 }
-          }
-        }
-      ]);
-      
-      if (priceStats.length > 0) {
-        relatedData.analytics.estimatedResults = priceStats[0].count;
-        
-        // Suggest price ranges
-        const stats = priceStats[0];
-        if (stats.count > 10) {
-          const range = (stats.maxPrice - stats.minPrice) / 3;
-          relatedData.analytics.popularFilters.push(
-            `Under $${Math.round(stats.minPrice + range)}`,
-            `$${Math.round(stats.minPrice + range)} - $${Math.round(stats.minPrice + range * 2)}`,
-            `Over $${Math.round(stats.minPrice + range * 2)}`
-          );
-        }
-      }
-      
-      // Get delivery time stats for services
-      if (searchType === 'services') {
-        const deliveryStats = await Service.aggregate([
-          {
-            $match: {
-              $or: [
-                { title: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } },
-                { description: { $regex: new RegExp(escapeRegex(searchQuery), 'i') } }
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: 'active'
-            }
-          },
-          {
-            $bucket: {
-              groupBy: '$deliveryTime',
-              boundaries: [0, 3, 7, 14, 30, 90],
-              default: 'Other',
-              output: {
-                count: { $sum: 1 }
-              }
-            }
-          },
-          { $sort: { _id: 1 } }
-        ]);
-        
-        const deliveryLabels = {
-          0: '1-3 days',
-          3: '4-7 days',
-          7: '1-2 weeks',
-          14: '2-4 weeks',
-          30: '1-3 months'
-        };
-        
-        deliveryStats.forEach(stat => {
-          if (stat._id !== 'Other' && stat.count > 0) {
-            relatedData.analytics.popularFilters.push(
-              `${deliveryLabels[stat._id] || `${stat._id}+ days`} delivery`
-            );
-          }
-        });
+        relatedData.topSellers = await User.find({
+          _id: { $in: creatorIds },
+          isActive: true,
+          registrationStatus: 'verified'
+        })
+        .select('name username picture rating completedOrders responseRate responseTime accountType level country')
+        .sort({ rating: -1, completedOrders: -1 })
+        .limit(6)
+        .lean();
       }
     }
     
@@ -1633,20 +1347,19 @@ const updateUserSearchHistory = async (userId, searchQuery, searchType, filters)
           $each: [{
             query: searchQuery,
             type: searchType,
-            filters: filters,
-            timestamp: new Date()
+            filters: Object.keys(filters || {}).slice(0, 10), // Limit stored filters
+            timestamp: new Date(),
+            resultCount: 0 // Will be updated when search completes
           }],
-          $slice: -50 // Keep only last 50 searches
+          $slice: -100 // Keep last 100 searches
         }
-      },
-      $set: { lastSeenAt: new Date() }
+      }
     });
   } catch (error) {
     console.error('Error updating user search history:', error);
   }
 };
 
-// Main search endpoint with advanced features
 router.get('/search', async (req, res) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1655,10 +1368,10 @@ router.get('/search', async (req, res) => {
     // Get user for personalization
     const user = req.user || null;
     
-    // Clean and validate parameters with user context
+    // Clean and validate parameters
     const params = cleanSearchParams(req.query, user);
     
-    // Extract main parameters
+    // Extract main parameters with defaults
     const {
       query: searchQuery,
       q,
@@ -1686,29 +1399,8 @@ router.get('/search', async (req, res) => {
       recommended,
       trending,
       has_images,
-      has_attachments,
-      has_packages,
       has_video,
-      cache: useCacheParam = 'true',
-      populate = 'true',
-      fields,
-      search_in = 'everywhere',
-      source = 'top-bar',
-      fuzzy = 'false',
-      exact = 'false',
-      include_inactive = 'false',
-      show_all = 'false',
-      boost,
-      location,
-      country,
-      city,
-      revisions,
-      min_reviews,
-      max_reviews,
-      experience_level,
-      pro_level,
-      language,
-      timezone
+      cache: useCacheParam = 'true'
     } = params;
     
     // Determine search type
@@ -1718,36 +1410,47 @@ router.get('/search', async (req, res) => {
     const finalQuery = searchQuery || q || search;
     
     // Validate query
-    if (!finalQuery || typeof finalQuery !== 'string') {
+    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 1) {
       return res.status(400).json({
         success: false,
-        message: 'Search query is required',
+        message: 'Search query is required and must be at least 1 character',
         code: 'QUERY_REQUIRED',
         requestId,
         timestamp: new Date().toISOString()
       });
     }
     
-    // Security: Check for injection patterns
-    const injectionPatternsAfterSanitization = [
-      /\bOR\b.*\bOR\b/i,
-      /\bAND\b.*\bAND\b/i,
-      /'1'='1'/i,
-      /'0'='0'/i,
-      /=.*=.*=/i,
+    // Additional security checks
+    if (finalQuery.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is too long',
+        code: 'QUERY_TOO_LONG',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Check for suspicious patterns
+    const suspiciousPatterns = [
       /'.*'.*'.*'/i,
       /union.*select/i,
       /select.*from/i,
-      /insert.*into/i
+      /insert.*into/i,
+      /<script/i,
+      /javascript:/i,
+      /\.\.\//i,
+      /\/etc\/passwd/i,
+      /\\x/i
     ];
     
-    for (const pattern of injectionPatternsAfterSanitization) {
+    for (const pattern of suspiciousPatterns) {
       if (pattern.test(finalQuery)) {
-        console.warn(`SQL injection attempt detected and blocked: ${finalQuery}`);
+        console.warn(`Suspicious search attempt detected and blocked: ${finalQuery}`);
         return res.status(400).json({
           success: false,
           message: 'Invalid search query',
-          code: 'INVALID_QUERY_FORMAT',
+          code: 'INVALID_QUERY',
           requestId,
           timestamp: new Date().toISOString()
         });
@@ -1758,12 +1461,23 @@ router.get('/search', async (req, res) => {
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(parseInt(limit) || 48, 200);
     const skip = offset !== undefined ? parseInt(offset) : (pageNum - 1) * limitNum;
-    const useCache = useCacheParam === 'true';
+    const useCache = useCacheParam === 'true' && pageNum === 1;
+    
+    // Validate pagination
+    if (skip < 0 || skip > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pagination parameters',
+        code: 'INVALID_PAGINATION',
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // Get user personalization
     const personalization = user ? await getUserPersonalization(user._id, searchType) : null;
     
-    // Build cache key with personalization
+    // Build cache key
     const cacheKey = generateCacheKey(`search_${searchType}_${user ? user._id : 'guest'}`, {
       query: finalQuery,
       page: pageNum,
@@ -1776,36 +1490,21 @@ router.get('/search', async (req, res) => {
       min_price,
       max_price,
       min_rating,
-      max_rating,
       delivery_time,
-      currency,
-      skills,
-      tags,
-      keywords,
-      featured,
-      popular,
-      recommended,
-      trending,
-      has_images,
-      has_attachments,
-      has_packages,
-      has_video,
-      fuzzy,
-      exact,
-      personalization: personalization ? 'yes' : 'no'
+      skills
     });
     
     // Try to get from cache
     let cachedResults = null;
-    if (useCache && pageNum === 1) {
-      cachedResults = await cache.get(cacheKey);
-      if (cachedResults) {
-        console.log(`Cache hit for search: ${cacheKey}`);
+    if (useCache) {
+      try {
+        cachedResults = await cache.get(cacheKey);
+      } catch (cacheError) {
+        console.error('Cache error:', cacheError);
       }
     }
     
     if (cachedResults) {
-      // Return cached results
       const responseTime = Date.now() - startTime;
       
       res.set({
@@ -1822,114 +1521,246 @@ router.get('/search', async (req, res) => {
         requestId,
         timestamp: new Date().toISOString(),
         responseTime: `${responseTime}ms`,
-        cached: true,
-        personalized: !!personalization
+        cached: true
       });
     }
     
-    // Build search filter with personalization
+    // Build search filter
     const baseFilter = await buildSearchFilter(params, searchType, user);
     
     // Add text search query
     let hasTextSearch = false;
-    if (finalQuery && typeof finalQuery === 'string' && finalQuery.trim().length >= 2) {
+    if (finalQuery && finalQuery.trim().length >= 1) {
       const textSearchQuery = buildTextSearchQuery(finalQuery, searchType, params);
       
       if (textSearchQuery.$text) {
+        // Use text search
         baseFilter.$text = textSearchQuery.$text;
         hasTextSearch = true;
       } else if (textSearchQuery.$or) {
-        baseFilter.$or = textSearchQuery.$or;
+        // Use regex search
+        if (!baseFilter.$or) baseFilter.$or = [];
+        baseFilter.$or.push(...textSearchQuery.$or);
       }
     }
-    
-    // Apply personalization boost
-    const finalFilter = buildPersonalizedBoost(baseFilter, personalization, searchType, finalQuery);
     
     // Get sort options
     const sortOptions = getSortOptions(sort, searchType, hasTextSearch, params, user);
     
-    // Build aggregation pipeline for advanced search
-    const pipeline = buildAggregationPipeline(
-      finalFilter,
-      sortOptions,
-      skip,
-      limitNum,
-      searchType,
-      finalQuery,
-      personalization
-    );
-    
-    // Execute aggregation and count in parallel
+    // Execute search with optimized approach
     const Model = searchType === 'services' ? Service : Gig;
-    const [results, totalCount] = await Promise.all([
-      Model.aggregate(pipeline),
-      Model.countDocuments(finalFilter)
-    ]);
     
-    // Get related data
-    const relatedData = await getRelatedData(
-      finalQuery,
-      searchType,
-      categoryParam,
-      subcategoryParam,
-      user ? user._id : null
-    );
+    // Get total count
+    let totalCount = 0;
+    try {
+      totalCount = await Model.countDocuments(baseFilter);
+    } catch (countError) {
+      console.error('Count error:', countError);
+      // If count fails, estimate based on simpler filter
+      const simpleFilter = { ...baseFilter };
+      delete simpleFilter.$text;
+      delete simpleFilter.$or;
+      totalCount = await Model.countDocuments(simpleFilter);
+    }
     
-    // Update user search history
+    // Build query with sort
+    let query = Model.find(baseFilter);
+    
+    // Apply text score sorting if using text search
+    if (hasTextSearch && sort === 'relevance') {
+      query = query.select({ score: { $meta: 'textScore' } });
+      query = query.sort({ score: { $meta: 'textScore' } });
+    } else {
+      // Apply regular sort
+      query = query.sort(sortOptions);
+    }
+    
+    // Apply pagination
+    query = query.skip(skip).limit(limitNum);
+    
+    // Select fields to return
+    query = query.select('title slug description shortDescription price budget currency rating reviewsCount views likes deliveryTime deliveryTimeUnit images thumbnail tags skillsRequired isFeatured isRecommended isPopular status visibility urgency createdAt updatedAt createdBy category subcategory projectCategory');
+    
+    // Execute query
+    let results = [];
+    try {
+      results = await query.lean();
+    } catch (queryError) {
+      console.error('Query error:', queryError);
+      
+      // Fallback to simpler query
+      results = await Model.find(baseFilter)
+        .select('title slug description price budget rating thumbnail')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean();
+    }
+    
+    // If we have results, populate creator and category info
+    if (results.length > 0) {
+      try {
+        // Get creator IDs
+        const creatorIds = results.map(r => r.createdBy).filter(Boolean);
+        const creators = await User.find({ _id: { $in: creatorIds } })
+          .select('name username picture rating completedOrders responseRate responseTime accountType level country joinedAt lastSeenAt')
+          .lean();
+        
+        const creatorMap = creators.reduce((map, creator) => {
+          map[creator._id.toString()] = creator;
+          return map;
+        }, {});
+        
+        // Get category IDs
+        const categoryIds = results.map(r => r.category || r.projectCategory).filter(Boolean);
+        const categories = await Category.find({ _id: { $in: categoryIds } })
+          .select('name slug icon description isSubcategory')
+          .lean();
+        
+        const categoryMap = categories.reduce((map, category) => {
+          map[category._id.toString()] = category;
+          return map;
+        }, {});
+        
+        // Get subcategory IDs
+        const subcategoryIds = results.map(r => r.subcategory).filter(Boolean);
+        const subcategories = await Subcategory.find({ _id: { $in: subcategoryIds } })
+          .select('name slug icon description')
+          .lean();
+        
+        const subcategoryMap = subcategories.reduce((map, subcategory) => {
+          map[subcategory._id.toString()] = subcategory;
+          return map;
+        }, {});
+        
+        // Enrich results with related data
+        results = results.map(item => {
+          const enriched = {
+            ...item,
+            type: searchType,
+            priceFormatted: item.currency 
+              ? `${item.currency} ${(item.price || item.budget || 0).toFixed(2)}`
+              : `USD ${(item.price || item.budget || 0).toFixed(2)}`,
+            descriptionShort: item.description && item.description.length > 150
+              ? item.description.substring(0, 150) + '...'
+              : item.description || '',
+            seller: item.createdBy && creatorMap[item.createdBy.toString()]
+              ? {
+                  _id: creatorMap[item.createdBy.toString()]._id,
+                  name: creatorMap[item.createdBy.toString()].name,
+                  username: creatorMap[item.createdBy.toString()].username,
+                  picture: creatorMap[item.createdBy.toString()].picture,
+                  rating: creatorMap[item.createdBy.toString()].rating,
+                  completedOrders: creatorMap[item.createdBy.toString()].completedOrders,
+                  responseRate: creatorMap[item.createdBy.toString()].responseRate,
+                  responseTime: creatorMap[item.createdBy.toString()].responseTime,
+                  isPro: ['premium', 'business', 'pro'].includes(creatorMap[item.createdBy.toString()].accountType),
+                  level: creatorMap[item.createdBy.toString()].level,
+                  country: creatorMap[item.createdBy.toString()].country
+                }
+              : null,
+            categoryInfo: (item.category || item.projectCategory) && categoryMap[(item.category || item.projectCategory).toString()]
+              ? {
+                  _id: categoryMap[(item.category || item.projectCategory).toString()]._id,
+                  name: categoryMap[(item.category || item.projectCategory).toString()].name,
+                  slug: categoryMap[(item.category || item.projectCategory).toString()].slug,
+                  icon: categoryMap[(item.category || item.projectCategory).toString()].icon,
+                  description: categoryMap[(item.category || item.projectCategory).toString()].description,
+                  isSubcategory: categoryMap[(item.category || item.projectCategory).toString()].isSubcategory
+                }
+              : null,
+            subcategoryInfo: item.subcategory && subcategoryMap[item.subcategory.toString()]
+              ? {
+                  _id: subcategoryMap[item.subcategory.toString()]._id,
+                  name: subcategoryMap[item.subcategory.toString()].name,
+                  slug: subcategoryMap[item.subcategory.toString()].slug,
+                  icon: subcategoryMap[item.subcategory.toString()].icon,
+                  description: subcategoryMap[item.subcategory.toString()].description
+                }
+              : null
+          };
+          
+          // Calculate some scores for sorting
+          enriched.relevanceScore = calculateRelevanceScore(enriched, finalQuery, personalization);
+          
+          return enriched;
+        });
+        
+        // Re-sort by relevance score if needed
+        if (sort === 'relevance' && !hasTextSearch) {
+          results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        }
+        
+      } catch (enrichError) {
+        console.error('Error enriching results:', enrichError);
+        // Continue with basic results
+      }
+    }
+    
+    // Get related data (non-blocking)
+    let relatedData = {};
+    try {
+      relatedData = await getRelatedData(
+        finalQuery,
+        searchType,
+        categoryParam,
+        subcategoryParam,
+        user ? user._id : null
+      );
+    } catch (relatedError) {
+      console.error('Related data error:', relatedError);
+    }
+    
+    // Update user search history (non-blocking)
     if (user && user._id) {
-      await updateUserSearchHistory(user._id, finalQuery, searchType, params);
+      updateUserSearchHistory(user._id, finalQuery, searchType, params).catch(err => {
+        console.error('Search history update error:', err);
+      });
     }
     
     // Calculate pagination info
-    const totalPages = Math.ceil(totalCount / limitNum);
+    const totalPages = Math.max(1, Math.ceil(totalCount / limitNum));
     const hasNext = pageNum < totalPages;
     const hasPrev = pageNum > 1;
     
     // Prepare response
-    const response = {
-      success: true,
-      data: {
-        results: results,
-        totalCount,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total: totalCount,
-          totalPages,
-          hasNext,
-          hasPrev,
-          nextPage: hasNext ? pageNum + 1 : null,
-          prevPage: hasPrev ? pageNum - 1 : null
-        },
-        meta: {
-          query: finalQuery,
-          type: searchType,
-          source,
-          search_in,
-          totalResults: totalCount,
-          showing: `${skip + 1}-${Math.min(skip + limitNum, totalCount)} of ${totalCount}`,
-          sort,
-          order,
-          filtersApplied: Object.keys(finalFilter).length - 3,
-          personalized: !!personalization,
-          queryComplexity: relatedData.analytics.queryComplexity,
-          estimatedMatches: relatedData.analytics.estimatedResults || totalCount
-        },
-        relatedData,
-        suggestions: {
-          popularFilters: relatedData.analytics.popularFilters,
-          trendingItems: relatedData.trendingItems,
-          frequentlyBought: relatedData.frequentlyBought,
-          personalized: relatedData.personalizedSuggestions
-        }
+    const responseData = {
+      results: results,
+      totalCount,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages,
+        hasNext,
+        hasPrev,
+        nextPage: hasNext ? pageNum + 1 : null,
+        prevPage: hasPrev ? pageNum - 1 : null
+      },
+      meta: {
+        query: finalQuery,
+        type: searchType,
+        totalResults: totalCount,
+        showing: results.length,
+        sort,
+        order,
+        personalized: !!personalization,
+        queryComplexity: relatedData.analytics?.queryComplexity || 'simple'
       }
     };
     
+    // Add related data if available
+    if (Object.keys(relatedData).length > 0) {
+      responseData.related = relatedData;
+    }
+    
     // Cache the response if enabled
-    if (useCache && pageNum === 1) {
-      await cache.set(cacheKey, response.data, 300);
-      console.log(`Cache set for search: ${cacheKey}`);
+    if (useCache && results.length > 0) {
+      try {
+        await cache.set(cacheKey, responseData, 300);
+      } catch (cacheError) {
+        console.error('Cache set error:', cacheError);
+      }
     }
     
     const responseTime = Date.now() - startTime;
@@ -1942,22 +1773,20 @@ router.get('/search', async (req, res) => {
       'X-Page-Size': limitNum,
       'X-Current-Page': pageNum,
       'X-Response-Time': `${responseTime}ms`,
-      'X-Cache': useCache && pageNum === 1 ? 'MISS' : 'BYPASSED',
-      'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache, no-store, must-revalidate',
+      'X-Cache': useCache ? 'MISS' : 'BYPASS',
+      'Cache-Control': useCache ? 'public, max-age=300' : 'no-cache',
       'X-Search-Type': searchType,
-      'X-Query-Length': finalQuery.length,
-      'X-Personalized': personalization ? 'yes' : 'no',
-      'X-Results-Count': results.length
+      'X-Results-Count': results.length,
+      'X-Personalized': personalization ? 'yes' : 'no'
     });
     
     // Send response
     res.json({
-      ...response,
+      success: true,
+      data: responseData,
       requestId,
       timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`,
-      cached: false,
-      personalized: !!personalization
+      responseTime: `${responseTime}ms`
     });
     
   } catch (error) {
@@ -1966,47 +1795,33 @@ router.get('/search', async (req, res) => {
     const responseTime = Date.now() - startTime;
     
     // Handle specific errors
+    let statusCode = 500;
+    let errorCode = 'SEARCH_ERROR';
+    let errorMessage = 'Error performing search';
+    
     if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid parameter format',
-        code: 'INVALID_PARAMETER',
-        details: error.message,
-        requestId,
-        timestamp: new Date().toISOString(),
-        responseTime: `${responseTime}ms`
-      });
+      statusCode = 400;
+      errorCode = 'INVALID_PARAMETER';
+      errorMessage = 'Invalid parameter format';
+    } else if (error.name === 'ValidationError') {
+      statusCode = 400;
+      errorCode = 'VALIDATION_ERROR';
+      errorMessage = 'Validation error in search parameters';
+    } else if (error.message && error.message.includes('Too many parameters')) {
+      statusCode = 400;
+      errorCode = 'TOO_MANY_PARAMETERS';
+      errorMessage = 'Too many search parameters provided';
+    } else if (error.message && error.message.includes('text index')) {
+      statusCode = 400;
+      errorCode = 'TEXT_SEARCH_UNAVAILABLE';
+      errorMessage = 'Text search is not available for this query';
     }
     
-    if (error.name === 'MongoError' && error.message.includes('text index')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Text search not available. Please use simpler search terms.',
-        code: 'TEXT_SEARCH_UNAVAILABLE',
-        requestId,
-        timestamp: new Date().toISOString(),
-        responseTime: `${responseTime}ms`
-      });
-    }
-    
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error in search parameters',
-        code: 'VALIDATION_ERROR',
-        details: error.message,
-        requestId,
-        timestamp: new Date().toISOString(),
-        responseTime: `${responseTime}ms`
-      });
-    }
-    
-    // Default error response
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
-      message: 'Error performing search',
-      code: 'SEARCH_ERROR',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message: errorMessage,
+      code: errorCode,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
@@ -2014,7 +1829,77 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// Advanced suggestions endpoint with semantic understanding
+// Add this helper function for relevance scoring
+const calculateRelevanceScore = (item, searchQuery, personalization) => {
+  let score = 0;
+  
+  // Base score from item properties
+  if (item.isFeatured) score += 50;
+  if (item.isRecommended) score += 30;
+  if (item.isPopular) score += 20;
+  
+  // Rating score
+  if (item.rating) score += item.rating * 10;
+  
+  // Reviews score
+  if (item.reviewsCount) score += Math.min(item.reviewsCount * 0.5, 50);
+  
+  // Engagement score
+  if (item.views) score += item.views * 0.01;
+  if (item.likes) score += item.likes * 0.5;
+  
+  // Text match score
+  if (searchQuery && item.title) {
+    const searchLower = searchQuery.toLowerCase();
+    const titleLower = item.title.toLowerCase();
+    
+    if (titleLower.includes(searchLower)) {
+      score += 30;
+    }
+    
+    // Check for individual words
+    const searchWords = searchLower.split(' ');
+    const titleWords = titleLower.split(' ');
+    const matchingWords = searchWords.filter(word => 
+      titleWords.some(titleWord => titleWord.includes(word))
+    );
+    
+    score += matchingWords.length * 10;
+  }
+  
+  // Description match
+  if (searchQuery && item.description) {
+    const descLower = item.description.toLowerCase();
+    if (descLower.includes(searchQuery.toLowerCase())) {
+      score += 10;
+    }
+  }
+  
+  // Personalization score
+  if (personalization) {
+    if (item.categoryInfo && personalization.preferredCategories.includes(item.categoryInfo._id.toString())) {
+      score += 40;
+    }
+    
+    if (item.tags && Array.isArray(item.tags)) {
+      const matchingSkills = item.tags.filter(tag => 
+        personalization.preferredSkills.includes(tag.toLowerCase())
+      );
+      score += matchingSkills.length * 15;
+    }
+  }
+  
+  // Freshness score (newer items get higher score)
+  if (item.createdAt) {
+    const ageInDays = (Date.now() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+    const freshnessScore = Math.max(0, 100 - ageInDays);
+    score += freshnessScore * 0.1;
+  }
+  
+  return Math.round(score * 100) / 100;
+};
+
+// Suggestions endpoint with improved performance
 router.get('/suggestions', async (req, res) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -2028,15 +1913,12 @@ router.get('/suggestions', async (req, res) => {
       q,
       search,
       type = 'services',
-      limit = 10,
-      category: categoryParam,
-      subcategory: subcategoryParam,
-      intent
+      limit = 10
     } = params;
     
     const finalQuery = searchQuery || q || search;
     
-    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 2) {
+    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 1) {
       return res.json({
         success: true,
         data: [],
@@ -2047,272 +1929,88 @@ router.get('/suggestions', async (req, res) => {
     }
     
     const searchType = (type === 'gigs' || type === 'projects') ? 'gigs' : 'services';
-    const searchRegex = new RegExp(escapeRegex(finalQuery), 'i');
+    const searchRegex = new RegExp(`^${escapeRegex(finalQuery)}`, 'i');
     const limitNum = Math.min(parseInt(limit) || 10, 50);
     
-    let suggestions = [];
+    const suggestions = [];
     
-    // Detect intent for better suggestions
-    const detectedIntent = intent || (
-      finalQuery.includes('urgent') || finalQuery.includes('asap') ? 'urgent' :
-      finalQuery.includes('cheap') || finalQuery.includes('budget') ? 'budget' :
-      finalQuery.includes('premium') || finalQuery.includes('expert') ? 'premium' :
-      finalQuery.includes('beginner') || finalQuery.includes('simple') ? 'beginner' :
-      null
-    );
-    
-    // Get service/gig suggestions with intent-based filtering
-    const Model = searchType === 'services' ? Service : Gig;
-    const statusFilter = searchType === 'services' ? 'active' : 'open';
-    
-    let modelFilter = {
-      $or: [
-        { title: { $regex: searchRegex } },
-        { tags: { $regex: searchRegex } },
-        searchType === 'services' ? { searchKeywords: { $regex: searchRegex } } : {},
-        { description: { $regex: searchRegex } }
-      ],
-      status: statusFilter,
-      isActive: true,
-      deletedAt: null
-    };
-    
-    // Apply intent filters
-    if (detectedIntent === 'urgent') {
-      if (searchType === 'services') {
-        modelFilter.deliveryTime = { $lte: 3 };
-      } else {
-        modelFilter.urgency = { $in: ['urgent', 'high'] };
-      }
-    } else if (detectedIntent === 'budget') {
-      const priceField = searchType === 'services' ? 'price' : 'budget';
-      modelFilter[priceField] = { $lte: 100 };
-    } else if (detectedIntent === 'premium') {
-      modelFilter.$or = [
-        ...modelFilter.$or,
-        { isFeatured: true },
-        { rating: { $gte: 4.5 } }
-      ];
+    // Search in services
+    if (searchType === 'services' || !type) {
+      const serviceSuggestions = await Service.find({
+        title: searchRegex,
+        status: 'active',
+        isActive: true,
+        deletedAt: null
+      })
+      .select('title slug price rating thumbnail')
+      .sort({ rating: -1, reviewsCount: -1 })
+      .limit(Math.ceil(limitNum / 2))
+      .lean();
+      
+      suggestions.push(...serviceSuggestions.map(item => ({
+        type: 'service',
+        title: item.title,
+        slug: item.slug,
+        price: item.price,
+        rating: item.rating,
+        thumbnail: item.thumbnail,
+        url: `/services/${item.slug}`
+      })));
     }
     
-    const modelSuggestions = await Model.find(modelFilter)
-      .select('title slug shortDescription price budget rating reviewsCount thumbnail deliveryTime urgency')
-      .sort({ rating: -1, reviewsCount: -1 })
-      .limit(limitNum)
+    // Search in gigs
+    if (searchType === 'gigs' || !type) {
+      const gigSuggestions = await Gig.find({
+        title: searchRegex,
+        status: 'open',
+        isActive: true,
+        deletedAt: null,
+        visibility: 'public'
+      })
+      .select('title slug budget thumbnail urgency')
+      .sort({ createdAt: -1 })
+      .limit(Math.ceil(limitNum / 2))
       .lean();
+      
+      suggestions.push(...gigSuggestions.map(item => ({
+        type: 'gig',
+        title: item.title,
+        slug: item.slug,
+        price: item.budget,
+        thumbnail: item.thumbnail,
+        urgency: item.urgency,
+        url: `/gigs/${item.slug}`
+      })));
+    }
     
-    suggestions.push(...modelSuggestions.map(item => ({
-      type: searchType,
-      title: item.title,
-      slug: item.slug,
-      price: item.price || item.budget,
-      rating: item.rating || 0,
-      reviewsCount: item.reviewsCount || 0,
-      description: item.shortDescription || (item.description ? item.description.substring(0, 80) + '...' : ''),
-      thumbnail: item.thumbnail,
-      deliveryTime: item.deliveryTime,
-      urgency: item.urgency,
-      relevance: 'high',
-      entity: searchType === 'services' ? 'Service' : 'Project',
-      matchType: 'direct'
-    })));
-    
-    // Get category suggestions with popularity score
-    const categorySuggestions = await Category.aggregate([
-      {
-        $match: {
-          $or: [
-            { name: { $regex: searchRegex } },
-            { description: { $regex: searchRegex } },
-            { metaKeywords: { $regex: searchRegex } }
-          ],
-          isActive: true,
-          deletedAt: null,
-          isSubcategory: false
-        }
-      },
-      {
-        $addFields: {
-          matchScore: {
-            $cond: [
-              { $regexMatch: { input: '$name', regex: searchRegex } },
-              10,
-              { $cond: [
-                { $regexMatch: { input: '$description', regex: searchRegex } },
-                5,
-                3
-              ]}
-            ]
-          },
-          popularityScore: {
-            $add: [
-              { $multiply: ['$servicesCount', 0.5] },
-              { $multiply: ['$gigsCount', 0.3] },
-              { $cond: [{ $eq: ['$featured', true] }, 50, 0] },
-              { $cond: [{ $eq: ['$popular', true] }, 30, 0] }
-            ]
-          }
-        }
-      },
-      { $sort: { matchScore: -1, popularityScore: -1 } },
-      { $limit: 5 }
-    ]);
+    // Search in categories
+    const categorySuggestions = await Category.find({
+      name: searchRegex,
+      isActive: true,
+      deletedAt: null,
+      isSubcategory: false
+    })
+    .select('name slug icon servicesCount gigsCount')
+    .sort({ servicesCount: -1, gigsCount: -1 })
+    .limit(5)
+    .lean();
     
     suggestions.push(...categorySuggestions.map(item => ({
       type: 'category',
       title: item.name,
       slug: item.slug,
       icon: item.icon,
-      description: item.description || '',
-      servicesCount: item.servicesCount || 0,
-      gigsCount: item.gigsCount || 0,
-      featured: item.featured,
-      popular: item.popular,
-      matchScore: item.matchScore,
-      entity: 'Category',
-      matchType: 'category'
+      count: (item.servicesCount || 0) + (item.gigsCount || 0),
+      url: `/categories/${item.slug}`
     })));
     
-    // Get subcategory suggestions
-    const subcategorySuggestions = await Subcategory.aggregate([
-      {
-        $match: {
-          $or: [
-            { name: { $regex: searchRegex } },
-            { description: { $regex: searchRegex } }
-          ],
-          isActive: true,
-          deletedAt: null
-        }
-      },
-      {
-        $lookup: {
-          from: 'categories',
-          localField: 'category',
-          foreignField: '_id',
-          as: 'categoryDetails'
-        }
-      },
-      { $unwind: '$categoryDetails' },
-      { $sort: { order: 1, name: 1 } },
-      { $limit: 5 }
-    ]);
-    
-    suggestions.push(...subcategorySuggestions.map(item => ({
-      type: 'subcategory',
-      title: item.name,
-      slug: item.slug,
-      icon: item.icon,
-      description: item.description || '',
-      category: item.categoryDetails.name,
-      categorySlug: item.categoryDetails.slug,
-      servicesCount: item.servicesCount || 0,
-      gigsCount: item.gigsCount || 0,
-      entity: 'Subcategory',
-      matchType: 'subcategory'
-    })));
-    
-    // Get skill/tag suggestions
-    if (searchType === 'services') {
-      const tagSuggestions = await Service.aggregate([
-        {
-          $match: {
-            tags: { $regex: searchRegex },
-            isActive: true,
-            deletedAt: null,
-            status: 'active'
-          }
-        },
-        { $unwind: '$tags' },
-        {
-          $match: {
-            tags: { $regex: searchRegex }
-          }
-        },
-        {
-          $group: {
-            _id: '$tags',
-            count: { $sum: 1 },
-            avgRating: { $avg: '$rating' },
-            avgPrice: { $avg: '$price' }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 5 }
-      ]);
-      
-      suggestions.push(...tagSuggestions.map(item => ({
-        type: 'skill',
-        title: item._id,
-        count: item.count,
-        avgRating: item.avgRating,
-        avgPrice: item.avgPrice,
-        entity: 'Skill',
-        matchType: 'skill'
-      })));
-    } else {
-      const skillSuggestions = await Gig.aggregate([
-        {
-          $match: {
-            skillsRequired: { $regex: searchRegex },
-            isActive: true,
-            deletedAt: null,
-            status: 'open'
-          }
-        },
-        { $unwind: '$skillsRequired' },
-        {
-          $match: {
-            skillsRequired: { $regex: searchRegex }
-          }
-        },
-        {
-          $group: {
-            _id: '$skillsRequired',
-            count: { $sum: 1 },
-            avgBudget: { $avg: '$budget' }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 5 }
-      ]);
-      
-      suggestions.push(...skillSuggestions.map(item => ({
-        type: 'skill',
-        title: item._id,
-        count: item.count,
-        avgBudget: item.avgBudget,
-        entity: 'Skill',
-        matchType: 'skill'
-      })));
-    }
-    
-    // Remove duplicates and sort by relevance
+    // Remove duplicates and sort by type priority
     const uniqueSuggestions = Array.from(
-      new Map(suggestions.map(item => [`${item.type}-${item.title}`, item])).values()
+      new Map(suggestions.map(item => [`${item.type}-${item.slug}`, item])).values()
     )
     .sort((a, b) => {
-      // Sort by type priority
-      const typePriority = {
-        'service': 5,
-        'gig': 5,
-        'category': 4,
-        'subcategory': 3,
-        'skill': 2
-      };
-      
-      const priorityDiff = (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
-      if (priorityDiff !== 0) return priorityDiff;
-      
-      // Then by match score if available
-      if (a.matchScore && b.matchScore) {
-        return b.matchScore - a.matchScore;
-      }
-      
-      // Then by count/rating
-      const aScore = a.count || a.rating || a.reviewsCount || 0;
-      const bScore = b.count || b.rating || b.reviewsCount || 0;
-      return bScore - aScore;
+      const typePriority = { service: 3, gig: 3, category: 2 };
+      return (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
     })
     .slice(0, limitNum);
     
@@ -2322,7 +2020,6 @@ router.get('/suggestions', async (req, res) => {
       success: true,
       data: uniqueSuggestions,
       query: finalQuery,
-      intent: detectedIntent,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
@@ -2343,26 +2040,24 @@ router.get('/suggestions', async (req, res) => {
   }
 });
 
-// Enhanced quick search with semantic understanding
+// Quick search endpoint
 router.get('/quick', async (req, res) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    const user = req.user || null;
-    const params = cleanSearchParams(req.query, user);
+    const params = cleanSearchParams(req.query);
     
     const {
       query: searchQuery,
       q,
       search,
-      limit = 5,
-      type
+      limit = 5
     } = params;
     
     const finalQuery = searchQuery || q || search;
     
-    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 2) {
+    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 1) {
       return res.json({
         success: true,
         data: [],
@@ -2377,48 +2072,16 @@ router.get('/quick', async (req, res) => {
     
     const results = [];
     
-    // Search in services with relevance scoring
-    const serviceResults = await Service.aggregate([
-      {
-        $match: {
-          title: { $regex: searchRegex },
-          status: 'active',
-          isActive: true,
-          deletedAt: null
-        }
-      },
-      {
-        $addFields: {
-          matchQuality: {
-            $cond: [
-              { $eq: [{ $indexOfCP: ['$title', finalQuery] }, 0] },
-              10, // Exact start match
-              5   // Contains match
-            ]
-          },
-          relevanceScore: {
-            $add: [
-              { $multiply: ['$rating', 2] },
-              { $multiply: [{ $divide: ['$reviewsCount', 10] }, 1] },
-              { $cond: [{ $eq: ['$isFeatured', true] }, 5, 0] },
-              '$matchQuality'
-            ]
-          }
-        }
-      },
-      { $sort: { relevanceScore: -1 } },
-      { $limit: limitNum },
-      {
-        $project: {
-          title: 1,
-          slug: 1,
-          price: 1,
-          thumbnail: 1,
-          rating: 1,
-          relevanceScore: 1
-        }
-      }
-    ]);
+    // Search in services
+    const serviceResults = await Service.find({
+      title: searchRegex,
+      status: 'active',
+      isActive: true,
+      deletedAt: null
+    })
+    .select('title slug price thumbnail')
+    .limit(limitNum)
+    .lean();
     
     results.push(...serviceResults.map(item => ({
       type: 'service',
@@ -2426,201 +2089,38 @@ router.get('/quick', async (req, res) => {
       slug: item.slug,
       price: item.price,
       thumbnail: item.thumbnail,
-      rating: item.rating,
-      relevanceScore: item.relevanceScore,
       url: `/services/${item.slug}`
     })));
     
-    // Search in gigs if no type specified or type is gigs
-    if (!type || type === 'gigs' || type === 'projects') {
-      const gigResults = await Gig.aggregate([
-        {
-          $match: {
-            title: { $regex: searchRegex },
-            status: 'open',
-            isActive: true,
-            deletedAt: null,
-            visibility: 'public'
-          }
-        },
-        {
-          $addFields: {
-            matchQuality: {
-              $cond: [
-                { $eq: [{ $indexOfCP: ['$title', finalQuery] }, 0] },
-                10,
-                5
-              ]
-            },
-            relevanceScore: {
-              $add: [
-                { $multiply: [{ $divide: [1000, { $ifNull: ['$budget', 1000] }] }, 0.5] },
-                { $cond: [{ $eq: ['$urgency', 'urgent'] }, 3, 0] },
-                '$matchQuality'
-              ]
-            }
-          }
-        },
-        { $sort: { relevanceScore: -1 } },
-        { $limit: limitNum },
-        {
-          $project: {
-            title: 1,
-            slug: 1,
-            budget: 1,
-            thumbnail: 1,
-            urgency: 1,
-            relevanceScore: 1
-          }
-        }
-      ]);
-      
-      results.push(...gigResults.map(item => ({
-        type: 'gig',
-        title: item.title,
-        slug: item.slug,
-        price: item.budget,
-        thumbnail: item.thumbnail,
-        urgency: item.urgency,
-        relevanceScore: item.relevanceScore,
-        url: `/gigs/${item.slug}`
-      })));
-    }
-    
     // Search in categories
-    const categoryResults = await Category.aggregate([
-      {
-        $match: {
-          name: { $regex: searchRegex },
-          isActive: true,
-          deletedAt: null,
-          isSubcategory: false
-        }
-      },
-      {
-        $addFields: {
-          matchQuality: {
-            $cond: [
-              { $eq: [{ $indexOfCP: ['$name', finalQuery] }, 0] },
-              10,
-              5
-            ]
-          },
-          popularityScore: {
-            $add: [
-              { $multiply: ['$servicesCount', 0.5] },
-              { $multiply: ['$gigsCount', 0.3] },
-              { $cond: [{ $eq: ['$featured', true] }, 5, 0] }
-            ]
-          }
-        }
-      },
-      { $sort: { matchQuality: -1, popularityScore: -1 } },
-      { $limit: limitNum },
-      {
-        $project: {
-          name: 1,
-          slug: 1,
-          icon: 1,
-          servicesCount: 1,
-          gigsCount: 1,
-          matchQuality: 1
-        }
-      }
-    ]);
+    const categoryResults = await Category.find({
+      name: searchRegex,
+      isActive: true,
+      deletedAt: null,
+      isSubcategory: false
+    })
+    .select('name slug icon')
+    .limit(Math.ceil(limitNum / 2))
+    .lean();
     
     results.push(...categoryResults.map(item => ({
       type: 'category',
       title: item.name,
       slug: item.slug,
       icon: item.icon,
-      servicesCount: item.servicesCount,
-      gigsCount: item.gigsCount,
-      matchQuality: item.matchQuality,
       url: `/categories/${item.slug}`
     })));
     
-    // Search in subcategories
-    const subcategoryResults = await Subcategory.aggregate([
-      {
-        $match: {
-          name: { $regex: searchRegex },
-          isActive: true,
-          deletedAt: null
-        }
-      },
-      {
-        $lookup: {
-          from: 'categories',
-          localField: 'category',
-          foreignField: '_id',
-          as: 'categoryDetails'
-        }
-      },
-      { $unwind: '$categoryDetails' },
-      {
-        $addFields: {
-          matchQuality: {
-            $cond: [
-              { $eq: [{ $indexOfCP: ['$name', finalQuery] }, 0] },
-              10,
-              5
-            ]
-          }
-        }
-      },
-      { $sort: { matchQuality: -1, order: 1 } },
-      { $limit: limitNum },
-      {
-        $project: {
-          name: 1,
-          slug: 1,
-          icon: 1,
-          category: '$categoryDetails.name',
-          categorySlug: '$categoryDetails.slug',
-          matchQuality: 1
-        }
-      }
-    ]);
-    
-    results.push(...subcategoryResults.map(item => ({
-      type: 'subcategory',
-      title: item.name,
-      slug: item.slug,
-      icon: item.icon,
-      category: item.category,
-      matchQuality: item.matchQuality,
-      url: `/categories/${item.categorySlug}#${item.slug}`
-    })));
-    
-    // Sort all results by relevance and remove duplicates
-    const uniqueResults = Array.from(
-      new Map(results.map(item => [`${item.type}-${item.title}`, item])).values()
-    )
-    .sort((a, b) => {
-      // Sort by relevance score if available
-      const aScore = a.relevanceScore || a.matchQuality || 0;
-      const bScore = b.relevanceScore || b.matchQuality || 0;
-      
-      if (bScore !== aScore) return bScore - aScore;
-      
-      // Then by type priority
-      const typePriority = {
-        'service': 5,
-        'gig': 5,
-        'category': 4,
-        'subcategory': 3
-      };
-      
-      return (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
-    })
-    .slice(0, limitNum);
+    // Sort and limit
+    const sortedResults = results
+      .sort((a, b) => a.type.localeCompare(b.type))
+      .slice(0, limitNum);
     
     const responseTime = Date.now() - startTime;
     
     res.json({
       success: true,
-      data: uniqueResults,
+      data: sortedResults,
       query: finalQuery,
       requestId,
       timestamp: new Date().toISOString(),
@@ -2642,415 +2142,6 @@ router.get('/quick', async (req, res) => {
   }
 });
 
-// Advanced search statistics with trends
-router.get('/stats', async (req, res) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-  
-  try {
-    // Get total counts
-    const [totalServices, totalGigs, totalCategories, totalSubcategories] = await Promise.all([
-      Service.countDocuments({ status: 'active', isActive: true, deletedAt: null }),
-      Gig.countDocuments({ status: 'open', isActive: true, deletedAt: null, visibility: 'public' }),
-      Category.countDocuments({ isActive: true, deletedAt: null, isSubcategory: false }),
-      Subcategory.countDocuments({ isActive: true, deletedAt: null })
-    ]);
-    
-    // Get recent activity (last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    const [recentServices, recentGigs] = await Promise.all([
-      Service.countDocuments({
-        status: 'active',
-        isActive: true,
-        deletedAt: null,
-        createdAt: { $gte: sevenDaysAgo }
-      }),
-      Gig.countDocuments({
-        status: 'open',
-        isActive: true,
-        deletedAt: null,
-        visibility: 'public',
-        createdAt: { $gte: sevenDaysAgo }
-      })
-    ]);
-    
-    // Get popular search terms (you would typically get this from analytics)
-    const popularSearches = [
-      { term: 'web development', count: 1245, trend: 'up', category: 'Technology' },
-      { term: 'logo design', count: 892, trend: 'steady', category: 'Design' },
-      { term: 'content writing', count: 765, trend: 'up', category: 'Writing' },
-      { term: 'video editing', count: 543, trend: 'steady', category: 'Video' },
-      { term: 'social media marketing', count: 432, trend: 'up', category: 'Marketing' }
-    ];
-    
-    // Get trending categories with growth rate
-    const trendingCategories = await Category.aggregate([
-      {
-        $match: {
-          isActive: true,
-          deletedAt: null,
-          isSubcategory: false
-        }
-      },
-      {
-        $lookup: {
-          from: 'services',
-          let: { categoryId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$category', '$$categoryId'] },
-                    { $eq: ['$status', 'active'] },
-                    { $eq: ['$isActive', true] },
-                    { $eq: ['$deletedAt', null] },
-                    { $gte: ['$createdAt', sevenDaysAgo] }
-                  ]
-                }
-              }
-            },
-            { $count: 'recentCount' }
-          ],
-          as: 'recentServices'
-        }
-      },
-      {
-        $lookup: {
-          from: 'gigs',
-          let: { categoryId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$projectCategory', '$$categoryId'] },
-                    { $eq: ['$status', 'open'] },
-                    { $eq: ['$isActive', true] },
-                    { $eq: ['$deletedAt', null] },
-                    { $eq: ['$visibility', 'public'] },
-                    { $gte: ['$createdAt', sevenDaysAgo] }
-                  ]
-                }
-              }
-            },
-            { $count: 'recentGigs' }
-          ],
-          as: 'recentGigs'
-        }
-      },
-      {
-        $addFields: {
-          recentServicesCount: { $ifNull: [{ $arrayElemAt: ['$recentServices.recentCount', 0] }, 0] },
-          recentGigsCount: { $ifNull: [{ $arrayElemAt: ['$recentGigs.recentGigs', 0] }, 0] },
-          growthRate: {
-            $cond: [
-              { $gt: ['$servicesCount', 0] },
-              {
-                $multiply: [
-                  { $divide: [
-                    { $add: ['$recentServicesCount', '$recentGigsCount'] },
-                    { $add: ['$servicesCount', '$gigsCount'] }
-                  ]},
-                  100
-                ]
-              },
-              0
-            ]
-          },
-          engagementScore: {
-            $add: [
-              { $multiply: ['$servicesCount', 0.5] },
-              { $multiply: ['$gigsCount', 0.3] },
-              { $multiply: ['$recentServicesCount', 2] },
-              { $multiply: ['$recentGigsCount', 1.5] }
-            ]
-          }
-        }
-      },
-      { $sort: { engagementScore: -1 } },
-      { $limit: 8 },
-      {
-        $project: {
-          name: 1,
-          slug: 1,
-          icon: 1,
-          servicesCount: 1,
-          gigsCount: 1,
-          recentServicesCount: 1,
-          recentGigsCount: 1,
-          growthRate: 1,
-          engagementScore: 1
-        }
-      }
-    ]);
-    
-    // Get platform statistics
-    const platformStats = {
-      totalUsers: await User.countDocuments({ 
-        registrationStatus: 'verified',
-        isActive: true 
-      }),
-      activeSellers: await User.countDocuments({
-        registrationStatus: 'verified',
-        isActive: true,
-        role: 'user',
-        $or: [
-          { 'servicesCount': { $gt: 0 } },
-          { 'completedOrders': { $gt: 0 } }
-        ]
-      }),
-      newUsersThisWeek: await User.countDocuments({
-        registrationStatus: 'verified',
-        isActive: true,
-        createdAt: { $gte: sevenDaysAgo }
-      })
-    };
-    
-    // Get price statistics
-    const priceStats = await Service.aggregate([
-      {
-        $match: {
-          status: 'active',
-          isActive: true,
-          deletedAt: null
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          avgPrice: { $avg: '$price' },
-          minPrice: { $min: '$price' },
-          maxPrice: { $max: '$price' },
-          medianPrice: { $percentile: { input: '$price', p: [0.5] } }
-        }
-      }
-    ]);
-    
-    const responseTime = Date.now() - startTime;
-    
-    res.json({
-      success: true,
-      data: {
-        totals: {
-          services: totalServices,
-          gigs: totalGigs,
-          categories: totalCategories,
-          subcategories: totalSubcategories
-        },
-        recentActivity: {
-          services: recentServices,
-          gigs: recentGigs,
-          period: '7 days'
-        },
-        popularSearches,
-        trendingCategories,
-        platformStats,
-        priceStats: priceStats[0] || {},
-        lastUpdated: new Date().toISOString()
-      },
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-    
-  } catch (error) {
-    console.error('Search stats error:', error);
-    
-    const responseTime = Date.now() - startTime;
-    
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching search statistics',
-      code: 'STATS_ERROR',
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-  }
-});
-
-// New endpoint: Search analytics for a specific query
-router.get('/analytics', async (req, res) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-  
-  try {
-    const params = cleanSearchParams(req.query);
-    const { query: searchQuery, q, search, type = 'services' } = params;
-    
-    const finalQuery = searchQuery || q || search;
-    
-    if (!finalQuery || typeof finalQuery !== 'string' || finalQuery.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Query parameter is required',
-        code: 'QUERY_REQUIRED',
-        requestId,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    const searchType = (type === 'gigs' || type === 'projects') ? 'gigs' : 'services';
-    const Model = searchType === 'services' ? Service : Gig;
-    
-    // Get basic statistics for this query
-    const searchRegex = new RegExp(escapeRegex(finalQuery), 'i');
-    
-    const [totalResults, priceStats, ratingStats] = await Promise.all([
-      Model.countDocuments({
-        $or: [
-          { title: { $regex: searchRegex } },
-          { description: { $regex: searchRegex } },
-          searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-        ],
-        isActive: true,
-        deletedAt: null,
-        status: searchType === 'services' ? 'active' : 'open'
-      }),
-      
-      Model.aggregate([
-        {
-          $match: {
-            $or: [
-              { title: { $regex: searchRegex } },
-              { description: { $regex: searchRegex } },
-              searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-            ],
-            isActive: true,
-            deletedAt: null,
-            status: searchType === 'services' ? 'active' : 'open'
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            avgPrice: { $avg: searchType === 'services' ? '$price' : '$budget' },
-            minPrice: { $min: searchType === 'services' ? '$price' : '$budget' },
-            maxPrice: { $max: searchType === 'services' ? '$price' : '$budget' },
-            priceRange: {
-              $push: searchType === 'services' ? '$price' : '$budget'
-            }
-          }
-        }
-      ]),
-      
-      Model.aggregate([
-        {
-          $match: {
-            $or: [
-              { title: { $regex: searchRegex } },
-              { description: { $regex: searchRegex } },
-              searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-            ],
-            isActive: true,
-            deletedAt: null,
-            status: searchType === 'services' ? 'active' : 'open',
-            rating: { $exists: true, $ne: null }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            avgRating: { $avg: '$rating' },
-            minRating: { $min: '$rating' },
-            maxRating: { $max: '$rating' },
-            totalReviews: { $sum: '$reviewsCount' }
-          }
-        }
-      ])
-    ]);
-    
-    // Get category distribution
-    const categoryDistribution = await Model.aggregate([
-      {
-        $match: {
-          $or: [
-            { title: { $regex: searchRegex } },
-            { description: { $regex: searchRegex } },
-            searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-          ],
-          isActive: true,
-          deletedAt: null,
-          status: searchType === 'services' ? 'active' : 'open'
-        }
-      },
-      {
-        $group: {
-          _id: searchType === 'services' ? '$category' : '$projectCategory',
-          count: { $sum: 1 },
-          avgPrice: { $avg: searchType === 'services' ? '$price' : '$budget' },
-          avgRating: { $avg: '$rating' }
-        }
-      },
-      { $sort: { count: -1 } },
-      { $limit: 5 }
-    ]);
-    
-    // Get seller statistics
-    const sellerStats = await Model.aggregate([
-      {
-        $match: {
-          $or: [
-            { title: { $regex: searchRegex } },
-            { description: { $regex: searchRegex } },
-            searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-          ],
-          isActive: true,
-          deletedAt: null,
-          status: searchType === 'services' ? 'active' : 'open'
-        }
-      },
-      {
-        $group: {
-          _id: '$createdBy',
-          itemCount: { $sum: 1 },
-          avgRating: { $avg: '$rating' },
-          avgPrice: { $avg: searchType === 'services' ? '$price' : '$budget' }
-        }
-      },
-      { $sort: { itemCount: -1 } },
-      { $limit: 5 }
-    ]);
-    
-    const responseTime = Date.now() - startTime;
-    
-    res.json({
-      success: true,
-      data: {
-        query: finalQuery,
-        type: searchType,
-        totalResults,
-        priceStats: priceStats[0] || {},
-        ratingStats: ratingStats[0] || {},
-        categoryDistribution,
-        sellerStats,
-        queryComplexity: finalQuery.split(' ').length > 3 ? 'complex' : 'simple',
-        timestamp: new Date().toISOString()
-      },
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-    
-  } catch (error) {
-    console.error('Search analytics error:', error);
-    
-    const responseTime = Date.now() - startTime;
-    
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching search analytics',
-      code: 'ANALYTICS_ERROR',
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
-  }
-});
-// Filter options endpoint - FIXED VERSION
 router.get('/filters', async (req, res) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -3069,6 +2160,43 @@ router.get('/filters', async (req, res) => {
     
     const finalQuery = searchQuery || q || search;
     const searchType = (type === 'gigs' || type === 'projects') ? 'gigs' : 'services';
+    const Model = searchType === 'services' ? Service : Gig;
+    
+    // Base filter for counting
+    const baseFilter = {
+      isActive: true,
+      deletedAt: null,
+      status: searchType === 'services' ? 'active' : 'open'
+    };
+    
+    if (searchType === 'gigs') {
+      baseFilter.visibility = 'public';
+    }
+    
+    // Add category filter if provided
+    if (categoryParam && isValidObjectId(categoryParam)) {
+      const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
+      baseFilter[categoryField] = new mongoose.Types.ObjectId(categoryParam);
+    }
+    
+    // Add subcategory filter if provided
+    if (subcategoryParam && isValidObjectId(subcategoryParam)) {
+      baseFilter.subcategory = new mongoose.Types.ObjectId(subcategoryParam);
+    }
+    
+    // Add text search if query exists
+    if (finalQuery && finalQuery.length >= 2) {
+      const searchRegex = new RegExp(escapeRegex(finalQuery), 'i');
+      baseFilter.$or = [
+        { title: { $regex: searchRegex } },
+        { description: { $regex: searchRegex } },
+        searchType === 'services' ? { tags: { $regex: searchRegex } } : {},
+        searchType === 'gigs' ? { skillsRequired: { $regex: searchRegex } } : {}
+      ];
+    }
+    
+    // Get total count for this search
+    const totalCount = await Model.countDocuments(baseFilter);
     
     // Base filter options
     const filterOptions = {
@@ -3083,33 +2211,33 @@ router.get('/filters', async (req, res) => {
         { value: 'recommended', label: 'Recommended', icon: 'BadgeCheck', description: 'Personalized for you' }
       ],
       budget: [
-        { value: '', label: 'Any Budget', range: [0, 10000] },
-        { value: '0-50', label: 'Under $50', range: [0, 50] },
-        { value: '50-100', label: '$50 - $100', range: [50, 100] },
-        { value: '100-200', label: '$100 - $200', range: [100, 200] },
-        { value: '200-500', label: '$200 - $500', range: [200, 500] },
-        { value: '500-1000', label: '$500 - $1,000', range: [500, 1000] },
-        { value: '1000-10000', label: '$1,000+', range: [1000, 10000] }
+        { value: '', label: 'Any Budget', range: [0, 10000], count: totalCount },
+        { value: '0-50', label: 'Under $50', range: [0, 50], count: 0 },
+        { value: '50-100', label: '$50 - $100', range: [50, 100], count: 0 },
+        { value: '100-200', label: '$100 - $200', range: [100, 200], count: 0 },
+        { value: '200-500', label: '$200 - $500', range: [200, 500], count: 0 },
+        { value: '500-1000', label: '$500 - $1,000', range: [500, 1000], count: 0 },
+        { value: '1000-10000', label: '$1,000+', range: [1000, 10000], count: 0 }
       ],
       rating: [
-        { value: '', label: 'Any Rating', min: 0 },
-        { value: '4.5', label: '4.5+ Stars', min: 4.5 },
-        { value: '4.0', label: '4.0+ Stars', min: 4.0 },
-        { value: '3.5', label: '3.5+ Stars', min: 3.5 },
-        { value: '3.0', label: '3.0+ Stars', min: 3.0 }
+        { value: '', label: 'Any Rating', min: 0, count: totalCount },
+        { value: '4.5', label: '4.5+ Stars', min: 4.5, count: 0 },
+        { value: '4.0', label: '4.0+ Stars', min: 4.0, count: 0 },
+        { value: '3.5', label: '3.5+ Stars', min: 3.5, count: 0 },
+        { value: '3.0', label: '3.0+ Stars', min: 3.0, count: 0 }
       ]
     };
     
     // Service-specific filters
     if (searchType === 'services') {
       filterOptions.deliveryTime = [
-        { value: '', label: 'Any Delivery Time', days: null },
-        { value: '1', label: '24 Hours', days: 1 },
-        { value: '3', label: '1-3 Days', days: 3 },
-        { value: '7', label: '3-7 Days', days: 7 },
-        { value: '14', label: '1-2 Weeks', days: 14 },
-        { value: '30', label: '1 Month', days: 30 },
-        { value: '90', label: '3 Months', days: 90 }
+        { value: '', label: 'Any Delivery Time', days: null, count: totalCount },
+        { value: '1', label: '24 Hours', days: 1, count: 0 },
+        { value: '3', label: '1-3 Days', days: 3, count: 0 },
+        { value: '7', label: '3-7 Days', days: 7, count: 0 },
+        { value: '14', label: '1-2 Weeks', days: 14, count: 0 },
+        { value: '30', label: '1 Month', days: 30, count: 0 },
+        { value: '90', label: '3 Months', days: 90, count: 0 }
       ];
       
       filterOptions.revisions = [
@@ -3154,259 +2282,128 @@ router.get('/filters', async (req, res) => {
       ];
     }
     
-    // Get category filters if query exists
-    if (finalQuery && finalQuery.length >= 2) {
-      try {
-        const Model = searchType === 'services' ? Service : Gig;
-        const searchRegex = new RegExp(escapeRegex(finalQuery), 'i');
-        
-        // Get total count for this search
-        const totalCount = await Model.countDocuments({
-          $or: [
-            { title: { $regex: searchRegex } },
-            { description: { $regex: searchRegex } },
-            searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-          ],
-          isActive: true,
-          deletedAt: null,
-          status: searchType === 'services' ? 'active' : 'open'
-        });
-        
-        // Get price distribution
-        const priceStats = await Model.aggregate([
-          {
-            $match: {
-              $or: [
-                { title: { $regex: searchRegex } },
-                { description: { $regex: searchRegex } },
-                searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: searchType === 'services' ? 'active' : 'open'
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              minPrice: { $min: searchType === 'services' ? '$price' : '$budget' },
-              maxPrice: { $max: searchType === 'services' ? '$price' : '$budget' },
-              avgPrice: { $avg: searchType === 'services' ? '$price' : '$budget' }
-            }
-          }
-        ]);
-        
-        // Get category distribution
-        const categoryStats = await Model.aggregate([
-          {
-            $match: {
-              $or: [
-                { title: { $regex: searchRegex } },
-                { description: { $regex: searchRegex } },
-                searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: searchType === 'services' ? 'active' : 'open'
-            }
-          },
-          {
-            $group: {
-              _id: searchType === 'services' ? '$category' : '$projectCategory',
-              count: { $sum: 1 }
-            }
-          },
-          { $sort: { count: -1 } },
-          { $limit: 5 }
-        ]);
-        
-        // Get delivery time distribution (for services)
-        if (searchType === 'services') {
-          const deliveryStats = await Service.aggregate([
-            {
-              $match: {
-                $or: [
-                  { title: { $regex: searchRegex } },
-                  { description: { $regex: searchRegex } },
-                  { tags: { $regex: searchRegex } }
-                ],
-                isActive: true,
-                deletedAt: null,
-                status: 'active',
-                deliveryTime: { $exists: true, $ne: null }
-              }
-            },
-            {
-              $bucket: {
-                groupBy: '$deliveryTime',
-                boundaries: [0, 3, 7, 14, 30, 90, 180],
-                default: 'Other',
-                output: {
-                  count: { $sum: 1 }
-                }
-              }
-            },
-            { $sort: { _id: 1 } }
-          ]);
-          
-          // Update delivery time options with counts
-          if (deliveryStats.length > 0) {
-            filterOptions.deliveryTime = filterOptions.deliveryTime.map(option => {
-              const stat = deliveryStats.find(s => s._id === parseInt(option.value) || 
-                (option.value === '' && s._id === 'Other') ||
-                (option.value === '1' && s._id === 0) ||
-                (option.value === '3' && s._id === 3) ||
-                (option.value === '7' && s._id === 7) ||
-                (option.value === '14' && s._id === 14) ||
-                (option.value === '30' && s._id === 30) ||
-                (option.value === '90' && s._id === 90));
-              
-              return {
-                ...option,
-                count: stat?.count || 0
-              };
-            });
+    // Get price distribution if we have results
+    if (totalCount > 0) {
+      const priceField = searchType === 'services' ? 'price' : 'budget';
+      
+      // Get price stats
+      const priceStats = await Model.aggregate([
+        { $match: baseFilter },
+        {
+          $group: {
+            _id: null,
+            minPrice: { $min: `$${priceField}` },
+            maxPrice: { $max: `$${priceField}` },
+            avgPrice: { $avg: `$${priceField}` },
+            totalCount: { $sum: 1 }
           }
         }
+      ]);
+      
+      if (priceStats.length > 0) {
+        const stats = priceStats[0];
         
-        // Update budget options with counts if we have price stats
-        if (priceStats.length > 0 && totalCount > 0) {
-          const stats = priceStats[0];
-          const minPrice = stats.minPrice || 0;
-          const maxPrice = stats.maxPrice || 10000;
-          const range = Math.max(1, maxPrice - minPrice);
-          
-          // Calculate approximate counts for each budget range
-          filterOptions.budget = await Promise.all(filterOptions.budget.map(async (option) => {
-            if (option.value === '') {
-              return { ...option, count: totalCount };
-            }
-            
-            const [min, max] = option.range;
-            // For specific ranges, do a count query
-            const count = await Model.countDocuments({
-              $or: [
-                { title: { $regex: searchRegex } },
-                { description: { $regex: searchRegex } },
-                searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: searchType === 'services' ? 'active' : 'open',
-              [searchType === 'services' ? 'price' : 'budget']: {
-                $gte: min,
-                $lte: max
-              }
-            });
-            
-            return {
-              ...option,
-              count
-            };
-          }));
-        } else {
-          // If no price stats, use default counts based on total
-          filterOptions.budget = filterOptions.budget.map(option => ({
-            ...option,
-            count: option.value === '' ? totalCount : Math.floor(totalCount * 0.15) // Rough estimate
-          }));
-        }
-        
-        // Get rating stats
-        const ratingStats = await Model.aggregate([
-          {
-            $match: {
-              $or: [
-                { title: { $regex: searchRegex } },
-                { description: { $regex: searchRegex } },
-                searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-              ],
-              isActive: true,
-              deletedAt: null,
-              status: searchType === 'services' ? 'active' : 'open',
-              rating: { $exists: true, $ne: null }
-            }
-          },
-          {
-            $bucket: {
-              groupBy: '$rating',
-              boundaries: [0, 3.0, 3.5, 4.0, 4.5, 5.0],
-              default: 'Other',
-              output: {
-                count: { $sum: 1 }
-              }
-            }
-          }
-        ]);
-        
-        // Update rating options with counts
-        filterOptions.rating = await Promise.all(filterOptions.rating.map(async (option) => {
+        // Calculate counts for budget ranges
+        const budgetCountPromises = filterOptions.budget.map(async (option) => {
           if (option.value === '') {
             return { ...option, count: totalCount };
           }
           
-          const minRating = parseFloat(option.value);
+          const [min, max] = option.range;
+          const countFilter = { ...baseFilter };
           
-          // Count items with rating >= minRating
-          const count = await Model.countDocuments({
-            $or: [
-              { title: { $regex: searchRegex } },
-              { description: { $regex: searchRegex } },
-              searchType === 'services' ? { tags: { $regex: searchRegex } } : {}
-            ],
-            isActive: true,
-            deletedAt: null,
-            status: searchType === 'services' ? 'active' : 'open',
-            rating: { $gte: minRating }
-          });
+          if (min !== undefined) {
+            countFilter[priceField] = { ...countFilter[priceField], $gte: min };
+          }
+          if (max !== undefined) {
+            countFilter[priceField] = { ...countFilter[priceField], $lte: max };
+          }
           
-          return {
-            ...option,
-            count
-          };
-        }));
+          const count = await Model.countDocuments(countFilter);
+          return { ...option, count };
+        });
         
-        // Add category filters if we have category stats
-        if (categoryStats.length > 0) {
-          // Get category details
-          const categoryIds = categoryStats.map(stat => stat._id).filter(Boolean);
-          const categories = await Category.find({
-            _id: { $in: categoryIds }
-          }).select('name slug icon').lean();
-          
-          const categoryMap = categories.reduce((map, cat) => {
-            map[cat._id.toString()] = cat;
-            return map;
-          }, {});
-          
-          filterOptions.category = categoryStats.map(stat => {
-            const category = categoryMap[stat._id?.toString()];
-            return {
-              value: stat._id?.toString() || '',
-              label: category?.name || 'Unknown',
-              icon: category?.icon || 'Tag',
-              count: stat.count
-            };
-          });
-        }
-        
-      } catch (error) {
-        console.error('Error calculating filter counts:', error);
-        // Continue with default counts
-        
-        // Add default counts to all options
-        filterOptions.budget = filterOptions.budget.map(opt => ({ ...opt, count: 0 }));
-        filterOptions.rating = filterOptions.rating.map(opt => ({ ...opt, count: 0 }));
-        if (filterOptions.deliveryTime) {
-          filterOptions.deliveryTime = filterOptions.deliveryTime.map(opt => ({ ...opt, count: 0 }));
-        }
+        filterOptions.budget = await Promise.all(budgetCountPromises);
       }
-    } else {
-      // If no query, set all counts to 0
-      filterOptions.budget = filterOptions.budget.map(opt => ({ ...opt, count: 0 }));
-      filterOptions.rating = filterOptions.rating.map(opt => ({ ...opt, count: 0 }));
-      if (filterOptions.deliveryTime) {
-        filterOptions.deliveryTime = filterOptions.deliveryTime.map(opt => ({ ...opt, count: 0 }));
+    }
+    
+    // Get rating distribution
+    if (totalCount > 0) {
+      const ratingCountPromises = filterOptions.rating.map(async (option) => {
+        if (option.value === '') {
+          return { ...option, count: totalCount };
+        }
+        
+        const minRating = parseFloat(option.value);
+        const countFilter = { ...baseFilter, rating: { $gte: minRating } };
+        const count = await Model.countDocuments(countFilter);
+        return { ...option, count };
+      });
+      
+      filterOptions.rating = await Promise.all(ratingCountPromises);
+    }
+    
+    // Get delivery time distribution for services
+    if (searchType === 'services' && totalCount > 0) {
+      const deliveryCountPromises = filterOptions.deliveryTime.map(async (option) => {
+        if (option.value === '') {
+          return { ...option, count: totalCount };
+        }
+        
+        const days = option.days;
+        const countFilter = { ...baseFilter };
+        
+        if (days !== null) {
+          if (option.value === '90') {
+            countFilter.deliveryTime = { $gte: days };
+          } else {
+            countFilter.deliveryTime = days;
+          }
+        }
+        
+        const count = await Model.countDocuments(countFilter);
+        return { ...option, count };
+      });
+      
+      filterOptions.deliveryTime = await Promise.all(deliveryCountPromises);
+    }
+    
+    // Get category distribution
+    if (totalCount > 0) {
+      const categoryField = searchType === 'services' ? 'category' : 'projectCategory';
+      
+      const categoryStats = await Model.aggregate([
+        { $match: baseFilter },
+        {
+          $group: {
+            _id: `$${categoryField}`,
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 5 }
+      ]);
+      
+      if (categoryStats.length > 0) {
+        const categoryIds = categoryStats.map(stat => stat._id).filter(Boolean);
+        const categories = await Category.find({
+          _id: { $in: categoryIds }
+        }).select('name slug icon').lean();
+        
+        const categoryMap = categories.reduce((map, cat) => {
+          map[cat._id.toString()] = cat;
+          return map;
+        }, {});
+        
+        filterOptions.category = categoryStats.map(stat => {
+          const category = categoryMap[stat._id?.toString()];
+          return {
+            value: stat._id?.toString() || '',
+            label: category?.name || 'Unknown',
+            icon: category?.icon || 'Tag',
+            count: stat.count
+          };
+        });
       }
     }
     
@@ -3418,6 +2415,7 @@ router.get('/filters', async (req, res) => {
       meta: {
         query: finalQuery,
         type: searchType,
+        totalResults: totalCount,
         timestamp: new Date().toISOString(),
         responseTime: `${responseTime}ms`
       },
@@ -3441,4 +2439,143 @@ router.get('/filters', async (req, res) => {
     });
   }
 });
+
+// Search statistics endpoint
+router.get('/stats', async (req, res) => {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
+  try {
+    // Get total counts
+    const [totalServices, totalGigs, totalCategories] = await Promise.all([
+      Service.countDocuments({ status: 'active', isActive: true, deletedAt: null }),
+      Gig.countDocuments({ status: 'open', isActive: true, deletedAt: null, visibility: 'public' }),
+      Category.countDocuments({ isActive: true, deletedAt: null, isSubcategory: false })
+    ]);
+    
+    // Get recent activity (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const [recentServices, recentGigs] = await Promise.all([
+      Service.countDocuments({
+        status: 'active',
+        isActive: true,
+        deletedAt: null,
+        createdAt: { $gte: sevenDaysAgo }
+      }),
+      Gig.countDocuments({
+        status: 'open',
+        isActive: true,
+        deletedAt: null,
+        visibility: 'public',
+        createdAt: { $gte: sevenDaysAgo }
+      })
+    ]);
+    
+    // Get top categories
+    const topCategories = await Category.aggregate([
+      {
+        $match: {
+          isActive: true,
+          deletedAt: null,
+          isSubcategory: false
+        }
+      },
+      {
+        $lookup: {
+          from: 'services',
+          let: { categoryId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$category', '$$categoryId'] },
+                status: 'active',
+                isActive: true,
+                deletedAt: null
+              }
+            },
+            { $count: 'serviceCount' }
+          ],
+          as: 'serviceStats'
+        }
+      },
+      {
+        $lookup: {
+          from: 'gigs',
+          let: { categoryId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$projectCategory', '$$categoryId'] },
+                status: 'open',
+                isActive: true,
+                deletedAt: null,
+                visibility: 'public'
+              }
+            },
+            { $count: 'gigCount' }
+          ],
+          as: 'gigStats'
+        }
+      },
+      {
+        $addFields: {
+          servicesCount: { $ifNull: [{ $arrayElemAt: ['$serviceStats.serviceCount', 0] }, 0] },
+          gigsCount: { $ifNull: [{ $arrayElemAt: ['$gigStats.gigCount', 0] }, 0] },
+          totalItems: { $add: ['$servicesCount', '$gigsCount'] }
+        }
+      },
+      { $sort: { totalItems: -1 } },
+      { $limit: 8 },
+      {
+        $project: {
+          name: 1,
+          slug: 1,
+          icon: 1,
+          servicesCount: 1,
+          gigsCount: 1,
+          totalItems: 1
+        }
+      }
+    ]);
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      data: {
+        totals: {
+          services: totalServices,
+          gigs: totalGigs,
+          categories: totalCategories
+        },
+        recentActivity: {
+          services: recentServices,
+          gigs: recentGigs,
+          period: '7 days'
+        },
+        topCategories
+      },
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+    
+  } catch (error) {
+    console.error('Search stats error:', error);
+    
+    const responseTime = Date.now() - startTime;
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching search statistics',
+      code: 'STATS_ERROR',
+      requestId,
+      timestamp: new Date().toISOString(),
+      responseTime: `${responseTime}ms`
+    });
+  }
+});
+
 module.exports = router;

@@ -166,19 +166,21 @@ export const useSearch = () => {
     });
   };
 
-  // Filter options
   const useFilterOptions = (query = searchQuery, type = searchType) => {
-    const debouncedFilterQuery = useDebounce(query, 300);
-    
-    return useQuery({
-      queryKey: ['search', 'filters', debouncedFilterQuery, type],
-      queryFn: () => searchAPI.getFilterOptions(debouncedFilterQuery, type),
-      enabled: true, // Always enabled, uses cache
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes,
-      refetchOnWindowFocus: false
-    });
-  };
+  const debouncedFilterQuery = useDebounce(query, 300);
+  
+  return useQuery({
+    queryKey: ['search', 'filters', debouncedFilterQuery, type],
+    queryFn: () => searchAPI.getFilterOptions(debouncedFilterQuery, type),
+    enabled: true, // Always enabled, uses cache
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes,
+    refetchOnWindowFocus: false,
+    onError: (error) => {
+      console.error('Filter options query error:', error);
+    }
+  });
+};
 
   // Search history
   const useSearchHistory = () => {
