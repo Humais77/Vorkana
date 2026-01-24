@@ -423,21 +423,42 @@ export const useDeleteMultipleGigs = () => {
   
   return useMutation({
     mutationFn: async (ids) => {
+      console.log('Deleting gigs with IDs:', ids);
+      
+      // Validate we have IDs
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        throw new Error('No gig IDs provided for deletion');
+      }
+      
       const results = [];
       const errors = [];
       
+      // Process each gig deletion
       for (const id of ids) {
         try {
+          console.log(`Deleting gig ${id}...`);
+          
+          // CRITICAL: Ensure we're calling the gigs API endpoint
+          // The gigsAPI.delete should call: DELETE /api/gigs/:id
           const result = await gigsAPI.delete(id);
+          console.log(`Gig ${id} deleted successfully:`, result);
+          
           results.push({ id, success: true, result });
         } catch (error) {
+          console.error(`Failed to delete gig ${id}:`, error);
+          
           if (error.message?.includes('validation failed') || error.code === 'DELETE_VALIDATION_ERROR') {
             try {
+              console.log(`Trying force delete for gig ${id}...`);
               const forceResult = await gigsAPI.delete(id, { force: true });
               results.push({ id, success: true, result: forceResult, forceDeleted: true });
             } catch (forceError) {
               errors.push({ id, error: forceError.message });
             }
+          } else if (error.response?.status === 404) {
+            console.log(`Gig ${id} not found, skipping...`);
+            // Skip 404 errors - gig might already be deleted
+            continue;
           } else {
             errors.push({ id, error: error.message });
           }
@@ -451,10 +472,14 @@ export const useDeleteMultipleGigs = () => {
       return results;
     },
     onSuccess: (data, ids) => {
+      console.log('Gig deletion successful, invalidating queries...');
+      
+      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
       queryClient.invalidateQueries({ queryKey: gigKeys.popular() });
       
+      // Remove individual gig queries from cache
       ids.forEach(id => {
         queryClient.removeQueries({ queryKey: gigKeys.detail(id) });
       });
@@ -467,6 +492,7 @@ export const useDeleteMultipleGigs = () => {
       }
     },
     onError: (error) => {
+      console.error('Gig deletion mutation error:', error);
       toast.error(error.message || 'Failed to delete gigs');
     },
   });

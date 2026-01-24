@@ -56,7 +56,7 @@ const EditService = lazy(() => import('./layouts/pages/services/EditService'));
 const ServiceDetails = lazy(() => import('./layouts/pages/services/ServiceDetails'));
 const ServiceListingPage = lazy(() => import('./layouts/pages/services/ServiceListingPage'));
 const ServicesInfoPage = lazy(() => import('./layouts/pages/services/ServicesInfoPage'));
-const PopularServicesPage = lazy(() => import('./components/services/PopularService'));
+const PopularServicesPage = lazy(() => import('./components/services/PopularServicesPage'));
 
 const OAuthSuccess = lazy(() => import('./layouts/pages/OAuthSuccess'));
 const SearchResults = lazy(() => import('./layouts/pages/SearchResults'));

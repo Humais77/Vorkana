@@ -36,33 +36,64 @@ export const useGigToast = () => {
 
   // Show success toast with redirect option
   const showGigUpdateSuccess = useCallback((gigId, title = 'Success!', description = '') => {
-  if (loadingToastIdRef.current) {
-    dismissToast(loadingToastIdRef.current);
-    loadingToastIdRef.current = null;
-  }
-  
-  const safeTitle = ensureString(title);
-  const safeDescription = ensureString(description);
-  
-  const toastOptions = {
-    autoClose: 5000,
-    onClose: () => {
-      setTimeout(() => {
-        window.location.href = `/gig/${gigId}`;
-      }, 300);
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
     }
-  };
-  
-  // Combine title and description for the toast content
-  let toastContent = safeTitle;
-  if (safeDescription) {
-    toastContent = `${safeTitle}\n${safeDescription}`;
-  }
-  
-  const toastId = showSuccessToast(toastContent, toastOptions);
-  
-  return toastId;
-}, []);
+    
+    const safeTitle = ensureString(title);
+    const safeDescription = ensureString(description);
+    
+    const toastOptions = {
+      autoClose: 5000,
+      onClose: () => {
+        setTimeout(() => {
+          window.location.href = `/gig/${gigId}`;
+        }, 300);
+      }
+    };
+    
+    // Combine title and description for the toast content
+    let toastContent = safeTitle;
+    if (safeDescription) {
+      toastContent = `${safeTitle}\n${safeDescription}`;
+    }
+    
+    const toastId = showSuccessToast(toastContent, toastOptions);
+    
+    return toastId;
+  }, []);
+
+  // Show delete success toast
+  const showGigDeleteSuccess = useCallback((count = 1, options = {}) => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    const message = count > 1 
+      ? `Successfully deleted ${count} gigs!`
+      : 'Gig deleted successfully!';
+    
+    return showSuccessToast(message, {
+      autoClose: 3000,
+      ...options
+    });
+  }, []);
+
+  // Show delete error toast
+  const showGigDeleteError = useCallback((message, options = {}) => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    const safeMessage = ensureString(message);
+    return showErrorToast(safeMessage, {
+      autoClose: 5000,
+      ...options
+    });
+  }, []);
 
   // Show simple success toast
   const showGigSuccess = useCallback((message, options = {}) => {
@@ -137,6 +168,8 @@ export const useGigToast = () => {
   return {
     showGigLoading,
     showGigUpdateSuccess,
+    showGigDeleteSuccess,
+    showGigDeleteError,
     showGigSuccess,
     showGigWarning,
     showGigError,
