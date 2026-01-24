@@ -11,6 +11,7 @@ const {
 const cache = require('../utils/cache.js');
 const EventEmitter = require('events');
 const serviceEmitter = new EventEmitter();
+const { v4: uuidv4 } = require('uuid');
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
 };
@@ -2238,90 +2239,164 @@ const restoreService = async (req, res, next) => {
   }
 };
 
-// Get Service Statistics
-const getServiceStats = async (req, res, next) => {
-  const requestId = generateRequestId();
+const getServiceStats = async (req, res) => {
+  const requestId = uuidv4();
+  
   try {
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required for statistics',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
-    const cacheKey = 'service_stats:admin';
-
-    // Try to get from cache first
-    const cached = await cache.get(cacheKey);
-    if (cached) {
-      console.log(`Cache hit for service stats: ${cacheKey}`);
+    console.log('[SERVICE STATS] Starting stats aggregation');
+    
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:stats:services', {
+      timestamp: Math.floor(Date.now() / 60000) // Cache per minute
+    });
+    
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:stats:services');
       return res.json({
-        success: true,
-        stats: cached,
+        ...cachedStats,
+        cached: true,
         requestId,
-        timestamp: new Date().toISOString(),
-        generatedAt: new Date(),
-        cached: true
+        timestamp: new Date().toISOString()
       });
     }
-
-    const filter = {};
-
+    
+    // Simplify the aggregation for better performance
     const stats = await Service.aggregate([
-      { $match: filter },
       {
         $facet: {
+          // Overview stats - simplified
           overview: [
             {
               $group: {
                 _id: null,
                 totalServices: { $sum: 1 },
-                activeServices: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'active'] }, { $eq: ['$isActive', true] }] }, 1, 0] } },
-                draftServices: { $sum: { $cond: [{ $eq: ['$status', 'draft'] }, 1, 0] } },
-                pendingServices: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-                pausedServices: { $sum: { $cond: [{ $eq: ['$status', 'paused'] }, 1, 0] } },
-                featuredServices: { $sum: { $cond: [{ $eq: ['$isFeatured', true] }, 1, 0] } },
-                recommendedServices: { $sum: { $cond: [{ $eq: ['$isRecommended', true] }, 1, 0] } },
-                popularServices: { $sum: { $cond: [{ $eq: ['$isPopular', true] }, 1, 0] } },
-                avgPrice: { $avg: '$price' },
-                avgDeliveryTime: { $avg: '$deliveryTime' }
+                activeServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'active'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                draftServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'draft'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                pendingServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'pending'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                pausedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'paused'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                suspendedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$status', 'suspended'] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                featuredServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$isFeatured', true] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                recommendedServices: { 
+                  $sum: { 
+                    $cond: [
+                      { $eq: ['$isRecommended', true] },
+                      1,
+                      0
+                    ]
+                  } 
+                },
+                // Use $ifNull to handle null values
+                totalViews: { $sum: { $ifNull: ['$views', 0] } },
+                totalLikes: { $sum: { $ifNull: ['$likes', 0] } },
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                avgRating: { $avg: { $ifNull: ['$rating', 0] } },
+                avgDeliveryTime: { $avg: { $ifNull: ['$deliveryTime', 0] } },
+                // Calculate revenue safely
+                totalRevenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
+                }
               }
             }
           ],
+          
+          // Category stats - simplified
           byCategory: [
-            { $match: { status: 'active', isActive: true } },
+            { 
+              $match: { 
+                status: { $in: ['active', 'published'] },
+                isActive: true,
+                category: { $exists: true, $ne: null }
+              } 
+            },
             {
               $group: {
                 _id: '$category',
                 count: { $sum: 1 },
+                avgRating: { $avg: { $ifNull: ['$rating', 0] } },
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                totalRevenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
+                }
               }
             },
             { $sort: { count: -1 } },
             { $limit: 10 }
           ],
+          
+          // Status breakdown
           byStatus: [
             {
               $group: {
                 _id: '$status',
                 count: { $sum: 1 },
-                avgPrice: { $avg: '$price' }
+                avgPrice: { $avg: { $ifNull: ['$price', 0] } },
+                avgOrders: { $avg: { $ifNull: ['$ordersCount', 0] } }
               }
             },
             { $sort: { count: -1 } }
           ],
-          topServices: [
-            { $match: { status: 'active', isActive: true } },
-            { $limit: 10 },
-            {
-              $project: {
-                title: 1,
-                price: 1,
-                slug: 1
-              }
-            }
-          ],
+          
+          // Monthly growth
           growth: [
             {
               $group: {
@@ -2329,50 +2404,106 @@ const getServiceStats = async (req, res, next) => {
                   year: { $year: '$createdAt' },
                   month: { $month: '$createdAt' }
                 },
-                count: { $sum: 1 }
-              }
-            },
-            { $sort: { '_id.year': -1, '_id.month': -1 } },
-            { $limit: 12 }
-          ],
-          priceDistribution: [
-            {
-              $bucket: {
-                groupBy: "$price",
-                boundaries: [0, 50, 100, 200, 500, 1000, 5000, 10000],
-                default: "10000+",
-                output: {
-                  count: { $sum: 1 },
+                count: { $sum: 1 },
+                revenue: { 
+                  $sum: { 
+                    $multiply: [
+                      { $ifNull: ['$price', 0] },
+                      { $ifNull: ['$ordersCount', 0] }
+                    ]
+                  } 
                 }
               }
-            }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1 } },
+            { $limit: 12 }
           ]
         }
       }
     ]);
 
-    const sanitizedStats = stats[0];
+    console.log('[SERVICE STATS] Aggregation completed:', stats.length);
+
+    // Handle empty results
+    const result = stats[0] || {
+      overview: [{
+        totalServices: 0,
+        activeServices: 0,
+        draftServices: 0,
+        pendingServices: 0,
+        pausedServices: 0,
+        suspendedServices: 0,
+        featuredServices: 0,
+        recommendedServices: 0,
+        totalViews: 0,
+        totalLikes: 0,
+        avgPrice: 0,
+        avgRating: 0,
+        avgDeliveryTime: 0,
+        totalRevenue: 0
+      }],
+      byCategory: [],
+      byStatus: [],
+      growth: []
+    };
+
+    // Get category names for byCategory
+    const byCategory = result.byCategory || [];
+    const categoryIds = byCategory.map(item => item._id).filter(id => id);
     
-    // Cache stats for 10 minutes
-    await cache.set(cacheKey, sanitizedStats, 600);
+    let categories = [];
+    if (categoryIds.length > 0) {
+      categories = await Category.find({ _id: { $in: categoryIds } })
+        .select('name slug')
+        .lean();
+    }
     
-    res.json({
-      success: true,
-      stats: sanitizedStats,
-      requestId,
-      timestamp: new Date().toISOString(),
-      generatedAt: new Date(),
-      cached: false
+    const categoryMap = {};
+    categories.forEach(cat => {
+      categoryMap[cat._id.toString()] = cat;
     });
+    
+    // Replace category IDs with names
+    const byCategoryWithNames = byCategory.map(item => ({
+      ...item,
+      category: categoryMap[item._id?.toString()] || { name: 'Unknown', slug: '' }
+    }));
+
+    // Format dates in growth data
+    const formattedGrowth = (result.growth || []).map(item => ({
+      ...item,
+      period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`
+    }));
+
+    const response = {
+      success: true,
+      data: {
+        overview: result.overview[0] || result.overview,
+        byCategory: byCategoryWithNames,
+        byStatus: result.byStatus || [],
+        growth: formattedGrowth
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    res.json(response);
 
   } catch (error) {
-    logAudit('ERROR', 'SERVICE', 'STATS', req.user?._id, { error: error.message });
-    next(error);
+    console.error('[SERVICE STATS ERROR]', error);
+    console.error('[SERVICE STATS ERROR DETAILS]', error.stack);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch service statistics: ' + error.message,
+      code: 'SERVICE_STATS_ERROR',
+      requestId
+    });
   }
 };
-
-// Bulk Operations
-// In your bulkUpdateServices function, update this section:
 
 const bulkUpdateServices = async (req, res, next) => {
   const requestId = generateRequestId();

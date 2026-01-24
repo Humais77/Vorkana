@@ -230,7 +230,7 @@ router.get('/services/stats',
   requirePermission('view_analytics'),
   auditLog('VIEW_SERVICE_STATS', 'services'),
   cacheMiddleware(300, 'admin:services:stats'), // Cache for 5 minutes
-  adminController.getServiceStats
+  serviceController.getServiceStats
 );
 router.post('/categories/repair-counts', 
   verifyAdmin,
