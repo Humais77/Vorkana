@@ -1,3 +1,4 @@
+// routes/gig.route.js - Production Ready with Redis Cache
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -13,7 +14,6 @@ const {
   getGigStats,
   searchGigs,
   exportGigs,
-  // New image-related functions
   uploadImages,
   removeImage,
   setThumbnail,
@@ -27,19 +27,78 @@ const {
   validateUpdate, 
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const {  optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const { optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
 const SessionMiddleware = require("../middleware/session.middleware");
 const CSRFMiddleware = require('../middleware/csrf.middleware');
-// Configure multer storage
+
+// Import cache middleware
+const { 
+  createCacheMiddleware, 
+  createClearCacheMiddleware,
+  cacheControlMiddleware,
+  CACHE_TTL,
+  NAMESPACES 
+} = require('../middleware/cacheMiddleware');
+
+// Cache configurations for gigs
+const GIG_CACHE_CONFIG = {
+  PUBLIC_LIST: {
+    ttl: CACHE_TTL.PUBLIC.MEDIUM,
+    namespace: NAMESPACES.PUBLIC,
+    publicOnly: true,
+    tags: ['gigs', 'list']
+  },
+  ADMIN_LIST: {
+    ttl: CACHE_TTL.PRIVATE.SHORT,
+    namespace: NAMESPACES.ADMIN,
+    checkUserRole: true,
+    rolesToBypass: ['admin'],
+    tags: ['gigs', 'admin', 'list']
+  },
+  DETAIL: {
+    ttl: CACHE_TTL.PUBLIC.LONG,
+    namespace: NAMESPACES.PUBLIC,
+    tags: ['gigs', 'detail']
+  },
+  USER_GIGS: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.USER,
+    tags: ['gigs', 'user']
+  },
+  STATS: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['gigs', 'stats']
+  }
+};
+
+// Create cache middlewares
+const cachePublicList = createCacheMiddleware(GIG_CACHE_CONFIG.PUBLIC_LIST);
+const cacheAdminList = createCacheMiddleware(GIG_CACHE_CONFIG.ADMIN_LIST);
+const cacheDetail = createCacheMiddleware(GIG_CACHE_CONFIG.DETAIL);
+const cacheUserGigs = createCacheMiddleware(GIG_CACHE_CONFIG.USER_GIGS);
+const cacheStats = createCacheMiddleware(GIG_CACHE_CONFIG.STATS);
+
+// Clear cache middleware for write operations
+const clearGigCache = createClearCacheMiddleware({
+  patterns: [
+    'gigs:*',
+    'gig:*',
+    '*:tags:*gigs*'
+  ],
+  tags: ['gigs'],
+  namespace: NAMESPACES.PUBLIC,
+  clearAllOnWrite: false
+});
+
+// Configure multer
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../public/uploads');
-    
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
-    
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
@@ -61,26 +120,20 @@ const fileFilter = (req, file, cb) => {
   
   if (extname && mimetype) {
     const maxSize = 10 * 1024 * 1024;
-    
     if (file.size > maxSize) {
       return cb(new Error('File size exceeds 10MB limit'), false);
     }
-    
     const originalName = file.originalname.toLowerCase();
     if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
       return cb(new Error('Invalid filename'), false);
     }
-    
-    // Security check for executable files
     const executableExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.py'];
     const fileExtension = path.extname(originalName);
     if (executableExtensions.includes(fileExtension)) {
       return cb(new Error('Executable files are not allowed'), false);
     }
-    
     return cb(null, true);
   }
-  
   cb(new Error('Invalid file type. Only images, PDFs, docs, and archives are allowed.'), false);
 };
 
@@ -93,27 +146,22 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Configure multer for images (different from regular files)
 const imageFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|webp|gif/i;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase().substring(1));
   const mimetype = allowedTypes.test(file.mimetype);
   
   if (extname && mimetype) {
-    const maxSize = 5 * 1024 * 1024; // 5MB for images
-    
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       return cb(new Error('Image size exceeds 5MB limit'), false);
     }
-    
     const originalName = file.originalname.toLowerCase();
     if (originalName.includes('..') || originalName.includes('/') || originalName.includes('\\')) {
       return cb(new Error('Invalid filename'), false);
     }
-    
     return cb(null, true);
   }
-  
   cb(new Error('Invalid image type. Only JPEG, JPG, PNG, WebP, and GIF are allowed.'), false);
 };
 
@@ -180,27 +228,255 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-//  SessionMiddleware.authenticateed stats and export routes
-router.get('/stats',  SessionMiddleware.authenticate, gigLimiter, getGigStats);
-router.get('/export',  SessionMiddleware.authenticate, adminOnly, gigLimiter, validateQuery, exportGigs);
-router.get('/', optionalAuth, validateQuery, getGigs);
-router.get('/search', optionalAuth, validateQuery, searchGigs);
-router.get('/subcategory/:subcategoryId', optionalAuth, validateQuery, getGigsBySubcategory);
-router.get('/:id', optionalAuth, getGigById);
+// ==================== PUBLIC ROUTES (Cached) ====================
 
-//  SessionMiddleware.authenticateed routes - authentication via cookies
-router.post('/',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
-router.put('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
-router.delete('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, deleteGig);
-router.patch('/:id/restore',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, adminOnly, gigLimiter, restoreGig);
+// Get all gigs
+router.get('/', 
+  optionalAuth, 
+  gigLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
+  validateQuery, 
+  getGigs
+);
 
-//  SessionMiddleware.authenticateed image management routes
-router.post('/:id/images/upload',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleImageUpload, uploadImages);
-router.delete('/:id/images/:publicId',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, removeImage);
-router.put('/:id/thumbnail/:publicId',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, setThumbnail);
-router.post('/:id/thumbnail/upload',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleThumbnailUpload, uploadThumbnail);
+// Search gigs
+router.get('/search', 
+  optionalAuth, 
+  gigLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 180 }),
+  cachePublicList,
+  validateQuery, 
+  searchGigs
+);
 
+// Get gigs by subcategory
+router.get('/subcategory/:subcategoryId', 
+  optionalAuth, 
+  gigLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
+  validateQuery, 
+  getGigsBySubcategory
+);
 
-router.use(errorHandler)
+// Get gig by ID
+router.get('/:id', 
+  optionalAuth, 
+  gigLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 600 }),
+  cacheDetail,
+  getGigById
+);
+
+// ==================== USER ROUTES (Cached for user) ====================
+
+// Get gig stats (user specific)
+router.get('/stats', 
+  SessionMiddleware.authenticate, 
+  gigLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheStats,
+  getGigStats
+);
+
+// ==================== ADMIN READ ROUTES (Cached) ====================
+
+// Export gigs (admin)
+router.get('/export', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  validateQuery, 
+  exportGigs
+);
+
+// ==================== USER WRITE ROUTES (Clear Cache) ====================
+
+// Create gig
+router.post('/', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  handleMultipleFileFields, 
+  validateCreate, 
+  createGig
+);
+
+// Update gig
+router.put('/:id', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  handleMultipleFileFields, 
+  validateUpdate, 
+  updateGig
+);
+
+// Delete gig
+router.delete('/:id', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  deleteGig
+);
+
+// Restore gig
+router.patch('/:id/restore', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  restoreGig
+);
+
+// Upload images
+router.post('/:id/images/upload', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  handleImageUpload, 
+  uploadImages
+);
+
+// Remove image
+router.delete('/:id/images/:publicId', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  removeImage
+);
+
+// Set thumbnail
+router.put('/:id/thumbnail/:publicId', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  setThumbnail
+);
+
+// Upload thumbnail
+router.post('/:id/thumbnail/upload', 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  handleThumbnailUpload, 
+  uploadThumbnail
+);
+
+// ==================== ADMIN WRITE ROUTES (Clear Cache) ====================
+
+// Bulk gig operations (admin)
+router.post('/admin/bulk', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  gigLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearGigCache,
+  async (req, res) => {
+    try {
+      const { ids, operation, data = {} } = req.body;
+      
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No gigs selected',
+          code: 'NO_GIGS_SELECTED'
+        });
+      }
+      
+      let updateData = {};
+      let message = 'Gigs updated successfully';
+      
+      switch (operation) {
+        case 'activate':
+          updateData = { status: 'open', isActive: true };
+          message = 'Gigs activated successfully';
+          break;
+        case 'pause':
+          updateData = { status: 'closed', isActive: false };
+          message = 'Gigs closed successfully';
+          break;
+        case 'delete':
+          // Use Gig model
+          const Gig = require('../models/gig.model');
+          const results = await Promise.all(
+            ids.map(id => 
+              Gig.findByIdAndUpdate(id, {
+                isActive: false,
+                deletedAt: new Date(),
+                deletedBy: req.user._id
+              })
+            )
+          );
+          
+          return res.json({
+            success: true,
+            message: 'Gigs deleted successfully',
+            modifiedCount: results.filter(r => r).length
+          });
+        default:
+          updateData = data;
+      }
+      
+      updateData.lastUpdatedBy = req.user._id;
+      
+      const Gig = require('../models/gig.model');
+      const result = await Gig.updateMany(
+        { _id: { $in: ids } },
+        { $set: updateData }
+      );
+      
+      res.json({
+        success: true,
+        message,
+        modifiedCount: result.modifiedCount
+      });
+      
+    } catch (error) {
+      console.error('[BULK UPDATE GIGS ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to perform bulk operation'
+      });
+    }
+  }
+);
+
+// ==================== HEALTH CHECK ====================
+
+router.get('/health/check', 
+  gigLimiter,
+  cacheControlMiddleware({ maxAge: 30 }),
+  (req, res) => {
+    const cache = require('../utils/cache');
+    
+    res.json({
+      success: true,
+      message: 'Gig routes are operational',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      cache: cache.stats()
+    });
+  }
+);
+
+router.use(errorHandler);
 
 module.exports = router;

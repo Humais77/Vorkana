@@ -6,10 +6,11 @@ const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const http = require('http');
-const compression = require('compression'); // ADD THIS
-const responseTime = require('response-time'); // ADD THIS
-const morgan = require('morgan'); // ADD THIS for logging
+const compression = require('compression');
+const responseTime = require('response-time');
+const morgan = require('morgan');
 const csrfRoutes = require('./routes/csrf.route');
+
 dotenv.config();
 
 // Validate environment variables
@@ -47,43 +48,41 @@ const contactRoutes = require('./routes/contact.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
-// Connect to database with connection pooling
+// Connect to database
 connectDB().then(() => {
-  console.log('✅ Database connected with optimized pool');
+  console.log('✅ Database connected');
 });
 
 const app = express();
 const server = http.createServer(app);
 
-// ==================== CRITICAL PERFORMANCE MIDDLEWARE ====================
+// ==================== PERFORMANCE MIDDLEWARE ====================
 
-// 1. Compression - REDUCES RESPONSE SIZE BY 70%
+// 1. Compression
 app.use(compression({
-  level: 6, // Optimal balance between speed and compression
-  threshold: 1024, // Only compress responses > 1KB
+  level: 6,
+  threshold: 1024,
   filter: (req, res) => {
     if (req.headers['x-no-compression']) return false;
     return compression.filter(req, res);
   }
 }));
 
-// 2. Response Time Tracking - IDENTIFY SLOW ENDPOINTS
+// 2. Response Time Tracking
 app.use(responseTime((req, res, time) => {
-  if (time > 300) {
+  if (time > 500) {
     console.warn(`🚨 SLOW ENDPOINT: ${req.method} ${req.originalUrl} - ${time.toFixed(2)}ms`);
   }
   
-  // Add response time header for client-side monitoring
   res.setHeader('X-Response-Time', `${time.toFixed(2)}ms`);
 }));
 
-// 3. Optimized Morgan Logging (skip in production for performance)
+// 3. Optimized Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else if (process.env.NODE_ENV === 'production') {
-  // Minimal logging in production
   app.use(morgan('combined', {
-    skip: (req, res) => res.statusCode < 400, // Only log errors in production
+    skip: (req, res) => res.statusCode < 400,
     stream: process.stderr
   }));
 }
@@ -135,7 +134,7 @@ const corsOptions = {
     'ETag',
     'Last-Modified'
   ],
-  credentials: true, // IMPORTANT: Allows cookies
+  credentials: true,
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
@@ -146,12 +145,11 @@ security(app);
 
 // ==================== RATE LIMITING ====================
 
-// Use memory store for better performance
 const MemoryStore = require('express-rate-limit').MemoryStore;
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500, // Reduced from 1000 for better memory management
+  max: 500,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
@@ -159,36 +157,23 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new MemoryStore(),
-  // FIXED: Proper IP key generator
-  keyGenerator: (req, res) => {
-    // Use the built-in helper for IPv6 support
-    const ipKeyGenerator = require('express-rate-limit').ipKeyGenerator;
-    const ip = ipKeyGenerator(req, res);
-    
-    // Add user agent for additional uniqueness (optional)
-    const userAgent = req.headers['user-agent'] || '';
-    return `${ip}:${Buffer.from(userAgent).toString('base64').slice(0, 10)}`;
-  },
   skip: (req) => {
-    // Skip rate limiting for health checks and static files
     return req.path === '/health' || 
            req.path.startsWith('/public/') ||
            req.method === 'OPTIONS';
-  },
-  skipSuccessfulRequests: false,
-  skipFailedRequests: false
+  }
 });
+
 app.use(globalLimiter);
 
-// ==================== BODY PARSING OPTIMIZATIONS ====================
+// ==================== BODY PARSING ====================
 
 app.use(hpp({
-  whitelist: ['sort', 'limit', 'page'] // Only check these parameters
+  whitelist: ['sort', 'limit', 'page']
 }));
 
-// Parse JSON with optimization
 app.use(express.json({ 
-  limit: '5mb', // Reduced from 10mb for security/performance
+  limit: '5mb',
   verify: (req, res, buf) => {
     try {
       JSON.parse(buf.toString());
@@ -198,24 +183,22 @@ app.use(express.json({
   }
 }));
 
-// Parse URL-encoded with optimization
 app.use(express.urlencoded({ 
   extended: true, 
-  limit: '5mb', // Reduced from 10mb
-  parameterLimit: 50 // Reduced from 100
+  limit: '5mb',
+  parameterLimit: 50
 }));
 
-// ==================== STATIC FILES WITH CACHING ====================
+// ==================== STATIC FILES ====================
 
 if (process.env.NODE_ENV === 'production') {
   app.use('/public', express.static('public', {
-    maxAge: '1d', // Cache for 1 day
-    etag: true, // Enable ETag for caching
+    maxAge: '1d',
+    etag: true,
     lastModified: true,
     setHeaders: (res, path) => {
-      // Cache images longer
       if (path.match(/\.(jpg|jpeg|png|gif|ico|svg)$/)) {
-        res.setHeader('Cache-Control', 'public, max-age=604800'); // 1 week
+        res.setHeader('Cache-Control', 'public, max-age=604800');
       }
     }
   }));
@@ -224,34 +207,37 @@ if (process.env.NODE_ENV === 'production') {
 // ==================== PASSPORT INITIALIZATION ====================
 
 app.use(passport.initialize());
-// Update health check endpoint
+
+// ==================== HEALTH CHECK ====================
+
 app.get('/health', (req, res) => {
-  const csrfStats = CSRFMiddleware.getTokenStats();
+  const memoryUsage = process.memoryUsage();
   
   res.json({ 
     success: true, 
     message: 'API is healthy', 
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    csrf: {
-      enabled: true,
-      tokens: csrfStats.totalTokens,
-      activeSessions: csrfStats.activeSessions
+    memory: {
+      rss: Math.round(memoryUsage.rss / 1024 / 1024) + 'MB',
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024) + 'MB'
     },
-    uptime: process.uptime(),
-    memory: process.memoryUsage()
+    uptime: process.uptime()
   });
 });
-// Cache control middleware for GET routes
-const cacheControl = (seconds = 300) => (req, res, next) => {
+
+// ==================== ROUTES ====================
+
+// Cache control middleware
+const cacheControl = (seconds = 60) => (req, res, next) => {
   if (req.method === 'GET' && !req.path.includes('/api/auth')) {
     res.set('Cache-Control', `public, max-age=${seconds}`);
   }
   next();
 };
 
-// Apply cache control to all GET routes
-app.use(cacheControl(300));
+app.use(cacheControl(60));
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -266,13 +252,14 @@ app.use('/api/popular-services', popularServicesRoute);
 app.use('/api/subscribe-email', subscribeRoute);
 app.use('/api/contact', contactRoutes); 
 app.use('/api/csrf', csrfRoutes);
+
+// ==================== SECURITY HEADERS ====================
+
 app.use((req, res, next) => {
-  // Add CSRF token to response headers for web clients
   if (req.csrfToken) {
     res.setHeader('X-CSRF-Token', req.csrfToken);
   }
   
-  // Add CSRF protection headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
@@ -280,42 +267,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
-// Add this route to your Express server
-app.get('/api/proxy/image', async (req, res) => {
-  try {
-    const { url } = req.query;
-    
-    if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    // Optionally validate the URL is from your Cloudinary account
-    if (!url.includes(process.env.CLOUDINARY_CLOUD_NAME)) {
-      return res.status(403).json({ error: 'Invalid image source' });
-    }
-    
-    // Fetch the image from Cloudinary
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch image');
-    }
-    
-    // Get image data
-    const buffer = await response.buffer();
-    const contentType = response.headers.get('content-type');
-    
-    // Serve the image
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year cache
-    res.send(buffer);
-    
-  } catch (error) {
-    console.error('Image proxy error:', error);
-    res.status(500).json({ error: 'Failed to fetch image' });
-  }
-});
 // ==================== ERROR HANDLING ====================
 
 // 404 Handler
@@ -332,16 +283,14 @@ app.use((err, req, res, next) => {
   const errorId = Math.random().toString(36).substr(2, 9);
   const timestamp = new Date().toISOString();
   
-  console.error(`🔴 [${errorId}] Unhandled Error:`, {
+  console.error(`🔴 [${errorId}] Error:`, {
     message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     path: req.path,
     method: req.method,
     ip: req.ip,
     timestamp
   });
 
-  // Specific error handling
   if (err.message === 'Not allowed by CORS policy') {
     return res.status(403).json({
       success: false,
@@ -388,9 +337,10 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Default error
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  const message = process.env.NODE_ENV === 'production' 
+    ? 'Internal Server Error' 
+    : err.message;
 
   res.status(statusCode).json({
     success: false,
@@ -398,45 +348,38 @@ app.use((err, req, res, next) => {
     errorId,
     timestamp,
     ...(process.env.NODE_ENV === 'development' && { 
-      stack: err.stack,
-      details: err.toString()
+      stack: err.stack
     })
   });
 });
 
 // ==================== SERVER OPTIMIZATION ====================
 
-// Increase server timeouts
-server.keepAliveTimeout = 65000; // 65 seconds
-server.headersTimeout = 66000; // 66 seconds
+// Increase server timeouts for production
+if (process.env.NODE_ENV === 'production') {
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+}
 
-// Set proper timeout for requests
+// Request timeout middleware
 app.use((req, res, next) => {
-  req.setTimeout(30000, () => { // 30 second timeout
+  req.setTimeout(30000, () => {
     console.warn(`Request timeout: ${req.method} ${req.url}`);
   });
   next();
 });
 
-// ==================== PERFORMANCE MONITORING ====================
+// ==================== MEMORY MONITORING ====================
 
-// Performance monitoring middleware
+// Periodic memory monitoring
 if (process.env.NODE_ENV === 'production') {
-  let requestCount = 0;
-  let totalResponseTime = 0;
-  
   setInterval(() => {
-    const avgResponseTime = requestCount > 0 ? totalResponseTime / requestCount : 0;
-    console.log(`📊 Performance Stats: ${requestCount} requests, Avg: ${avgResponseTime.toFixed(2)}ms`);
-    
-    // Reset counters
-    requestCount = 0;
-    totalResponseTime = 0;
-    
-    // Log memory usage
     const memoryUsage = process.memoryUsage();
-    console.log(`🧠 Memory: RSS=${Math.round(memoryUsage.rss / 1024 / 1024)}MB, Heap=${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB/${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`);
-  }, 60000); // Log every minute
+    console.log(`📊 Memory Stats: RSS=${Math.round(memoryUsage.rss / 1024 / 1024)}MB, Heap=${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB/${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`);
+  }, 5 * 60 * 1000); // Every 5 minutes
 }
 
+// ==================== EXPORT ====================
+
+// Export both app and server
 module.exports = { app, server };
