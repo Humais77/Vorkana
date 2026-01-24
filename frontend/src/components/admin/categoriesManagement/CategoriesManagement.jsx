@@ -1,5 +1,5 @@
-// CategoriesManagement.jsx - Professional UI Update
-import React, { useState, useMemo, useCallback, memo } from 'react';
+// CategoriesManagement.jsx - Updated with debounced search
+import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
@@ -30,9 +30,17 @@ import {
   FiX,
   FiLoader,
   FiGrid,
-  FiHash
+  FiHash,
+  FiBarChart2,
+  FiPackage,
+  FiUsers,
+  FiTrendingDown,
+  FiActivity,
+  FiDatabase,
+  FiPercent,
+  FiClock
 } from 'react-icons/fi';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
 import CategoryEditModal from './CategoryEditModal';
 import DeleteConfirmationModal from '../DeleteConfirmationModal';
@@ -234,9 +242,28 @@ const CategoryTableRow = memo(({
 
 CategoryTableRow.displayName = 'CategoryTableRow';
 
+// Debounce hook
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  const timerRef = useRef();
+
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(timerRef.current);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 // Main Component
 const CategoriesManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms delay
   const [filters, setFilters] = useState({
     status: '',
     featured: '',
@@ -268,7 +295,7 @@ const CategoriesManagement = () => {
   } = useAdminCategories({
     page,
     limit,
-    search: searchTerm,
+    search: debouncedSearchTerm, // Use debounced search term
     ...filters
   });
   
@@ -355,26 +382,25 @@ const CategoriesManagement = () => {
   }, [selectedCategory, updateCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const handleDeleteCategory = useCallback(async (deleteOptions) => {
-  const loadingToastId = showCategoryLoading('Deleting category...');
-  setDeletingCategoryId(deleteOptions.id);
-  
-  try {
-    await deleteCategoryMutation.mutateAsync(deleteOptions);
-    dismissCategoryToast(loadingToastId);
-    showCategorySuccess('Category deleted successfully');
-    setShowDeleteModal(false);
-    setSelectedCategory(null);
-    setForceDelete(false);
-    setDeletingCategoryId(null);
-    refetch();
-  } catch (error) {
-    dismissCategoryToast(loadingToastId);
-    setDeletingCategoryId(null);
-    showCategoryError(error.response?.data?.message || 'Failed to delete category');
-    throw error;
-  }
-}, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
-
+    const loadingToastId = showCategoryLoading('Deleting category...');
+    setDeletingCategoryId(deleteOptions.id);
+    
+    try {
+      await deleteCategoryMutation.mutateAsync(deleteOptions);
+      dismissCategoryToast(loadingToastId);
+      showCategorySuccess('Category deleted successfully');
+      setShowDeleteModal(false);
+      setSelectedCategory(null);
+      setForceDelete(false);
+      setDeletingCategoryId(null);
+      refetch();
+    } catch (error) {
+      dismissCategoryToast(loadingToastId);
+      setDeletingCategoryId(null);
+      showCategoryError(error.response?.data?.message || 'Failed to delete category');
+      throw error;
+    }
+  }, [deleteCategoryMutation, refetch, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const toggleSelectAll = useCallback((e) => {
     if (e.target.checked) {
@@ -411,11 +437,10 @@ const CategoriesManagement = () => {
   }, []);
 
   const handleDelete = useCallback((category) => {
-  setSelectedCategory(category);
-  setForceDelete(false);
-  setShowDeleteModal(true);
-}, []);
-
+    setSelectedCategory(category);
+    setForceDelete(false);
+    setShowDeleteModal(true);
+  }, []);
 
   const refreshData = useCallback(() => {
     setSelectedCategories([]);
@@ -449,14 +474,47 @@ const CategoriesManagement = () => {
   }, [exportCategoriesMutation, showCategoryLoading, showCategorySuccess, showCategoryError, dismissCategoryToast]);
 
   const stats = useMemo(() => {
-    const categoryStats = categoryStatsData?.data?.overview?.[0] || {};
+    const categoryStats = categoryStatsData?.data?.overview || {};
     
+    // Calculate derived stats
+    const totalCategories = pagination.total || categories.length;
+    const activeCategories = categories.filter(c => c.isActive).length;
+    const featuredCategories = categories.filter(c => c.featured).length;
+    
+    // Use actual stats from backend, fallback to calculated values
     return {
-      total: pagination.total || categories.length,
-      active: categories.filter(c => c.isActive).length,
-      featured: categories.filter(c => c.featured).length,
-      totalServices: categoryStats.totalServices || categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0),
-      totalGigs: categoryStats.totalGigs || categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0)
+      // Basic stats
+      total: categoryStats.totalCategories || totalCategories,
+      active: categoryStats.activeCategories || activeCategories,
+      inactive: categoryStats.inactiveCategories || (totalCategories - activeCategories),
+      featured: categoryStats.featuredCategories || featuredCategories,
+      popular: categoryStats.popularCategories || categories.filter(c => c.popular).length,
+      
+      // Content stats
+      totalServices: Math.max(0, categoryStats.totalServices || categories.reduce((sum, cat) => sum + (cat.servicesCount || 0), 0)),
+      totalGigs: Math.max(0, categoryStats.totalGigs || categories.reduce((sum, cat) => sum + (cat.gigsCount || 0), 0)),
+      
+      // Average stats from backend
+      avgServicesPerCategory: Math.max(0, categoryStats.avgServicesPerCategory || 0),
+      avgGigsPerCategory: Math.max(0, categoryStats.avgGigsPerCategory || 0),
+      
+      // Range stats from backend
+      maxServices: Math.max(0, categoryStats.maxServices || 0),
+      maxGigs: Math.max(0, categoryStats.maxGigs || 0),
+      minServices: Math.max(0, categoryStats.minServices || 0),
+      minGigs: Math.max(0, categoryStats.minGigs || 0),
+      
+      // Hierarchy stats
+      categoriesWithParent: Math.max(0, categoryStats.categoriesWithParent || categories.filter(c => c.parentCategory).length),
+      categoriesWithoutParent: Math.max(0, categoryStats.categoriesWithoutParent || categories.filter(c => !c.parentCategory).length),
+      
+      // Additional derived stats
+      avgUtilization: totalCategories > 0 
+        ? ((activeCategories / totalCategories) * 100).toFixed(1)
+        : 0,
+      serviceDensity: totalCategories > 0 
+        ? ((categoryStats.totalServices || 0) / totalCategories).toFixed(1)
+        : 0
     };
   }, [categories, pagination.total, categoryStatsData]);
 
@@ -523,13 +581,22 @@ const CategoriesManagement = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Enhanced Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Categories Card */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Categories</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`text-xs px-2 py-1 rounded-full ${stats.active > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  {stats.active} active
+                </span>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                  {stats.featured} featured
+                </span>
+              </div>
             </div>
             <div className="h-12 w-12 bg-indigo-100 rounded-lg flex items-center justify-center">
               <FiFolder className="h-6 w-6 text-indigo-600" />
@@ -537,38 +604,78 @@ const CategoriesManagement = () => {
           </div>
         </div>
         
+        {/* Active Status Card */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Active</p>
+              <p className="text-sm font-medium text-gray-600">Active Status</p>
               <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Utilization</span>
+                  <span className="font-semibold">{stats.avgUtilization}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                  <div 
+                    className="bg-green-500 h-1.5 rounded-full" 
+                    style={{ width: `${Math.min(100, stats.avgUtilization)}%` }}
+                  ></div>
+                </div>
+              </div>
             </div>
             <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <FiCheckCircle className="h-6 w-6 text-green-600" />
+              <FiActivity className="h-6 w-6 text-green-600" />
             </div>
           </div>
         </div>
         
+        {/* Content Distribution Card */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Featured</p>
-              <p className="text-2xl font-bold text-purple-600 mt-1">{stats.featured}</p>
-            </div>
-            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <FiStar className="h-6 w-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Services</p>
-              <p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalServices}</p>
+              <p className="text-sm font-medium text-gray-600">Content Distribution</p>
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Services</span>
+                  <span className="text-sm font-bold text-blue-600">{stats.totalServices}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Gigs</span>
+                  <span className="text-sm font-bold text-purple-600">{stats.totalGigs}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                  <span>Density</span>
+                  <span>{stats.serviceDensity} per category</span>
+                </div>
+              </div>
             </div>
             <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FiTrendingUp className="h-6 w-6 text-blue-600" />
+              <FiPackage className="h-6 w-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+        
+        {/* Performance Metrics Card */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Performance</p>
+              <div className="mt-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <FiTrendingUp className="h-4 w-4 text-green-500" />
+                  <span className="text-sm">Max: {stats.maxServices} services</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <FiTrendingDown className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm">Avg: {stats.avgServicesPerCategory.toFixed(1)}/category</span>
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  {stats.categoriesWithParent} with parent category
+                </div>
+              </div>
+            </div>
+            <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
+              <FiBarChart2 className="h-6 w-6 text-purple-600" />
             </div>
           </div>
         </div>
@@ -696,6 +803,8 @@ const CategoriesManagement = () => {
                 <option value="createdAt">Date Created</option>
                 <option value="name">Name</option>
                 <option value="order">Order</option>
+                <option value="servicesCount">Services Count</option>
+                <option value="gigsCount">Gigs Count</option>
               </select>
             </div>
             
@@ -775,8 +884,16 @@ const CategoriesManagement = () => {
             <FiFolder className="h-16 w-16 text-gray-300 mx-auto mb-4" />
             <h3 className="mt-4 text-lg font-semibold text-gray-900">No categories found</h3>
             <p className="mt-2 text-gray-500 max-w-md mx-auto">
-              Try adjusting your search or filter criteria to find what you're looking for.
+              {searchTerm || Object.values(filters).some(f => f !== '' && f !== null) 
+                ? "Try adjusting your search or filter criteria to find what you're looking for."
+                : "No categories available. Create your first category to get started."}
             </p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              Create First Category
+            </button>
           </div>
         )}
 
@@ -878,6 +995,7 @@ const CategoriesManagement = () => {
       {showCategoryDetails && selectedCategory && (
         <CategoryDetailsModal
           category={selectedCategory}
+          stats={stats} // Pass stats to modal
           isOpen={showCategoryDetails}
           onClose={() => {
             setShowCategoryDetails(false);
@@ -889,26 +1007,26 @@ const CategoriesManagement = () => {
       )}
       
       {showDeleteModal && selectedCategory && (
-  <DeleteConfirmationModal
-    item={selectedCategory}
-    isOpen={showDeleteModal}
-    onClose={() => {
-      setShowDeleteModal(false);
-      setSelectedCategory(null);
-      setForceDelete(false);
-    }}
-    onDelete={handleDeleteCategory}
-    type="category"
-    loading={deleteCategoryMutation.isLoading || deletingCategoryId === selectedCategory._id}
-    dependencies={{
-      services: selectedCategory.servicesCount || 0,
-      gigs: selectedCategory.gigsCount || 0,
-      subcategories: selectedCategory.subcategoriesCount || 0
-    }}
-    forceDelete={forceDelete}
-    onForceDeleteChange={setForceDelete}
-  />
-)}
+        <DeleteConfirmationModal
+          item={selectedCategory}
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedCategory(null);
+            setForceDelete(false);
+          }}
+          onDelete={handleDeleteCategory}
+          type="category"
+          loading={deleteCategoryMutation.isLoading || deletingCategoryId === selectedCategory._id}
+          dependencies={{
+            services: selectedCategory.servicesCount || 0,
+            gigs: selectedCategory.gigsCount || 0,
+            subcategories: selectedCategory.subcategoriesCount || 0
+          }}
+          forceDelete={forceDelete}
+          onForceDeleteChange={setForceDelete}
+        />
+      )}
     </div>
   );
 };
