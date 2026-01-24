@@ -49,7 +49,6 @@ import { useService, useUpdateService } from '../../../hooks/useServices';
 import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from '../../../components/SeoWrapper';
-import { isProfileCompleteEnough } from '../../../utils/profileUtils';
 import { useServiceToast } from '../../../hooks/useServiceToast';
 
 // Static data outside component
@@ -376,13 +375,7 @@ const EditService = () => {
     };
   }, [uploadedImages, thumbnailFile]);
 
-  // Profile completion check - OPTIMIZED
-  useEffect(() => {
-    if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
-      showServiceError('Please complete your profile before editing services');
-      navigate('/dashboard');
-    }
-  }, [currentUser, navigate, showServiceError]);
+ 
 
   // Memoized helper functions
   const getCategoryName = useCallback(() => {
