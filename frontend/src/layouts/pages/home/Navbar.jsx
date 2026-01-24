@@ -8,6 +8,7 @@ import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import { useSessionWatcher } from '../../../hooks/useAuth';
+
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -18,7 +19,7 @@ const Default_pp_URL = buildImageUrl({
 });
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
-   useSessionWatcher();
+  useSessionWatcher();
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
@@ -184,11 +185,8 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   return (
     <>
       <nav className="w-full bg-white border-b sticky top-0 z-50 h-16 lg:h-20">
-
-        <div className="max-w-7xl mx-auto px-4 h-full">
-
+        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
           <div className="flex items-center justify-between h-full">
-
             {/* Left: Hamburger Menu (Mobile only) */}
             <div className="flex items-center lg:hidden">
               <button
@@ -205,7 +203,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             {/* Desktop: Logo */}
-            <div className="hidden lg:flex items-center shrink-0 mr-8 mb-2">
+            <div className="hidden lg:flex items-center shrink-0 mr-4 xl:mr-6 2xl:mr-8">
               <Link
                 to="/"
                 className="flex items-center gap-1"
@@ -213,21 +211,19 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 draggable="true"
               >
                 <img
-  src={Logo_URL}
-  alt="Vorkanna"
-  className="h-10 lg:h-10 w-auto object-contain"
- />
-
+                  src={Logo_URL}
+                  alt="Vorkanna"
+                  className="h-9 lg:h-10 w-auto object-contain"
+                />
               </Link>
             </div>
 
             {/* Desktop: Search */}
-            <div className="hidden lg:flex items-center ml-6 mr-auto min-w-[520px] h-full">
-
-              <div>
+            <div className="hidden lg:flex items-center flex-1 max-w-lg xl:max-w-2xl 2xl:max-w-3xl mx-4 xl:mx-6 2xl:mx-8 h-full">
+              <div className="w-full">
                 <SearchComponent 
                   placeholder="What service are you looking for today?"
-                  className="w-[520px] xl:w-[500px] 2xl:w-[720px]" 
+                  className="w-full" 
                 />
               </div>
             </div>
@@ -281,7 +277,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                           <div className="p-4 border-b border-gray-100">
                             <div className="flex items-center space-x-3">
                               <img
-                                src={user?.picture ||Default_pp_URL}
+                                src={user?.picture || Default_pp_URL}
                                 alt={user?.name}
                                 className="w-10 h-10 rounded-full object-cover"
                                 loading="lazy"
@@ -385,31 +381,38 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   }}
                   className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm"
                 >
-                  Join
+                  <span className="hidden xs:inline">Join Free</span>
+                  <span className="xs:hidden">Join</span>
                 </button>
               )}
             </div>
 
             {/* Desktop: Navigation Items */}
-            <div className="hidden lg:flex items-center space-x-4">
-              <Link
-    to="/how-it-works"
-    onClick={closeAllDropdowns}
-    className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150 font-medium"
-  >
-    <span>How It Works</span>
-  </Link>
-              <div className="relative" ref={exploreRef}>
+            <div className="hidden lg:flex items-center space-x-1 xl:space-x-2 2xl:space-x-3 min-w-0">
+              {/* How It Works - Fixed to prevent hiding */}
+              <div className="shrink-0">
+                <Link
+                  to="/how-it-works"
+                  onClick={closeAllDropdowns}
+                  className="flex items-center px-3 xl:px-3 2xl:px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150 font-medium whitespace-nowrap text-sm xl:text-base"
+                >
+                  <span>How It Works</span>
+                </Link>
+              </div>
+              
+              {/* Explore Dropdown */}
+              <div className="relative shrink-0" ref={exploreRef}>
                 <button
                   onClick={() => toggleDropdown('explore')}
-                  className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150"
+                  className="flex items-center space-x-2 px-3 xl:px-3 2xl:px-4 py-2.5 text-gray-700 hover:text-black rounded-lg hover:bg-gray-50 transition-all duration-150 whitespace-nowrap"
                   disabled={categoriesLoading}
                 >
-                  <Globe className="w-5 h-5" />
-                  <span className="font-medium">Explore</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
+                  <Globe className="w-4 h-4 xl:w-5 xl:h-5 shrink-0" />
+                  <span className="font-medium text-sm xl:text-base">Explore</span>
+                  <ChevronDown className={`w-3 h-3 xl:w-4 xl:h-4 shrink-0 transition-transform duration-150 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
                 </button>
 
+                {/* Explore dropdown content - ADDED BACK */}
                 <AnimatePresence>
                   {activeDropdown === 'explore' && (
                     <motion.div
@@ -474,31 +477,34 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </div>
 
               {isAuthenticated ? (
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1 xl:space-x-2 2xl:space-x-3 min-w-0">
                   {isAdminUser && (
-                    <Link
-                      to="/admin"
-                      className="bg-gradient-to-r from-red-600 to-red-700 text-white text-sm px-4 py-1.5 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-150 shadow-sm"
-                      onClick={closeAllDropdowns}
-                    >
-                      Admin
-                    </Link>
+                    <div className="shrink-0">
+                      <Link
+                        to="/admin"
+                        className="bg-gradient-to-r from-red-600 to-red-700 text-white text-xs xl:text-sm px-2 xl:px-3 2xl:px-4 py-1.5 rounded-full hover:from-red-700 hover:to-red-800 transition-all duration-150 shadow-sm whitespace-nowrap"
+                        onClick={closeAllDropdowns}
+                      >
+                        Admin
+                      </Link>
+                    </div>
                   )}
 
-                  <div className="relative" ref={profileRef}>
+                  <div className="relative shrink-0" ref={profileRef}>
                     <button
                       onClick={() => toggleDropdown('profile')}
-                      className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
+                      className="flex items-center space-x-1 xl:space-x-2 p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
                     >
                       <img
-                        src={user?.picture ||Default_pp_URL}
-                        className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-full object-cover"
+                        src={user?.picture || Default_pp_URL}
+                        className="w-8 h-8 xl:w-9 xl:h-9 min-w-[32px] min-h-[32px] xl:min-w-[36px] xl:min-h-[36px] rounded-full object-cover shrink-0"
                         loading="lazy"
                         alt="Profile"
                       />
-                      <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-3 h-3 xl:w-4 xl:h-4 text-gray-600 shrink-0 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
+                    {/* Profile dropdown content - ADDED BACK */}
                     <AnimatePresence>
                       {activeDropdown === 'profile' && (
                         <motion.div
@@ -556,25 +562,29 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => {
-                      closeAllDropdowns();
-                      onSigninClick?.();
-                    }}
-                    className="text-gray-700 hover:text-black font-medium px-4 py-2.5 transition-colors duration-150"
-                  >
-                    Sign In
-                  </button>
-                  <button
-                    onClick={() => {
-                      closeAllDropdowns();
-                      onSignupClick?.();
-                    }}
-                    className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 shadow-sm hover:shadow-md"
-                  >
-                    Join Free
-                  </button>
+                <div className="flex items-center space-x-1 xl:space-x-2 2xl:space-x-3 min-w-0">
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => {
+                        closeAllDropdowns();
+                        onSigninClick?.();
+                      }}
+                      className="text-gray-700 hover:text-black font-medium px-2 xl:px-3 2xl:px-4 py-2.5 transition-colors duration-150 whitespace-nowrap text-sm xl:text-base"
+                    >
+                      Sign In
+                    </button>
+                  </div>
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => {
+                        closeAllDropdowns();
+                        onSignupClick?.();
+                      }}
+                      className="px-3 xl:px-4 2xl:px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 shadow-sm hover:shadow-md whitespace-nowrap text-sm xl:text-base"
+                    >
+                      Join Free
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -621,7 +631,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                         <div className="flex items-center space-x-3">
                           <img
-                            src={user?.picture ||Default_pp_URL}
+                            src={user?.picture || Default_pp_URL}
                             alt={user?.name}
                             className="w-10 h-10 rounded-full object-cover border border-gray-300"
                             loading="lazy"
@@ -656,13 +666,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                         <span className="font-medium text-gray-800">Home</span>
                       </Link>
                       <Link
-    to="/how-it-works"
-    onClick={() => setMobileMenuOpen(false)}
-    className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
-  >
-    <span className="w-5 h-5 flex items-center justify-center">📋</span>
-    <span className="font-medium text-gray-800">How It Works</span>
-  </Link>
+                        to="/how-it-works"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center space-x-3 px-3 py-3 rounded-lg hover:bg-gray-50 transition-all duration-150"
+                      >
+                        <span className="w-5 h-5 flex items-center justify-center">📋</span>
+                        <span className="font-medium text-gray-800">How It Works</span>
+                      </Link>
                     </div>
 
                     {/* Explore Section */}
