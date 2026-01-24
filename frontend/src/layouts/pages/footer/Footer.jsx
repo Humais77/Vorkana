@@ -11,7 +11,11 @@ import TrackedLink from '../../../components/TrackedLink';
 import { useParentCategories } from "../../../hooks/useCategories";
 import { useSubscribe, useSubscriptionStatus, useToggleSubscription } from "../../../hooks/useSubscribe";
 import { toast } from 'react-hot-toast';
-
+import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
+const Logo_URL = buildImageUrl({
+  publicId: "gpepaqvupkzg17xso4b7",
+  width: 220
+});
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -595,7 +599,11 @@ const Footer = () => {
                 to="/"
                 className="text-3xl md:text-5xl font-black text-black transition-colors tracking-tighter"
               >
-                Vorkanna
+               <img
+  src={Logo_URL}
+  alt="Vorkanna"
+  className="h-12 lg:h-12 w-auto object-contain"
+ />
               </TrackedLink>
             </div>
             

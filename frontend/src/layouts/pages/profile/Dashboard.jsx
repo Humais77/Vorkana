@@ -52,7 +52,12 @@ import {
   Clock,
   MapPin
 } from 'lucide-react';
+import { useServiceToast } from '../../../hooks/useServiceToast';
+import { useGigToast } from '../../../hooks/useGigToast';
+import { Dialog, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
 
+// ImageWithFallback component
 const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, itemId, forceRefresh }) => {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,23 +65,19 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 2;
 
-  // Validate and clean the URL
   const validateUrl = useCallback((url) => {
     if (!url || typeof url !== 'string') return null;
     
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return null;
     
-    // Check if it's a valid URL
     if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('/')) {
-      // Check if it's an empty URL pattern
       if (trimmedUrl === 'http://' || trimmedUrl === 'https://' || trimmedUrl === '/') {
         return null;
       }
       return trimmedUrl;
     }
     
-    // If it starts with data:, use as is
     if (trimmedUrl.startsWith('data:')) {
       return trimmedUrl;
     }
@@ -84,43 +85,36 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     return null;
   }, []);
 
-  // Generate a unique cache busting URL
   const getCacheBustedUrl = useCallback((url) => {
     const validUrl = validateUrl(url);
     if (!validUrl) return null;
     
     try {
-      // For data URLs, return as is
       if (validUrl.startsWith('data:')) {
         return validUrl;
       }
       
-      // Clean URL - remove any existing cache busting params
       const urlObj = new URL(validUrl, window.location.origin);
       const cleanUrl = urlObj.origin + urlObj.pathname;
       const separator = urlObj.search ? '&' : '?';
       
-      // Add cache busting parameters
       const params = new URLSearchParams(urlObj.search);
-      params.set('_t', Date.now().toString()); // Timestamp
-      params.set('v', forceRefresh || Date.now()); // Version from prop
-      params.set('rc', retryCount.toString()); // Retry count
-      params.set('type', type || 'item'); // Item type for cache grouping
+      params.set('_t', Date.now().toString());
+      params.set('v', forceRefresh || Date.now());
+      params.set('rc', retryCount.toString());
+      params.set('type', type || 'item');
       
-      // Add ID if available
       if (itemId) {
-        params.set('id', itemId.slice(-8)); // Last 8 chars of ID
+        params.set('id', itemId.slice(-8));
       }
       
       return `${cleanUrl}${separator}${params.toString()}`;
     } catch (error) {
       console.warn('Error processing URL:', validUrl, error);
-      // Return the original URL if parsing fails
       return validUrl;
     }
   }, [validateUrl, type, itemId, forceRefresh, retryCount]);
 
-  // Reset and load image
   const loadImage = useCallback(() => {
     const validUrl = validateUrl(src);
     if (!validUrl) {
@@ -143,18 +137,15 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     setImgSrc(finalSrc);
   }, [src, getCacheBustedUrl, validateUrl]);
 
-  // Load image on mount and when src changes
   useEffect(() => {
     loadImage();
   }, [loadImage]);
 
-  // Handle image load success
   const handleLoad = useCallback(() => {
     setLoading(false);
     setError(false);
   }, []);
 
-  // Handle image load error
   const handleError = useCallback(() => {
     if (retryCount < maxRetries) {
       setRetryCount(prev => prev + 1);
@@ -165,7 +156,6 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     }
   }, [retryCount, loadImage]);
 
-  // Force refresh when forceRefresh prop changes
   useEffect(() => {
     if (forceRefresh) {
       setRetryCount(0);
@@ -173,7 +163,6 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     }
   }, [forceRefresh, loadImage]);
 
-  // If no valid source, return fallback immediately
   if (!src || !validateUrl(src)) {
     return fallback || (
       <div className={`bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center ${className}`}>
@@ -187,7 +176,6 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
     );
   }
 
-  // If error occurred, return fallback
   if (error) {
     return fallback || (
       <div className={`bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center ${className}`}>
@@ -203,12 +191,10 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
 
   return (
     <div className={`relative ${className}`}>
-      {/* Loading skeleton */}
       {loading && (
         <div className={`absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse ${className}`} />
       )}
       
-      {/* Actual image */}
       {imgSrc && (
         <img
           src={imgSrc}
@@ -228,7 +214,7 @@ const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, it
 });
 ImageWithFallback.displayName = 'ImageWithFallback';
 
-// Updated StatsCard with clean black/white design
+// StatsCard component
 const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, onClick }) => (
   <motion.div 
     whileHover={{ y: -4, scale: 1.02 }}
@@ -254,19 +240,16 @@ const StatsCard = memo(({ title, value, subValue, icon: Icon, colorClass, onClic
 ));
 StatsCard.displayName = 'StatsCard';
 
+// Helper functions
 const getThumbnailUrl = (item, type) => {
   if (!item) return null;
   
-  // Helper to validate and extract URL
   const extractUrl = (value) => {
     if (!value) return null;
     
-    // If it's a string, validate it
     if (typeof value === 'string') {
       const trimmed = value.trim();
-      // Check if it's a valid URL pattern
       if (trimmed && (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:'))) {
-        // Ensure it's not just a prefix
         if (trimmed === 'http://' || trimmed === 'https://' || trimmed === '/') {
           return null;
         }
@@ -275,7 +258,6 @@ const getThumbnailUrl = (item, type) => {
       return null;
     }
     
-    // If it's an object with url property
     if (value && typeof value === 'object' && value.url) {
       return extractUrl(value.url);
     }
@@ -283,30 +265,23 @@ const getThumbnailUrl = (item, type) => {
     return null;
   };
   
-  // Check all possible thumbnail sources in priority order
-  
-  // 1. Direct thumbnail fields
   if (item.thumbnail) {
     const url = extractUrl(item.thumbnail);
     if (url) return url;
   }
   
-  // 2. Images array with priority for thumbnail flagged images
   if (item.images && Array.isArray(item.images) && item.images.length > 0) {
-    // Look for thumbnail image first
     const thumbnailImage = item.images.find(img => img.isThumbnail === true);
     if (thumbnailImage) {
       const url = extractUrl(thumbnailImage);
       if (url) return url;
     }
     
-    // Use first image
     const firstImage = item.images[0];
     const url = extractUrl(firstImage);
     if (url) return url;
   }
   
-  // 3. Check for specific nested structures (from API response)
   if (item.data?.thumbnail) {
     const url = extractUrl(item.data.thumbnail);
     if (url) return url;
@@ -327,13 +302,11 @@ const getThumbnailUrl = (item, type) => {
     if (url) return url;
   }
   
-  // 4. Try common image fields
   if (item.image) {
     const url = extractUrl(item.image);
     if (url) return url;
   }
   
-  // 5. For gigs, check additional fields
   if (type === 'gig') {
     if (item.gigImages?.[0]) {
       const url = extractUrl(item.gigImages[0]);
@@ -341,18 +314,16 @@ const getThumbnailUrl = (item, type) => {
     }
   }
   
-  // 6. For services
   if (type === 'service') {
     if (item.serviceImages?.[0]) {
       const url = extractUrl(item.serviceImages[0]);
       if (url) return url;
     }
   }
+  
   return null;
 };
 
-
-// Helper function to get consistent duration/delivery time
 const getDurationInfo = (item, type) => {
   if (!item) return null;
   
@@ -363,7 +334,6 @@ const getDurationInfo = (item, type) => {
   }
 };
 
-// Helper function to get consistent price/budget
 const getPriceInfo = (item, type) => {
   if (!item) return 0;
   
@@ -374,11 +344,9 @@ const getPriceInfo = (item, type) => {
   }
 };
 
-// Helper function to get consistent rating
 const getRatingInfo = (item) => {
   if (!item) return null;
   
-  // Check various possible rating fields
   const rating = item.rating || item.averageRating || item.avgRating || 
                 item.reviewRating || item.overallRating || 
                 item.data?.rating || item.data?.averageRating;
@@ -391,7 +359,6 @@ const getRatingInfo = (item) => {
   return null;
 };
 
-// Helper function to get consistent reviews count
 const getReviewsCount = (item) => {
   if (!item) return 0;
   
@@ -401,29 +368,23 @@ const getReviewsCount = (item) => {
   return parseInt(count) || 0;
 };
 
-// Helper function to get consistent category name
 const getCategoryName = (item) => {
   if (!item) return 'Uncategorized';
   
-  // Check category object
   if (item.category?.name) return item.category.name;
   if (item.category && typeof item.category === 'string') return item.category;
   
-  // Check subcategory
   if (item.subcategory?.name) return item.subcategory.name;
   if (item.subcategory && typeof item.subcategory === 'string') return item.subcategory;
   
-  // Check projectCategory for gigs
   if (item.projectCategory?.name) return item.projectCategory.name;
   
-  // Check nested
   if (item.data?.category?.name) return item.data.category.name;
   if (item.data?.subcategory?.name) return item.data.subcategory.name;
   
   return 'Uncategorized';
 };
 
-// Helper function to get consistent views count
 const getViewsCount = (item) => {
   if (!item) return 0;
   
@@ -431,7 +392,6 @@ const getViewsCount = (item) => {
          item.data?.views || item.data?.viewCount || 0;
 };
 
-// Helper function to get consistent description
 const getDescription = (item) => {
   if (!item) return 'No description available';
   
@@ -439,7 +399,6 @@ const getDescription = (item) => {
          item.summary || item.data?.description || 'No description available';
 };
 
-// Helper function to get consistent title
 const getTitle = (item, type) => {
   if (!item) return `Untitled ${type === 'service' ? 'Service' : 'Gig'}`;
   
@@ -447,7 +406,168 @@ const getTitle = (item, type) => {
          item.data?.name || `Untitled ${type === 'service' ? 'Service' : 'Gig'}`;
 };
 
-// Updated ItemCard with consistent layout and better image handling
+// DeleteConfirmationDialog component
+const DeleteConfirmationDialog = memo(({
+  isOpen,
+  onClose,
+  onConfirm,
+  itemType,
+  count,
+  isLoading,
+  itemName,
+  isDeleting
+}) => {
+  const [confirmText, setConfirmText] = useState('');
+  const requiresTyping = count >= 3;
+
+  const isGig = itemType === 'gig';
+  const itemLabel = isGig ? 'gig' : 'service';
+  const pluralItemLabel = `${itemLabel}${count > 1 ? 's' : ''}`;
+  
+  const handleConfirm = () => {
+    if (requiresTyping) {
+      const expectedText = count > 1 ? `delete ${count} ${itemLabel}s` : `delete ${itemLabel}`;
+      if (confirmText.toLowerCase() !== expectedText.toLowerCase()) {
+        toast.error(`Please type "${expectedText}" to confirm`);
+        return;
+      }
+    }
+    onConfirm();
+  };
+
+  return (
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={isLoading || isDeleting ? () => {} : onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <Dialog.Title
+                  as="h3"
+                  className="text-lg font-bold text-gray-900 flex items-center gap-2"
+                >
+                  <Trash2 className={`w-5 h-5 ${isGig ? 'text-red-500' : 'text-red-500'}`} />
+                  Delete {count > 1 ? `${count} ${pluralItemLabel}` : itemLabel}
+                </Dialog.Title>
+                
+                <div className="mt-4">
+                  <p className="text-gray-700 mb-4">
+                    {count > 1 ? (
+                      <>
+                        You are about to delete <span className="font-bold text-red-600">{count} {pluralItemLabel}</span>.
+                        This action cannot be undone.
+                      </>
+                    ) : (
+                      <>
+                        You are about to delete {itemName ? (
+                          <span className="font-bold text-gray-900">"{itemName}"</span>
+                        ) : (
+                          <span className="font-bold text-red-600">this {itemLabel}</span>
+                        )}.
+                        This action cannot be undone.
+                      </>
+                    )}
+                  </p>
+                  
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <Info className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-yellow-700">
+                        If an item was already deleted by another user, it will be skipped automatically.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {requiresTyping && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Type <span className="font-mono text-red-600">delete {count > 1 ? `${count} ${itemLabel}s` : itemLabel}</span> to confirm:
+                      </label>
+                      <input
+                        type="text"
+                        value={confirmText}
+                        onChange={(e) => setConfirmText(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                        placeholder="Type the confirmation text..."
+                        autoComplete="off"
+                        disabled={isLoading || isDeleting}
+                      />
+                    </div>
+                  )}
+                  
+                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-red-800">Warning: This action is permanent</p>
+                        <p className="text-sm text-red-700 mt-1">
+                          All associated data, images, and history will be permanently removed.
+                          {count > 1 && ' This may affect your account statistics and visibility.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={isLoading || isDeleting}
+                    className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirm}
+                    disabled={isLoading || isDeleting || (requiresTyping && confirmText.toLowerCase() !== `delete ${count > 1 ? `${count} ${itemLabel}s` : itemLabel}`.toLowerCase())}
+                    className="px-4 py-2.5 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center"
+                  >
+                    {(isLoading || isDeleting) ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete {count > 1 ? `All (${count})` : 'Permanently'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </div>
+      </Dialog>
+    </Transition>
+  );
+});
+DeleteConfirmationDialog.displayName = 'DeleteConfirmationDialog';
+
+// ItemCard component
 const ItemCard = memo(({ 
   item, 
   type, 
@@ -456,13 +576,13 @@ const ItemCard = memo(({
   onClick, 
   getStatusColor, 
   getStatusIcon,
-  imageRefreshKey 
+  imageRefreshKey,
+  onDelete 
 }) => {
   const isService = type === 'services';
   const primaryColor = isService ? 'blue' : 'green';
   const itemType = isService ? 'service' : 'gig';
   
-  // Get all consistent data
   const thumbnailUrl = getThumbnailUrl(item, itemType);
   const duration = getDurationInfo(item, itemType);
   const price = getPriceInfo(item, itemType);
@@ -481,31 +601,29 @@ const ItemCard = memo(({
       whileHover={{ y: -5 }}
       className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 group flex flex-col h-full"
     >
-      {/* Thumbnail Section - Fixed Height */}
       <div 
         className="relative h-48 bg-gray-100 cursor-pointer overflow-hidden"
         onClick={() => onClick(item._id || item.id)}
       >
         <ImageWithFallback
-  src={thumbnailUrl} 
-  alt={title}
-  className="w-full h-full"
-  type={itemType}
-  itemId={item._id || item.id}
-  forceRefresh={imageRefreshKey}
-  fallback={
-    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-      <div className="text-center p-4">
-        <Image className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-        <span className="text-sm text-gray-500 font-medium">
-          {isService ? 'Service' : 'Gig'} Image
-        </span>
-      </div>
-    </div>
-  }
-/>
+          src={thumbnailUrl} 
+          alt={title}
+          className="w-full h-full"
+          type={itemType}
+          itemId={item._id || item.id}
+          forceRefresh={imageRefreshKey}
+          fallback={
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+              <div className="text-center p-4">
+                <Image className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                <span className="text-sm text-gray-500 font-medium">
+                  {isService ? 'Service' : 'Gig'} Image
+                </span>
+              </div>
+            </div>
+          }
+        />
         
-        {/* Status Badge Overlay */}
         <div className="absolute top-3 left-3">
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
             {getStatusIcon(item.status)}
@@ -518,13 +636,12 @@ const ItemCard = memo(({
           </span>
         </div>
         
-        {/* Selection Checkbox */}
         <button
           onClick={(e) => {
             e.stopPropagation();
             onSelect(item._id || item.id);
           }}
-          className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-md hover:shadow-lg transition-shadow z-10"
+          className="absolute top-3 right-12 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-md hover:shadow-lg transition-shadow z-10"
         >
           {isSelected ? (
             <CheckSquare className={`w-5 h-5 text-${primaryColor}-600`} />
@@ -533,7 +650,17 @@ const ItemCard = memo(({
           )}
         </button>
         
-        {/* Overlay on hover */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(item._id || item.id, title);
+          }}
+          className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-md hover:shadow-lg hover:bg-red-50 hover:text-red-600 transition-all z-10 group/delete"
+          title={`Delete ${itemType}`}
+        >
+          <Trash2 className="w-5 h-5 text-gray-500 group-hover/delete:text-red-600 transition-colors" />
+        </button>
+        
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
           <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center">
             <Eye className="w-4 h-4 text-gray-700 mr-2" />
@@ -542,9 +669,7 @@ const ItemCard = memo(({
         </div>
       </div>
 
-      {/* Content Section - Flex column with consistent spacing */}
       <div className="p-5 flex-1 flex flex-col">
-        {/* Title and Category */}
         <div className="mb-3 flex-shrink-0">
           <div 
             className="flex items-start justify-between mb-1 cursor-pointer"
@@ -564,14 +689,11 @@ const ItemCard = memo(({
           </div>
         </div>
 
-        {/* Description - Fixed height with clamp */}
         <p className="text-sm text-gray-600 mb-4 line-clamp-2 flex-shrink-0 min-h-[2.5rem]">
           {description}
         </p>
 
-        {/* Stats - Consistent grid layout */}
         <div className="space-y-2 mb-4 flex-1">
-          {/* Price - Always shown */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <DollarSign className="w-4 h-4 text-gray-600 mr-1 flex-shrink-0" />
@@ -582,7 +704,6 @@ const ItemCard = memo(({
             </span>
           </div>
 
-          {/* Rating - Conditional */}
           {rating !== null && (
             <div className="flex items-center justify-between">
               <div className="flex items-center">
@@ -598,8 +719,6 @@ const ItemCard = memo(({
             </div>
           )}
 
-
-          {/* Duration - Always shown */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <Clock className="w-4 h-4 text-gray-600 mr-1 flex-shrink-0" />
@@ -611,7 +730,6 @@ const ItemCard = memo(({
           </div>
         </div>
 
-        {/* View Count - Conditional */}
         {views > 0 && (
           <div className="flex items-center text-xs text-gray-500 mb-3 flex-shrink-0">
             <Eye className="w-3 h-3 mr-1" />
@@ -619,7 +737,6 @@ const ItemCard = memo(({
           </div>
         )}
 
-        {/* Bottom Actions - Fixed at bottom */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-auto flex-shrink-0">
           <div className="flex items-center">
             <span className="text-xs text-gray-500">
@@ -639,7 +756,7 @@ const ItemCard = memo(({
 });
 ItemCard.displayName = 'ItemCard';
 
-// Updated NoActiveGigs with clean design
+// NoActiveGigs component
 const NoActiveGigs = memo(({ onCreateGig, canCreateContent }) => (
   <motion.div
     initial={{ opacity: 0 }}
@@ -670,7 +787,7 @@ const NoActiveGigs = memo(({ onCreateGig, canCreateContent }) => (
 ));
 NoActiveGigs.displayName = 'NoActiveGigs';
 
-// Updated ProfileWarningBanner
+// ProfileWarningBanner component
 const ProfileWarningBanner = memo(({ profileCompletion, profileSuggestions, onCompleteProfile, isLoading }) => {
   if (isLoading) return null;
   if (profileCompletion >= 70) return null;
@@ -734,7 +851,7 @@ const ProfileWarningBanner = memo(({ profileCompletion, profileSuggestions, onCo
 });
 ProfileWarningBanner.displayName = 'ProfileWarningBanner';
 
-// Updated ProfileInfoBar
+// ProfileInfoBar component
 const ProfileInfoBar = memo(({ profileCompletion, canCreateContent, onImproveProfile, isLoading }) => {
   if (isLoading) return null;
 
@@ -793,7 +910,7 @@ const ProfileInfoBar = memo(({ profileCompletion, canCreateContent, onImprovePro
 });
 ProfileInfoBar.displayName = 'ProfileInfoBar';
 
-// Updated DashboardSkeleton
+// DashboardSkeleton component
 const DashboardSkeleton = memo(() => (
   <div className="min-h-screen bg-gray-50">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -834,7 +951,7 @@ const DashboardSkeleton = memo(() => (
 ));
 DashboardSkeleton.displayName = 'DashboardSkeleton';
 
-// Updated BulkActionsBar
+// BulkActionsBar component
 const BulkActionsBar = memo(({ 
   activeTab, 
   selectedCount, 
@@ -866,25 +983,34 @@ const BulkActionsBar = memo(({
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onUpdateStatus('active')}
-            disabled={isUpdating}
+            disabled={isUpdating || isDeleting}
             className={`px-4 py-2 bg-${primaryColor}-600 text-white rounded-lg font-medium hover:bg-${primaryColor}-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
           >
             {isUpdating ? 'Updating...' : 'Make Active'}
           </button>
           <button
             onClick={() => onUpdateStatus('paused')}
-            disabled={isUpdating}
+            disabled={isUpdating || isDeleting}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
             {isUpdating ? 'Updating...' : 'Pause'}
           </button>
           <button
             onClick={onDelete}
-            disabled={isDeleting}
+            disabled={isDeleting || isUpdating}
             className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
-            <Trash2 className="w-4 h-4 mr-2 flex-shrink-0" />
-            {isDeleting ? 'Deleting...' : 'Delete'}
+            {isDeleting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin flex-shrink-0" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2 flex-shrink-0" />
+                Delete
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -893,7 +1019,7 @@ const BulkActionsBar = memo(({
 });
 BulkActionsBar.displayName = 'BulkActionsBar';
 
-// Updated EmptyState
+// EmptyState component
 const EmptyState = memo(({ 
   type, 
   filter, 
@@ -941,8 +1067,18 @@ const EmptyState = memo(({
 });
 EmptyState.displayName = 'EmptyState';
 
-// Updated ListView with consistent data handling
-const ListView = memo(({ items, type, selectedIds, onSelect, onClick, getStatusColor, getStatusIcon, imageRefreshKey }) => {
+// ListView component
+const ListView = memo(({ 
+  items, 
+  type, 
+  selectedIds, 
+  onSelect, 
+  onClick, 
+  getStatusColor, 
+  getStatusIcon, 
+  imageRefreshKey,
+  onDelete
+}) => {
   const isService = type === 'services';
   const primaryColor = isService ? 'blue' : 'green';
   const itemType = isService ? 'service' : 'gig';
@@ -971,9 +1107,6 @@ const ListView = memo(({ items, type, selectedIds, onSelect, onClick, getStatusC
               </th>
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700">{type === 'services' ? 'Price' : 'Budget'}</span>
-              </th>
-              <th className="py-4 px-6 text-left">
-                <span className="text-sm font-semibold text-gray-700">Views</span>
               </th>
               <th className="py-4 px-6 text-left">
                 <span className="text-sm font-semibold text-gray-700">Actions</span>
@@ -1068,12 +1201,6 @@ const ListView = memo(({ items, type, selectedIds, onSelect, onClick, getStatusC
                     </div>
                   </td>
                   <td className="py-4 px-6">
-                    <div className="flex items-center text-gray-600">
-                      <Eye className="w-4 h-4 mr-1" />
-                      <span className="text-sm">{views.toLocaleString()}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => onClick(item._id || item.id)}
@@ -1089,6 +1216,13 @@ const ListView = memo(({ items, type, selectedIds, onSelect, onClick, getStatusC
                       >
                         <Edit className="w-4 h-4" />
                       </Link>
+                      <button
+                        onClick={() => onDelete(item._id || item.id, title)}
+                        className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors group/delete"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 group-hover/delete:text-red-600" />
+                      </button>
                     </div>
                   </td>
                 </motion.tr>
@@ -1108,6 +1242,32 @@ const Dashboard = () => {
   const location = useLocation();
   const { user: authUser, isAuthenticated } = useAuthStore();
   const prevStatsRef = useRef(null);
+  
+  const { 
+    showServiceDeleteSuccess, 
+    showServiceDeleteError,
+    showServiceLoading,
+    dismissServiceToast,
+    showServiceInfo
+  } = useServiceToast();
+  
+  const { 
+    showGigDeleteSuccess, 
+    showGigDeleteError,
+    showGigLoading,
+    dismissGigToast,
+    showGigSuccess,
+    showGigError
+  } = useGigToast();
+  
+  const [deleteDialog, setDeleteDialog] = useState({
+    isOpen: false,
+    type: null,
+    ids: [],
+    itemName: '',
+    isLoading: false
+  });
+  
   const { 
     data: profileResponse, 
     isLoading: isProfileLoading,
@@ -1130,30 +1290,6 @@ const Dashboard = () => {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [imageRefreshKey, setImageRefreshKey] = useState(Date.now());
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
-
-  // Force image refresh when data loads or when returning from details page
-  useEffect(() => {
-    if (initialLoadComplete) {
-      // Trigger image refresh after a short delay to ensure data is loaded
-      const timer = setTimeout(() => {
-        setImageRefreshKey(Date.now());
-        setForceRefreshTrigger(prev => prev + 1);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [initialLoadComplete, activeTab, statusFilter, serviceStatusFilter]);
-
-  // Force refresh when returning from details page
-  useEffect(() => {
-    if (location.state?.from === 'details' || location.state?.from === 'edit') {
-      // Force complete refresh
-      setImageRefreshKey(Date.now());
-      setForceRefreshTrigger(prev => prev + 1);
-      
-      // Clear the state to prevent repeated refreshes
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state, navigate, location.pathname]);
 
   // Profile calculations
   const profileCompletion = useMemo(() => {
@@ -1183,7 +1319,6 @@ const Dashboard = () => {
     order: 'desc'
   });
 
-  // Memoized services extraction
   const services = useMemo(() => {
     if (!servicesResponse) return [];
     
@@ -1210,7 +1345,6 @@ const Dashboard = () => {
     order: 'desc'
   });
 
-  // Memoized gigs extraction
   const gigs = useMemo(() => 
     extractGigsFromResponse(gigsResponse) || [], 
     [gigsResponse]
@@ -1223,7 +1357,6 @@ const Dashboard = () => {
 
   const stats = useMemo(() => {
     if (servicesLoading || gigsLoading) {
-      // Return cached stats while loading
       return prevStatsRef.current || {
         totalGigs: 0,
         activeGigs: 0,
@@ -1242,7 +1375,6 @@ const Dashboard = () => {
       activeServices: activeServices,
     };
     
-    // Store for next render
     prevStatsRef.current = newStats;
     
     return newStats;
@@ -1265,14 +1397,18 @@ const Dashboard = () => {
   useEffect(() => {
     resetSelection();
   }, [gigs, services, resetSelection]);
-
+useEffect(() => {
+  console.log('Current active tab:', activeTab);
+  console.log('Selected gigs:', selectedGigs);
+  console.log('Selected services:', selectedServices);
+  console.log('Delete dialog:', deleteDialog);
+}, [activeTab, selectedGigs, selectedServices, deleteDialog]);
   const handleCreateService = useCallback(() => {
     if (!canCreateContent) {
       toast.error('Complete your profile to create services');
       return;
     }
     
-    // Store current stats before navigation
     sessionStorage.setItem('preCreateStats', JSON.stringify(stats));
     navigate('/services/create');
   }, [canCreateContent, navigate, stats]);
@@ -1283,7 +1419,6 @@ const Dashboard = () => {
       return;
     }
     
-    // Store current stats before navigation
     sessionStorage.setItem('preCreateStats', JSON.stringify(stats));
     navigate('/gig/create', { state: { from: 'dashboard' } });
   }, [canCreateContent, navigate, stats]);
@@ -1336,74 +1471,197 @@ const Dashboard = () => {
     );
   }, []);
 
-  const handleDeleteGigs = useCallback(async () => {
+  const handleSingleDelete = useCallback((id, name, type) => {
+  console.log('Single delete called:', { id, name, type, activeTab });
+  
+  // FIXED: Determine type based on what was passed OR current active tab
+  // If type is explicitly passed, use it. Otherwise, check if we're in gigs tab
+  let deleteType = type;
+  
+  if (!deleteType) {
+    // Check if we're deleting from the gigs view
+    const isGigInGigsView = activeTab === 'gigs';
+    deleteType = isGigInGigsView ? 'gig' : 'service';
+  }
+  
+  console.log('Determined delete type:', deleteType, 'for item:', name);
+  
+  setDeleteDialog({
+    isOpen: true,
+    type: deleteType,
+    ids: [id],
+    itemName: name,
+    isLoading: false
+  });
+}, [activeTab]);
+
+  const handleBulkDelete = useCallback(() => {
+  const ids = activeTab === 'services' ? selectedServices : selectedGigs;
+  if (ids.length === 0) return;
+  
+  console.log('Bulk delete called:', { 
+    activeTab, 
+    ids, 
+    selectedServicesCount: selectedServices.length,
+    selectedGigsCount: selectedGigs.length 
+  });
+  
+  // FIXED: Always use activeTab to determine type
+  const deleteType = activeTab === 'services' ? 'service' : 'gig';
+  
+  console.log('Setting delete dialog type to:', deleteType);
+  
+  setDeleteDialog({
+    isOpen: true,
+    type: deleteType,
+    ids,
+    itemName: '',
+    isLoading: false
+  });
+}, [activeTab, selectedServices, selectedGigs]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+  setDeleteDialog(prev => ({ ...prev, isLoading: true }));
+  
+  try {
+    const isGig = deleteDialog.type === 'gig';
+    const count = deleteDialog.ids.length;
+    
+    console.log(`Deleting ${count} ${isGig ? 'gig(s)' : 'service(s)'} with IDs:`, deleteDialog.ids);
+    console.log('Using mutation for:', isGig ? 'gigs' : 'services');
+    
+    if (isGig) {
+      // DEBUG: Show what mutation we're using
+      console.log('Using deleteMultipleGigsMutation');
+      
+      showGigLoading(`Deleting ${count} gig${count > 1 ? 's' : ''}...`);
+      
+      // CRITICAL FIX: Ensure we're calling the gig deletion endpoint
+      await deleteMultipleGigsMutation.mutateAsync(deleteDialog.ids);
+      
+      // Clear gig selection
+      setSelectedGigs(prev => prev.filter(id => !deleteDialog.ids.includes(id)));
+      if (allSelected) setAllSelected(false);
+      
+      showGigDeleteSuccess(count, {
+        onClose: () => {
+          setImageRefreshKey(Date.now());
+        }
+      });
+      
+      // Refresh gig data
+      await refetchGigs();
+    } else {
+      // DEBUG: Show what mutation we're using
+      console.log('Using deleteServiceMutation');
+      
+      showServiceLoading(`Deleting ${count} service${count > 1 ? 's' : ''}...`);
+      
+      // Use service-specific deletion mutation
+      const results = [];
+      
+      for (const id of deleteDialog.ids) {
+        try {
+          const result = await deleteServiceMutation.mutateAsync({ id });
+          results.push({ id, success: true, result });
+        } catch (error) {
+          // If service not found (404), skip it
+          if (error.response?.status === 404 || error.message?.includes('not found')) {
+            console.log(`Service ${id} not found, skipping...`);
+            continue;
+          }
+          throw error;
+        }
+      }
+      
+      // Clear service selection
+      setSelectedServices(prev => prev.filter(id => !deleteDialog.ids.includes(id)));
+      if (allServicesSelected) setAllServicesSelected(false);
+      
+      const successCount = results.length;
+      if (successCount > 0) {
+        showServiceDeleteSuccess(successCount, {
+          onClose: () => {
+            setImageRefreshKey(Date.now());
+          }
+        });
+      }
+      
+      // Refresh service data
+      await refetchServices();
+    }
+    
+    // Close dialog
+    setDeleteDialog({
+      isOpen: false,
+      type: null,
+      ids: [],
+      itemName: '',
+      isLoading: false
+    });
+    
+  } catch (error) {
+    console.error('Delete error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      url: error.config?.url
+    });
+    
+    if (deleteDialog.type === 'gig') {
+      showGigDeleteError(error.message || 'Failed to delete gigs');
+    } else {
+      showServiceDeleteError(error.message || 'Failed to delete services');
+    }
+    
+    setDeleteDialog(prev => ({ ...prev, isLoading: false }));
+  } finally {
+    if (deleteDialog.type === 'gig') {
+      dismissGigToast();
+    } else {
+      dismissServiceToast();
+    }
+  }
+}, [
+  deleteDialog.ids, 
+  deleteDialog.type, 
+  deleteMultipleGigsMutation, 
+  deleteServiceMutation, 
+  refetchServices,
+  refetchGigs,
+  allSelected,
+  allServicesSelected,
+  showGigLoading,
+  showServiceLoading,
+  showGigDeleteSuccess,
+  showServiceDeleteSuccess,
+  showGigDeleteError,
+  showServiceDeleteError,
+  dismissGigToast,
+  dismissServiceToast
+]);
+
+  const handleDeleteGigs = useCallback(() => {
     if (selectedGigs.length === 0) {
       toast.error('Please select gigs to delete');
       return;
     }
-
-    const confirmed = window.confirm(`Are you sure you want to delete ${selectedGigs.length} gig(s)? This action cannot be undone.`);
-    if (!confirmed) return;
-
-    try {
-      await deleteMultipleGigsMutation.mutateAsync(selectedGigs);
-      resetSelection();
-      toast.success('Gigs deleted successfully!');
-      
-      // Force refresh images after deletion
-      setImageRefreshKey(Date.now());
-    } catch (error) {
-      toast.error('Failed to delete gigs');
-    }
-  }, [selectedGigs, deleteMultipleGigsMutation, resetSelection]);
+    handleBulkDelete();
+  }, [selectedGigs, handleBulkDelete]);
 
   const handleActiveGigsClick = useCallback(() => {
     setActiveTab('gigs');
     setStatusFilter('active');
   }, []);
 
-  const handleDeleteServices = useCallback(async () => {
+  const handleDeleteServices = useCallback(() => {
     if (selectedServices.length === 0) {
       toast.error('Please select services to delete');
       return;
     }
-
-    const confirmed = window.confirm(`Are you sure you want to delete ${selectedServices.length} service(s)? This action cannot be undone.`);
-    if (!confirmed) return;
-
-    try {
-      // Optimistically update the UI
-      const servicesToDelete = selectedServices;
-      setSelectedServices([]);
-      
-      // Update local state for immediate UI feedback
-      if (activeTab === 'services') {
-        // Filter out deleted services from local state
-        const newServices = services.filter(s => !servicesToDelete.includes(s._id || s.id));
-        // You might need to update a local state for services or refetch
-      }
-      
-      const deletePromises = selectedServices.map(serviceId => 
-        deleteServiceMutation.mutateAsync({ id: serviceId })
-      );
-      
-      await Promise.all(deletePromises);
-      resetSelection();
-      
-      // Force immediate refetch
-      await refetchServices();
-      
-      // Force refresh images
-      setImageRefreshKey(Date.now());
-      
-      toast.success('Services deleted successfully!');
-    } catch (error) {
-      toast.error('Failed to delete services');
-      // Revert optimistic updates on error
-      // You might want to show an error and refetch original data
-      refetchServices();
-    }
-  }, [selectedServices, deleteServiceMutation, resetSelection, refetchServices, activeTab, services, stats]);
+    handleBulkDelete();
+  }, [selectedServices, handleBulkDelete]);
 
   const handleUpdateGigStatus = useCallback(async (status) => {
     if (selectedGigs.length === 0) {
@@ -1412,19 +1670,28 @@ const Dashboard = () => {
     }
 
     try {
+      const loadingToastId = showGigLoading(`Updating ${selectedGigs.length} gig${selectedGigs.length > 1 ? 's' : ''}...`);
+      
       await updateMultipleGigsStatusMutation.mutateAsync({
         ids: selectedGigs,
         status
       });
       resetSelection();
-      toast.success(`Gigs marked as ${status}`);
       
-      // Force refresh images
-      setImageRefreshKey(Date.now());
+      showGigSuccess(`${selectedGigs.length} gig${selectedGigs.length > 1 ? 's' : ''} marked as ${status}`, {
+        onClose: () => {
+          setImageRefreshKey(Date.now());
+        }
+      });
+      
     } catch (error) {
-      toast.error('Failed to update gigs status');
+      if (!error.message.includes('already active')) {
+        showGigError(error.message || 'Failed to update gigs');
+      }
+    } finally {
+      dismissGigToast();
     }
-  }, [selectedGigs, updateMultipleGigsStatusMutation, resetSelection]);
+  }, [selectedGigs, updateMultipleGigsStatusMutation, resetSelection, showGigLoading, showGigSuccess, showGigError, dismissGigToast]);
 
   const handleUpdateServiceStatus = useCallback(async (status) => {
     if (selectedServices.length === 0) {
@@ -1432,8 +1699,8 @@ const Dashboard = () => {
       return;
     }
 
-    toast.info('Service status update feature coming soon');
-  }, []);
+    showServiceInfo('Service status update feature coming soon');
+  }, [showServiceInfo]);
 
   const filterGigs = useCallback((gigsToFilter) => {
     if (statusFilter === 'all') return gigsToFilter;
@@ -1502,29 +1769,42 @@ const Dashboard = () => {
     const preCreateStats = sessionStorage.getItem('preCreateStats');
     
     if (refreshNeeded === 'true') {
-      // Force refresh all data
       refetchProfile();
       refetchServices();
       refetchGigs();
-      
-      // Force refresh images
       setImageRefreshKey(Date.now());
-      
-      // Clear the flag
       sessionStorage.removeItem('refreshDashboard');
       sessionStorage.removeItem('preCreateStats');
     }
     
-    // Also check URL parameters for refresh triggers
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.get('refresh') === 'true') {
       refetchServices();
       refetchGigs();
       setImageRefreshKey(Date.now());
-      // Clean up URL
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [refetchProfile, refetchServices, refetchGigs]);
+
+  // Force image refresh
+  useEffect(() => {
+    if (initialLoadComplete) {
+      const timer = setTimeout(() => {
+        setImageRefreshKey(Date.now());
+        setForceRefreshTrigger(prev => prev + 1);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [initialLoadComplete, activeTab, statusFilter, serviceStatusFilter]);
+
+  // Force refresh when returning from details page
+  useEffect(() => {
+    if (location.state?.from === 'details' || location.state?.from === 'edit') {
+      setImageRefreshKey(Date.now());
+      setForceRefreshTrigger(prev => prev + 1);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate, location.pathname]);
 
   if (isProfileLoading || !initialLoadComplete) {
     return <DashboardSkeleton />;
@@ -1557,6 +1837,15 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <DeleteConfirmationDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => !deleteDialog.isLoading && setDeleteDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={handleDeleteConfirm}
+        itemType={deleteDialog.type}
+        count={deleteDialog.ids.length}
+        isLoading={deleteDialog.isLoading}
+        itemName={deleteDialog.itemName}
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -1675,24 +1964,63 @@ const Dashboard = () => {
             </div>
             
             <div className="flex gap-3">
-  <button
-  onClick={handleCreateGig}
-  disabled={isLoading}
-  className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
->
-  <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-  Create Gig
-</button>
-
-<button
-  onClick={handleCreateService}
-  disabled={isLoading}
-  className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
->
-  <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-  Create Service
-</button>
-</div>
+              <button
+                onClick={handleCreateGig}
+                disabled={!canCreateContent || isLoading}
+                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  canCreateContent 
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                title={!canCreateContent ? "Complete your profile to create gigs" : ""}
+              >
+                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+                Create Gig
+                {!canCreateContent && (
+                  <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-4 h-4" />
+                      <span className="font-medium">Profile Incomplete</span>
+                    </div>
+                    <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs.</p>
+                    <button
+                      onClick={handleCompleteProfile}
+                      className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+                    >
+                      Complete Profile Now
+                    </button>
+                  </div>
+                )}
+              </button>
+              <button
+                onClick={handleCreateService}
+                disabled={!canCreateContent || isLoading}
+                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  canCreateContent 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                title={!canCreateContent ? "Complete your profile to create services" : ""}
+              >
+                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+                Create Service
+                {!canCreateContent && (
+                  <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-4 h-4" />
+                      <span className="font-medium">Profile Incomplete</span>
+                    </div>
+                    <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create services.</p>
+                    <button
+                      onClick={handleCompleteProfile}
+                      className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+                    >
+                      Complete Profile Now
+                    </button>
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Info message */}
@@ -1805,7 +2133,6 @@ const Dashboard = () => {
                     } else {
                       setStatusFilter(e.target.value);
                     }
-                    // Force image refresh when filter changes
                     setImageRefreshKey(Date.now());
                   }}
                   disabled={isLoading}
@@ -1867,19 +2194,20 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {items.map((item) => (
                     <ItemCard
-                      key={`${item._id || item.id}-${imageRefreshKey}`}
-                      item={item}
-                      type={activeTab}
-                      isSelected={activeTab === 'services' 
-                        ? selectedServices.includes(item._id || item.id)
-                        : selectedGigs.includes(item._id || item.id)
-                      }
-                      onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
-                      onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
-                      getStatusColor={getStatusColor}
-                      getStatusIcon={getStatusIcon}
-                      imageRefreshKey={imageRefreshKey}
-                    />
+  key={`${item._id || item.id}-${imageRefreshKey}`}
+  item={item}
+  type={activeTab} // This should be 'gigs' or 'services'
+  isSelected={activeTab === 'services' 
+    ? selectedServices.includes(item._id || item.id)
+    : selectedGigs.includes(item._id || item.id)
+  }
+  onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
+  onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
+  getStatusColor={getStatusColor}
+  getStatusIcon={getStatusIcon}
+  imageRefreshKey={imageRefreshKey}
+  onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')} // FIX THIS LINE
+/>
                   ))}
                 </div>
               ) : (
@@ -1892,6 +2220,7 @@ const Dashboard = () => {
                   getStatusColor={getStatusColor}
                   getStatusIcon={getStatusIcon}
                   imageRefreshKey={imageRefreshKey}
+                  onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')}
                 />
               )}
             </motion.div>

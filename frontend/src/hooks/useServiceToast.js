@@ -86,6 +86,48 @@ export const useServiceToast = () => {
     return toastId;
   }, []);
 
+  // Show delete success toast
+  const showServiceDeleteSuccess = useCallback((count = 1, options = {}) => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    const message = count > 1 
+      ? `Successfully deleted ${count} services!`
+      : 'Service deleted successfully!';
+    
+    return showSuccessToast(message, {
+      autoClose: 3000,
+      ...options
+    });
+  }, []);
+
+  // Show delete error toast
+  const showServiceDeleteError = useCallback((error, options = {}) => {
+    if (loadingToastIdRef.current) {
+      dismissToast(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    const errors = extractValidationErrors(error);
+    
+    // Show first error from validation errors
+    if (errors.length > 0) {
+      return showErrorToast(errors[0], {
+        autoClose: 5000,
+        ...options
+      });
+    }
+    
+    // Fallback to string error
+    const safeMessage = ensureString(error);
+    return showErrorToast(safeMessage, {
+      autoClose: 5000,
+      ...options
+    });
+  }, []);
+
   // Show simple success toast
   const showServiceSuccess = useCallback((message, options = {}) => {
     if (loadingToastIdRef.current) {
@@ -159,6 +201,8 @@ export const useServiceToast = () => {
   return {
     showServiceLoading,
     showServiceUpdateSuccess,
+    showServiceDeleteSuccess,
+    showServiceDeleteError,
     showServiceSuccess,
     showServiceError,
     showServiceWarning,
