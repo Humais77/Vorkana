@@ -1,4 +1,4 @@
-// service.route.js - Remove local storage configurations
+// routes/service.route.js - Production Ready with Redis Cache
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/services.controller.js');
@@ -10,7 +10,7 @@ const {
   validateQuery 
 } = require('../middleware/validators/service.validator.js');
 const SessionMiddleware = require("../middleware/session.middleware");
-
+const CSRFMiddleware = require('../middleware/csrf.middleware');
 const rateLimit = require('express-rate-limit');
 const { 
   upload, 
@@ -18,7 +18,74 @@ const {
   handleMulterError,
   processUploadToCloudinary 
 } = require('../middleware/upload.middleware.js');
-const CSRFMiddleware = require('../middleware/csrf.middleware');
+
+// Import cache middleware
+const { 
+  createCacheMiddleware, 
+  createClearCacheMiddleware,
+  cacheControlMiddleware,
+  CACHE_TTL,
+  NAMESPACES 
+} = require('../middleware/cacheMiddleware');
+
+// Cache configurations for services
+const SERVICE_CACHE_CONFIG = {
+  PUBLIC_LIST: {
+    ttl: CACHE_TTL.PUBLIC.MEDIUM,
+    namespace: NAMESPACES.PUBLIC,
+    publicOnly: true,
+    tags: ['services', 'list']
+  },
+  ADMIN_LIST: {
+    ttl: CACHE_TTL.PRIVATE.SHORT,
+    namespace: NAMESPACES.ADMIN,
+    checkUserRole: true,
+    rolesToBypass: ['admin'],
+    tags: ['services', 'admin', 'list']
+  },
+  DETAIL: {
+    ttl: CACHE_TTL.PUBLIC.LONG,
+    namespace: NAMESPACES.PUBLIC,
+    tags: ['services', 'detail']
+  },
+  POPULAR: {
+    ttl: CACHE_TTL.PUBLIC.SHORT,
+    namespace: NAMESPACES.PUBLIC,
+    tags: ['services', 'popular']
+  },
+  USER_SERVICES: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.USER,
+    tags: ['services', 'user']
+  },
+  STATS: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['services', 'stats']
+  }
+};
+
+// Create cache middlewares
+const cachePublicList = createCacheMiddleware(SERVICE_CACHE_CONFIG.PUBLIC_LIST);
+const cacheAdminList = createCacheMiddleware(SERVICE_CACHE_CONFIG.ADMIN_LIST);
+const cacheDetail = createCacheMiddleware(SERVICE_CACHE_CONFIG.DETAIL);
+const cachePopular = createCacheMiddleware(SERVICE_CACHE_CONFIG.POPULAR);
+const cacheUserServices = createCacheMiddleware(SERVICE_CACHE_CONFIG.USER_SERVICES);
+const cacheStats = createCacheMiddleware(SERVICE_CACHE_CONFIG.STATS);
+
+// Clear cache middleware for write operations
+const clearServiceCache = createClearCacheMiddleware({
+  patterns: [
+    'services:*',
+    'service:*',
+    '*:tags:*services*'
+  ],
+  tags: ['services'],
+  namespace: NAMESPACES.PUBLIC,
+  clearAllOnWrite: false
+});
+
+// Rate limiting
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -64,78 +131,146 @@ const uploadWithThumbnail = upload.fields([
   { name: 'thumbnail', maxCount: 1 }
 ]);
 
-// Get all services
-router.get('/', optionalAuth, validateQuery, controller.getServices);
-// Get services with stats
-router.get('/with-stats', 
-  optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesWithCategoryStats
-);
-// Search services
-router.get('/search', optionalAuth, validateQuery, controller.searchServices);
-
-// Get similar services
-router.get('/similar/:id', optionalAuth, controller.getSimilarServices);
-
-// Get my services
+// ==================== PUBLIC ROUTES (Cached) ====================
 router.get('/my-services', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheUserServices,
   validateQuery, 
   controller.getMyServices
 );
+// Get all services (public - cached)
+router.get('/', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
+  validateQuery, 
+  controller.getServices
+);
+
+// Get services with stats
+router.get('/with-stats', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 180 }),
+  cachePublicList,
+  controller.getServicesWithCategoryStats
+);
+
+// Search services
+router.get('/search', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 180 }),
+  cachePublicList,
+  validateQuery, 
+  controller.searchServices
+);
 
 // Get service by ID or slug
-router.get('/:id', optionalAuth, controller.getServiceById);
+router.get('/:id', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 600 }),
+  cacheDetail,
+  controller.getServiceById
+);
 
 // Get popular services
 router.get('/popular', 
   optionalAuth, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 180 }),
+  cachePopular,
   controller.getPopularServices
 );
 
 // Get popular services by category
 router.get('/popular/category', 
   optionalAuth, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePopular,
   controller.getPopularServicesByCategory
-);
-
-// Get all active services
-router.get('/all/active', 
-   SessionMiddleware.authenticate, 
-  controller.getAllActiveServices
 );
 
 // Get services by category
 router.get('/category/:categoryId', 
   optionalAuth, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
   controller.getServicesByCategory
 );
 
-// Get services by subcategory ID
+// Get services by subcategory
 router.get('/subcategory/:subcategoryId', 
   optionalAuth, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
   controller.getServicesBySubcategory
 );
 
-// Get services by subcategory slug
-router.get('/subcategory/slug/:slug', 
+// Get similar services
+router.get('/similar/:id', 
   optionalAuth, 
-  serviceLimiter, 
-  controller.getServicesBySubcategorySlug
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 300 }),
+  cachePublicList,
+  controller.getSimilarServices
 );
 
-// Create service with Cloudinary uploads
+// ==================== USER ROUTES (Cached for user) ====================
+
+// Get my services
+
+
+// ==================== ADMIN READ ROUTES (Cached) ====================
+
+// Get admin services
+router.get('/admin/services', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheAdminList,
+  validateQuery, 
+  controller.getAdminServices
+);
+
+// Get admin stats
+router.get('/admin/stats', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 180 }),
+  cacheStats,
+  controller.getServiceStats
+);
+
+// Export services (admin - no cache)
+router.get('/admin/export', 
+  SessionMiddleware.authenticate, 
+  adminOnly, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  validateQuery, 
+  controller.exportServices
+);
+
+// ==================== USER WRITE ROUTES (Clear Cache) ====================
+
+// Create service
 router.post('/', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   uploadWithThumbnail, 
   handleMulterError, 
   validateCreate, 
@@ -144,9 +279,11 @@ router.post('/',
 
 // Update my service
 router.put('/:id', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   uploadWithThumbnail,
   handleMulterError, 
   validateUpdate, 
@@ -155,205 +292,224 @@ router.put('/:id',
 
 // Delete my service
 router.delete('/:id', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.deleteService
 );
 
 // Restore my service
 router.patch('/:id/restore', 
-   SessionMiddleware.authenticate, 
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.restoreService
 );
 
-// Upload additional images to my service (Cloudinary)
+// Upload additional images
 router.post('/:id/images', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  imageUploadLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  imageUploadLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   upload.array('images', 10), 
   handleMulterError, 
   controller.uploadImages
 );
 
-// Remove specific image from my service (Cloudinary)
+// Remove specific image
 router.delete('/:id/images/:publicId', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.removeImage
 );
 
-// Set existing image as thumbnail for my service
+// Set existing image as thumbnail
 router.put('/:id/thumbnail/:publicId', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  serviceLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.setThumbnail
 );
 
-// Upload new thumbnail for my service (Cloudinary)
+// Upload new thumbnail
 router.post('/:id/thumbnail', 
-   SessionMiddleware.authenticate, 
-   CSRFMiddleware.requireCSRF,
-  imageUploadLimiter, 
+  SessionMiddleware.authenticate, 
+  CSRFMiddleware.requireCSRF,
+  imageUploadLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
   controller.uploadThumbnail
 );
 
+// ==================== ADMIN WRITE ROUTES (Clear Cache) ====================
+
 // Admin create service
 router.post('/admin/create', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   uploadWithThumbnail,
   handleMulterError, 
   validateCreate, 
   controller.createService
 );
 
-// Get admin services
-router.get('/admin/services', 
-   SessionMiddleware.authenticate, 
-  adminOnly, 
-  serviceLimiter, 
-  validateQuery, 
-  controller.getAdminServices
-);
-
-// Update any service (admin)
+// Admin update service
 router.put('/admin/:id', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   upload.array('images', 10), 
   handleMulterError, 
   validateUpdate, 
   controller.updateService
 );
 
-// Delete any service (admin)
+// Admin delete service
 router.delete('/admin/:id', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.deleteService
-);
-
-// Get admin stats
-router.get('/admin/stats', 
-   SessionMiddleware.authenticate, 
-  adminOnly, 
-  serviceLimiter, 
-  controller.getServiceStats
 );
 
 // Bulk operations (admin)
 router.post('/admin/bulk', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  bulkOperationLimiter, 
+  bulkOperationLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   validateBulk, 
   controller.bulkUpdateServices
 );
 
-// Export services (admin)
-router.get('/admin/export', 
-   SessionMiddleware.authenticate, 
-  adminOnly, 
-  serviceLimiter, 
-  validateQuery, 
-  controller.exportServices
-);
-
-// Upload additional images (admin)
+// Admin upload images
 router.post('/admin/:id/images', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  imageUploadLimiter, 
+  imageUploadLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   upload.array('images', 10), 
   handleMulterError, 
   controller.uploadImages
 );
 
-// Remove specific image (admin)
+// Admin remove image
 router.delete('/admin/:id/images/:publicId', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.removeImage
 );
 
-// Set existing image as thumbnail (admin)
+// Admin set thumbnail
 router.put('/admin/:id/thumbnail/:publicId', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.setThumbnail
 );
 
-// Upload new thumbnail (admin)
+// Admin upload thumbnail
 router.post('/admin/:id/thumbnail', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  imageUploadLimiter, 
+  imageUploadLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   thumbnailUpload.single('thumbnail'), 
   handleMulterError, 
   controller.uploadThumbnail
 );
 
-// Toggle popular status (admin)
+// Toggle popular status
 router.patch('/:id/popular', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  serviceLimiter, 
+  serviceLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.togglePopularStatus
 );
 
-// Batch update services status
+// Batch operations
 router.patch('/batch/status', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  bulkOperationLimiter, 
+  bulkOperationLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.bulkUpdateServices
 );
 
-// Batch feature/unfeature services
 router.patch('/batch/feature', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  bulkOperationLimiter, 
+  bulkOperationLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.bulkUpdateServices
 );
 
-// Batch recommend/unrecommend services
 router.patch('/batch/recommend', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  bulkOperationLimiter, 
+  bulkOperationLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.bulkUpdateServices
 );
 
-// Batch popular/unpopular services
 router.patch('/batch/popular', 
-   SessionMiddleware.authenticate, 
+  SessionMiddleware.authenticate, 
   adminOnly, 
-  bulkOperationLimiter, 
+  bulkOperationLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearServiceCache,
   controller.bulkUpdateServices
 );
 
-// Service health check
-router.get('/health/check', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Service routes are operational',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memoryUsage: process.memoryUsage()
-  });
-});
+// ==================== HEALTH CHECK ====================
+
+router.get('/health/check', 
+  serviceLimiter,
+  cacheControlMiddleware({ maxAge: 30 }),
+  (req, res) => {
+    const cache = require('../utils/cache');
+    
+    res.json({
+      success: true,
+      message: 'Service routes are operational',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
+      cache: cache.stats()
+    });
+  }
+);
 
 module.exports = router;

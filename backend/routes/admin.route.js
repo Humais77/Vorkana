@@ -1,3 +1,4 @@
+// routes/admin.route.js - Production Ready with Redis Cache
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller.js');
@@ -16,175 +17,102 @@ const gigController = require('../controllers/gig.controller.js');
 const {logout} = require('../controllers/auth.controller.js');
 const mongoose = require('mongoose');
 
-// ADD CSRF MIDDLEWARE
-const CSRFMiddleware = require('../middleware/csrf.middleware');
-const SessionMiddleware = require('../middleware/session.middleware');
+// Import cache middleware
+const { 
+  createCacheMiddleware, 
+  createClearCacheMiddleware,
+  cacheStatsMiddleware,
+  cacheControlMiddleware,
+  CACHE_TTL,
+  NAMESPACES 
+} = require('../middleware/cacheMiddleware');
 
-// IMPORT MODELS
+// Import models
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
 const User = require('../models/user.model.js');
-const cache = require('../utils/cache.js'); 
 
-// Security: Admin-only rate limiting
+// CSRF middleware
+const CSRFMiddleware = require('../middleware/csrf.middleware');
+const SessionMiddleware = require('../middleware/session.middleware');
+
+// Cache configurations for admin
+const ADMIN_CACHE_CONFIG = {
+  DASHBOARD: {
+    ttl: CACHE_TTL.PRIVATE.SHORT,
+    namespace: NAMESPACES.ADMIN,
+    checkUserRole: true,
+    rolesToBypass: ['admin'],
+    tags: ['admin', 'dashboard']
+  },
+  STATS: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['admin', 'stats']
+  },
+  LIST: {
+    ttl: CACHE_TTL.PRIVATE.SHORT,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['admin', 'list']
+  },
+  DETAIL: {
+    ttl: CACHE_TTL.PRIVATE.MEDIUM,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['admin', 'detail']
+  },
+  DROPDOWN: {
+    ttl: CACHE_TTL.PRIVATE.LONG,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['admin', 'dropdown']
+  },
+  SESSION: {
+    ttl: CACHE_TTL.PRIVATE.SHORT,
+    namespace: NAMESPACES.ADMIN,
+    tags: ['admin', 'session']
+  }
+};
+
+// Create cache middlewares
+const cacheDashboard = createCacheMiddleware(ADMIN_CACHE_CONFIG.DASHBOARD);
+const cacheStats = createCacheMiddleware(ADMIN_CACHE_CONFIG.STATS);
+const cacheList = createCacheMiddleware(ADMIN_CACHE_CONFIG.LIST);
+const cacheDetail = createCacheMiddleware(ADMIN_CACHE_CONFIG.DETAIL);
+const cacheDropdown = createCacheMiddleware(ADMIN_CACHE_CONFIG.DROPDOWN);
+const cacheSession = createCacheMiddleware(ADMIN_CACHE_CONFIG.SESSION);
+
+// Clear cache middleware for write operations
+const clearAdminCache = createClearCacheMiddleware({
+  patterns: [
+    'admin:*',
+    '*:tags:*admin*'
+  ],
+  tags: ['admin'],
+  namespace: NAMESPACES.ADMIN,
+  clearAllOnWrite: false
+});
+
+// Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
 
-// Cache middleware
-const cacheMiddleware = (duration = 300, keyPrefix = '') => {
-  return async (req, res, next) => {
-    // Skip cache for non-GET requests
-    if (req.method !== 'GET') {
-      return next();
-    }
-    
-    // Skip cache if explicitly disabled
-    if (req.query.cache === 'false') {
-      res.set('X-Cache', 'BYPASSED');
-      return next();
-    }
-    
-    // Generate cache key based on request
-    const cacheKey = adminController.generateCacheKey(
-      keyPrefix || `admin:${req.baseUrl}${req.path}`,
-      {
-        query: req.query,
-        params: req.params,
-        userRole: req.admin?.role,
-        userId: req.admin?._id
-      }
-    );
-    
-    try {
-      const cached = await cache.get(cacheKey);
-      if (cached) {
-        console.log(`Cache HIT: ${cacheKey}`);
-        res.set({
-          'X-Cache': 'HIT',
-          'X-Cache-Key': cacheKey,
-          'X-Cache-TTL': duration
-        });
-        
-        // If it's a full response object with success field
-        if (cached.success !== undefined) {
-          return res.json({
-            ...cached,
-            cached: true,
-            requestId: req.headers['x-request-id'] || crypto.randomUUID(),
-            timestamp: new Date().toISOString()
-          });
-        }
-        
-        // If it's just data
-        return res.json({
-          success: true,
-          data: cached,
-          cached: true,
-          requestId: req.headers['x-request-id'] || crypto.randomUUID(),
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      // Add cache control to response
-      res.set({
-        'X-Cache': 'MISS',
-        'X-Cache-Key': cacheKey,
-        'X-Cache-TTL': duration
-      });
-      
-      // Store the original json method
-      const originalJson = res.json;
-      
-      // Override json method to cache response
-      res.json = function(data) {
-        // Only cache successful responses
-        if (data && data.success !== false) {
-          cache.set(cacheKey, data, duration).catch(err => {
-            console.warn('Cache set error:', err.message);
-          });
-        }
-        
-        // Call original json method
-        return originalJson.call(this, data);
-      };
-      
-      next();
-    } catch (error) {
-      console.warn('Cache middleware error:', error.message);
-      next();
-    }
-  };
-};
+// ==================== DASHBOARD ROUTES (Cached) ====================
 
-// Clear cache middleware (for POST/PUT/DELETE operations)
-const clearCacheMiddleware = (resourceType) => {
-  return async (req, res, next) => {
-    // Store the original json method
-    const originalJson = res.json;
-    
-    // Override json method to clear cache after successful operations
-    res.json = function(data) {
-      // Only clear cache on successful operations
-      if (data && data.success !== false) {
-        const clearCachePromises = [];
-        
-        // Clear specific resource cache
-        if (resourceType && req.params.id) {
-          clearCachePromises.push(
-            adminController.invalidateSpecificCache(resourceType, req.params.id)
-          );
-        }
-        
-        // Clear list caches for the resource type
-        if (resourceType) {
-          clearCachePromises.push(
-            adminController.invalidateAdminCache(resourceType)
-          );
-        }
-        
-        // Clear dashboard cache if relevant
-        if (['users', 'gigs', 'services', 'categories', 'subcategories'].includes(resourceType)) {
-          clearCachePromises.push(
-            adminController.invalidateAdminCache('dashboard')
-          );
-        }
-        
-        // Execute all cache clearing in background
-        Promise.allSettled(clearCachePromises).then(results => {
-          const failed = results.filter(r => r.status === 'rejected');
-          if (failed.length > 0) {
-            console.warn('Some cache clearing failed:', failed.map(f => f.reason.message));
-          }
-        });
-      }
-      
-      // Call original json method
-      return originalJson.call(this, data);
-    };
-    
-    next();
-  };
-};
-
-// ============================================
-// DASHBOARD ROUTES WITH CSRF
-// ============================================
 router.get('/dashboard', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('view_dashboard'),
   auditLog('VIEW_DASHBOARD', 'dashboard'),
-  cacheMiddleware(300, 'admin:dashboard'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheDashboard,
   adminController.getDashboardStats
 );
 
-// ============================================
-// ADMIN AUTH ROUTES WITH CSRF
-// ============================================
+// ==================== ADMIN AUTH ROUTES ====================
+
 router.post('/logout', 
   verifyAdmin,
-  // IMPORTANT: Use custom CSRF handling for logout to prevent lockout
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   (req, res, next) => {
-    // For admin logout, we'll handle CSRF differently
     const csrfToken = req.headers['x-csrf-token'] || req.body?.csrfToken;
     
     if (csrfToken) {
@@ -196,19 +124,16 @@ router.post('/logout',
     
     next();
   },
-  // Middleware to set admin logout flags
   (req, res, next) => {
     console.log('🛡️ Admin logout middleware triggered for:', {
       adminId: req.admin?._id,
       email: req.admin?.email
     });
     
-    // Set flags for logout controller
     req.isAdminLogout = true;
     req.isAdmin = true;
     req.adminId = req.admin._id;
     
-    // Also set user object for logout controller
     req.user = {
       _id: req.admin._id,
       email: req.admin.email,
@@ -216,32 +141,26 @@ router.post('/logout',
       role: req.admin.role
     };
     
-    console.log('🛡️ Admin flags set:', {
-      isAdminLogout: req.isAdminLogout,
-      isAdmin: req.isAdmin,
-      adminId: req.adminId
-    });
-    
     next();
   },
-  // Call the logout controller
   logout
 );
 
 router.get('/session',
   verifyAdmin,
-  cacheMiddleware(60, 'admin:session'), // Cache for 1 minute
+  cacheControlMiddleware({ public: false, maxAge: 60 }),
+  cacheSession,
   adminController.checkAdminSession
 );
 
-// ============================================
-// ANALYTICS ROUTES (READ-ONLY - NO CSRF NEEDED)
-// ============================================
+// ==================== ANALYTICS ROUTES (Cached) ====================
+
 router.get('/categories/analytics', 
   verifyAdmin, 
   requirePermission('view_analytics'),
   auditLog('VIEW_CATEGORY_ANALYTICS', 'categories'),
-  cacheMiddleware(300, 'admin:categories:analytics'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 180 }),
+  cacheStats,
   categoryController.getCategoryStats
 );
 
@@ -249,7 +168,8 @@ router.get('/subcategories/stats',
   verifyAdmin, 
   requirePermission('view_analytics'),
   auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
-  cacheMiddleware(300, 'admin:subcategories:stats'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 180 }),
+  cacheStats,
   adminController.getSubcategoryStats
 );
 
@@ -258,53 +178,56 @@ router.get('/services/stats',
   adminApiLimiter,
   requirePermission('view_analytics'),
   auditLog('VIEW_SERVICE_STATS', 'services'),
-  cacheMiddleware(300, 'admin:services:stats'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 180 }),
+  cacheStats,
   serviceController.getServiceStats
 );
 
-// Gig statistics
 router.get('/gigs/stats', 
   verifyAdmin, 
   requirePermission('view_analytics'),
   auditLog('VIEW_GIG_STATS', 'gigs'),
-  cacheMiddleware(300, 'admin:gigs:stats'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 180 }),
+  cacheStats,
   async (req, res, next) => {
     req.user = { role: 'admin', _id: req.admin._id };
     next();
   },
-  gigController.getGigStats // Use main gig controller
+  gigController.getGigStats
 );
 
-// ============================================
-// REPAIR ROUTES WITH CSRF
-// ============================================
+// ==================== REPAIR ROUTES (Clear Cache) ====================
+
 router.post('/categories/repair-counts', 
   verifyAdmin,
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('system_settings'),
   auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   categoryController.repairCategoryCounts
 );
 
 router.post('/subcategories/repair-counts', 
   verifyAdmin,
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('system_settings'),
   auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   subcategoryController.repairSubcategoryCounts
 );
 
-// ============================================
-// DROPDOWN ROUTES (READ-ONLY - NO CSRF NEEDED)
-// ============================================
+// ==================== DROPDOWN ROUTES (Cached) ====================
+
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
-  cacheMiddleware(600, 'admin:categories:dropdown'),
+  cacheControlMiddleware({ public: false, maxAge: 600 }),
+  cacheDropdown,
   async (req, res) => {
     try {
       console.log('[CATEGORIES DROPDOWN] Fetching categories...');
-      console.log('[CATEGORIES DROPDOWN] Query params:', req.query);
       
       const { 
         includeSubcategories = false, 
@@ -312,43 +235,22 @@ router.get('/categories/dropdown',
         onlyWithSubcategories = false 
       } = req.query;
       
-      // Build filter
       const filter = { 
         isActive: true,
         deletedAt: null
       };
       
-      // DEBUG: Log the filter being used
-      console.log('[CATEGORIES DROPDOWN] Filter before allowSubcategories:', filter);
-      
-      // Only filter by allowSubcategories if explicitly requested
       if (onlyWithSubcategories === 'true') {
         filter.allowSubcategories = true;
-      }
-      // Remove allowSubcategories filter if showAll is true
-      else if (showAll === 'true') {
+      } else if (showAll === 'true') {
         // Don't filter by allowSubcategories
-        console.log('[CATEGORIES DROPDOWN] showAll=true, removing allowSubcategories filter');
-      } else {
-        // Default: show all active categories
-        console.log('[CATEGORIES DROPDOWN] Using default filter (no allowSubcategories)');
       }
-      
-      console.log('[CATEGORIES DROPDOWN] Final filter:', filter);
       
       const categories = await Category.find(filter)
         .select('name slug icon parentCategory order isActive featured popular servicesCount gigsCount allowSubcategories')
         .sort({ order: 1, name: 1 })
         .lean();
       
-      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
-      console.log('[CATEGORIES DROPDOWN] Categories found:', categories.map(c => ({
-        name: c.name,
-        allowSubcategories: c.allowSubcategories,
-        id: c._id
-      })));
-      
-      // If includeSubcategories is true, fetch subcategories
       if (includeSubcategories === 'true') {
         const categoryIds = categories.map(cat => cat._id);
         
@@ -381,16 +283,14 @@ router.get('/categories/dropdown',
         success: true,
         data: categories,
         count: categories.length,
-        filterUsed: filter,
-        queryParams: req.query
+        cached: false
       });
     } catch (error) {
       console.error('[CATEGORIES DROPDOWN ERROR]', error);
       res.status(500).json({
         success: false,
         message: 'Failed to fetch categories',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
@@ -401,19 +301,18 @@ router.get('/categories/:categoryId/subcategories/dropdown',
   adminApiLimiter,
   requirePermission('manage_categories'),
   auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
-  cacheMiddleware(600, 'admin:subcategories:dropdown:bycategory'), // Cache for 10 minutes
+  cacheControlMiddleware({ public: false, maxAge: 600 }),
+  cacheDropdown,
   adminController.getSubcategoriesDropdown
 );
 
 router.get('/subcategories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
-  cacheMiddleware(600, 'admin:subcategories:dropdown'), // Cache for 10 minutes
+  cacheControlMiddleware({ public: false, maxAge: 600 }),
+  cacheDropdown,
   async (req, res) => {
     try {
-      console.log('[SUBCATEGORIES DROPDOWN] Fetching subcategories...');
-      console.log('[SUBCATEGORIES DROPDOWN] Admin user:', req.admin?.email);
-      
       const { categoryId } = req.query;
       
       const filter = {
@@ -431,11 +330,10 @@ router.get('/subcategories/dropdown',
         .sort({ order: 1, name: 1 })
         .lean();
       
-      console.log(`[SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories`);
-      
       res.json({
         success: true,
-        data: subcategories
+        data: subcategories,
+        cached: false
       });
     } catch (error) {
       console.error('[SUBCATEGORIES DROPDOWN ERROR]', error);
@@ -448,23 +346,60 @@ router.get('/subcategories/dropdown',
   }
 );
 
-// ============================================
-// SUBCATEGORY MANAGEMENT ROUTES WITH CSRF
-// ============================================
+router.get('/users/dropdown', 
+  verifyAdmin, 
+  adminApiLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 600 }),
+  cacheDropdown,
+  async (req, res) => {
+    try {
+      const { role = '' } = req.query;
+      
+      const query = { 
+        isActive: true,
+        deletedAt: null 
+      };
+      
+      if (role) {
+        query.role = role;
+      }
+      
+      const users = await User.find(query)
+        .select('name email picture role')
+        .sort({ name: 1 })
+        .limit(100)
+        .lean();
+      
+      res.json({
+        success: true,
+        data: users,
+        cached: false
+      });
+    } catch (error) {
+      console.error('[USERS DROPDOWN ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch users',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
 
-// Get all subcategories with pagination and filtering (READ-ONLY)
+// ==================== SUBCATEGORY MANAGEMENT ROUTES ====================
+
+// Get all subcategories (cached)
 router.get('/subcategories', 
   verifyAdmin, 
   adminApiLimiter,
   requirePermission('manage_categories'),
   auditLog('VIEW_SUBCATEGORIES', 'categories'),
-  cacheMiddleware(300, 'admin:subcategories'),
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheList,
   async (req, res, next) => {
     try {
-      // Create a clean query object for subcategories
       const cleanQuery = {};
       
-      // Copy only non-empty parameters
       for (const [key, value] of Object.entries(req.query)) {
         if (value === '') continue;
         
@@ -483,290 +418,210 @@ router.get('/subcategories',
         }
       }
       
-      // Ensure pagination defaults
       if (!cleanQuery.page) cleanQuery.page = 1;
       if (!cleanQuery.limit) cleanQuery.limit = 20;
       
-      // ADD DEFAULT PARAMETERS FOR CATEGORY POPULATION
-      cleanQuery.populateCategory = 'true'; // Force category population
+      cleanQuery.populateCategory = 'true';
       cleanQuery.includeCategoryDetails = 'true';
       
-      // Replace the req.query with clean version
       req.query = cleanQuery;
       
-      console.log('[SUBCATEGORIES QUERY] Cleaned query:', cleanQuery);
       next();
     } catch (error) {
-      console.error('[SUBCATEGORIES MIDDLEWARE ERROR]', error);
       next(error);
     }
   },
   adminController.getSubcategories
 );
 
-// Export subcategories (READ-ONLY)
+// Export subcategories (no cache)
 router.get('/subcategories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
   auditLog('EXPORT_SUBCATEGORIES', 'categories'),
-  cacheMiddleware(3600, 'admin:subcategories:export'), // Cache exports for 1 hour
+  cacheControlMiddleware({ noStore: true }),
   adminController.exportSubcategories
 );
 
-// Bulk subcategory operations WITH CSRF
+// Bulk subcategory operations (clear cache)
 router.post('/subcategories/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
-  clearCacheMiddleware('subcategories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.bulkUpdateSubcategories
 );
 
-// Get single subcategory (READ-ONLY)
+// Get single subcategory (cached)
 router.get('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter,
   requirePermission('manage_categories'),
   auditLog('VIEW_SUBCATEGORY', 'categories'),
-  cacheMiddleware(600, 'admin:subcategory'),
+  cacheControlMiddleware({ public: false, maxAge: 300 }),
+  cacheDetail,
   async (req, res, next) => {
     try {
-      console.log('[GET SUBCATEGORY BY ID] Request:', {
-        id: req.params.id,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if it's wrapped in quotes
       if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
         req.params.id = req.params.id.slice(1, -1);
       }
       
-      // Set population parameters
       req.query.populateCategory = true;
       req.query.includeCategoryDetails = true;
       req.query.populate = 'true';
       
       next();
     } catch (error) {
-      console.error('[GET SUBCATEGORY MIDDLEWARE ERROR]', error);
       next(error);
     }
   },
   adminController.getSubcategoryById
 );
 
-// Create subcategory WITH CSRF
+// Create subcategory (clear cache)
 router.post('/subcategories', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('CREATE_SUBCATEGORY', 'categories'),
-  clearCacheMiddleware('subcategories'),
-  async (req, res, next) => {
-    try {
-      console.log('[CREATE SUBCATEGORY] Request body:', req.body);
-      next();
-    } catch (error) {
-      console.error('[CREATE SUBCATEGORY MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.createSubcategory
 );
 
-// Update subcategory WITH CSRF
+// Update subcategory (clear cache)
 router.put('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('UPDATE_SUBCATEGORY', 'categories'),
-  clearCacheMiddleware('subcategories'),
-  // Add JSON body parser middleware specifically for this route
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   express.json({ limit: '10mb' }),
-  async (req, res, next) => {
-    try {
-      console.log('[UPDATE SUBCATEGORY] Incoming request:', {
-        params: req.params,
-        body: req.body,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if it's wrapped in quotes
-      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
-        req.params.id = req.params.id.slice(1, -1);
-        console.log('[UPDATE SUBCATEGORY] Fixed ID:', req.params.id);
-      }
-      
-      next();
-    } catch (error) {
-      console.error('[UPDATE SUBCATEGORY MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
   adminController.updateSubcategory
 );
 
-// Delete subcategory WITH CSRF
+// Delete subcategory (clear cache)
 router.delete('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('DELETE_SUBCATEGORY', 'categories'),
-  clearCacheMiddleware('subcategories'),
-  async (req, res, next) => {
-    try {
-      console.log('[DELETE SUBCATEGORY] Request:', {
-        id: req.params.id,
-        query: req.query,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if needed
-      if (req.params.id === '[object Object]') {
-        if (req.body && req.body.id) {
-          req.params.id = req.body.id;
-        } else if (req.query && req.query.id) {
-          req.params.id = req.query.id;
-        }
-      }
-      
-      // Fix quoted ID
-      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
-        req.params.id = req.params.id.slice(1, -1);
-      }
-      
-      next();
-    } catch (error) {
-      console.error('[DELETE SUBCATEGORY MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.deleteSubcategory
 );
 
-// ============================================
-// USER MANAGEMENT ROUTES WITH CSRF
-// ============================================
+// ==================== USER MANAGEMENT ROUTES ====================
 
-// Get users (READ-ONLY)
+// Get users (cached)
 router.get('/users', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_users'),
   auditLog('VIEW_USERS', 'users'),
-  cacheMiddleware(300, 'admin:users'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheList,
   adminController.getUsers
 );
 
-// Create user WITH CSRF
+// Create user (clear cache)
 router.post('/users', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_users'),
   auditLog('CREATE_USER', 'users'),
-  clearCacheMiddleware('users'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.createUser
 );
 
-// Export users (READ-ONLY)
+// Export users (no cache)
 router.get('/users/export', 
   verifyAdmin, 
   requirePermission('manage_users'),
   auditLog('EXPORT_USERS', 'users'),
-  cacheMiddleware(3600, 'admin:users:export'), // Cache exports for 1 hour
+  cacheControlMiddleware({ noStore: true }),
   adminController.exportUsers
 );
 
-// User bulk operations WITH CSRF
+// User bulk operations (clear cache)
 router.post('/users/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_users'),
   auditLog('BULK_USER_ACTION', 'users'),
-  clearCacheMiddleware('users'),
-  async (req, res, next) => {
-    try {
-      console.log('[USERS BULK ACTION] Request:', {
-        body: req.body,
-        admin: req.admin?.email
-      });
-      next();
-    } catch (error) {
-      console.error('[USERS BULK ACTION MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.bulkUpdateUsers
 );
 
-// Update user WITH CSRF
+// Update user (clear cache)
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_users'),
   auditLog('UPDATE_USER', 'users'),
-  clearCacheMiddleware('users'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.updateUser
 );
 
-// Delete user WITH CSRF
+// Delete user (clear cache)
 router.delete('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_users'),
   auditLog('DELETE_USER', 'users'),
-  clearCacheMiddleware('users'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   adminController.deleteUser
 );
 
-// ============================================
-// CATEGORY MANAGEMENT ROUTES WITH CSRF
-// ============================================
+// ==================== CATEGORY MANAGEMENT ROUTES ====================
 
-// Create category WITH CSRF
+// Create category (clear cache)
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('CREATE_CATEGORY', 'categories'),
-  clearCacheMiddleware('categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   categoryController.createCategory
 );
 
-// Get categories (READ-ONLY)
+// Get categories (cached)
 router.get('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_categories'),
   auditLog('VIEW_CATEGORIES', 'categories'),
-  cacheMiddleware(300, 'admin:categories'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheList,
   async (req, res, next) => {
     try {
-      // Create a clean query object
       const cleanQuery = {};
       
-      // Copy only non-empty parameters
       for (const [key, value] of Object.entries(req.query)) {
-        // Skip empty strings for boolean fields
         if (value === '' && ['featured', 'popular', 'isActive'].includes(key)) {
           continue;
         }
         
-        // Parse numeric values
         if (['page', 'limit', 'sortOrder', 'order', 'level'].includes(key)) {
           cleanQuery[key] = parseInt(value) || (key === 'page' ? 1 : key === 'limit' ? 20 : 0);
         }
-        // Parse boolean values
         else if (['featured', 'isActive', 'popular', 'showAll', 'isAdmin'].includes(key)) {
           if (value === 'true' || value === true || value === '1') {
             cleanQuery[key] = true;
@@ -774,216 +629,121 @@ router.get('/categories',
             cleanQuery[key] = false;
           }
         }
-        // Keep other values as-is
         else {
           cleanQuery[key] = value;
         }
       }
       
-      // Add admin defaults
       cleanQuery.showAll = true;
       cleanQuery.isAdmin = true;
       
-      // Ensure pagination defaults
       if (!cleanQuery.page) cleanQuery.page = 1;
       if (!cleanQuery.limit) cleanQuery.limit = 20;
       
-      // Replace the req.query with clean version
       req.query = cleanQuery;
       
-      console.log('[CATEGORIES QUERY] Cleaned query:', cleanQuery);
       next();
     } catch (error) {
-      console.error('[CATEGORIES MIDDLEWARE ERROR]', error);
       next(error);
     }
   },
   categoryController.getCategories
 );
 
-// Update category WITH CSRF
+// Update category (clear cache)
 router.put('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('UPDATE_CATEGORY', 'categories'),
-  clearCacheMiddleware('categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   categoryController.updateCategory
 );
 
-// Get single category by ID (READ-ONLY)
+// Get single category (cached)
 router.get('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_categories'),
   auditLog('VIEW_CATEGORY', 'categories'),
-  cacheMiddleware(600, 'admin:category'), // Cache single item for 10 minutes
+  cacheControlMiddleware({ public: false, maxAge: 300 }),
+  cacheDetail,
   async (req, res, next) => {
     try {
-      console.log('[ADMIN GET CATEGORY] Request received:', {
-        id: req.params.id,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if needed
-      if (req.params.id === '[object Object]') {
-        if (req.body && req.body.id) {
-          req.params.id = req.body.id;
-        } else if (req.query && req.query.id) {
-          req.params.id = req.query.id;
-        }
-      }
-      
-      // Fix quoted ID
       if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
         req.params.id = req.params.id.slice(1, -1);
       }
       
-      // Set admin query parameters
       req.query.showAll = true;
       req.query.includeDeleted = true;
       req.query.populate = 'true';
       
       next();
     } catch (error) {
-      console.error('[ADMIN GET CATEGORY MIDDLEWARE ERROR]', error);
       next(error);
     }
   },
   categoryController.getCategoryById
 );
 
-// Delete category WITH CSRF
+// Delete category (clear cache)
 router.delete('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('DELETE_CATEGORY', 'categories'),
-  clearCacheMiddleware('categories'),
-  async (req, res, next) => {
-    try {
-      console.log('[DELETE CATEGORY] Request received:', {
-        params: req.params,
-        body: req.body,
-        query: req.query,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if it's [object Object]
-      if (req.params.id === '[object Object]') {
-        console.log('[DELETE CATEGORY] Detected object ID, attempting to fix...');
-        
-        if (req.body && req.body.id) {
-          req.params.id = req.body.id;
-          console.log('[DELETE CATEGORY] Fixed ID from body:', req.params.id);
-        } else if (req.query && req.query.id) {
-          req.params.id = req.query.id;
-          console.log('[DELETE CATEGORY] Fixed ID from query:', req.params.id);
-        } else if (req.body && req.body._id) {
-          req.params.id = req.body._id;
-          console.log('[DELETE CATEGORY] Fixed ID from body._id:', req.params.id);
-        }
-      }
-      
-      next();
-    } catch (error) {
-      console.error('[DELETE CATEGORY MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   categoryController.deleteCategory
 );
 
-// Restore category WITH CSRF
+// Restore category (clear cache)
 router.post('/categories/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('RESTORE_CATEGORY', 'categories'),
-  clearCacheMiddleware('categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   express.json({ limit: '10mb' }),
-  async (req, res, next) => {
-    try {
-      console.log('[RESTORE CATEGORY ROUTE] Request received:', {
-        params: req.params,
-        body: req.body,
-        query: req.query,
-        admin: req.admin?.email
-      });
-      
-      // Fix the ID if it's [object Object]
-      if (req.params.id === '[object Object]') {
-        console.log('[RESTORE CATEGORY ROUTE] Detected object ID, attempting to fix...');
-        
-        if (req.body && req.body.id) {
-          req.params.id = req.body.id;
-          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from body:', req.params.id);
-        } else if (req.query && req.query.id) {
-          req.params.id = req.query.id;
-          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from query:', req.params.id);
-        } else if (req.body && req.body._id) {
-          req.params.id = req.body._id;
-          console.log('[RESTORE CATEGORY ROUTE] Fixed ID from body._id:', req.params.id);
-        }
-      }
-      
-      // Fix quoted ID
-      if (req.params.id && req.params.id.startsWith('"') && req.params.id.endsWith('"')) {
-        req.params.id = req.params.id.slice(1, -1);
-      }
-      
-      // Ensure we have proper JSON body for POST requests
-      if (req.method === 'POST' && !req.body && req.query.searchValue) {
-        req.body = {
-          searchBy: req.query.searchBy || 'id',
-          searchValue: req.query.searchValue,
-          force: req.query.force || 'false'
-        };
-      }
-      
-      next();
-    } catch (error) {
-      console.error('[RESTORE CATEGORY ROUTE MIDDLEWARE ERROR]', error);
-      next(error);
-    }
-  },
   categoryController.restoreCategory
 );
 
-// Bulk category operations WITH CSRF
+// Bulk category operations (clear cache)
 router.post('/categories/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_categories'),
   auditLog('BULK_CATEGORY_ACTION', 'categories'),
-  clearCacheMiddleware('categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   categoryController.bulkUpdateCategories
 );
 
-// Export categories (READ-ONLY)
+// Export categories (no cache)
 router.get('/categories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
   auditLog('EXPORT_CATEGORIES', 'categories'),
-  cacheMiddleware(3600, 'admin:categories:export'), // Cache exports for 1 hour
+  cacheControlMiddleware({ noStore: true }),
   adminController.exportCategories
 );
 
-// ============================================
-// SERVICE MANAGEMENT ROUTES WITH CSRF
-// ============================================
+// ==================== SERVICE MANAGEMENT ROUTES ====================
 
-// Get services (READ-ONLY)
+// Get services (cached)
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
   requirePermission('manage_services'),
   auditLog('VIEW_SERVICES', 'services'),
-  cacheMiddleware(300, 'admin:services'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheList,
   async (req, res, next) => {
     req.query.isAdmin = true;
     req.query.showAll = true;
@@ -1000,28 +760,19 @@ router.get('/services',
   serviceController.getAdminServices
 );
 
-// Delete service WITH CSRF
+// Delete service (clear cache)
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_services'),
   auditLog('DELETE_SERVICE', 'services'),
-  clearCacheMiddleware('services'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   async (req, res, next) => {
     try {
       req.isAdmin = true;
       
-      // Log the request details for debugging
-      console.log('[ADMIN DELETE SERVICE] Request received:', {
-        params: req.params,
-        query: req.query,
-        body: req.body,
-        admin: req.admin?.email,
-        adminRole: req.admin?.role
-      });
-      
-      // Ensure permanent parameter is passed correctly
       if (req.query.permanent) {
         req.query.permanent = String(req.query.permanent).toLowerCase();
       }
@@ -1032,69 +783,65 @@ router.delete('/services/:id',
       
       next();
     } catch (error) {
-      console.error('[ADMIN DELETE SERVICE ERROR]', error);
       next(error);
     }
   },
   serviceController.deleteService
 );
 
-// Get service by ID (READ-ONLY)
+// Get service by ID (cached)
 router.get('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_services'),
   auditLog('VIEW_SERVICE', 'services'),
-  cacheMiddleware(600, 'admin:service'), // Cache single item for 10 minutes
+  cacheControlMiddleware({ public: false, maxAge: 300 }),
+  cacheDetail,
   async (req, res, next) => {
     try {
       req.isAdmin = true;
-      // Add query parameters for full details
       req.query.includeFullDetails = 'true';
       req.query.includeSubcategory = 'true';
       req.query.populate = 'true';
       next();
     } catch (error) {
-      console.error('[ADMIN GET SERVICE ERROR]', error);
       next(error);
     }
   },
   serviceController.getServiceById
 );
 
-// Update service WITH CSRF
+// Update service (clear cache)
 router.put('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_services'),
   auditLog('UPDATE_SERVICE', 'services'),
-  clearCacheMiddleware('services'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   async (req, res, next) => {
     try {
       req.isAdmin = true;
       next();
     } catch (error) {
-      console.error('[ADMIN UPDATE SERVICE ERROR]', error);
       next(error);
     }
   },
   serviceController.updateService
 );
 
-// ============================================
-// GIG MANAGEMENT ROUTES WITH CSRF
-// ============================================
+// ==================== GIG MANAGEMENT ROUTES ====================
 
-// Get gigs (READ-ONLY)
+// Get gigs (cached)
 router.get('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('VIEW_GIGS', 'gigs'),
-  cacheMiddleware(300, 'admin:gigs'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheList,
   async (req, res, next) => {
-    // Set admin flags for gig controller
     req.user = { 
       role: 'admin', 
       _id: req.admin._id,
@@ -1115,18 +862,18 @@ router.get('/gigs',
     
     next();
   },
-  gigController.getGigs // Use main gig controller
+  gigController.getGigs
 );
 
-// Get gig by ID (READ-ONLY)
+// Get gig by ID (cached)
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
   requirePermission('manage_gigs'),
   auditLog('VIEW_GIG', 'gigs'),
-  cacheMiddleware(600, 'admin:gig'), // Cache single item for 10 minutes
+  cacheControlMiddleware({ public: false, maxAge: 300 }),
+  cacheDetail,
   async (req, res, next) => {
-    // Set admin flags
     req.user = { 
       role: 'admin', 
       _id: req.admin._id,
@@ -1137,28 +884,25 @@ router.get('/gigs/:id',
     req.query.includeCommunication = true;
     next();
   },
-  gigController.getGigById // Use main gig controller
+  gigController.getGigById
 );
 
-// Create gig WITH CSRF
+// Create gig (clear cache)
 router.post('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_gigs'),
   auditLog('CREATE_GIG', 'gigs'),
-  clearCacheMiddleware('gigs'),
-  // Use upload middleware if needed
-  // upload.array('images', 10),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   async (req, res, next) => {
-    // Set admin as creator
     req.user = { 
       role: 'admin', 
       _id: req.admin._id,
       ...req.admin 
     };
     
-    // If client ID provided, set as createdBy
     if (req.body.clientId) {
       req.body.createdBy = req.body.clientId;
     } else {
@@ -1168,57 +912,47 @@ router.post('/gigs',
     delete req.body.clientId;
     next();
   },
-  gigController.createGig // Use main gig controller
+  gigController.createGig
 );
 
-// Update gig WITH CSRF
+// Update gig (clear cache)
 router.put('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_gigs'),
   auditLog('UPDATE_GIG', 'gigs'),
-  clearCacheMiddleware('gigs'),
-  // Add JSON body parser with version handling
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   express.json({ limit: '10mb' }),
   async (req, res, next) => {
-    // Set admin user
     req.user = { 
       role: 'admin', 
       _id: req.admin._id,
       ...req.admin 
     };
-    
-    // Log for debugging
-    console.log('[ADMIN UPDATE GIG] Request:', {
-      id: req.params.id,
-      body: req.body,
-      admin: req.admin.email
-    });
-    
     next();
   },
-  gigController.updateGig // Use main gig controller
+  gigController.updateGig
 );
 
-// Delete gig WITH CSRF
+// Delete gig (clear cache)
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_gigs'),
   auditLog('DELETE_GIG', 'gigs'),
-  clearCacheMiddleware('gigs'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   express.json(),
   async (req, res, next) => {
-    // Set admin user
     req.user = { 
       role: 'admin', 
       _id: req.admin._id,
       ...req.admin 
     };
     
-    // Fix ID if needed
     if (req.params.id === '[object Object]') {
       if (req.body && req.body.id) {
         req.params.id = req.body.id;
@@ -1227,7 +961,6 @@ router.delete('/gigs/:id',
       }
     }
     
-    // Parse query parameters
     if (req.query.permanent) {
       req.query.permanent = String(req.query.permanent).toLowerCase();
     }
@@ -1238,218 +971,83 @@ router.delete('/gigs/:id',
     
     next();
   },
-  gigController.deleteGig // Use main gig controller
+  gigController.deleteGig
 );
 
-// Bulk gig operations WITH CSRF
-router.post('/gigs/bulk', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
-  requirePermission('manage_gigs'),
-  auditLog('BULK_GIG_ACTION', 'gigs'),
-  clearCacheMiddleware('gigs'),
-  async (req, res) => {
-    // For bulk operations, keep using admin controller or create new endpoint
-    try {
-      const { ids, operation, data = {} } = req.body;
-      
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'No gigs selected',
-          code: 'NO_GIGS_SELECTED'
-        });
-      }
-      
-      let updateData = {};
-      let message = 'Gigs updated successfully';
-      
-      switch (operation) {
-        case 'activate':
-          updateData = { status: 'open', isActive: true };
-          message = 'Gigs activated successfully';
-          break;
-        case 'pause':
-          updateData = { status: 'closed', isActive: false };
-          message = 'Gigs closed successfully';
-          break;
-        case 'delete':
-          // Use gig controller's delete function for each
-          const results = await Promise.all(
-            ids.map(id => 
-              Gig.findByIdAndUpdate(id, {
-                isActive: false,
-                deletedAt: new Date(),
-                deletedBy: req.admin._id
-              })
-            )
-          );
-          
-          // Invalidate cache
-          await adminController.invalidateAdminCache('gigs');
-          
-          return res.json({
-            success: true,
-            message: 'Gigs deleted successfully',
-            modifiedCount: results.filter(r => r).length
-          });
-        default:
-          updateData = data;
-      }
-      
-      updateData.lastUpdatedBy = req.admin._id;
-      
-      const result = await Gig.updateMany(
-        { _id: { $in: ids } },
-        { $set: updateData }
-      );
-      
-      // Invalidate cache
-      await adminController.invalidateAdminCache('gigs');
-      
-      res.json({
-        success: true,
-        message,
-        modifiedCount: result.modifiedCount
-      });
-      
-    } catch (error) {
-      console.error('[BULK UPDATE GIGS ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to perform bulk operation'
-      });
-    }
-  }
-);
-
-// Export gigs (READ-ONLY)
+// Export gigs (no cache)
 router.get('/gigs/export', 
   verifyAdmin, 
   requirePermission('manage_gigs'),
   auditLog('EXPORT_GIGS', 'gigs'),
-  cacheMiddleware(3600, 'admin:gigs:export'), // Cache exports for 1 hour
+  cacheControlMiddleware({ noStore: true }),
   async (req, res, next) => {
     req.user = { role: 'admin', _id: req.admin._id };
     next();
   },
-  gigController.exportGigs // Use main gig controller
+  gigController.exportGigs
 );
 
-// Restore gig WITH CSRF
+// Restore gig (clear cache)
 router.post('/gigs/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('manage_gigs'),
   auditLog('RESTORE_GIG', 'gigs'),
-  clearCacheMiddleware('gigs'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   async (req, res, next) => {
     req.user = { role: 'admin', _id: req.admin._id };
     next();
   },
-  gigController.restoreGig // Use main gig controller
+  gigController.restoreGig
 );
 
-// ============================================
-// USER DROPDOWN (READ-ONLY - NO CSRF NEEDED)
-// ============================================
-router.get('/users/dropdown', 
-  verifyAdmin, 
-  adminApiLimiter,
-  cacheMiddleware(600, 'admin:users:dropdown'), // Cache for 10 minutes
-  async (req, res) => {
-    try {
-      console.log('[USERS DROPDOWN] Fetching users...');
-      console.log('[USERS DROPDOWN] Admin user:', req.admin?.email);
-      
-      const { role = '' } = req.query;
-      
-      const query = { 
-        isActive: true,
-        deletedAt: null 
-      };
-      
-      if (role) {
-        query.role = role;
-      }
-      
-      const users = await User.find(query)
-        .select('name email picture role')
-        .sort({ name: 1 })
-        .limit(100)
-        .lean();
-      
-      console.log(`[USERS DROPDOWN] Found ${users.length} users`);
-      
-      res.json({
-        success: true,
-        data: users
-      });
-    } catch (error) {
-      console.error('[USERS DROPDOWN ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch users',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
+// ==================== SYSTEM MANAGEMENT ROUTES ====================
 
-// ============================================
-// SYSTEM MANAGEMENT ROUTES WITH CSRF
-// ============================================
-
-// System health (READ-ONLY)
+// System health (cached)
 router.get('/system/health', 
   verifyAdmin, 
   adminApiLimiter,
   requirePermission('system_settings'),
   auditLog('VIEW_SYSTEM_HEALTH', 'system'),
-  cacheMiddleware(30, 'admin:system:health'), // Cache for 30 seconds
+  cacheControlMiddleware({ public: false, maxAge: 30 }),
+  cacheStats,
   adminController.getSystemHealthHandler
 );
 
-// Recent activity (READ-ONLY)
+// Recent activity (cached)
 router.get('/activity/recent', 
   verifyAdmin, 
   adminApiLimiter,
   requirePermission('view_dashboard'),
   auditLog('VIEW_RECENT_ACTIVITY', 'dashboard'),
-  cacheMiddleware(300, 'admin:activity:recent'), // Cache for 5 minutes
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheStats,
   adminController.getRecentActivity
 );
 
-// Cache management endpoints WITH CSRF
+// Cache management (clear cache)
 router.post('/cache/clear', 
   verifyAdmin,
-  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  CSRFMiddleware.requireCSRF,
   requirePermission('system_settings'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
   async (req, res) => {
     try {
       const { type } = req.body;
+      const cache = require('../utils/cache');
       
       if (type === 'all') {
         await cache.del('admin:*');
         console.log('Cleared all admin cache');
       } else if (type) {
-        await adminController.invalidateAdminCache(type);
+        await cache.del(`admin:${type}:*`);
         console.log(`Cleared admin cache for type: ${type}`);
       } else {
-        // Clear specific patterns
-        const patterns = [
-          'admin:users:*',
-          'admin:categories:*',
-          'admin:subcategories:*',
-          'admin:services:*',
-          'admin:gigs:*',
-          'admin:dashboard:*'
-        ];
-        
-        await Promise.all(patterns.map(pattern => cache.del(pattern)));
-        console.log('Cleared all admin resource caches');
+        await cache.del('admin:*');
+        console.log('Cleared all admin cache');
       }
       
       res.json({
@@ -1468,29 +1066,53 @@ router.post('/cache/clear',
   }
 );
 
-// Cache stats (READ-ONLY)
+// Cache stats
 router.get('/cache/stats', 
   verifyAdmin,
   requirePermission('system_settings'),
+  cacheControlMiddleware({ public: false, maxAge: 30 }),
+  cacheStatsMiddleware,
   async (req, res) => {
     try {
-      // This would require Redis-specific implementation
-      // For now, return basic cache info
       res.json({
         success: true,
-        data: {
-          enabled: true,
-          type: process.env.REDIS_URL ? 'redis' : 'memory',
-          memoryCacheSize: 'N/A', // Would need to track memory cache size
-          redisConnected: !!cache.redisClient && cache.redisClient.status === 'ready'
-        }
+        data: req.cacheStats
       });
     } catch (error) {
-      console.error('[CACHE STATS ERROR]', error);
       res.status(500).json({
         success: false,
         message: 'Failed to get cache stats',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+// ==================== HEALTH CHECK ====================
+
+router.get('/health', 
+  verifyAdmin,
+  cacheControlMiddleware({ maxAge: 30 }),
+  async (req, res) => {
+    try {
+      const cache = require('../utils/cache');
+      const health = await cache.health();
+      
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        admin: req.admin?.email,
+        cache: {
+          redis: health.redis.healthy,
+          memory: health.memory.healthy,
+          overall: health.overall
+        }
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: error.message
       });
     }
   }
