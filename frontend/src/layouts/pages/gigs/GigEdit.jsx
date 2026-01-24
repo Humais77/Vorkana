@@ -44,7 +44,6 @@ import { useGig, useUpdateGig } from "../../../hooks/useGigs";
 import { useParentCategories } from '../../../hooks/useCategories';
 import { useSubcategoriesByCategory } from '../../../hooks/useSubcategories';
 import { SeoWrapper } from "../../../components/SeoWrapper";
-import { isProfileCompleteEnough } from '../../../utils/profileUtils';
 import { useGigToast } from '../../../hooks/useGigToast';
 
 // Static data outside component
@@ -373,13 +372,6 @@ const GigEdit = () => {
     };
   }, [uploadedImages, thumbnailFile]);
 
-  // Check profile completeness - OPTIMIZED
-  useEffect(() => {
-    if (currentUser && !isProfileCompleteEnough(currentUser, 70)) {
-      showGigError('Please complete your profile before editing gigs');
-      navigate('/dashboard');
-    }
-  }, [currentUser, navigate, showGigError]);
 
   // Memoized helper functions
   const getCategoryName = useCallback(() => {

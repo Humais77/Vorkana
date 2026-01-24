@@ -1,33 +1,29 @@
-// App.jsx – Updated with global auth handling
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState, lazy, Suspense, useCallback } from 'react';
 
 // Providers / Hooks
 import { SecurityProvider } from './context/SecurityContext';
 import { useAuthSync } from './hooks/useAuthSync';
 import { useCheckAuth } from './hooks/useAuth';
-import { useAuthStore } from './store/useAuthStore';
 // Layouts
 import PublicLayout from './layouts/PublicLayout';
 
-// Utils
+// Components
 import ScrollToTop from './components/ScrollToTop';
 import VerificationWrapper from './components/VerificationWrapper';
-
-// Admin
+import AuthProtectedRoute from './components/AuthProtectedRoute'; 
 import ProtectedAdminRoute from './ProtectedAdminRoute';
 import AdminLayout from './layouts/pages/admin/AdminLayout';
 import AdminRoutes from './layouts/pages/admin/AdminRoutes';
+import Toaster from './components/Toaster';
+
+// Pages
 import VerificationRedirect from './layouts/pages/profile/VerificationRedirect';
 import ResetPasswordRedirect from './layouts/pages/profile/ResetPasswordRedirect';
 import EmailVerificationHandler from './layouts/pages/profile/EmailVerificationHandler';
 import VerificationStatus from './layouts/pages/profile/VerificationStatus';
-import SessionMonitor from './components/SessionMonitor';
-import Toaster from './components/Toaster';
 
-// =======================
-// LAZY LOADED PAGES
-// =======================
+
 const Home = lazy(() => import('./layouts/pages/home/Home'));
 const AboutUsPage = lazy(() => import('./layouts/pages/footer/AboutUsPage'));
 const Signin = lazy(() => import('./layouts/pages/auth/Signin'));
@@ -64,57 +60,7 @@ const NotFound = lazy(() => import('./layouts/pages/NotFound'));
 const HowItWorksPage = lazy(() => import('./layouts/pages/footer/HowItWorksPage'));
 const HelpCenterPage = lazy(() => import('./layouts/pages/footer/HelpCenterPage'));
 const ContactPage = lazy(() => import('./layouts/pages/footer/ContactPage'));
-const FaqPage = lazy(()=> import('./layouts/pages/footer/FaqSection'))
-
-// Auth Protected Route Component
-const AuthProtectedRoute = ({ children, requireProfileCompletion = false, redirectTo = '/signin' }) => {
-  const { isAuthenticated, isLoading, user } = useAuthStore();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (!isAuthenticated) {
-        // Store the intended destination
-        sessionStorage.setItem('redirectAfterLogin', location.pathname);
-        navigate(redirectTo, { state: { from: location.pathname } });
-      } else if (requireProfileCompletion && user) {
-        // Check profile completion (you'll need to implement this)
-        const profileComplete = calculateProfileCompletion(user) >= 70;
-        if (!profileComplete) {
-          navigate('/profile', { 
-            state: { 
-              from: location.pathname,
-              requireCompletion: true 
-            } 
-          });
-        }
-      }
-    }
-  }, [isAuthenticated, isLoading, navigate, location, requireProfileCompletion, user, redirectTo]);
-
-  if (isLoading) {
-    return <LoadingFallback />;
-  }
-
-  return isAuthenticated ? children : null;
-};
-
-// Helper function for profile completion (you need to implement this)
-const calculateProfileCompletion = (user) => {
-  // Implement your profile completion logic here
-  if (!user) return 0;
-  
-  let score = 0;
-  if (user.name) score += 20;
-  if (user.email) score += 20;
-  if (user.profilePicture) score += 15;
-  if (user.bio) score += 15;
-  if (user.skills && user.skills.length > 0) score += 15;
-  if (user.country) score += 15;
-  
-  return Math.min(score, 100);
-};
+const FaqPage = lazy(()=> import('./layouts/pages/footer/FaqSection'));
 
 // Loading fallback
 const LoadingFallback = () => (
@@ -142,7 +88,6 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('signin');
 
   useEffect(() => {
-    // Clean up old tokens on app start
     localStorage.removeItem('userToken');
     localStorage.removeItem('refreshToken');
     
@@ -187,13 +132,12 @@ const App = () => {
               <Route path="/signin" element={<Signin />} />
               <Route path="/signup" element={<Signup />} />
 
-              {/* Protected Routes */}
+              
               <Route path="/gig/create" element={
-  <AuthProtectedRoute>
-    <GigCreate />
-  </AuthProtectedRoute>
-} />
-
+                <AuthProtectedRoute>
+                  <GigCreate />
+                </AuthProtectedRoute>
+              } />
               <Route path="/gig/:id" element={<GigDetails />} />
               <Route path="/edit-gig/:id" element={
                 <AuthProtectedRoute>
@@ -219,16 +163,17 @@ const App = () => {
                 </AuthProtectedRoute>
               } />
 
-              <Route path="/services/create" element={
-                <AuthProtectedRoute requireProfileCompletion={true}>
-                  <CreateService />
+              <Route path="/edit-service/:id" element={
+                <AuthProtectedRoute>
+                  <EditService />
                 </AuthProtectedRoute>
               } />
               <Route path="/services/create" element={
-  <AuthProtectedRoute>
-    <CreateService />
-  </AuthProtectedRoute>
-} />
+                <AuthProtectedRoute>
+                  <CreateService />
+                </AuthProtectedRoute>
+              } />
+
               <Route path="/services/:id" element={<ServiceDetails />} />
               <Route path="/services" element={<ServiceListingPage />} />
               <Route path="/what-are-services" element={<ServicesInfoPage />} />
@@ -240,7 +185,7 @@ const App = () => {
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/faq" element={<FaqPage />} />
 
-              {/* Auth Routes */}
+              
               <Route path="/verify-email/:token?" element={
                 <VerificationWrapper>
                   <VerifyEmail />
