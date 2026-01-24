@@ -1,9 +1,12 @@
+// useGigs.js - Production-ready hooks with CSRF protection
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { gigsAPI } from '../api/gigs';
 import { useGigStore } from '../store/useGigStore';
 import { useAuthStore } from '../store/useAuthStore';
 import toast from 'react-hot-toast';
+import { useCSRF } from './useAuth';
 
+// Query keys
 export const gigKeys = {
   all: ['gigs'],
   lists: () => [...gigKeys.all, 'list'],
@@ -15,8 +18,11 @@ export const gigKeys = {
   popular: () => [...gigKeys.all, 'popular'],
   search: (params) => [...gigKeys.all, 'search', params],
   bySubcategory: (subcategoryId, params) => [...gigKeys.all, 'subcategory', subcategoryId, params],
+  images: (gigId) => [...gigKeys.detail(gigId), 'images'],
+  thumbnail: (gigId) => [...gigKeys.detail(gigId), 'thumbnail'],
 };
 
+// Helper function to extract gigs from response
 export const extractGigsFromResponse = (response) => {
   if (!response) return [];
   
@@ -39,14 +45,40 @@ export const extractGigsFromResponse = (response) => {
   return [];
 };
 
+// Helper to handle CSRF errors
+const handleCSRFError = (error, retryAction = null) => {
+  if (error.code === 'CSRF_TOKEN_INVALID' || error.requiresCSRFRefresh) {
+    toast.error('Security session expired. Refreshing...');
+    
+    // Try to refresh CSRF token
+    gigsAPI.refreshCSRFToken().then(() => {
+      toast.success('Security session refreshed. Please try again.');
+      if (retryAction) retryAction();
+    }).catch(() => {
+      toast.error('Please refresh the page and try again.');
+    });
+    
+    return true;
+  }
+  return false;
+};
+
+// Main gigs query hooks
 export const useMyGigs = (filters = {}) => {
   const { user } = useAuthStore();
+  const { validate: validateCSRF } = useCSRF();
   
   return useQuery({
     queryKey: ['myGigs', filters, user?._id],
     queryFn: async () => {
       if (!user?._id) {
         throw new Error('User not authenticated');
+      }
+      
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
       }
       
       return gigsAPI.getAll({
@@ -58,13 +90,18 @@ export const useMyGigs = (filters = {}) => {
     enabled: !!user?._id,
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => {
+      if (error.code === 'CSRF_TOKEN_INVALID') return false;
+      return failureCount < 2;
+    },
     onError: (error) => {
-      if (error.message !== 'User not authenticated') {
-        if (error.code === 'SESSION_EXPIRED') {
-          toast.error('Session expired. Please login again.');
-          // Auth store will handle logout via interceptor
-        } else {
-          toast.error('Failed to load your gigs');
+      if (!handleCSRFError(error)) {
+        if (error.message !== 'User not authenticated') {
+          if (error.code === 'SESSION_EXPIRED') {
+            toast.error('Session expired. Please login again.');
+          } else {
+            toast.error('Failed to load your gigs');
+          }
         }
       }
     }
@@ -83,10 +120,12 @@ export const useGigs = (params = {}) => {
     retry: 1,
     retryDelay: 1000,
     onError: (error) => {
-      if (error.code === 'SESSION_EXPIRED') {
-        toast.error('Session expired. Please login again.');
-      } else if (error.code !== 'SERVER_ERROR') {
-        toast.error('Failed to load gigs');
+      if (!handleCSRFError(error)) {
+        if (error.code === 'SESSION_EXPIRED') {
+          toast.error('Session expired. Please login again.');
+        } else if (error.code !== 'SERVER_ERROR') {
+          toast.error('Failed to load gigs');
+        }
       }
     }
   });
@@ -100,10 +139,12 @@ export const useGigsBySubcategory = (subcategoryId, params = {}) => {
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     onError: (error) => {
-      if (error.code === 'SESSION_EXPIRED') {
-        toast.error('Session expired. Please login again.');
-      } else {
-        toast.error('Failed to load gigs for this subcategory');
+      if (!handleCSRFError(error)) {
+        if (error.code === 'SESSION_EXPIRED') {
+          toast.error('Session expired. Please login again.');
+        } else {
+          toast.error('Failed to load gigs for this subcategory');
+        }
       }
     }
   });
@@ -132,6 +173,10 @@ export const useInfiniteGigs = (queryParams = {}) => {
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     enabled: !(queryParams.createdBy === 'me' && !user?._id),
+    retry: (failureCount, error) => {
+      if (error.code === 'CSRF_TOKEN_INVALID') return false;
+      return failureCount < 2;
+    },
   });
 };
 
@@ -161,23 +206,32 @@ export const useGig = (id) => {
     queryKey: gigKeys.detail(id),
     queryFn: () => gigsAPI.getById(id),
     enabled: !!id && id !== 'undefined',
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    
-    // Accept initialData for optimistic updates
     initialData: () => {
-      // Try to get from cache first
       return queryClient.getQueryData(gigKeys.detail(id));
+    },
+    retry: (failureCount, error) => {
+      if (error.code === 'GIG_NOT_FOUND') return false;
+      return failureCount < 2;
     },
   });
 };
 
+// Mutation hooks with CSRF protection
 export const useCreateGig = () => {
   const queryClient = useQueryClient();
   const setLastCreatedGigId = useGigStore((state) => state.setLastCreatedGigId);
+  const { validate: validateCSRF, refetch: refreshCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: async (gigData) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
       // Validate subcategory is required
       if (!gigData.subcategory && !(gigData instanceof FormData)) {
         throw {
@@ -201,6 +255,9 @@ export const useCreateGig = () => {
       
       return gigsAPI.create(gigData);
     },
+    onMutate: () => {
+      toast.loading('Creating gig...');
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['gigs'] });
       queryClient.invalidateQueries({ queryKey: ['myGigs'] });
@@ -213,6 +270,10 @@ export const useCreateGig = () => {
       toast.success(data.message || 'Gig created successfully!');
     },
     onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
       let errorMessage = error.message || 'Failed to create gig';
       
       if (error.code === 'SUBCATEGORY_REQUIRED') {
@@ -229,84 +290,37 @@ export const useCreateGig = () => {
       
       toast.error(errorMessage);
     },
-  });
-};
-
-const applyOptimisticUpdate = (queryClient, gigId, updates) => {
-  // Update single gig cache
-  queryClient.setQueryData(gigKeys.detail(gigId), (old) => {
-    if (!old) return old;
-    const updatedGig = {
-      ...old.data,
-      ...old.gig,
-      ...updates,
-      subcategory: updates.subcategory ? {
-        _id: updates.subcategory,
-        name: updates.subcategoryName || "Loading..."
-      } : old.data?.subcategory,
-      projectCategory: updates.projectCategory ? {
-        _id: updates.projectCategory,
-        name: updates.categoryName || "Loading..."
-      } : old.data?.projectCategory
-    };
-    
-    return {
-      ...old,
-      gig: updatedGig,
-      data: updatedGig
-    };
-  });
-
-  // Update gigs list cache
-  queryClient.setQueryData(gigKeys.myGigs(), (old) => {
-    if (!old || !old.data) return old;
-    return {
-      ...old,
-      data: old.data.map(g => {
-        if (g._id === gigId) {
-          return {
-            ...g,
-            ...updates,
-            subcategory: updates.subcategory ? {
-              _id: updates.subcategory,
-              name: updates.subcategoryName || "Loading..."
-            } : g.subcategory,
-            projectCategory: updates.projectCategory ? {
-              _id: updates.projectCategory,
-              name: updates.categoryName || "Loading..."
-            } : g.projectCategory
-          };
-        }
-        return g;
-      })
-    };
+    onSettled: () => {
+      toast.dismiss();
+    },
   });
 };
 
 export const useUpdateGig = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: async ({ id, data }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
       return gigsAPI.update(id, data);
     },
     onMutate: async ({ id, data }) => {
-      // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: gigKeys.detail(id) });
       
-      // Snapshot the previous value
       const previousGig = queryClient.getQueryData(gigKeys.detail(id));
       
-      // Return context for rollback
       return { previousGig };
     },
     onSuccess: (response, variables) => {
-      // CRITICAL FIX: Get the UPDATED gig from response
       const updatedGig = response.data || response;
       
-      console.log('Update success - updated gig:', updatedGig);
-      
-      // DIRECTLY SET the cache with fresh server data
+      // Update cache
       queryClient.setQueryData(gigKeys.detail(variables.id), {
         success: true,
         data: updatedGig,
@@ -314,13 +328,12 @@ export const useUpdateGig = () => {
         message: response.message
       });
       
-      // Force immediate cache update for lists
+      // Update lists
       queryClient.setQueriesData(
         { queryKey: gigKeys.lists() },
         (old) => {
           if (!old) return old;
           
-          // Update in data array
           if (old.data && Array.isArray(old.data)) {
             return {
               ...old,
@@ -330,7 +343,6 @@ export const useUpdateGig = () => {
             };
           }
           
-          // Update in gigs array  
           if (old.gigs && Array.isArray(old.gigs)) {
             return {
               ...old,
@@ -344,10 +356,10 @@ export const useUpdateGig = () => {
         }
       );
       
-      // IMPORTANT: Invalidate ALL queries that might have this gig
+      // Invalidate queries
       queryClient.invalidateQueries({ 
         queryKey: gigKeys.detail(variables.id),
-        refetchType: 'none' // Don't refetch, we already set the data
+        refetchType: 'none'
       });
       
       queryClient.invalidateQueries({ 
@@ -363,6 +375,10 @@ export const useUpdateGig = () => {
       toast.success(response.message || 'Gig updated successfully!');
     },
     onError: (err, variables, context) => {
+      if (handleCSRFError(err, () => {})) {
+        return;
+      }
+      
       // Rollback on error
       if (context?.previousGig) {
         queryClient.setQueryData(gigKeys.detail(variables.id), context.previousGig);
@@ -372,13 +388,12 @@ export const useUpdateGig = () => {
         queryClient.invalidateQueries({ 
           queryKey: gigKeys.detail(variables.id) 
         });
+        toast.error('This gig was modified by another user. Please refresh and try again.');
+      } else {
+        toast.error(err.message || 'Failed to update gig');
       }
-      
-      toast.error(err.message || 'Failed to update gig');
     },
-    // Add onSettled to ensure fresh data
     onSettled: (data, error, variables) => {
-      // Force a fresh fetch to ensure data consistency
       queryClient.invalidateQueries({ 
         queryKey: gigKeys.detail(variables.id) 
       });
@@ -388,9 +403,21 @@ export const useUpdateGig = () => {
 
 export const useDeleteGig = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
-    mutationFn: ({ id, options = {} }) => gigsAPI.delete(id, options),
+    mutationFn: async ({ id, options = {} }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.delete(id, options);
+    },
+    onMutate: () => {
+      toast.loading('Deleting gig...');
+    },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gigKeys.popular() });
@@ -398,12 +425,17 @@ export const useDeleteGig = () => {
       
       if (variables.options?.permanent) {
         queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.id) });
+        queryClient.removeQueries({ queryKey: gigKeys.detail(variables.id) });
       }
       
       toast.success(data.message || 'Gig deleted successfully!');
     },
     onError: (error) => {
-      let errorMessage = error.data?.message || error.message || 'Failed to delete gig';
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to delete gig';
       
       if (error.code === 'GIG_IN_PROGRESS') {
         errorMessage = 'Cannot delete gig that is in progress. Use force delete if necessary.';
@@ -415,17 +447,26 @@ export const useDeleteGig = () => {
       
       toast.error(errorMessage);
     },
+    onSettled: () => {
+      toast.dismiss();
+    },
   });
 };
 
 export const useDeleteMultipleGigs = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: async (ids) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
       console.log('Deleting gigs with IDs:', ids);
       
-      // Validate we have IDs
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         throw new Error('No gig IDs provided for deletion');
       }
@@ -433,13 +474,10 @@ export const useDeleteMultipleGigs = () => {
       const results = [];
       const errors = [];
       
-      // Process each gig deletion
       for (const id of ids) {
         try {
           console.log(`Deleting gig ${id}...`);
           
-          // CRITICAL: Ensure we're calling the gigs API endpoint
-          // The gigsAPI.delete should call: DELETE /api/gigs/:id
           const result = await gigsAPI.delete(id);
           console.log(`Gig ${id} deleted successfully:`, result);
           
@@ -457,7 +495,6 @@ export const useDeleteMultipleGigs = () => {
             }
           } else if (error.response?.status === 404) {
             console.log(`Gig ${id} not found, skipping...`);
-            // Skip 404 errors - gig might already be deleted
             continue;
           } else {
             errors.push({ id, error: error.message });
@@ -471,15 +508,16 @@ export const useDeleteMultipleGigs = () => {
       
       return results;
     },
+    onMutate: () => {
+      toast.loading('Deleting gigs...');
+    },
     onSuccess: (data, ids) => {
       console.log('Gig deletion successful, invalidating queries...');
       
-      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
       queryClient.invalidateQueries({ queryKey: gigKeys.popular() });
       
-      // Remove individual gig queries from cache
       ids.forEach(id => {
         queryClient.removeQueries({ queryKey: gigKeys.detail(id) });
       });
@@ -492,17 +530,31 @@ export const useDeleteMultipleGigs = () => {
       }
     },
     onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
       console.error('Gig deletion mutation error:', error);
       toast.error(error.message || 'Failed to delete gigs');
+    },
+    onSettled: () => {
+      toast.dismiss();
     },
   });
 };
 
 export const useUpdateGigStatus = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
-    mutationFn: ({ id, status }) => {
+    mutationFn: async ({ id, status }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
       return gigsAPI.update(id, { status });
     },
     onSuccess: (data, variables) => {
@@ -512,6 +564,10 @@ export const useUpdateGigStatus = () => {
       toast.success(`Gig marked as ${variables.status}`);
     },
     onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
       let errorMessage = error.message || 'Failed to update gig status';
       
       if (error.code === 'AUTH_REQUIRED') {
@@ -527,18 +583,22 @@ export const useUpdateGigStatus = () => {
 
 export const useUpdateMultipleGigsStatus = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
     mutationFn: async ({ ids, status }) => {
-      // Validate status
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
       const validStatuses = ['active', 'paused', 'closed', 'cancelled'];
       if (!validStatuses.includes(status)) {
         throw new Error(`Invalid status: ${status}`);
       }
       
-      // Check if trying to activate already active gigs
       if (status === 'active') {
-        // Fetch current status of selected gigs
         const gigs = await Promise.all(
           ids.map(id => gigsAPI.getById(id).catch(() => null))
         );
@@ -546,7 +606,6 @@ export const useUpdateMultipleGigsStatus = () => {
         const alreadyActive = gigs.filter(g => g?.status === 'active');
         if (alreadyActive.length > 0) {
           toast.error(`${alreadyActive.length} gig(s) are already active`);
-          // Remove already active gigs from the update list
           ids = ids.filter((id, index) => gigs[index]?.status !== 'active');
           if (ids.length === 0) {
             throw new Error('No gigs need status update');
@@ -566,6 +625,10 @@ export const useUpdateMultipleGigsStatus = () => {
       toast.success(`Updated ${variables.ids.length} gig(s) to ${variables.status}`);
     },
     onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
       if (!error.message.includes('already active')) {
         toast.error(error.message || 'Failed to update gigs');
       }
@@ -575,9 +638,18 @@ export const useUpdateMultipleGigsStatus = () => {
 
 export const useRestoreGig = () => {
   const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
   
   return useMutation({
-    mutationFn: (id) => gigsAPI.restore(id),
+    mutationFn: async (id) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.restore(id);
+    },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: gigKeys.lists() });
       queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables) });
@@ -586,7 +658,11 @@ export const useRestoreGig = () => {
       toast.success(data.message || 'Gig restored successfully!');
     },
     onError: (error) => {
-      let errorMessage = error.data?.message || error.message || 'Failed to restore gig';
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to restore gig';
       
       if (error.code === 'AUTH_REQUIRED') {
         errorMessage = 'Please sign in to restore gig';
@@ -631,8 +707,10 @@ export const useGigStats = () => {
     retry: 1,
     retryDelay: 1000,
     onError: (error) => {
-      if (error.code === 'SESSION_EXPIRED') {
-        toast.error('Session expired. Please login again.');
+      if (!handleCSRFError(error)) {
+        if (error.code === 'SESSION_EXPIRED') {
+          toast.error('Session expired. Please login again.');
+        }
       }
     }
   });
@@ -646,16 +724,31 @@ export const useSearchGigs = (searchParams = {}) => {
     gcTime: 5 * 60 * 1000,
     enabled: Boolean(searchParams.query?.trim()),
     onError: (error) => {
-      if (error.code === 'SESSION_EXPIRED') {
-        toast.error('Session expired. Please login again.');
+      if (!handleCSRFError(error)) {
+        if (error.code === 'SESSION_EXPIRED') {
+          toast.error('Session expired. Please login again.');
+        }
       }
     }
   });
 };
 
 export const useExportGigs = () => {
+  const { validate: validateCSRF } = useCSRF();
+  
   return useMutation({
-    mutationFn: (params) => gigsAPI.exportGigs(params),
+    mutationFn: async (params) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.exportGigs(params);
+    },
+    onMutate: () => {
+      toast.loading('Exporting gigs...');
+    },
     onSuccess: (data) => {
       if (data.format === 'csv') {
         toast.success('CSV export started. Check your downloads.');
@@ -664,7 +757,11 @@ export const useExportGigs = () => {
       }
     },
     onError: (error) => {
-      let errorMessage = error.data?.message || error.message || 'Failed to export gigs';
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to export gigs';
       
       if (error.code === 'EXPORT_LIMIT_EXCEEDED') {
         errorMessage = 'Export limit exceeded. Please use filters to reduce the number of records.';
@@ -675,6 +772,190 @@ export const useExportGigs = () => {
       }
       
       toast.error(errorMessage);
+    },
+    onSettled: () => {
+      toast.dismiss();
+    },
+  });
+};
+
+// Image management hooks
+export const useUploadGigImages = () => {
+  const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, files }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.uploadImages(gigId, files);
+    },
+    onMutate: () => {
+      toast.loading('Uploading images...');
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        queryClient.invalidateQueries({ queryKey: gigKeys.images(variables.gigId) });
+        toast.success(data.message || 'Images uploaded successfully!');
+      }
+    },
+    onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to upload images';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to upload images';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
+    },
+    onSettled: () => {
+      toast.dismiss();
+    },
+  });
+};
+
+export const useRemoveGigImage = () => {
+  const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, publicId }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.removeImage(gigId, publicId);
+    },
+    onMutate: () => {
+      toast.loading('Removing image...');
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        queryClient.invalidateQueries({ queryKey: gigKeys.images(variables.gigId) });
+        toast.success(data.message || 'Image removed successfully!');
+      }
+    },
+    onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to remove image';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to remove images';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
+    },
+    onSettled: () => {
+      toast.dismiss();
+    },
+  });
+};
+
+export const useSetGigThumbnail = () => {
+  const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, publicId }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.setThumbnail(gigId, publicId);
+    },
+    onMutate: () => {
+      toast.loading('Setting thumbnail...');
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        queryClient.invalidateQueries({ queryKey: gigKeys.thumbnail(variables.gigId) });
+        toast.success(data.message || 'Thumbnail updated successfully!');
+      }
+    },
+    onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to set thumbnail';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to update thumbnail';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
+    },
+    onSettled: () => {
+      toast.dismiss();
+    },
+  });
+};
+
+export const useUploadGigThumbnail = () => {
+  const queryClient = useQueryClient();
+  const { validate: validateCSRF } = useCSRF();
+  
+  return useMutation({
+    mutationFn: async ({ gigId, file }) => {
+      // Validate CSRF token
+      const hasValidCSRF = await validateCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return gigsAPI.uploadThumbnail(gigId, file);
+    },
+    onMutate: () => {
+      toast.loading('Uploading thumbnail...');
+    },
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
+        queryClient.invalidateQueries({ queryKey: gigKeys.thumbnail(variables.gigId) });
+        toast.success(data.message || 'Thumbnail uploaded successfully!');
+      }
+    },
+    onError: (error) => {
+      if (handleCSRFError(error, () => {})) {
+        return;
+      }
+      
+      let errorMessage = error.message || 'Failed to upload thumbnail';
+      
+      if (error.code === 'AUTH_REQUIRED') {
+        errorMessage = 'Please sign in to upload thumbnail';
+      } else if (error.code === 'SESSION_EXPIRED') {
+        errorMessage = 'Session expired. Please login again.';
+      }
+      
+      toast.error(errorMessage);
+    },
+    onSettled: () => {
+      toast.dismiss();
     },
   });
 };
@@ -721,114 +1002,6 @@ export const useToggleGigSelection = () => {
   });
 };
 
-export const useUploadGigImages = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ gigId, files }) => {
-      return gigsAPI.uploadImages(gigId, files);
-    },
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
-        toast.success(data.message || 'Images uploaded successfully!');
-      }
-    },
-    onError: (error) => {
-      let errorMessage = error.message || 'Failed to upload images';
-      
-      if (error.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to upload images';
-      } else if (error.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
-      }
-      
-      toast.error(errorMessage);
-    },
-  });
-};
-
-export const useRemoveGigImage = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ gigId, publicId }) => {
-      return gigsAPI.removeImage(gigId, publicId);
-    },
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
-        toast.success(data.message || 'Image removed successfully!');
-      }
-    },
-    onError: (error) => {
-      let errorMessage = error.message || 'Failed to remove image';
-      
-      if (error.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to remove images';
-      } else if (error.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
-      }
-      
-      toast.error(errorMessage);
-    },
-  });
-};
-
-export const useSetGigThumbnail = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ gigId, publicId }) => {
-      return gigsAPI.setThumbnail(gigId, publicId);
-    },
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
-        toast.success(data.message || 'Thumbnail updated successfully!');
-      }
-    },
-    onError: (error) => {
-      let errorMessage = error.message || 'Failed to set thumbnail';
-      
-      if (error.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to update thumbnail';
-      } else if (error.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
-      }
-      
-      toast.error(errorMessage);
-    },
-  });
-};
-
-export const useUploadGigThumbnail = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ gigId, file }) => {
-      return gigsAPI.uploadThumbnail(gigId, file);
-    },
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: gigKeys.detail(variables.gigId) });
-        toast.success(data.message || 'Thumbnail uploaded successfully!');
-      }
-    },
-    onError: (error) => {
-      let errorMessage = error.message || 'Failed to upload thumbnail';
-      
-      if (error.code === 'AUTH_REQUIRED') {
-        errorMessage = 'Please sign in to upload thumbnail';
-      } else if (error.code === 'SESSION_EXPIRED') {
-        errorMessage = 'Session expired. Please login again.';
-      }
-      
-      toast.error(errorMessage);
-    },
-  });
-};
-
 export const useInfiniteGigsBySubcategory = (subcategoryId, params = {}) => {
   return useInfiniteQuery({
     queryKey: gigKeys.bySubcategory(subcategoryId, params),
@@ -845,5 +1018,34 @@ export const useInfiniteGigsBySubcategory = (subcategoryId, params = {}) => {
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    retry: (failureCount, error) => {
+      if (error.code === 'CSRF_TOKEN_INVALID') return false;
+      return failureCount < 2;
+    },
   });
+};
+
+// CSRF protection wrapper for gig operations
+export const useGigCSRFProtection = () => {
+  const { token, isLoading, isError, error, refetch, refresh, validate, hasToken } = useCSRF();
+  
+  const ensureCSRF = async (operation) => {
+    const hasValidCSRF = await validate();
+    if (!hasValidCSRF) {
+      throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+    }
+    return operation();
+  };
+  
+  return {
+    token,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    refresh,
+    validate,
+    hasToken,
+    ensureCSRF
+  };
 };

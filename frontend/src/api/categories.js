@@ -1,23 +1,36 @@
-// api/categories.js
+// categories.js - Production-ready with CSRF protection
 import axios from 'axios';
 import { z } from 'zod';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+
+// CSRF token management
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
   withCredentials: true,
 });
 
-// Request interceptor
+// Request ID generator
+const generateRequestId = () => {
+  return `cat_req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+// Request interceptor with CSRF handling
 axiosInstance.interceptors.request.use(
-  (config) => {
-    config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  async (config) => {
+    const requestId = generateRequestId();
+    config.headers['X-Request-ID'] = requestId;
     
+    // Add timestamp for cache busting on GET requests
     if (config.method === 'get' && config.cacheBust !== false) {
       config.params = {
         ...config.params,
@@ -25,44 +38,90 @@ axiosInstance.interceptors.request.use(
       };
     }
     
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor for cookie-based auth
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      
-      if (originalRequest.url.includes('/api/auth')) {
-        return Promise.reject(error);
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get' && config.method !== 'GET') {
+      // Check if token is expired
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        try {
+          await refreshCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token:', error.message);
+        }
       }
       
-      try {
-        await axiosInstance.post('/api/auth/refresh', {}, {
-          withCredentials: true
-        });
-        
-        return axiosInstance(originalRequest);
-      } catch (refreshError) {
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('userInfo');
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        // Also add to body for JSON requests
+        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
+          config.data.csrfToken = csrfToken;
         }
-        
-        if (!window.location.pathname.includes('/signin') && 
-            !window.location.pathname.includes('/signup')) {
-          window.location.href = '/signin';
-        }
-        
-        return Promise.reject(refreshError);
       }
     }
     
+    if (DEBUG) {
+      console.log(`📤 Categories Request: ${config.method?.toUpperCase()} ${config.url}`);
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('Categories request error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor
+axiosInstance.interceptors.response.use(
+  (response) => {
+    // Update CSRF token from response
+    if (response.data?.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+    }
+    
+    if (DEBUG) {
+      console.log(`📥 Categories Response: ${response.status} ${response.config.url}`);
+    }
+    
+    return response;
+  },
+  async (error) => {
+    // Handle CSRF errors
+    if (error.response?.status === 403 && 
+        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      console.log('Categories API: CSRF token invalid, refreshing...');
+      
+      try {
+        // Try to refresh CSRF token
+        await refreshCSRFToken();
+        
+        // Retry original request
+        if (error.config) {
+          error.config.headers['X-CSRF-Token'] = csrfToken;
+          if (error.config.data && typeof error.config.data === 'object') {
+            error.config.data.csrfToken = csrfToken;
+          }
+          return axiosInstance(error.config);
+        }
+      } catch (refreshError) {
+        console.error('CSRF refresh failed:', refreshError);
+        // Clear auth and redirect to login
+        clearAuthData();
+        window.location.href = '/signin?csrf_error=true';
+      }
+    }
+    
+    // Handle authentication errors
+    if (error.response?.status === 401) {
+      console.log('Categories API: Authentication required');
+      localStorage.removeItem('userInfo');
+      if (window.location.pathname !== '/signin' && 
+          window.location.pathname !== '/signup') {
+        window.location.href = '/signin?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+    }
+    
+    // Handle network errors
     if (error.code === 'ECONNABORTED') {
       throw new Error('Request timeout. Please check your connection.');
     }
@@ -79,6 +138,37 @@ axiosInstance.interceptors.response.use(
   }
 );
 
+// CSRF token management functions
+const setCSRFToken = (token, expiresAt) => {
+  csrfToken = token;
+  csrfTokenExpiry = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+  
+  localStorage.setItem('csrfToken', token);
+  localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry);
+};
+
+const refreshCSRFToken = async () => {
+  try {
+    console.log('Refreshing CSRF token for categories API...');
+    const response = await axiosInstance.get('/api/csrf/token');
+    if (response.data.success) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('CSRF token refreshed successfully');
+      return csrfToken;
+    }
+    throw new Error('Failed to refresh CSRF token');
+  } catch (error) {
+    console.error('Failed to refresh CSRF token:', error.message);
+    throw error;
+  }
+};
+
+const clearAuthData = () => {
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('csrfToken');
+  localStorage.removeItem('csrfTokenExpiry');
+};
+
 // Validation schema
 const CategorySchema = z.object({
   name: z.string()
@@ -94,6 +184,7 @@ const CategorySchema = z.object({
     .nullable(),
 });
 
+// Main categories API functions
 export const categoriesAPI = {
   /**
    * Get all categories - REAL DATA ONLY
@@ -131,7 +222,12 @@ export const categoriesAPI = {
     } catch (error) {
       console.error('Categories API getAll error:', error.message);
       
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -162,7 +258,6 @@ export const categoriesAPI = {
       }
       
       return categories.map(category => {
-        
         return {
           _id: category._id || category.id,
           name: category.name || '',
@@ -179,7 +274,12 @@ export const categoriesAPI = {
     } catch (error) {
       console.error('Get parent categories error:', error.message);
       
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load parent categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -202,7 +302,21 @@ export const categoriesAPI = {
     } catch (error) {
       console.error('Get category by ID error:', error);
       
-      throw error;
+      if (error.status === 404) {
+        throw {
+          success: false,
+          message: 'Category not found',
+          code: 'CATEGORY_NOT_FOUND',
+          status: 404
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load category',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -211,7 +325,13 @@ export const categoriesAPI = {
    */
   create: async (categoryData) => {
     try {
-      const validatedData = CategorySchema.parse(categoryData);
+      // Add CSRF token
+      const dataWithCSRF = {
+        ...categoryData,
+        csrfToken: csrfToken
+      };
+      
+      const validatedData = CategorySchema.parse(dataWithCSRF);
       
       const sanitizedData = {
         ...validatedData,
@@ -226,6 +346,7 @@ export const categoriesAPI = {
       }
       
       return response.data;
+      
     } catch (error) {
       if (error instanceof z.ZodError) {
         const validationErrors = error.errors.map(err => ({
@@ -237,7 +358,22 @@ export const categoriesAPI = {
           errors: validationErrors 
         };
       }
-      throw error;
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to create category',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -246,11 +382,33 @@ export const categoriesAPI = {
    */
   update: async (id, updateData) => {
     try {
-      const response = await axiosInstance.put(`/api/categories/${id}`, updateData);
+      // Add CSRF token
+      const dataWithCSRF = {
+        ...updateData,
+        csrfToken: csrfToken
+      };
+      
+      const response = await axiosInstance.put(`/api/categories/${id}`, dataWithCSRF);
       return response.data.category || response.data;
+      
     } catch (error) {
       console.error('Update category error:', error);
-      throw error;
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to update category',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -259,11 +417,34 @@ export const categoriesAPI = {
    */
   delete: async (id) => {
     try {
-      const response = await axiosInstance.delete(`/api/categories/${id}`);
+      const config = {};
+      
+      // Add CSRF token for delete request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.delete(`/api/categories/${id}`, config);
       return response.data;
+      
     } catch (error) {
       console.error('Delete category error:', error);
-      throw error;
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to delete category',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -274,9 +455,15 @@ export const categoriesAPI = {
     try {
       const response = await axiosInstance.get(`/api/categories/search?q=${encodeURIComponent(query)}`);
       return response.data.categories || response.data.data || [];
+      
     } catch (error) {
       console.error('Search categories error:', error);
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to search categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -287,9 +474,15 @@ export const categoriesAPI = {
     try {
       const response = await axiosInstance.get('/api/categories/stats');
       return response.data.categories || response.data.data || [];
+      
     } catch (error) {
       console.error('Get categories with stats error:', error);
-      throw error;
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load category statistics',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
     }
   },
   
@@ -314,9 +507,172 @@ export const categoriesAPI = {
       }
       
       return categories;
+      
     } catch (error) {
       console.error('Get popular categories error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to load popular categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  /**
+   * Bulk update categories (admin only)
+   */
+  bulkUpdate: async (operations) => {
+    try {
+      // Add CSRF token
+      const dataWithCSRF = {
+        ...operations,
+        csrfToken: csrfToken
+      };
+      
+      const response = await axiosInstance.post('/api/categories/bulk', dataWithCSRF);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Bulk update categories error:', error);
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to bulk update categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  /**
+   * Export categories (admin only)
+   */
+  exportCategories: async (params = {}) => {
+    try {
+      const response = await axiosInstance.get('/api/categories/export', {
+        params,
+        responseType: 'blob'
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Export categories error:', error);
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to export categories',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  /**
+   * Repair category counts (admin only)
+   */
+  repairCategoryCounts: async () => {
+    try {
+      const config = {};
+      
+      // Add CSRF token for POST request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.get('/api/categories/repair-counts/status', config);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Repair category counts error:', error);
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to repair category counts',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  /**
+   * Restore category (admin only)
+   */
+  restore: async (id) => {
+    try {
+      const config = {};
+      
+      // Add CSRF token for PATCH request
+      if (csrfToken) {
+        config.data = { csrfToken };
+      }
+      
+      const response = await axiosInstance.patch(`/api/categories/${id}/restore`, config);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Restore category error:', error);
+      
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        throw {
+          message: 'Security validation failed. Please refresh the page.',
+          code: 'CSRF_TOKEN_INVALID',
+          status: 403,
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error.response?.data || {
+        success: false,
+        message: 'Failed to restore category',
+        code: error.code || 'NETWORK_ERROR',
+        status: error.status || 500
+      };
+    }
+  },
+  
+  // CSRF token management
+  getCSRFToken: async () => {
+    try {
+      const response = await axiosInstance.get('/api/csrf/token');
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get CSRF token:', error);
       throw error;
     }
   },
+  
+  refreshCSRFToken: async () => {
+    return refreshCSRFToken();
+  },
+  
+  hasValidCSRFToken: () => {
+    return csrfToken && Date.now() < parseInt(csrfTokenExpiry);
+  },
+  
+  clearAuthData: clearAuthData
 };
+
+// Export axios instance for other services
+export { axiosInstance };

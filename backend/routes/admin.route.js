@@ -15,6 +15,11 @@ const subcategoryController = require('../controllers/subcategory.controller.js'
 const gigController = require('../controllers/gig.controller.js');
 const {logout} = require('../controllers/auth.controller.js');
 const mongoose = require('mongoose');
+
+// ADD CSRF MIDDLEWARE
+const CSRFMiddleware = require('../middleware/csrf.middleware');
+const SessionMiddleware = require('../middleware/session.middleware');
+
 // IMPORT MODELS
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
@@ -159,6 +164,10 @@ const clearCacheMiddleware = (resourceType) => {
     next();
   };
 };
+
+// ============================================
+// DASHBOARD ROUTES WITH CSRF
+// ============================================
 router.get('/dashboard', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -167,8 +176,26 @@ router.get('/dashboard',
   cacheMiddleware(300, 'admin:dashboard'), // Cache for 5 minutes
   adminController.getDashboardStats
 );
+
+// ============================================
+// ADMIN AUTH ROUTES WITH CSRF
+// ============================================
 router.post('/logout', 
   verifyAdmin,
+  // IMPORTANT: Use custom CSRF handling for logout to prevent lockout
+  (req, res, next) => {
+    // For admin logout, we'll handle CSRF differently
+    const csrfToken = req.headers['x-csrf-token'] || req.body?.csrfToken;
+    
+    if (csrfToken) {
+      const validation = CSRFMiddleware.validateToken(req, csrfToken);
+      if (!validation.valid) {
+        console.warn('CSRF validation failed for admin logout, proceeding anyway:', validation.error);
+      }
+    }
+    
+    next();
+  },
   // Middleware to set admin logout flags
   (req, res, next) => {
     console.log('🛡️ Admin logout middleware triggered for:', {
@@ -208,7 +235,7 @@ router.get('/session',
 );
 
 // ============================================
-// SUBCATEGORY MANAGEMENT ROUTES
+// ANALYTICS ROUTES (READ-ONLY - NO CSRF NEEDED)
 // ============================================
 router.get('/categories/analytics', 
   verifyAdmin, 
@@ -217,6 +244,7 @@ router.get('/categories/analytics',
   cacheMiddleware(300, 'admin:categories:analytics'), // Cache for 5 minutes
   categoryController.getCategoryStats
 );
+
 router.get('/subcategories/stats', 
   verifyAdmin, 
   requirePermission('view_analytics'),
@@ -224,6 +252,7 @@ router.get('/subcategories/stats',
   cacheMiddleware(300, 'admin:subcategories:stats'), // Cache for 5 minutes
   adminController.getSubcategoryStats
 );
+
 router.get('/services/stats', 
   verifyAdmin, 
   adminApiLimiter,
@@ -231,19 +260,6 @@ router.get('/services/stats',
   auditLog('VIEW_SERVICE_STATS', 'services'),
   cacheMiddleware(300, 'admin:services:stats'), // Cache for 5 minutes
   serviceController.getServiceStats
-);
-router.post('/categories/repair-counts', 
-  verifyAdmin,
-  requirePermission('system_settings'),
-  auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
-  categoryController.repairCategoryCounts
-);
-
-router.post('/subcategories/repair-counts', 
-  verifyAdmin,
-  requirePermission('system_settings'),
-  auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
-  subcategoryController.repairSubcategoryCounts
 );
 
 // Gig statistics
@@ -259,6 +275,28 @@ router.get('/gigs/stats',
   gigController.getGigStats // Use main gig controller
 );
 
+// ============================================
+// REPAIR ROUTES WITH CSRF
+// ============================================
+router.post('/categories/repair-counts', 
+  verifyAdmin,
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  requirePermission('system_settings'),
+  auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
+  categoryController.repairCategoryCounts
+);
+
+router.post('/subcategories/repair-counts', 
+  verifyAdmin,
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
+  requirePermission('system_settings'),
+  auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
+  subcategoryController.repairSubcategoryCounts
+);
+
+// ============================================
+// DROPDOWN ROUTES (READ-ONLY - NO CSRF NEEDED)
+// ============================================
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -357,6 +395,7 @@ router.get('/categories/dropdown',
     }
   }
 );
+
 router.get('/categories/:categoryId/subcategories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -408,7 +447,12 @@ router.get('/subcategories/dropdown',
     }
   }
 );
-// Get all subcategories with pagination and filtering
+
+// ============================================
+// SUBCATEGORY MANAGEMENT ROUTES WITH CSRF
+// ============================================
+
+// Get all subcategories with pagination and filtering (READ-ONLY)
 router.get('/subcategories', 
   verifyAdmin, 
   adminApiLimiter,
@@ -460,7 +504,7 @@ router.get('/subcategories',
   adminController.getSubcategories
 );
 
-
+// Export subcategories (READ-ONLY)
 router.get('/subcategories/export', 
   verifyAdmin, 
   requirePermission('manage_categories'),
@@ -469,25 +513,18 @@ router.get('/subcategories/export',
   adminController.exportSubcategories
 );
 
-
-
+// Bulk subcategory operations WITH CSRF
 router.post('/subcategories/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
   clearCacheMiddleware('subcategories'),
   adminController.bulkUpdateSubcategories
 );
 
-router.get('/categories/export', 
-  verifyAdmin, 
-  requirePermission('manage_categories'),
-  auditLog('EXPORT_CATEGORIES', 'categories'),
-  cacheMiddleware(3600, 'admin:categories:export'), // Cache exports for 1 hour
-  adminController.exportCategories
-);
-
+// Get single subcategory (READ-ONLY)
 router.get('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter,
@@ -519,10 +556,12 @@ router.get('/subcategories/:id',
   },
   adminController.getSubcategoryById
 );
-// Create subcategory
+
+// Create subcategory WITH CSRF
 router.post('/subcategories', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('CREATE_SUBCATEGORY', 'categories'),
   clearCacheMiddleware('subcategories'),
@@ -538,10 +577,11 @@ router.post('/subcategories',
   adminController.createSubcategory
 );
 
-// Update subcategory - FIXED ROUTE WITH BODY PARSER
+// Update subcategory WITH CSRF
 router.put('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('UPDATE_SUBCATEGORY', 'categories'),
   clearCacheMiddleware('subcategories'),
@@ -570,10 +610,11 @@ router.put('/subcategories/:id',
   adminController.updateSubcategory
 );
 
-// Delete subcategory (soft or permanent)
+// Delete subcategory WITH CSRF
 router.delete('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('DELETE_SUBCATEGORY', 'categories'),
   clearCacheMiddleware('subcategories'),
@@ -609,12 +650,10 @@ router.delete('/subcategories/:id',
 );
 
 // ============================================
-// DASHBOARD ROUTES
+// USER MANAGEMENT ROUTES WITH CSRF
 // ============================================
 
-// ============================================
-// USER MANAGEMENT ROUTES
-// ============================================
+// Get users (READ-ONLY)
 router.get('/users', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -624,15 +663,18 @@ router.get('/users',
   adminController.getUsers
 );
 
+// Create user WITH CSRF
 router.post('/users', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_users'),
   auditLog('CREATE_USER', 'users'),
   clearCacheMiddleware('users'),
   adminController.createUser
 );
 
+// Export users (READ-ONLY)
 router.get('/users/export', 
   verifyAdmin, 
   requirePermission('manage_users'),
@@ -641,10 +683,11 @@ router.get('/users/export',
   adminController.exportUsers
 );
 
-// User bulk operations
+// User bulk operations WITH CSRF
 router.post('/users/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_users'),
   auditLog('BULK_USER_ACTION', 'users'),
   clearCacheMiddleware('users'),
@@ -663,34 +706,44 @@ router.post('/users/bulk-action',
   adminController.bulkUpdateUsers
 );
 
+// Update user WITH CSRF
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_users'),
   auditLog('UPDATE_USER', 'users'),
   clearCacheMiddleware('users'),
   adminController.updateUser
 );
 
+// Delete user WITH CSRF
 router.delete('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_users'),
   auditLog('DELETE_USER', 'users'),
   clearCacheMiddleware('users'),
   adminController.deleteUser
 );
 
+// ============================================
+// CATEGORY MANAGEMENT ROUTES WITH CSRF
+// ============================================
 
+// Create category WITH CSRF
 router.post('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('CREATE_CATEGORY', 'categories'),
   clearCacheMiddleware('categories'),
   categoryController.createCategory
 );
 
+// Get categories (READ-ONLY)
 router.get('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -748,16 +801,18 @@ router.get('/categories',
   categoryController.getCategories
 );
 
+// Update category WITH CSRF
 router.put('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('UPDATE_CATEGORY', 'categories'),
   clearCacheMiddleware('categories'),
   categoryController.updateCategory
 );
 
-// Get single category by ID (Admin)
+// Get single category by ID (READ-ONLY)
 router.get('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -799,9 +854,11 @@ router.get('/categories/:id',
   categoryController.getCategoryById
 );
 
+// Delete category WITH CSRF
 router.delete('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('DELETE_CATEGORY', 'categories'),
   clearCacheMiddleware('categories'),
@@ -839,9 +896,11 @@ router.delete('/categories/:id',
   categoryController.deleteCategory
 );
 
+// Restore category WITH CSRF
 router.post('/categories/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('RESTORE_CATEGORY', 'categories'),
   clearCacheMiddleware('categories'),
@@ -894,20 +953,31 @@ router.post('/categories/:id/restore',
   categoryController.restoreCategory
 );
 
+// Bulk category operations WITH CSRF
 router.post('/categories/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_categories'),
   auditLog('BULK_CATEGORY_ACTION', 'categories'),
   clearCacheMiddleware('categories'),
   categoryController.bulkUpdateCategories
 );
 
-
+// Export categories (READ-ONLY)
+router.get('/categories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_CATEGORIES', 'categories'),
+  cacheMiddleware(3600, 'admin:categories:export'), // Cache exports for 1 hour
+  adminController.exportCategories
+);
 
 // ============================================
-// SERVICE MANAGEMENT ROUTES
+// SERVICE MANAGEMENT ROUTES WITH CSRF
 // ============================================
+
+// Get services (READ-ONLY)
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
@@ -930,10 +1000,11 @@ router.get('/services',
   serviceController.getAdminServices
 );
 
-
+// Delete service WITH CSRF
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_services'),
   auditLog('DELETE_SERVICE', 'services'),
   clearCacheMiddleware('services'),
@@ -968,6 +1039,7 @@ router.delete('/services/:id',
   serviceController.deleteService
 );
 
+// Get service by ID (READ-ONLY)
 router.get('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -990,9 +1062,11 @@ router.get('/services/:id',
   serviceController.getServiceById
 );
 
+// Update service WITH CSRF
 router.put('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_services'),
   auditLog('UPDATE_SERVICE', 'services'),
   clearCacheMiddleware('services'),
@@ -1008,6 +1082,11 @@ router.put('/services/:id',
   serviceController.updateService
 );
 
+// ============================================
+// GIG MANAGEMENT ROUTES WITH CSRF
+// ============================================
+
+// Get gigs (READ-ONLY)
 router.get('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -1039,7 +1118,7 @@ router.get('/gigs',
   gigController.getGigs // Use main gig controller
 );
 
-// Get gig by ID (admin view)
+// Get gig by ID (READ-ONLY)
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -1061,10 +1140,11 @@ router.get('/gigs/:id',
   gigController.getGigById // Use main gig controller
 );
 
-// Create gig (admin)
+// Create gig WITH CSRF
 router.post('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_gigs'),
   auditLog('CREATE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
@@ -1091,10 +1171,11 @@ router.post('/gigs',
   gigController.createGig // Use main gig controller
 );
 
-// Update gig (admin)
+// Update gig WITH CSRF
 router.put('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_gigs'),
   auditLog('UPDATE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
@@ -1120,10 +1201,11 @@ router.put('/gigs/:id',
   gigController.updateGig // Use main gig controller
 );
 
-// Delete gig (admin)
+// Delete gig WITH CSRF
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_gigs'),
   auditLog('DELETE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
@@ -1159,10 +1241,11 @@ router.delete('/gigs/:id',
   gigController.deleteGig // Use main gig controller
 );
 
-// Bulk operations (admin) - Keep this in admin controller or create new endpoint
+// Bulk gig operations WITH CSRF
 router.post('/gigs/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_gigs'),
   auditLog('BULK_GIG_ACTION', 'gigs'),
   clearCacheMiddleware('gigs'),
@@ -1241,7 +1324,7 @@ router.post('/gigs/bulk',
   }
 );
 
-// Export gigs
+// Export gigs (READ-ONLY)
 router.get('/gigs/export', 
   verifyAdmin, 
   requirePermission('manage_gigs'),
@@ -1254,10 +1337,11 @@ router.get('/gigs/export',
   gigController.exportGigs // Use main gig controller
 );
 
-// Restore gig (admin only)
+// Restore gig WITH CSRF
 router.post('/gigs/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('manage_gigs'),
   auditLog('RESTORE_GIG', 'gigs'),
   clearCacheMiddleware('gigs'),
@@ -1269,10 +1353,8 @@ router.post('/gigs/:id/restore',
 );
 
 // ============================================
-// DROPDOWN ROUTES
+// USER DROPDOWN (READ-ONLY - NO CSRF NEEDED)
 // ============================================
-
-
 router.get('/users/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -1317,8 +1399,10 @@ router.get('/users/dropdown',
 );
 
 // ============================================
-// SYSTEM MANAGEMENT ROUTES
+// SYSTEM MANAGEMENT ROUTES WITH CSRF
 // ============================================
+
+// System health (READ-ONLY)
 router.get('/system/health', 
   verifyAdmin, 
   adminApiLimiter,
@@ -1328,6 +1412,7 @@ router.get('/system/health',
   adminController.getSystemHealthHandler
 );
 
+// Recent activity (READ-ONLY)
 router.get('/activity/recent', 
   verifyAdmin, 
   adminApiLimiter,
@@ -1337,9 +1422,10 @@ router.get('/activity/recent',
   adminController.getRecentActivity
 );
 
-// Cache management endpoints (admin only)
+// Cache management endpoints WITH CSRF
 router.post('/cache/clear', 
   verifyAdmin,
+  CSRFMiddleware.requireCSRF, // ADD CSRF PROTECTION
   requirePermission('system_settings'),
   async (req, res) => {
     try {
@@ -1382,6 +1468,7 @@ router.post('/cache/clear',
   }
 );
 
+// Cache stats (READ-ONLY)
 router.get('/cache/stats', 
   verifyAdmin,
   requirePermission('system_settings'),

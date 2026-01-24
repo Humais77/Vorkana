@@ -237,7 +237,7 @@ const register = asyncHandler(async (req, res) => {
     });
 
     // 5. Generate verification token
-    const verificationToken = user.generateVerificationToken();
+    const verificationToken = user.verificationToken();
     
     // 6. Save user with pending status
     await user.save({ validateBeforeSave: false });
@@ -306,7 +306,7 @@ const login = asyncHandler(async (req, res) => {
       });
     }
 
-    // 2. Find user with optimized query
+    // 2. Find user with optimized query - REMOVED admin controller reference
     console.time('User lookup');
     const user = await User.findOne({ 
       email: email.toLowerCase().trim(),
@@ -347,7 +347,7 @@ const login = asyncHandler(async (req, res) => {
       process.nextTick(async () => {
         try {
           await user.incrementLoginAttempts();
-          await user.addLoginHistory(ip, userAgent, false);
+          await user.loginHistory(ip, userAgent, false);
         } catch (err) {
           console.error('Error logging failed attempt:', err.message);
         }
@@ -378,7 +378,7 @@ const login = asyncHandler(async (req, res) => {
       }
     });
 
-    // 6. Create session
+    // 6. Create session - ONLY for regular users, not calling admin controller
     SessionMiddleware.clearAuthCookies(res);
     console.time('Session creation');
     const session = await SessionService.createSession(user._id, req, {
@@ -973,7 +973,7 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
     }
 
     // Generate new verification token
-    const verificationToken = user.generateVerificationToken();
+    const verificationToken = user.verificationToken();
     await user.save({ validateBeforeSave: false });
 
     // Send verification email
@@ -1322,7 +1322,7 @@ const validateCSRF = (req) => {
 const logout = asyncHandler(async (req, res) => {
   try {
     console.log('🚪 Logout request:', {
-      hasSessionId: !!req.sessionId,
+      hasSessionId: !!req.sessionID,
       hasUser: !!req.user,
       userId: req.user?._id,
       userEmail: req.user?.email,
@@ -1358,8 +1358,11 @@ const logout = asyncHandler(async (req, res) => {
       console.log('No CSRF token provided for logout, proceeding with caution');
     }
 
+    // Determine if this is an admin logout
+    const isAdminLogout = req.isAdminLogout || req.isAdmin || req.adminId || req.admin;
+    
     // Check if user exists
-    if (!req.user && !req.isAdminLogout) {
+    if (!req.user && !isAdminLogout) {
       console.log('No user found for logout, clearing cookies anyway');
       SessionMiddleware.clearAuthCookies(res);
       CSRFMiddleware.clearCSRFCookie(res);
@@ -1370,11 +1373,12 @@ const logout = asyncHandler(async (req, res) => {
     }
 
     // Logout session if we have session info
-    if (req.sessionId && req.user) {
+    if (req.sessionID && (req.user || isAdminLogout)) {
       try {
-        const logoutReason = req.isAdminLogout ? 'admin_logout' : 'manual';
-        await SessionService.logoutSession(req.sessionId, req.user._id, logoutReason);
-        console.log(`✅ Session logged out: ${req.sessionId}, reason: ${logoutReason}`);
+        const userId = req.user?._id || req.adminId;
+        const logoutReason = isAdminLogout ? 'admin_logout' : 'manual';
+        await SessionService.logoutSession(req.sessionID, userId, logoutReason);
+        console.log(`✅ Session logged out: ${req.sessionID}, reason: ${logoutReason}`);
       } catch (sessionError) {
         console.error('Session logout error:', sessionError);
         // Continue with cookie clearing even if session logout fails
@@ -1388,7 +1392,7 @@ const logout = asyncHandler(async (req, res) => {
         });
         
         if (session) {
-          const logoutReason = req.isAdminLogout ? 'admin_logout' : 'manual';
+          const logoutReason = isAdminLogout ? 'admin_logout' : 'manual';
           await SessionService.logoutSession(session._id, session.userId, logoutReason);
           console.log(`✅ Session logged out by refresh token: ${session._id}, reason: ${logoutReason}`);
         }
@@ -1398,7 +1402,7 @@ const logout = asyncHandler(async (req, res) => {
     }
     
     // Always clear cookies - enhanced for admin logout
-    if (req.isAdminLogout) {
+    if (isAdminLogout) {
       // Clear ALL cookies for admin logout
       console.log('🔄 Clearing ALL cookies for admin logout');
       
@@ -1442,14 +1446,14 @@ const logout = asyncHandler(async (req, res) => {
     CSRFMiddleware.clearCSRFCookie(res);
     
     console.log('✅ Logout completed successfully', {
-      type: req.isAdminLogout ? 'admin' : 'user',
-      userId: req.user?._id
+      type: isAdminLogout ? 'admin' : 'user',
+      userId: req.user?._id || req.adminId
     });
 
     res.json({
       success: true,
       message: 'Logged out successfully',
-      adminLogout: req.isAdminLogout || req.isAdmin,
+      adminLogout: isAdminLogout,
       csrfCleared: true
     });
   } catch (error) {
@@ -1475,7 +1479,7 @@ const getActiveSessions = asyncHandler(async (req, res) => {
     // Mark current session
     const sessionsWithCurrent = sessions.map(session => ({
       ...session,
-      isCurrent: session.id === req.sessionId
+      isCurrent: session.id === req.sessionID
     }));
 
     res.json({
@@ -1496,7 +1500,7 @@ const terminateSession = asyncHandler(async (req, res) => {
   try {
     const { sessionId } = req.params;
     
-    if (sessionId === req.sessionId) {
+    if (sessionId === req.sessionID) {
       return res.status(400).json({
         success: false,
         message: 'Cannot terminate current session'
@@ -1532,7 +1536,7 @@ const terminateSession = asyncHandler(async (req, res) => {
 // New: Terminate all other sessions
 const terminateAllOtherSessions = asyncHandler(async (req, res) => {
   try {
-    await SessionService.logoutAllUserSessions(req.user._id, req.sessionId);
+    await SessionService.logoutAllUserSessions(req.user._id, req.sessionID);
     
     res.json({
       success: true,
@@ -1710,7 +1714,7 @@ const refreshToken = asyncHandler(async (req, res) => {
 
     // Update device token if provided
     if (deviceToken) {
-      await user.addDeviceToken(deviceToken);
+      await user.deviceTokens(deviceToken);
     }
 
     // Update last seen

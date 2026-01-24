@@ -1,7 +1,7 @@
 // routes/user.route.js
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth.middleware');
+const SessionMiddleware = require('../middleware/session.middleware');
 const { switchRole } = require('../controllers/user.controller');
 const { 
   profilePicUpload, 
@@ -16,11 +16,11 @@ router.use((req, res, next) => {
   next();
 });
 
-router.patch('/switch-role', protect, switchRole);
+router.patch('/switch-role', SessionMiddleware.authenticate, switchRole);
 
 // routes/user.route.js - Add more detailed logging
 router.post('/upload-profile-picture', 
-  protect,
+  SessionMiddleware.authenticate,
   (req, res, next) => {
     console.log('=== UPLOAD REQUEST START ===');
     console.log('Headers:', req.headers);

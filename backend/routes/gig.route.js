@@ -30,7 +30,7 @@ const {
 const {  optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
 const SessionMiddleware = require("../middleware/session.middleware");
-
+const CSRFMiddleware = require('../middleware/csrf.middleware');
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -189,16 +189,16 @@ router.get('/subcategory/:subcategoryId', optionalAuth, validateQuery, getGigsBy
 router.get('/:id', optionalAuth, getGigById);
 
 //  SessionMiddleware.authenticateed routes - authentication via cookies
-router.post('/',  SessionMiddleware.authenticate, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
-router.put('/:id',  SessionMiddleware.authenticate, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
-router.delete('/:id',  SessionMiddleware.authenticate, gigLimiter, deleteGig);
-router.patch('/:id/restore',  SessionMiddleware.authenticate, adminOnly, gigLimiter, restoreGig);
+router.post('/',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleMultipleFileFields, validateCreate, createGig);
+router.put('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleMultipleFileFields, validateUpdate, updateGig);
+router.delete('/:id',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, deleteGig);
+router.patch('/:id/restore',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, adminOnly, gigLimiter, restoreGig);
 
 //  SessionMiddleware.authenticateed image management routes
-router.post('/:id/images/upload',  SessionMiddleware.authenticate, gigLimiter, handleImageUpload, uploadImages);
-router.delete('/:id/images/:publicId',  SessionMiddleware.authenticate, gigLimiter, removeImage);
-router.put('/:id/thumbnail/:publicId',  SessionMiddleware.authenticate, gigLimiter, setThumbnail);
-router.post('/:id/thumbnail/upload',  SessionMiddleware.authenticate, gigLimiter, handleThumbnailUpload, uploadThumbnail);
+router.post('/:id/images/upload',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleImageUpload, uploadImages);
+router.delete('/:id/images/:publicId',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, removeImage);
+router.put('/:id/thumbnail/:publicId',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, setThumbnail);
+router.post('/:id/thumbnail/upload',  SessionMiddleware.authenticate,CSRFMiddleware.requireCSRF, gigLimiter, handleThumbnailUpload, uploadThumbnail);
 
 
 router.use(errorHandler)
