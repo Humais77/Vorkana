@@ -6,9 +6,10 @@ import {
   useMyGigs, 
   useDeleteMultipleGigs, 
   useUpdateMultipleGigsStatus,
-  extractGigsFromResponse
+  extractGigsFromResponse,
+  gigKeys
 } from '../../../hooks/useGigs';
-import { useMyServices, useDeleteService } from '../../../hooks/useServices';
+import { useMyServices, useDeleteService ,serviceKeys,extractServicesFromResponse} from '../../../hooks/useServices';
 import { useGetProfile } from '../../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
 import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../../utils/profileUtils';
@@ -56,7 +57,7 @@ import { useServiceToast } from '../../../hooks/useServiceToast';
 import { useGigToast } from '../../../hooks/useGigToast';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
-
+import { useQueryClient } from '@tanstack/react-query';
 // ImageWithFallback component
 const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, itemId, forceRefresh }) => {
   const [error, setError] = useState(false);
@@ -1241,7 +1242,9 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user: authUser, isAuthenticated } = useAuthStore();
+   const queryClient = useQueryClient();
   const prevStatsRef = useRef(null);
+   const lastActionRef = useRef(null);
   
   const { 
     showServiceDeleteSuccess, 
@@ -1267,7 +1270,10 @@ const Dashboard = () => {
     itemName: '',
     isLoading: false
   });
-  
+  const [immediateUpdates, setImmediateUpdates] = useState({
+    services: { created: [], deleted: [], updated: [] },
+    gigs: { created: [], deleted: [], updated: [] }
+  });
   const { 
     data: profileResponse, 
     isLoading: isProfileLoading,
@@ -1354,7 +1360,15 @@ const Dashboard = () => {
   const deleteMultipleGigsMutation = useDeleteMultipleGigs();
   const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
   const deleteServiceMutation = useDeleteService();
-
+useEffect(() => {
+    if (services && gigs && (immediateUpdates.services.deleted.length > 0 || immediateUpdates.gigs.deleted.length > 0)) {
+      // After successful refetch, clear the immediate updates
+      setImmediateUpdates({
+        services: { created: [], deleted: [], updated: [] },
+        gigs: { created: [], deleted: [], updated: [] }
+      });
+    }
+  }, [services, gigs]);
   const stats = useMemo(() => {
     if (servicesLoading || gigsLoading) {
       return prevStatsRef.current || {
@@ -1365,21 +1379,128 @@ const Dashboard = () => {
       };
     }
     
-    const activeServices = services.filter(s => s.status === 'active').length;
-    const activeGigs = gigs.filter(g => g.status === 'active' || g.status === 'open').length;
+    // Filter out immediately deleted items
+    const filteredServices = services.filter(service => 
+      !immediateUpdates.services.deleted.includes(service._id)
+    );
+    const filteredGigs = gigs.filter(gig => 
+      !immediateUpdates.gigs.deleted.includes(gig._id)
+    );
+    
+    // Add immediately created items
+    const allServices = [...filteredServices, ...immediateUpdates.services.created];
+    const allGigs = [...filteredGigs, ...immediateUpdates.gigs.created];
+    
+    const activeServices = allServices.filter(s => s.status === 'active').length;
+    const activeGigs = allGigs.filter(g => g.status === 'active' || g.status === 'open').length;
     
     const newStats = {
-      totalGigs: gigs.length,
+      totalGigs: allGigs.length,
       activeGigs: activeGigs,
-      totalServices: services.length,
+      totalServices: allServices.length,
       activeServices: activeServices,
     };
     
     prevStatsRef.current = newStats;
     
     return newStats;
-  }, [gigs, services, servicesLoading, gigsLoading]);
-
+  }, [gigs, services, servicesLoading, gigsLoading, immediateUpdates]);
+const performOptimisticDelete = useCallback((ids, type) => {
+    const itemType = type === 'gig' ? 'gigs' : 'services';
+    const currentItems = itemType === 'gigs' ? gigs : services;
+    
+    if (!currentItems) return;
+    
+    // Add to immediate deletions
+    setImmediateUpdates(prev => ({
+      ...prev,
+      [itemType]: {
+        ...prev[itemType],
+        deleted: [...prev[itemType].deleted, ...ids]
+      }
+    }));
+    
+    // Update the cache immediately
+    const queryKey = itemType === 'gigs' ? gigKeys.myGigs() : serviceKeys.myServices();
+    
+    queryClient.setQueryData(queryKey, (old) => {
+      if (!old) return old;
+      
+      const oldItems = extractItemsFromResponse(old, itemType);
+      const filteredItems = oldItems.filter(item => !ids.includes(item._id || item.id));
+      
+      return {
+        ...old,
+        data: filteredItems,
+        [itemType]: filteredItems,
+        success: old.success !== undefined ? old.success : true
+      };
+    });
+    
+    // Also update the filtered lists
+    if (itemType === 'gigs') {
+      setSelectedGigs(prev => prev.filter(id => !ids.includes(id)));
+      setAllSelected(false);
+    } else {
+      setSelectedServices(prev => prev.filter(id => !ids.includes(id)));
+      setAllServicesSelected(false);
+    }
+    
+    lastActionRef.current = {
+      action: 'delete',
+      type: itemType,
+      ids,
+      timestamp: Date.now()
+    };
+  }, [gigs, services, queryClient]);
+  
+  // Optimistic creation function
+  const performOptimisticCreate = useCallback((item, type) => {
+    const itemType = type === 'gig' ? 'gigs' : 'services';
+    
+    // Add to immediate creations
+    setImmediateUpdates(prev => ({
+      ...prev,
+      [itemType]: {
+        ...prev[itemType],
+        created: [...prev[itemType].created, item]
+      }
+    }));
+    
+    // Update the cache immediately
+    const queryKey = itemType === 'gigs' ? gigKeys.myGigs() : serviceKeys.myServices();
+    
+    queryClient.setQueryData(queryKey, (old) => {
+      const oldItems = extractItemsFromResponse(old, itemType);
+      const newItems = [item, ...oldItems];
+      
+      return {
+        ...old,
+        data: newItems,
+        [itemType]: newItems,
+        success: old.success !== undefined ? old.success : true
+      };
+    });
+    
+    lastActionRef.current = {
+      action: 'create',
+      type: itemType,
+      id: item._id,
+      timestamp: Date.now()
+    };
+  }, [queryClient]);
+  
+  // Helper function to extract items from response
+  const extractItemsFromResponse = (response, type) => {
+    if (!response) return [];
+    
+    if (type === 'gigs') {
+      return extractGigsFromResponse(response);
+    } else {
+      return extractServicesFromResponse(response);
+    }
+  };
+  
   // Reset selection
   const resetSelection = useCallback(() => {
     setSelectedGigs([]);
@@ -1472,28 +1593,23 @@ useEffect(() => {
   }, []);
 
   const handleSingleDelete = useCallback((id, name, type) => {
-  console.log('Single delete called:', { id, name, type, activeTab });
-  
-  // FIXED: Determine type based on what was passed OR current active tab
-  // If type is explicitly passed, use it. Otherwise, check if we're in gigs tab
-  let deleteType = type;
-  
-  if (!deleteType) {
-    // Check if we're deleting from the gigs view
-    const isGigInGigsView = activeTab === 'gigs';
-    deleteType = isGigInGigsView ? 'gig' : 'service';
-  }
-  
-  console.log('Determined delete type:', deleteType, 'for item:', name);
-  
-  setDeleteDialog({
-    isOpen: true,
-    type: deleteType,
-    ids: [id],
-    itemName: name,
-    isLoading: false
-  });
-}, [activeTab]);
+    console.log('Single delete called:', { id, name, type, activeTab });
+    
+    let deleteType = type;
+    if (!deleteType) {
+      deleteType = activeTab === 'gigs' ? 'gig' : 'service';
+    }
+    
+    console.log('Determined delete type:', deleteType, 'for item:', name);
+    
+    setDeleteDialog({
+      isOpen: true,
+      type: deleteType,
+      ids: [id],
+      itemName: name,
+      isLoading: false
+    });
+  }, [activeTab]);
 
   const handleBulkDelete = useCallback(() => {
   const ids = activeTab === 'services' ? selectedServices : selectedGigs;
@@ -1521,126 +1637,120 @@ useEffect(() => {
 }, [activeTab, selectedServices, selectedGigs]);
 
   const handleDeleteConfirm = useCallback(async () => {
-  setDeleteDialog(prev => ({ ...prev, isLoading: true }));
-  
-  try {
-    const isGig = deleteDialog.type === 'gig';
-    const count = deleteDialog.ids.length;
+    setDeleteDialog(prev => ({ ...prev, isLoading: true }));
     
-    console.log(`Deleting ${count} ${isGig ? 'gig(s)' : 'service(s)'} with IDs:`, deleteDialog.ids);
-    console.log('Using mutation for:', isGig ? 'gigs' : 'services');
-    
-    if (isGig) {
-      // DEBUG: Show what mutation we're using
-      console.log('Using deleteMultipleGigsMutation');
+    try {
+      const isGig = deleteDialog.type === 'gig';
+      const count = deleteDialog.ids.length;
       
-      showGigLoading(`Deleting ${count} gig${count > 1 ? 's' : ''}...`);
+      console.log(`Deleting ${count} ${isGig ? 'gig(s)' : 'service(s)'} with IDs:`, deleteDialog.ids);
       
-      // CRITICAL FIX: Ensure we're calling the gig deletion endpoint
-      await deleteMultipleGigsMutation.mutateAsync(deleteDialog.ids);
+      // Perform optimistic update immediately
+      performOptimisticDelete(deleteDialog.ids, deleteDialog.type);
       
-      // Clear gig selection
-      setSelectedGigs(prev => prev.filter(id => !deleteDialog.ids.includes(id)));
-      if (allSelected) setAllSelected(false);
-      
-      showGigDeleteSuccess(count, {
-        onClose: () => {
-          setImageRefreshKey(Date.now());
-        }
-      });
-      
-      // Refresh gig data
-      await refetchGigs();
-    } else {
-      // DEBUG: Show what mutation we're using
-      console.log('Using deleteServiceMutation');
-      
-      showServiceLoading(`Deleting ${count} service${count > 1 ? 's' : ''}...`);
-      
-      // Use service-specific deletion mutation
-      const results = [];
-      
-      for (const id of deleteDialog.ids) {
-        try {
-          const result = await deleteServiceMutation.mutateAsync({ id });
-          results.push({ id, success: true, result });
-        } catch (error) {
-          // If service not found (404), skip it
-          if (error.response?.status === 404 || error.message?.includes('not found')) {
-            console.log(`Service ${id} not found, skipping...`);
-            continue;
-          }
-          throw error;
-        }
-      }
-      
-      // Clear service selection
-      setSelectedServices(prev => prev.filter(id => !deleteDialog.ids.includes(id)));
-      if (allServicesSelected) setAllServicesSelected(false);
-      
-      const successCount = results.length;
-      if (successCount > 0) {
-        showServiceDeleteSuccess(successCount, {
+      if (isGig) {
+        showGigLoading(`Deleting ${count} gig${count > 1 ? 's' : ''}...`);
+        
+        await deleteMultipleGigsMutation.mutateAsync(deleteDialog.ids);
+        
+        showGigDeleteSuccess(count, {
           onClose: () => {
             setImageRefreshKey(Date.now());
           }
         });
+      } else {
+        showServiceLoading(`Deleting ${count} service${count > 1 ? 's' : ''}...`);
+        
+        const results = [];
+        for (const id of deleteDialog.ids) {
+          try {
+            const result = await deleteServiceMutation.mutateAsync({ id });
+            results.push({ id, success: true, result });
+          } catch (error) {
+            if (error.response?.status === 404) {
+              console.log(`Service ${id} not found, skipping...`);
+              continue;
+            }
+            throw error;
+          }
+        }
+        
+        const successCount = results.length;
+        if (successCount > 0) {
+          showServiceDeleteSuccess(successCount, {
+            onClose: () => {
+              setImageRefreshKey(Date.now());
+            }
+          });
+        }
       }
       
-      // Refresh service data
-      await refetchServices();
+      // Close dialog immediately (don't wait for refetch)
+      setDeleteDialog({
+        isOpen: false,
+        type: null,
+        ids: [],
+        itemName: '',
+        isLoading: false
+      });
+      
+      // Queue refetch for background (non-blocking)
+      setTimeout(() => {
+        if (isGig) {
+          refetchGigs();
+        } else {
+          refetchServices();
+        }
+      }, 100);
+      
+    } catch (error) {
+      console.error('Delete error:', error);
+      
+      // Rollback optimistic update on error
+      const itemType = deleteDialog.type === 'gig' ? 'gigs' : 'services';
+      setImmediateUpdates(prev => ({
+        ...prev,
+        [itemType]: {
+          ...prev[itemType],
+          deleted: prev[itemType].deleted.filter(id => !deleteDialog.ids.includes(id))
+        }
+      }));
+      
+      // Invalidate queries to restore original data
+      if (deleteDialog.type === 'gig') {
+        queryClient.invalidateQueries({ queryKey: gigKeys.myGigs() });
+        showGigDeleteError(error.message || 'Failed to delete gigs');
+      } else {
+        queryClient.invalidateQueries({ queryKey: serviceKeys.myServices() });
+        showServiceDeleteError(error.message || 'Failed to delete services');
+      }
+      
+      setDeleteDialog(prev => ({ ...prev, isLoading: false }));
+    } finally {
+      if (deleteDialog.type === 'gig') {
+        dismissGigToast();
+      } else {
+        dismissServiceToast();
+      }
     }
-    
-    // Close dialog
-    setDeleteDialog({
-      isOpen: false,
-      type: null,
-      ids: [],
-      itemName: '',
-      isLoading: false
-    });
-    
-  } catch (error) {
-    console.error('Delete error:', error);
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-      url: error.config?.url
-    });
-    
-    if (deleteDialog.type === 'gig') {
-      showGigDeleteError(error.message || 'Failed to delete gigs');
-    } else {
-      showServiceDeleteError(error.message || 'Failed to delete services');
-    }
-    
-    setDeleteDialog(prev => ({ ...prev, isLoading: false }));
-  } finally {
-    if (deleteDialog.type === 'gig') {
-      dismissGigToast();
-    } else {
-      dismissServiceToast();
-    }
-  }
-}, [
-  deleteDialog.ids, 
-  deleteDialog.type, 
-  deleteMultipleGigsMutation, 
-  deleteServiceMutation, 
-  refetchServices,
-  refetchGigs,
-  allSelected,
-  allServicesSelected,
-  showGigLoading,
-  showServiceLoading,
-  showGigDeleteSuccess,
-  showServiceDeleteSuccess,
-  showGigDeleteError,
-  showServiceDeleteError,
-  dismissGigToast,
-  dismissServiceToast
-]);
+  }, [
+    deleteDialog.ids, 
+    deleteDialog.type, 
+    deleteMultipleGigsMutation, 
+    deleteServiceMutation,
+    performOptimisticDelete,
+    queryClient,
+    refetchServices,
+    refetchGigs,
+    showGigLoading,
+    showServiceLoading,
+    showGigDeleteSuccess,
+    showServiceDeleteSuccess,
+    showGigDeleteError,
+    showServiceDeleteError,
+    dismissGigToast,
+    dismissServiceToast
+  ]);
 
   const handleDeleteGigs = useCallback(() => {
     if (selectedGigs.length === 0) {
@@ -1703,14 +1813,132 @@ useEffect(() => {
   }, [showServiceInfo]);
 
   const filterGigs = useCallback((gigsToFilter) => {
-    if (statusFilter === 'all') return gigsToFilter;
-    return gigsToFilter.filter(gig => gig.status === statusFilter);
-  }, [statusFilter]);
-
+    let filtered = gigsToFilter;
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(gig => gig.status === statusFilter);
+    }
+    // Remove immediately deleted gigs
+    filtered = filtered.filter(gig => 
+      !immediateUpdates.gigs.deleted.includes(gig._id)
+    );
+    // Add immediately created gigs that match the filter
+    const createdGigs = immediateUpdates.gigs.created.filter(gig => 
+      statusFilter === 'all' || gig.status === statusFilter
+    );
+    return [...createdGigs, ...filtered];
+  }, [statusFilter, immediateUpdates.gigs]);
+  
   const filterServices = useCallback((servicesToFilter) => {
-    if (serviceStatusFilter === 'all') return servicesToFilter;
-    return servicesToFilter.filter(service => service.status === serviceStatusFilter);
-  }, [serviceStatusFilter]);
+    let filtered = servicesToFilter;
+    if (serviceStatusFilter !== 'all') {
+      filtered = filtered.filter(service => service.status === serviceStatusFilter);
+    }
+    // Remove immediately deleted services
+    filtered = filtered.filter(service => 
+      !immediateUpdates.services.deleted.includes(service._id)
+    );
+    // Add immediately created services that match the filter
+    const createdServices = immediateUpdates.services.created.filter(service => 
+      serviceStatusFilter === 'all' || service.status === serviceStatusFilter
+    );
+    return [...createdServices, ...filtered];
+  }, [serviceStatusFilter, immediateUpdates.services]);
+  useEffect(() => {
+    const handlePageShow = async (event) => {
+      if (event.persisted) {
+        // Page was restored from bfcache
+        console.log('Page restored from cache, refreshing data...');
+        await Promise.all([
+          refetchProfile(),
+          refetchServices(),
+          refetchGigs()
+        ]);
+        setImageRefreshKey(Date.now());
+      }
+    };
+    
+    window.addEventListener('pageshow', handlePageShow);
+    
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [refetchProfile, refetchServices, refetchGigs]);
+  useEffect(() => {
+    let pollInterval;
+    
+    if (lastActionRef.current && Date.now() - lastActionRef.current.timestamp < 5000) {
+      // Poll for updates for 5 seconds after an action
+      pollInterval = setInterval(() => {
+        if (lastActionRef.current?.type === 'gigs') {
+          refetchGigs();
+        } else if (lastActionRef.current?.type === 'services') {
+          refetchServices();
+        }
+      }, 1000);
+      
+      // Clear after 5 seconds
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        lastActionRef.current = null;
+      }, 5000);
+    }
+    
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [lastActionRef.current, refetchGigs, refetchServices]);
+  
+  // Listen for custom events from create pages
+  useEffect(() => {
+    const handleItemCreated = (event) => {
+      const { type, item } = event.detail;
+      performOptimisticCreate(item, type);
+      
+      // Show success message
+      if (type === 'gig') {
+        showGigSuccess('Gig created successfully!');
+      } else {
+        toast.success('Service created successfully!');
+      }
+      
+      // Background refetch
+      setTimeout(() => {
+        if (type === 'gig') {
+          refetchGigs();
+        } else {
+          refetchServices();
+        }
+      }, 100);
+    };
+    
+    const handleItemUpdated = (event) => {
+      const { type, item } = event.detail;
+      
+      // Update immediate updates
+      setImmediateUpdates(prev => ({
+        ...prev,
+        [type === 'gig' ? 'gigs' : 'services']: {
+          ...prev[type === 'gig' ? 'gigs' : 'services'],
+          updated: [...prev[type === 'gig' ? 'gigs' : 'services'].updated, item._id]
+        }
+      }));
+      
+      // Invalidate cache for the item
+      if (type === 'gig') {
+        queryClient.invalidateQueries({ queryKey: gigKeys.detail(item._id) });
+      } else {
+        queryClient.invalidateQueries({ queryKey: serviceKeys.detail(item._id) });
+      }
+    };
+    
+    window.addEventListener('item-created', handleItemCreated);
+    window.addEventListener('item-updated', handleItemUpdated);
+    
+    return () => {
+      window.removeEventListener('item-created', handleItemCreated);
+      window.removeEventListener('item-updated', handleItemUpdated);
+    };
+  }, [performOptimisticCreate, queryClient, refetchGigs, refetchServices, showGigSuccess]);
 
   const filteredGigs = useMemo(() => filterGigs(gigs), [gigs, filterGigs, forceRefreshTrigger]);
   const filteredServices = useMemo(() => filterServices(services), [services, filterServices, forceRefreshTrigger]);

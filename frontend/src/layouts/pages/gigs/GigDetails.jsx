@@ -55,6 +55,7 @@ import { useGigStore } from '../../../store/useGigStore';
 import { useGig, useDeleteGig } from '../../../hooks/useGigs';
 import { SeoWrapper } from '../../../components/SeoWrapper';
 import { DEFAULT_IMAGES } from '../../../utils/defaultImages';
+
 const GigDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -73,177 +74,35 @@ const GigDetails = () => {
   
   const deleteGigMutation = useDeleteGig();
   
-  // Extract gig data from response
-  
-  // Local state
-  const [isLiked, setIsLiked] = useState(false);
-  const [activeImage, setActiveImage] = useState(0);
-  const [viewCount, setViewCount] = useState(0);
-  const [imageViewMode, setImageViewMode] = useState('thumbnail');
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteOptions, setDeleteOptions] = useState({
-    permanent: false,
-    force: false
-  });
-
-
   const gig = gigResponse?.gig || gigResponse;
 
   // Check if current user is the gig owner
   const isGigOwner = user && gig && gig.createdBy?._id === user._id;
   const isAdmin = user?.role === 'admin';
-   useEffect(() => {
+  
+  useEffect(() => {
     if (gig) {
       setGigDetails(gig);
-      setViewCount(Math.floor(Math.random() * 500) + 100);
     }
   }, [gig, setGigDetails]);
+  
   // Cleanup when component unmounts
   useEffect(() => {
     return () => {
       clearGigDetails();
     };
   }, [clearGigDetails]);
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
-                <div className="space-y-4">
-                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full"></div>
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                </div>
-              </div>
-              <div className="lg:col-span-1">
-                <div className="bg-gray-200 rounded-2xl h-96"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
-  if (error || !gig) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-4">
-            {error?.response?.status === 404 ? 'Gig Not Found' : 'Error Loading Gig'}
-          </h3>
-          <p className="text-gray-600 mb-8 max-w-md mx-auto">
-            {error?.response?.data?.message || 
-             error?.message || 
-             "The gig you're looking for doesn't exist or has been removed."}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={handleRefresh}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/gigs')}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
-            >
-              Browse Gigs
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  // Structured Data for SEO (Schema.org)
-  const generateStructuredData = () => {
-    if (!gig) return null;
-
-    const gigUser = gig.createdBy;
-    const structuredData = {
-      "@context": "https://schema.org",
-      "@type": "Service",
-      "name": gig.title,
-      "description": gig.description?.substring(0, 200) + (gig.description?.length > 200 ? '...' : ''),
-      "url": typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`,
-      "provider": {
-        "@type": "Person",
-        "name": gigUser?.name || "Freelancer",
-        "url": gigUser?._id ? `${window.location.origin}/profile/${gigUser._id}` : undefined,
-        "image": gigUser?.picture,
-        "address": gigUser?.city && gigUser?.country ? {
-          "@type": "PostalAddress",
-          "addressLocality": gigUser.city,
-          "addressCountry": gigUser.country
-        } : undefined,
-        "jobTitle": gigUser?.occupation
-      },
-      "offers": {
-        "@type": "Offer",
-        "price": gig.budget,
-        "priceCurrency": gig.currency || "USD",
-        "availability": gig.status === "open" ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-        "validThrough": gig.deadline ? new Date(gig.deadline).toISOString().split('T')[0] : undefined
-      },
-      "areaServed": {
-        "@type": "Country",
-        "name": gigUser?.country || "Worldwide"
-      },
-      "serviceType": gig.projectCategory?.name,
-      "skills": gig.skillsRequired || [],
-      "estimatedDuration": gig.timeline,
-      "datePosted": gig.createdAt ? new Date(gig.createdAt).toISOString() : undefined,
-      "dateModified": gig.updatedAt ? new Date(gig.updatedAt).toISOString() : undefined
-    };
-
-    // Add images if available
-    if (gig.images && gig.images.length > 0) {
-      structuredData.image = gig.images.slice(0, 5).map(img => img.url);
-    }
-
-    // Add breadcrumb
-    const breadcrumbList = {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      "itemListElement": [
-        {
-          "@type": "ListItem",
-          "position": 1,
-          "name": "Home",
-          "item": typeof window !== 'undefined' ? window.location.origin : '/'
-        },
-        {
-          "@type": "ListItem",
-          "position": 2,
-          "name": "Gigs",
-          "item": typeof window !== 'undefined' ? `${window.location.origin}/gigs` : '/gigs'
-        },
-        {
-          "@type": "ListItem",
-          "position": 3,
-          "name": gig.projectCategory?.name || "Category",
-          "item": gig.projectCategory?._id ? 
-            `${window.location.origin}/categories/${gig.projectCategory._id}` : 
-            typeof window !== 'undefined' ? `${window.location.origin}/categories` : '/categories'
-        },
-        {
-          "@type": "ListItem",
-          "position": 4,
-          "name": gig.title?.substring(0, 50) + (gig.title?.length > 50 ? '...' : ''),
-          "item": typeof window !== 'undefined' ? `${window.location.origin}/gig/${id}` : `/gig/${id}`
-        }
-      ]
-    };
-
-    return [structuredData, breadcrumbList];
-  };
+  // Local state
+  const [isLiked, setIsLiked] = useState(false);
+  const [activeImage, setActiveImage] = useState(0);
+  const [imageViewMode, setImageViewMode] = useState('thumbnail');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteOptions, setDeleteOptions] = useState({
+    permanent: false,
+    force: false
+  });
 
   // Handle share
   const handleShare = async () => {
@@ -274,7 +133,6 @@ const GigDetails = () => {
       await navigator.clipboard.writeText(url);
       toast.success('Link copied to clipboard!');
     } catch (err) {
-      // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = url;
       document.body.appendChild(textArea);
@@ -306,52 +164,37 @@ const GigDetails = () => {
   };
 
   const handleDeleteGig = async () => {
-  if (!isAuthenticated) {
-    toast.error('Please sign in to delete gigs');
-    return;
-  }
-  
-  if (!isGigOwner && !isAdmin) {
-    toast.error('You can only delete your own gigs');
-    return;
-  }
+    if (!isAuthenticated) {
+      toast.error('Please sign in to delete gigs');
+      return;
+    }
+    
+    if (!isGigOwner && !isAdmin) {
+      toast.error('You can only delete your own gigs');
+      return;
+    }
 
-  setIsDeleting(true);
-  
-  try {
-    await deleteGigMutation.mutateAsync({
-      id: gig._id,
-      // Pass options as query parameters, not in data
-      permanent: deleteOptions.permanent,
-      force: deleteOptions.force
-    }, {
-      onSuccess: () => {
-        // Optimistic UI will update immediately
-        // Navigation will happen after toast is shown
-        const navigationTimer = setTimeout(() => {
-          navigate('/dashboard');
-        }, 800);
-        
-        return () => clearTimeout(navigationTimer);
-      },
-      onError: (error) => {
-        if (error.code === 'GIG_IN_PROGRESS') {
-          toast.error('Cannot delete gig that is in progress');
-          setDeleteOptions(prev => ({ ...prev, force: true }));
-          setShowDeleteDialog(true);
-        } else {
-          toast.error(error.message || 'Failed to delete gig');
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Delete error:', error);
-    toast.error('An error occurred while deleting the gig');
-  } finally {
-    setIsDeleting(false);
-    setShowDeleteDialog(false);
-  }
-};
+    setIsDeleting(true);
+    
+    try {
+      await deleteGigMutation.mutateAsync({
+        id: gig._id,
+        permanent: deleteOptions.permanent,
+        force: deleteOptions.force
+      });
+
+      toast.success('Gig deleted successfully');
+      
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete gig');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
 
   const confirmDelete = () => {
     if (gig.status === 'in_progress' && !deleteOptions.force) {
@@ -421,7 +264,7 @@ const GigDetails = () => {
     
     // Fallback to default image
     return {
-      url:DEFAULT_IMAGES.GALLERY,
+      url: DEFAULT_IMAGES.GENERIC,
       type: 'default'
     };
   };
@@ -465,18 +308,18 @@ const GigDetails = () => {
   };
 
   const getStatusColor = (status) => {
-  if (!status) return 'bg-gray-100 text-gray-800 border-gray-200';
-  
-  const statusStr = String(status).toLowerCase();
-  switch (statusStr) {
-    case 'open': return 'bg-green-100 text-green-800 border-green-200';
-    case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'assigned': return 'bg-purple-100 text-purple-800 border-purple-200';
-    case 'completed': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-    case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
-    default: return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
-};
+    if (!status) return 'bg-gray-100 text-gray-800 border-gray-200';
+    
+    const statusStr = String(status).toLowerCase();
+    switch (statusStr) {
+      case 'open': return 'bg-green-100 text-green-800 border-green-200';
+      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'assigned': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'completed': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
 
   const calculateTimeAgo = (date) => {
     const now = new Date();
@@ -503,12 +346,66 @@ const GigDetails = () => {
     return new Date(lastSeenAt) > fiveMinutesAgo;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-3/4 mb-8"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <div className="bg-gray-200 rounded-2xl h-96 mb-6"></div>
+                <div className="space-y-4">
+                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-full"></div>
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                </div>
+              </div>
+              <div className="lg:col-span-1">
+                <div className="bg-gray-200 rounded-2xl h-96"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const thumbnailImage = getThumbnailImage();
-  const galleryImages = getGalleryImages();
-  const allImages = [thumbnailImage, ...galleryImages];
+  if (error || !gig) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">
+            {error?.response?.status === 404 ? 'Gig Not Found' : 'Error Loading Gig'}
+          </h3>
+          <p className="text-gray-600 mb-8 max-w-md mx-auto">
+            {error?.response?.data?.message || 
+             error?.message || 
+             "The gig you're looking for doesn't exist or has been removed."}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={handleRefresh}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/gigs')}
+              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-colors font-semibold shadow-lg hover:shadow-xl"
+            >
+              Browse Gigs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Calculate derived values
+  const thumbnailImage = getThumbnailImage();
+  const galleryImages = getGalleryImages();
   const timeAgo = calculateTimeAgo(gig.createdAt);
   const deadlineDate = gig.deadline ? new Date(gig.deadline) : null;
   const daysUntilDeadline = deadlineDate ? 
@@ -519,9 +416,6 @@ const GigDetails = () => {
   const accountAge = calculateAccountAge(gigUser?.createdAt);
   const isOnline = isUserOnline(gigUser?.lastSeenAt);
 
-  // Generate structured data
-  const structuredData = generateStructuredData();
-  
   // SEO meta data
   const seoMetaData = {
     title: `${gig.title} | ${gig.projectCategory?.name || 'Service'} on Vorkana`,
@@ -542,38 +436,6 @@ const GigDetails = () => {
       description: gig.description?.substring(0, 200),
       image: thumbnailImage.url
     }
-  };
-
-  // Action buttons for gig owner
-  const renderOwnerActions = () => {
-    if (!isGigOwner && !isAdmin) return null;
-
-    return (
-      <div className="flex items-center space-x-3 ml-3">
-        {/* Edit Button */}
-        <button
-          onClick={handleEditGig}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
-          aria-label="Edit gig"
-          disabled={isDeleting}
-        >
-          <Edit className="h-4 w-4" aria-hidden="true" />
-          Edit
-        </button>
-
-        {/* Delete Button */}
-        <button
-          onClick={confirmDelete}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
-          aria-label="Delete gig"
-          disabled={isDeleting}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-          Delete
-        </button>
-
-      </div>
-    );
   };
 
   // Delete Confirmation Dialog
@@ -664,22 +526,14 @@ const GigDetails = () => {
       </div>
     </Dialog>
   );
+
   return (
     <SeoWrapper
       title={seoMetaData.title}
       description={seoMetaData.description}
       keywords={seoMetaData.keywords}
       canonical={seoMetaData.canonical}
-      structuredData={structuredData}
     >
-      {/* Additional JSON-LD for Breadcrumbs */}
-      {structuredData && (
-        <script type="application/ld+json">
-          {JSON.stringify(structuredData[1])}
-        </script>
-      )}
-
-      {/* Delete Confirmation Dialog */}
       {renderDeleteDialog()}
 
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
@@ -729,7 +583,30 @@ const GigDetails = () => {
                 >
                   Refresh Page
                 </button>
-                {renderOwnerActions()}
+                
+                {/* Edit and Delete buttons for owner/admin */}
+                {(isGigOwner || isAdmin) && (
+                  <>
+                    <button
+                      onClick={handleEditGig}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium flex items-center gap-2"
+                      aria-label="Edit gig"
+                      disabled={isDeleting}
+                    >
+                      <Edit className="h-4 w-4" aria-hidden="true" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={confirmDelete}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
+                      aria-label="Delete gig"
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -740,21 +617,18 @@ const GigDetails = () => {
             {/* Left Column - Gig Details */}
             <div className="lg:col-span-2 space-y-8">
               {/* Title and Actions */}
-              <article className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100" itemScope itemType="https://schema.org/Service">
-                <meta itemProp="url" content={`${window.location.origin}/gig/${id}`} />
-                <meta itemProp="image" content={thumbnailImage.url} />
-                
+              <article className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
                   <div className="flex-1">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                       <div>
-                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2" itemProp="name">
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 pr-4 mb-2">
                           {gig.title}
                         </h1>
                         <div className="flex flex-wrap items-center gap-3">
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(gig?.status)}`} itemProp="availability">
-  {gig?.status ? gig.status.replace('_', ' ').toUpperCase() : 'UNKNOWN'}
-</span>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(gig?.status)}`}>
+                            {gig?.status ? gig.status.replace('_', ' ').toUpperCase() : 'UNKNOWN'}
+                          </span>
                           <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getUrgencyColor(gig.urgency)}`}>
                             {gig.urgency.toUpperCase()} PRIORITY
                           </span>
@@ -774,26 +648,30 @@ const GigDetails = () => {
                       </div>
                     </div>
                   </div>
+                  
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={handleShare}
+                      className="p-3 hover:bg-gray-50 rounded-xl transition-colors"
+                      aria-label="Share this gig"
+                    >
+                      <Share2 className="h-6 w-6 text-gray-400" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
 
-
-                {/* Enhanced User Info */}
+                {/* Enhanced Client Profile Section */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 p-6 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
                   <Link 
                     to={`/profile/${gigUser?._id}`}
                     className="flex items-center space-x-4 group cursor-pointer flex-1"
                     aria-label={`View ${gigUser?.name || 'Client'}'s profile`}
-                    itemProp="provider"
-                    itemScope
-                    itemType="https://schema.org/Person"
                   >
-                    <meta itemProp="url" content={`${window.location.origin}/profile/${gigUser?._id}`} />
                     <div className="relative">
                       <img
-                        src={gigUser?.picture ||  DEFAULT_IMAGES.PROFILE}
+                        src={gigUser?.picture || DEFAULT_IMAGES.PROFILE}
                         alt={gigUser?.name || 'Client'}
                         className="w-16 h-16 rounded-full border-4 border-white shadow-lg group-hover:ring-2 group-hover:ring-emerald-500 transition-all"
-                        itemProp="image"
                       />
                       {isOnline && (
                         <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" aria-label="User is online"></div>
@@ -805,49 +683,41 @@ const GigDetails = () => {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors" itemProp="name">
-                          {gigUser?.name || 'User'}
-                        </span>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-gray-900 text-lg group-hover:text-emerald-700 transition-colors">
+                            {gigUser?.name || 'User'}
+                          </span>
+                          {gigUser?.email && (
+                            <span className="flex items-center text-sm text-gray-600">
+                              <Mail className="h-4 w-4 mr-1" />
+                              {gigUser.email}
+                            </span>
+                          )}
+                        </div>
                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
                           {gigUser?.role === 'admin' ? 'Admin' : 'Client'}
                         </span>
-                        {isOnline && (
-                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full flex items-center gap-1">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            Online
-                          </span>
-                        )}
                       </div>
                       
                       {/* Enhanced User Details */}
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm text-gray-600 mb-3">
                         {gigUser?.occupation && (
-                          <span className="flex items-center" itemProp="jobTitle">
+                          <span className="flex items-center">
                             <Briefcase className="h-4 w-4 mr-1" aria-hidden="true" />
                             {gigUser.occupation}
                           </span>
                         )}
                         
                         {gigUser?.country && (
-                          <span className="flex items-center" itemProp="address" itemScope itemType="https://schema.org/PostalAddress">
+                          <span className="flex items-center">
                             <MapPin className="h-4 w-4 mr-1" aria-hidden="true" />
-                            {gigUser.city ? (
-                              <>
-                                <meta itemProp="addressLocality" content={gigUser.city} />
-                                <meta itemProp="addressCountry" content={gigUser.country} />
-                                {gigUser.city}, {gigUser.country}
-                              </>
-                            ) : (
-                              <meta itemProp="addressCountry" content={gigUser.country} />
-                            )}
+                            {gigUser.city ? `${gigUser.city}, ${gigUser.country}` : gigUser.country}
                           </span>
                         )}
                         
                         {gigUser?.rating && (
-                          <span className="flex items-center" itemProp="aggregateRating" itemScope itemType="https://schema.org/AggregateRating">
-                            <meta itemProp="ratingValue" content={gigUser.rating.toString()} />
-                            <meta itemProp="reviewCount" content={(gigUser.totalReviews || 0).toString()} />
+                          <span className="flex items-center">
                             {renderStars(gigUser.rating)}
                             <span className="ml-1">({gigUser.totalReviews || 0})</span>
                           </span>
@@ -867,11 +737,16 @@ const GigDetails = () => {
                           </span>
                         )}
                         
-                        
+                        {gigUser?.createdAt && (
+                          <span className="flex items-center">
+                            <Calendar className="h-4 w-4 mr-1" aria-hidden="true" />
+                            Member for {accountAge}
+                          </span>
+                        )}
                       </div>
                       
                       {/* User Stats */}
-                      <div className="flex flex-wrap gap-4 mt-3">
+                      <div className="flex flex-wrap gap-4">
                         {gigUser?.completedOrders !== undefined && (
                           <div className="flex items-center gap-1">
                             <Activity className="h-4 w-4 text-gray-400" aria-hidden="true" />
@@ -913,7 +788,7 @@ const GigDetails = () => {
 
                 {/* Budget & Deadline Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                  <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100" itemProp="offers" itemScope itemType="https://schema.org/Offer">
+                  <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-100">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                         <DollarSign className="h-5 w-5 text-emerald-600" aria-hidden="true" />
@@ -924,10 +799,10 @@ const GigDetails = () => {
                       </span>
                     </div>
                     <div className="text-left">
-                      <div className="text-3xl font-bold text-emerald-600 mb-1" itemProp="price" content={gig.budget}>
+                      <div className="text-3xl font-bold text-emerald-600 mb-1">
                         {formatPrice(gig.budget)}
                       </div>
-                      <p className="text-sm text-gray-500" itemProp="priceCurrency" content={gig.currency || "USD"}>
+                      <p className="text-sm text-gray-500">
                         Total project cost • {gig.currency}
                       </p>
                       <div className="mt-3 text-xs text-gray-600">
@@ -954,7 +829,7 @@ const GigDetails = () => {
                       )}
                     </div>
                     <div className="text-left">
-                      <div className="text-2xl font-bold text-blue-600 mb-1" itemProp="estimatedDuration">
+                      <div className="text-2xl font-bold text-blue-600 mb-1">
                         {gig.timeline}
                       </div>
                       <p className="text-sm text-gray-500 mb-2">
@@ -1018,7 +893,7 @@ const GigDetails = () => {
                           alt={`${gig.title} - Featured thumbnail`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            e.target.src =DEFAULT_IMAGES.GENERIC;
+                            e.target.src = DEFAULT_IMAGES.GENERIC;
                           }}
                         />
                         <div className="absolute top-4 left-4">
@@ -1170,15 +1045,15 @@ const GigDetails = () => {
                   )}
                 </div>
 
-                {/* Description */}
+                {/* Description - Fixed overflow */}
                 <div className="mb-8">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                     <FileText className="h-6 w-6 text-emerald-600" aria-hidden="true" />
                     Project Description
                   </h2>
                   <div className="prose max-w-none">
-                    <div className="bg-gray-50 rounded-xl p-6">
-                      <p className="text-gray-700 whitespace-pre-line leading-relaxed" itemProp="description">
+                    <div className="bg-gray-50 rounded-xl p-6 overflow-hidden">
+                      <p className="text-gray-700 whitespace-pre-line leading-relaxed break-words">
                         {gig.description}
                       </p>
                     </div>
@@ -1273,7 +1148,6 @@ const GigDetails = () => {
                         <span
                           key={index}
                           className="px-4 py-2 bg-emerald-100 text-emerald-800 rounded-full font-medium flex items-center gap-2"
-                          itemProp="skills"
                         >
                           <CheckCircle className="h-4 w-4" aria-hidden="true" />
                           {skill}
@@ -1341,9 +1215,8 @@ const GigDetails = () => {
             </div>
 
             {/* Right Column - Gig Info & Actions */}
-           <aside className="lg:col-span-1">
+            <aside className="lg:col-span-1">
               <div className="top-8 space-y-8">
-                
                 {/* Project Quick Stats */}
                 <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-100">
                   <h3 className="text-xl font-bold text-gray-900 mb-6">Project Stats</h3>
@@ -1388,7 +1261,7 @@ const GigDetails = () => {
                         <div className="flex items-center p-3 bg-emerald-50 rounded-lg">
                           <Package className="h-5 w-5 text-emerald-600 mr-3" aria-hidden="true" />
                           <div>
-                            <span className="font-semibold text-gray-900 block" itemProp="serviceType">{gig.projectCategory.name}</span>
+                            <span className="font-semibold text-gray-900 block">{gig.projectCategory.name}</span>
                             {gig.projectCategory.description && (
                               <p className="text-xs text-gray-500 mt-1">{gig.projectCategory.description}</p>
                             )}
@@ -1415,7 +1288,6 @@ const GigDetails = () => {
                             <span
                               key={index}
                               className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
-                              itemProp="skills"
                             >
                               <Tag className="inline h-3 w-3 mr-1" aria-hidden="true" />
                               {skill}
@@ -1450,10 +1322,9 @@ const GigDetails = () => {
                         <h4 className="font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">
                           {gigUser?.name}
                         </h4>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
-                          View Profile
-                          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                        </p>
+                        {gigUser?.email && (
+                          <p className="text-xs text-gray-500 truncate">{gigUser.email}</p>
+                        )}
                       </div>
                     </Link>
 
@@ -1538,7 +1409,7 @@ const GigDetails = () => {
                     {/* View Full Profile Button */}
                     <Link 
                       to={`/profile/${gigUser?._id}`}
-                      className=" w-full text-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium flex items-center justify-center gap-2"
+                      className="w-full text-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium flex items-center justify-center gap-2"
                       aria-label="View client's full profile"
                     >
                       <User className="h-4 w-4" aria-hidden="true" />
