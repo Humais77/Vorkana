@@ -1504,13 +1504,7 @@ const ServiceDetails = () => {
                       </span>
                     </div>
                     
-                    {/* Version */}
-                    {service.version !== undefined && (
-                      <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                        <span className="text-gray-600">Version</span>
-                        <span className="font-semibold text-gray-900">v{service.version}</span>
-                      </div>
-                    )}
+                    
                   </div>
                 </div>
 

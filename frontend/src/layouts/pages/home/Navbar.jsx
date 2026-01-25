@@ -141,16 +141,28 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    try {
-      await logoutMutation.mutateAsync();
-      closeAllDropdowns();
-      setMobileMenuOpen(false);
-      setMobileProfileOpen(false);
-      navigate("/");
-    } catch (error) {
-      throw error("Logout failed:", error);
-    }
-  }, [logoutMutation, closeAllDropdowns, navigate]);
+  try {
+    // Close all dropdowns first
+    setActiveDropdown(null);
+    setMobileMenuOpen(false);
+    setMobileProfileOpen(false);
+    
+    
+    // Execute logout
+    await logoutMutation.mutateAsync();
+    
+    // Force clear any remaining state
+    localStorage.clear();
+    sessionStorage.clear();
+    
+  } catch (error) {
+    console.error('Logout error:', error);
+    
+    // Fallback cleanup
+    localStorage.clear();
+    sessionStorage.clear();
+  }
+}, [logoutMutation]);
 
   const handleMobileMenuClick = useCallback(() => {
     setMobileMenuOpen(prev => !prev);
@@ -202,6 +214,24 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </button>
             </div>
 
+            {/* Center: Logo (Mobile only) - Fixed positioning */}
+            <div className="absolute left-1/2 transform -translate-x-1/2 lg:hidden flex items-center h-full">
+              <Link
+                to="/"
+                className="flex items-center shrink-0 gap-1 h-full"
+                onClick={closeAllDropdowns}
+                draggable="true"
+              >
+                <img
+                  src={Logo_URL}
+                  alt="Vorkanna"
+                  className="h-10 w-auto pointer-events-none max-h-full"
+                  loading="eager"
+                  draggable="false"
+                />
+              </Link>
+            </div>
+
             {/* Desktop: Logo */}
             <div className="hidden lg:flex items-center shrink-0 mr-4 xl:mr-6 2xl:mr-8">
               <Link
@@ -228,31 +258,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
               </div>
             </div>
 
-            {/* Center: Logo (Mobile only) */}
-            <div className="flex items-center justify-center lg:hidden">
-              <Link
-                to="/"
-                className="flex items-center shrink-0 gap-1"
-                onClick={closeAllDropdowns}
-                draggable="true"
-              >
-                <img
-                  src={Logo_URL}
-                  alt="Vorkanna"
-                  className="h-10 w-auto pointer-events-none"
-                  loading="eager"
-                  draggable="false"
-                />
-              </Link>
-            </div>
-
-            {/* Right: Profile/Join Button (Mobile) */}
-            <div className="flex items-center lg:hidden relative" ref={mobileProfileRef}>
+            {/* Right: Profile/Join Button (Mobile) - FIXED ALIGNMENT */}
+            <div className="flex items-center justify-center lg:hidden relative" ref={mobileProfileRef}>
               {isAuthenticated ? (
                 <>
                   <button
                     onClick={toggleMobileProfile}
-                    className="p-1 rounded-full hover:bg-gray-100 transition-all duration-150"
+                    className="p-1 rounded-full hover:bg-gray-100 transition-all duration-150 flex items-center justify-center"
                     aria-label="Profile menu"
                   >
                     <img
@@ -338,17 +350,6 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                               <span>Dashboard</span>
                             </Link>
 
-                            <Link
-                              to="/settings"
-                              onClick={() => {
-                                setMobileProfileOpen(false);
-                                setMobileMenuOpen(false);
-                              }}
-                              className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-150"
-                            >
-                              <Settings className="w-4 h-4" />
-                              <span>Settings</span>
-                            </Link>
 
                             <button
                               onClick={handleLogout}
@@ -374,16 +375,18 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   </AnimatePresence>
                 </>
               ) : (
-                <button
-                  onClick={() => {
-                    closeAllDropdowns();
-                    onSignupClick?.();
-                  }}
-                  className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm"
-                >
-                  <span className="hidden xs:inline">Join Free</span>
-                  <span className="xs:hidden">Join</span>
-                </button>
+                <div className="flex items-center h-full py-2.5"> {/* Added wrapper div with specific height */}
+                  <button
+                    onClick={() => {
+                      closeAllDropdowns();
+                      onSignupClick?.();
+                    }}
+                    className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm flex items-center justify-center h-full"
+                  >
+                    <span className="hidden xs:inline">Join Free</span>
+                    <span className="xs:hidden">Join</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -412,7 +415,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <ChevronDown className={`w-3 h-3 xl:w-4 xl:h-4 shrink-0 transition-transform duration-150 ${activeDropdown === 'explore' ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Explore dropdown content - ADDED BACK */}
+                {/* Explore dropdown content */}
                 <AnimatePresence>
                   {activeDropdown === 'explore' && (
                     <motion.div
@@ -504,7 +507,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       <ChevronDown className={`w-3 h-3 xl:w-4 xl:h-4 text-gray-600 shrink-0 transition-transform duration-150 ${activeDropdown === 'profile' ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {/* Profile dropdown content - ADDED BACK */}
+                    {/* Profile dropdown content */}
                     <AnimatePresence>
                       {activeDropdown === 'profile' && (
                         <motion.div

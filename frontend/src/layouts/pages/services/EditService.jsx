@@ -943,10 +943,6 @@ const EditService = () => {
         <div className="flex items-start">
           <AlertTriangle className="text-orange-600 mr-3 flex-shrink-0 mt-0.5" size={18} />
           <div className="flex-1">
-            <h3 className="font-semibold text-orange-800 mb-2">Version Conflict Detected</h3>
-            <p className="text-orange-700 mb-3">
-              This service was modified by another user or in another tab. Your version: {formData.version}, Server version: {conflictResolution.serverVersion}
-            </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleRefreshService}
@@ -1001,9 +997,7 @@ const EditService = () => {
             <Eye className="mr-3" size={20} />
             <h2 className="text-xl font-bold">Service Preview</h2>
           </div>
-          <div className="px-2 py-1 bg-emerald-800 text-emerald-100 text-xs rounded-full">
-            v{currentVersion}
-          </div>
+        
           <p className="text-emerald-100 text-sm">
             Review your changes before updating. This preview shows how your service will appear to clients.
           </p>
@@ -1094,15 +1088,7 @@ const EditService = () => {
             </ul>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-            <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
-              <GitBranch className="h-5 w-5" />
-              Version Information
-            </h3>
             <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-emerald-100">Current Version:</span>
-                <span className="font-medium">{formData.version}</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-emerald-100">Status:</span>
                 <span className="font-medium capitalize">{formData.status}</span>

@@ -4,7 +4,7 @@ import { Pause, Play } from "lucide-react";
 import HeroSearch from "../../../components/Search/HeroSearch";
 import { useNavigate } from "react-router-dom";
 import useVideoStore from '../../../store/useVideoStore';
-import { getHeroVideoAssets, preloadVideo } from '../../../utils/cloudinaryFrontend';
+import { getHeroVideoAssets, preloadVideo ,preloadVideoWithFallbacks,checkVideoCDNPerformance } from '../../../utils/cloudinaryFrontend';
 import { useSubcategories } from '../../../hooks/useSubcategories';
 import LoadingSpinner from '../../../layouts/LoadingSpinner';
 
@@ -25,8 +25,9 @@ const Hero = ({ isAuthModalOpen = false }) => {
   // Get optimized PRODUCTION video URLs
   const { 
     videoUrl, 
+    webmUrl,
     posterUrl,
-    lowQualityVideoUrl 
+    lowQualityVideoUrl
   } = getHeroVideoAssets(VIDEO_PUBLIC_ID, POSTER_PUBLIC_ID);
 
   // Define the specific category names we want to show (same as before)
@@ -237,6 +238,16 @@ const Hero = ({ isAuthModalOpen = false }) => {
 
     return matchedCategories;
   };
+useEffect(() => {
+    if (!isMobile) {
+      preloadVideoWithFallbacks({ videoUrl, webmUrl, posterUrl });
+      
+      // Optional: Log CDN performance in development
+      if (import.meta.env.DEV) {
+        checkVideoCDNPerformance(videoUrl);
+      }
+    }
+  }, [videoUrl, webmUrl, posterUrl, isMobile]);
 
   const categoriesToDisplay = getCategoriesToDisplay();
   const trustedCompanies = ["Google", "NETFLIX", "ABC", "PayPal", "Olympiant"];
@@ -246,7 +257,6 @@ const Hero = ({ isAuthModalOpen = false }) => {
       {/* GREEN SPLASH / MOBILE BACKGROUND */}
       <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-green-600 lg:hidden" />
       
-      {/* === PRODUCTION VIDEO ELEMENT === */}
       {!videoLoadError ? (
         <video
           ref={videoRef}
@@ -254,7 +264,7 @@ const Hero = ({ isAuthModalOpen = false }) => {
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="auto"
           fetchPriority="high"
           poster={posterUrl}
           className={`
@@ -263,18 +273,18 @@ const Hero = ({ isAuthModalOpen = false }) => {
             hidden lg:block
             ${videoReady ? "opacity-100" : "opacity-0"}
           `}
-          src={videoUrl}
-          // PRODUCTION: Add these attributes for better performance
-          disablePictureInPicture
-          disableRemotePlayback
-          crossOrigin="anonymous"
+          // CDN OPTIMIZATION: Browser will choose the first supported format
         >
-          {/* PRODUCTION: Fallback source for older browsers */}
+          {/* WebM first (better compression, plays instantly in Chrome/Firefox) */}
+          <source src={webmUrl} type="video/webm" />
+          {/* MP4 fallback (universal support) */}
           <source src={videoUrl} type="video/mp4" />
-          Your browser does not support the video tag.
+          {/* Low quality fallback for very slow connections */}
+          <source src={lowQualityVideoUrl} type="video/mp4" />
+          Your browser does not support HTML5 video.
         </video>
       ) : (
-        // Fallback image if video completely fails to load
+        // Fallback with CDN-optimized image
         <div 
           className="absolute inset-0 hidden lg:block bg-cover bg-center"
           style={{ 
@@ -340,7 +350,6 @@ const Hero = ({ isAuthModalOpen = false }) => {
               ))}
             </div>
           ) : (
-            // No matching subcategories found in database
             <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg border border-red-700/50">
               No matching categories found in database. Please add the required subcategories.
             </div>

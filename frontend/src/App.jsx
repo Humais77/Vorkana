@@ -19,6 +19,7 @@ import Toaster from './components/Toaster';
 
 // Optimized PreloadLink
 import PreloadLink from './PreloadLink';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Cache for instant loading
 const COMPONENT_CACHE = new Map();
@@ -381,6 +382,7 @@ const App = () => {
   return (
     <BrowserRouter>
       <SecurityProvider>
+        <ErrorBoundary/>
         <Toaster/>
         <ScrollToTop />
         <NavigationProgress />
