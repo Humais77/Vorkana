@@ -142,7 +142,9 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 security(app);
-
+console.log('Server time:', new Date());
+console.log('UTC time:', new Date().toUTCString());
+console.log('Timezone offset:', new Date().getTimezoneOffset());
 // ==================== RATE LIMITING ====================
 
 const MemoryStore = require('express-rate-limit').MemoryStore;

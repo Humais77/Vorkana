@@ -33,9 +33,7 @@ class CSRFMiddleware {
     return token;
   }
 
-  // Validate CSRF token
- // csrf.middleware.js - UPDATE validateToken function
-validateToken(req, token) {
+ validateToken = (req, token) => {
   if (!token) {
     return { valid: false, error: 'CSRF token missing' };
   }
@@ -52,30 +50,68 @@ validateToken(req, token) {
     return { valid: false, error: 'CSRF token expired' };
   }
 
-  // SPECIAL CASE: For logout, we need flexible session matching
-  // because session might already be cleared or user might be logging out from different device
-  const sessionId = req.sessionId || req.user?._id || 'anonymous';
-  const tokenSessionId = tokenData.sessionId;
-  
-  // Allow logout even if session doesn't match exactly
-  // This handles cases like: logout from another device, forced logout, etc.
-  if (tokenSessionId !== sessionId && tokenSessionId !== 'anonymous') {
-    console.log('CSRF session mismatch for logout - allowing:', {
-      tokenSessionId,
-      reqSessionId: sessionId,
-      path: req.path
-    });
-    // Update token session ID to match current session
-    tokenData.sessionId = sessionId;
-    this.csrfTokens.set(token, tokenData);
-  }
-
   // Refresh token expiry on successful validation
   tokenData.expiresAt = Date.now() + this.tokenExpiry;
   this.csrfTokens.set(token, tokenData);
 
   return { valid: true, tokenData };
-}
+};
+
+// UPDATE requireCSRF method - make it more lenient
+requireCSRF = (req, res, next) => {
+  // Skip CSRF for safe methods and auth endpoints
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  // Skip for auth endpoints (except logout)
+  const publicAuthEndpoints = [
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password',
+    '/api/auth/reactivate',
+    '/api/auth/refresh'
+  ];
+  
+  if (publicAuthEndpoints.includes(req.path)) {
+    return next();
+  }
+
+  // Get token from headers or body
+  let token = req.headers['x-csrf-token'] || req.body?.csrfToken;
+  
+  // Fallback to cookie if not in headers/body
+  if (!token) {
+    token = req.cookies?.csrfToken;
+  }
+
+  if (!token) {
+    return res.status(403).json({
+      success: false,
+      message: 'CSRF token required',
+      code: 'CSRF_TOKEN_REQUIRED'
+    });
+  }
+
+  const validation = this.validateToken(req, token);
+  
+  if (!validation.valid) {
+    // For logout, be more lenient
+    if (req.path === '/api/auth/logout') {
+      console.warn('CSRF validation failed for logout, proceeding anyway');
+      return next();
+    }
+    
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID'
+    });
+  }
+
+  next();
+};
 requireCSRF = (req, res, next) => {
   // Skip CSRF for safe methods
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
@@ -190,21 +226,23 @@ attachCSRF = (req, res, next) => {
   next();
 };
 
-  // Set CSRF cookie
   setCSRFCookie(res, token) {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const isSecure = isProduction;
-    
-    res.cookie('csrfToken', token, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isProduction ? 'strict' : 'lax',
-      path: '/',
-      maxAge: this.tokenExpiry,
-      ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-      partitioned: true
-    });
-  }
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isSecure = isProduction;
+  
+  // Use expires instead of maxAge
+  const expires = new Date(Date.now() + this.tokenExpiry);
+  
+  res.cookie('csrfToken', token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/',
+    expires: expires, // Use expires
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+    partitioned: true
+  });
+}
 
   // Clear CSRF cookie
   clearCSRFCookie(res) {

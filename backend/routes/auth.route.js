@@ -43,7 +43,8 @@ const {
 const SessionMiddleware = require("../middleware/session.middleware");
 const SessionService = require("../services/session.service");
 const CSRFMiddleware = require("../middleware/csrf.middleware");
-
+const Session = require("../models/session.model")
+const jwt = require("jsonwebtoken");
 // Import cache middleware
 const { 
   createCacheMiddleware, 
@@ -384,7 +385,102 @@ router.post("/csrf-token/refresh",
   clearAuthCache,
   refreshCSRFToken
 );
-
+router.get("/debug/session",
+  SessionMiddleware.authenticate,
+  async (req, res) => {
+  try {
+    const token = req.cookies?.token;
+    const refreshToken = req.cookies?.refreshToken;
+    
+    let tokenStatus = {
+      exists: !!token,
+      length: token?.length,
+      preview: token ? token.substring(0, 30) + '...' : null
+    };
+    
+    let decoded;
+    let verification = { success: false, error: null };
+    
+    if (token) {
+      try {
+        // Try to verify
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+        verification.success = true;
+        verification.expiresAt = new Date(decoded.exp * 1000);
+        verification.expiresIn = Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60);
+        
+        tokenStatus = {
+          ...tokenStatus,
+          valid: true,
+          payload: {
+            id: decoded.id,
+            role: decoded.role,
+            type: decoded.type,
+            exp: decoded.exp,
+            iat: decoded.iat
+          },
+          expiresAt: verification.expiresAt.toISOString(),
+          expiresIn: `${verification.expiresIn} minutes`
+        };
+      } catch (verifyError) {
+        verification.success = false;
+        verification.error = verifyError.name;
+        verification.message = verifyError.message;
+        
+        // Try to decode anyway
+        decoded = jwt.decode(token);
+        
+        tokenStatus = {
+          ...tokenStatus,
+          valid: false,
+          error: verifyError.name,
+          errorMessage: verifyError.message,
+          decodedPayload: decoded,
+          expiresAt: decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : null
+        };
+      }
+    }
+    
+    // Get session
+    const session = await Session.findOne({
+      token: token,
+      userId: req.user?._id
+    }).lean();
+    
+    res.json({
+      success: true,
+      token: tokenStatus,
+      verification: verification,
+      session: {
+        exists: !!session,
+        sessionId: session?._id,
+        isActive: session?.isActive,
+        expiresAt: session?.expiresAt,
+        lastActivity: session?.lastActivity,
+        idleTime: session ? Date.now() - new Date(session.lastActivity).getTime() : null,
+        idleTimeMinutes: session ? Math.round((Date.now() - new Date(session.lastActivity).getTime()) / 1000 / 60) + ' minutes' : null
+      },
+      user: req.user ? {
+        _id: req.user._id,
+        role: req.user.role,
+        lastSeenAt: req.user.lastSeenAt,
+        isOnline: req.user.isOnline
+      } : null,
+      environment: {
+        jwtSecretLength: process.env.JWT_SECRET?.length || 0,
+        refreshSecretLength: process.env.JWT_REFRESH_SECRET?.length || 0,
+        nodeEnv: process.env.NODE_ENV
+      }
+    });
+  } catch (error) {
+    console.error('Debug endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+)
 // ==================== VERIFICATION ROUTES (No Cache) ====================
 
 // Verify email

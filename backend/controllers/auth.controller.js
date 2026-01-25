@@ -14,57 +14,115 @@ const SessionMiddleware = require("../middleware/session.middleware.js")
 const cache = require('../utils/cache.js');
 const Session = require('../models/session.model');
 const CSRFMiddleware = require('../middleware/csrf.middleware');
-const perfMiddleware = (req, res, next) => {
-  req.startTime = performance.now();
-  next();
-};
-
-// Cached bcrypt comparison for timing attack prevention
-const fakeCompare = async () => {
-  return await bcrypt.compare('fake', '$2b$10$fakeHashForTimingPrevention');
-};
+// auth.controller.js - REPLACE these functions at the top
 
 const generateToken = (id, role = 'user') => {
-  return jwt.sign(
-    { 
-      id, 
-      role,  // Add role to token
-      type: 'access'
-    }, 
-    process.env.JWT_SECRET, 
-    {
-      expiresIn: role === 'admin' ? '1h' : '3h', // Admin: 1 hour, Users: 3 hours
-      issuer: 'Vorkanna',
-      audience: 'Vorkanna-web'
-    }
-  );
+  try {
+    const expiresIn = role === 'admin' ? '1h' : '3h';
+    console.log(`🔐 Generating ${role} token, expires in: ${expiresIn}`);
+    
+    const token = jwt.sign(
+      { 
+        id, 
+        role,
+        type: 'access',
+        iat: Math.floor(Date.now() / 1000)
+      }, 
+      process.env.JWT_SECRET, 
+      {
+        expiresIn,
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
+    
+    // Verify it was created correctly
+    const decoded = jwt.decode(token);
+    console.log(`✅ Token generated for ${id}:`, {
+      expiresAt: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : 'unknown',
+      expiresIn: decoded.exp ? `${Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60)} minutes` : 'unknown'
+    });
+    
+    return token;
+  } catch (error) {
+    console.error('❌ Token generation failed:', error);
+    throw error;
+  }
 };
 
 const generateRefreshToken = (id, role = 'user') => {
-  return jwt.sign(
-    { 
-      id, 
-      role,  // Add role to refresh token
-      type: 'refresh' 
-    },
-    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
-    {
-      expiresIn: role === 'admin' ? '7d' : '30d', // Admin: 7 days, Users: 30 days
-      issuer: 'Vorkanna',
-      audience: 'Vorkanna-web'
+  try {
+    const expiresIn = role === 'admin' ? '7d' : '30d';
+    console.log(`🔐 Generating ${role} refresh token, expires in: ${expiresIn}`);
+    
+    const token = jwt.sign(
+      { 
+        id, 
+        role,
+        type: 'refresh',
+        iat: Math.floor(Date.now() / 1000)
+      },
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+      {
+        expiresIn,
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
+    
+    return token;
+  } catch (error) {
+    console.error('❌ Refresh token generation failed:', error);
+    throw error;
+  }
+};
+
+// UPDATED verifyToken functions
+const verifyToken = async (token) => {
+  try {
+    if (!token || typeof token !== 'string') {
+      throw new Error('Invalid token format');
     }
-  );
+    
+    console.log('🔍 Verifying token:', {
+      length: token.length,
+      startsWith: token.substring(0, 10) + '...'
+    });
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('✅ Token verified:', {
+      id: decoded.id,
+      role: decoded.role,
+      expiresAt: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : 'none',
+      expiresIn: decoded.exp ? Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60) + ' minutes' : 'none'
+    });
+    
+    return decoded;
+  } catch (error) {
+    console.error('❌ Token verification failed:', {
+      name: error.name,
+      message: error.message,
+      tokenLength: token?.length,
+      tokenStart: token?.substring(0, 20)
+    });
+    throw error;
+  }
 };
 
-const verifyToken = (token) => {
-  return promisify(jwt.verify)(token, process.env.JWT_SECRET);
-};
-
-const verifyRefreshToken = (token) => {
-  return promisify(jwt.verify)(
-    token, 
-    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
-  );
+const verifyRefreshToken = async (token) => {
+  try {
+    if (!token || typeof token !== 'string') {
+      throw new Error('Invalid refresh token format');
+    }
+    
+    return await promisify(jwt.verify)(
+      token, 
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+    );
+  } catch (error) {
+    console.error('Refresh token verification failed:', error.message);
+    throw error;
+  }
 };
 
 // ========== SECURITY FUNCTIONS ==========
@@ -1289,13 +1347,12 @@ const validateCSRF = (req) => {
   return CSRFMiddleware.validateToken(req, token);
 };
 
-// auth.controller.js - UPDATE logout function
 const logout = asyncHandler(async (req, res) => {
   try {
     console.log('🚪 Logout request');
     
     // Logout session if we have one
-    if (req.sessionID && mongoose.Types.ObjectId.isValid(req.sessionID)) {
+    if (req.sessionID) {
       try {
         await SessionService.logoutSession(
           req.sessionID,
@@ -1308,7 +1365,7 @@ const logout = asyncHandler(async (req, res) => {
       }
     }
     
-    // Clear ALL cookies
+    // Clear ALL cookies more aggressively
     const clearCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -1316,24 +1373,27 @@ const logout = asyncHandler(async (req, res) => {
       path: '/'
     };
 
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+    // Clear all possible auth cookies
+    const cookiesToClear = ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'oauth_state'];
+    cookiesToClear.forEach(cookie => {
       res.clearCookie(cookie, clearCookieOptions);
     });
 
     // Clear CSRF cookie
     CSRFMiddleware.clearCSRFCookie(res);
     
-    console.log('✅ Logout completed');
+    console.log('✅ Logout completed - all cookies cleared');
 
     res.json({
       success: true,
-      message: 'Logged out successfully'
+      message: 'Logged out successfully',
+      requiresReload: true // Add this flag for frontend
     });
 
   } catch (error) {
     console.error('Logout error:', error);
     
-    // Clear cookies on error
+    // Still clear cookies on error
     const clearCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -1347,7 +1407,8 @@ const logout = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Logged out'
+      message: 'Logged out',
+      requiresReload: true
     });
   }
 });

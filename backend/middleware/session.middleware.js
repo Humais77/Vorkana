@@ -21,23 +21,21 @@ class SessionMiddleware {
   
   }
  getCookieConfig = () => {
-    const isProd = process.env.NODE_ENV === 'production';
-    
-    const baseConfig = {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      path: '/',
-      partitioned: true
-    };
-
-    // Add domain for production
-    if (isProd && process.env.COOKIE_DOMAIN) {
-      baseConfig.domain = process.env.COOKIE_DOMAIN;
-    }
-
-    return baseConfig;
+  const isProd = process.env.NODE_ENV === 'production';
+  
+  const baseConfig = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/'
   };
+
+  if (isProd && process.env.COOKIE_DOMAIN) {
+    baseConfig.domain = process.env.COOKIE_DOMAIN;
+  }
+
+  return baseConfig;
+};
  authenticate = async (req, res, next) => {
   try {
     let token = req.cookies?.token;
@@ -49,9 +47,14 @@ class SessionMiddleware {
 
     let sessionResult;
     
+    // Try to validate current token
     if (token) {
       sessionResult = await SessionService.validateSession(token, refreshToken);
-    } else if (refreshToken) {
+    }
+    
+    // If validation failed but we have refresh token, try refresh
+    if ((!sessionResult || !sessionResult.valid) && refreshToken) {
+      console.log('Attempting session refresh...');
       try {
         const refreshed = await SessionService.refreshSession(refreshToken);
         if (refreshed) {
@@ -66,6 +69,7 @@ class SessionMiddleware {
           };
         }
       } catch (refreshError) {
+        console.error('Session refresh failed:', refreshError.message);
         this.clearAuthCookies(res);
         return this.handleUnauthorized(res, 'Session expired');
       }
@@ -76,7 +80,7 @@ class SessionMiddleware {
       return this.handleUnauthorized(res, 'Session expired. Please login again.');
     }
 
-    // Get user
+    // Get user and validate
     const user = await User.findById(sessionResult.userId);
     
     if (!user || !user.isActive) {
@@ -85,26 +89,22 @@ class SessionMiddleware {
       return this.handleUnauthorized(res, 'Account not found or deactivated');
     }
 
-    // CRITICAL: Set sessionID on request object
+    // Set session data
     req.sessionID = sessionResult.sessionId;
-    
-    // Update last seen
-    user.lastSeenAt = new Date();
-    await user.save({ validateBeforeSave: false });
-
-    // Set request data
     req.user = user;
     req.token = sessionResult.token;
     req.isAdmin = user.role === 'admin';
 
+    // Update last seen
+    user.lastSeenAt = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    // Generate CSRF token if not present
     if (!req.cookies?.csrfToken) {
       CSRFMiddleware.generateToken(req, res);
     }
 
-    console.log(`✅ Authenticated: ${user.email}, Session: ${req.sessionID}`);
-
     next();
-
   } catch (error) {
     console.error('Authentication error:', error);
     this.clearAuthCookies(res);
@@ -275,43 +275,67 @@ handleRefresh = async (req, res) => {
       });
     }
   };
- setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
-  const cookieConfig = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/'
-  };
+setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isSecure = isProduction;
+  
+  // Access token cookie (3 hours for users, 1 hour for admins)
+  // Extract role from token to set appropriate expiry
+  let decoded;
+  try {
+    decoded = jwt.decode(token);
+  } catch (error) {
+    decoded = { role: 'user' };
+  }
+  
+  const isAdmin = decoded.role === 'admin';
+  const accessTokenMaxAge = isAdmin ? 60 * 60 * 1000 : 3 * 60 * 60 * 1000;
 
-  // Access token (1 hour)
   res.cookie('token', token, {
-    ...cookieConfig,
-    maxAge: 60 * 60 * 1000
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+    maxAge: accessTokenMaxAge,
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+    partitioned: true
   });
 
-  // Refresh token (7 days)
+  // Refresh token cookie (30 days)
   res.cookie('refreshToken', refreshToken, {
-    ...cookieConfig,
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+    partitioned: true
   });
 
-  // CSRF token if provided
+  // CSRF token cookie (24 hours)
   if (csrfToken) {
     res.cookie('csrfToken', csrfToken, {
-      ...cookieConfig,
-      maxAge: 24 * 60 * 60 * 1000
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: isProduction ? 'none' : 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000,
+      ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+      partitioned: true
     });
   }
 
-  // Client-side auth flag
+  // Client-side auth flag (same as token)
   res.cookie('isAuthenticated', 'true', {
-    ...cookieConfig,
     httpOnly: false,
-    maxAge: 60 * 60 * 1000
+    secure: isSecure,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+    maxAge: accessTokenMaxAge,
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+    partitioned: true
   });
 };
-
-// Update clearAuthCookies
 clearAuthCookies = (res) => {
   const clearOpts = {
     path: '/',
@@ -320,10 +344,17 @@ clearAuthCookies = (res) => {
     sameSite: 'lax'
   };
 
-  res.clearCookie('token', clearOpts);
-  res.clearCookie('refreshToken', clearOpts);
-  res.clearCookie('csrfToken', clearOpts);
-  res.clearCookie('isAuthenticated', { ...clearOpts, httpOnly: false });
+  // Clear all possible auth cookies
+  const cookies = ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'oauth_state'];
+  cookies.forEach(cookie => {
+    res.clearCookie(cookie, clearOpts);
+  });
+
+  // Also clear with different paths
+  res.clearCookie('token', { ...clearOpts, path: '/' });
+  res.clearCookie('refreshToken', { ...clearOpts, path: '/' });
+  res.clearCookie('csrfToken', { ...clearOpts, path: '/' });
+  res.clearCookie('isAuthenticated', { ...clearOpts, path: '/', httpOnly: false });
 };
 
   // Handle session errors

@@ -8,30 +8,68 @@ const geoip = require('geoip-lite');
 const mongoose = require('mongoose');
 class SessionService {
   constructor() {
-     this.idleTimeout = 3 * 60 * 60 * 1000;
-     this.adminIdleTimeout = 60 * 60 * 1000;
-    this.sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days
-    this.tokenDuration = 60 * 60 * 1000; // 1 hour for access token
+        this.idleTimeout = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+    this.adminIdleTimeout = 1 * 60 * 60 * 1000; // 1 hour for admins
+    this.sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days for refresh tokens
+    this.tokenDuration = 3 * 60 * 60 * 1000; // 3 hours for access token
     this.maxSessionsPerUser = 10;
-     this.adminIdleTimeout = 60 * 60 * 1000;
+
   }
 
-  generateTokens(userId, role = 'user') {
-  const token = jwt.sign(
-    { 
-      id: userId, 
-      type: 'access',
-      role: role // Add role to token
-    },
-    process.env.JWT_SECRET,
-    { 
-      expiresIn: role === 'admin' ? '1h' : '3h' // Admin: 1 hour, Users: 3 hours
-    }
-  );
+ generateTokens(userId, role = 'user') {
+  console.log('🔐 Generating tokens for:', { userId, role });
+  
+  try {
+    // Generate access token
+    const token = jwt.sign(
+      { 
+        id: userId, 
+        type: 'access',
+        role: role
+      },
+      process.env.JWT_SECRET,
+      { 
+        expiresIn: role === 'admin' ? '1h' : '3h',
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
 
-  const refreshToken = crypto.randomBytes(64).toString('hex');
+    // Generate refresh token
+    const refreshToken = jwt.sign(
+      {
+        id: userId,
+        type: 'refresh',
+        role: role
+      },
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+      {
+        expiresIn: role === 'admin' ? '7d' : '30d',
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
 
-  return { token, refreshToken };
+    // Verify tokens were created
+    const decodedToken = jwt.decode(token);
+    const decodedRefresh = jwt.decode(refreshToken);
+    
+    console.log('✅ Tokens generated successfully:', {
+      accessToken: {
+        expiresAt: decodedToken.exp ? new Date(decodedToken.exp * 1000).toISOString() : null,
+        expiresInMinutes: decodedToken.exp ? Math.round((decodedToken.exp * 1000 - Date.now()) / 1000 / 60) : null
+      },
+      refreshToken: {
+        expiresAt: decodedRefresh.exp ? new Date(decodedRefresh.exp * 1000).toISOString() : null,
+        expiresInDays: decodedRefresh.exp ? Math.round((decodedRefresh.exp * 1000 - Date.now()) / 1000 / 60 / 60 / 24) : null
+      }
+    });
+
+    return { token, refreshToken };
+  } catch (error) {
+    console.error('❌ Token generation failed:', error);
+    throw new Error(`Failed to generate tokens: ${error.message}`);
+  }
 }
   async createSession(userId, req, metadata = {}) {
     try {
@@ -167,70 +205,113 @@ class SessionService {
       throw error;
     }
   }
-
-  async validateSession(token, refreshToken) {
+async validateSession(token, refreshToken) {
+  try {
+    console.log('🔍 Session validation started');
+    
+    if (!token) {
+      console.log('❌ No token provided');
+      return { valid: false, error: 'No token provided' };
+    }
+    
+    // First try to verify the token
+    let decoded;
+    let tokenValid = false;
+    
     try {
-      // Decode token to check role
-      let decoded;
-      try {
-        decoded = jwt.decode(token);
-      } catch (decodeError) {
-        console.error('Token decode error:', decodeError);
-      }
-      
-      const isAdmin = decoded?.role === 'admin';
-      
-      // SET TIMEOUTS BASED ON ROLE
-      const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
-      
-      let session = await Session.findOne({
-        token,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      tokenValid = true;
+      console.log('✅ Token verified successfully:', {
+        id: decoded.id,
+        role: decoded.role,
+        expiresAt: new Date(decoded.exp * 1000).toISOString(),
+        expiresIn: Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60) + ' minutes'
       });
+    } catch (verifyError) {
+      console.log('⚠️ Token verification error:', verifyError.name);
+      
+      if (verifyError.name === 'TokenExpiredError') {
+        console.log('⏰ Token expired at:', new Date(verifyError.expiredAt).toISOString());
+        // Try to decode to get payload even if expired
+        decoded = jwt.decode(token);
+        
+        // If we have refresh token, try to refresh
+        if (refreshToken) {
+          console.log('🔄 Attempting refresh with refresh token');
+          return await this.refreshSession(refreshToken);
+        }
+      } else if (verifyError.name === 'JsonWebTokenError') {
+        console.log('❌ Invalid token:', verifyError.message);
+        return { valid: false, error: 'Invalid token' };
+      }
+    }
+    
+    if (!decoded) {
+      console.log('❌ Could not decode token');
+      return { valid: false, error: 'Invalid token format' };
+    }
+    
+    const isAdmin = decoded.role === 'admin';
+    const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
+    
+    // Find session in database
+    const session = await Session.findOne({
+      token: token, // Match exact token
+      isActive: true,
+      expiresAt: { $gt: new Date() }
+    });
 
-      // If token not found but have refresh token, try refresh
-      if (!session && refreshToken) {
+    if (!session) {
+      console.log('📝 Session not found in database');
+      // Try refresh if available
+      if (refreshToken) {
         return await this.refreshSession(refreshToken);
       }
-
-      if (!session) {
-        return { valid: false, error: 'Session not found' };
-      }
-
-      const idleTime = Date.now() - session.lastActivity.getTime();
-      
-      if (idleTime > idleTimeout) {
-        console.log(`[SESSION TIMEOUT] ${isAdmin ? 'Admin' : 'User'} session timeout after ${Math.round(idleTime/1000/60)} minutes`);
-        await this.logoutSession(session._id, session.userId, isAdmin ? 'admin_timeout' : 'timeout');
-        return { 
-          valid: false, 
-          error: isAdmin ? 'Admin session timeout (1 hour)' : 'Session timeout (3 hours)',
-          isAdmin: isAdmin,
-          reason: 'timeout'
-        };
-      }
-
-      // Update activity
-      session.lastActivity = new Date();
-      await session.save({ validateBeforeSave: false });
-
-      return {
-        valid: true,
-        userId: session.userId,
-        sessionId: session._id,
-        token: session.token,
-        refreshToken: session.refreshToken,
-        lastActivity: session.lastActivity,
-        isAdmin: isAdmin,
-        idleTimeout: idleTimeout,
-        timeLeft: idleTimeout - idleTime
-      };
-    } catch (error) {
-      console.error('Session validation error:', error.message);
-      return { valid: false, error: error.message };
+      return { valid: false, error: 'Session not found' };
     }
+
+    // Check idle timeout
+    const idleTime = Date.now() - session.lastActivity.getTime();
+    console.log(`⏱️ Idle check: ${Math.round(idleTime/1000/60)}min / ${Math.round(idleTimeout/1000/60)}min timeout`);
+    
+    if (idleTime > idleTimeout) {
+      console.log(`⏰ Session idle timeout reached`);
+      await this.logoutSession(session._id, session.userId, 'timeout');
+      return { 
+        valid: false, 
+        error: isAdmin ? 'Admin session timeout (1 hour)' : 'Session timeout (3 hours)',
+        reason: 'timeout'
+      };
+    }
+
+    // Update activity
+    session.lastActivity = new Date();
+    // Extend session if close to expiration
+    if (session.expiresAt.getTime() - Date.now() < 24 * 60 * 60 * 1000) {
+      session.expiresAt = new Date(Date.now() + this.sessionDuration);
+    }
+    await session.save({ validateBeforeSave: false });
+
+    console.log('✅ Session validated successfully');
+    
+    return {
+      valid: true,
+      userId: session.userId,
+      sessionId: session._id,
+      token: session.token,
+      refreshToken: session.refreshToken,
+      lastActivity: session.lastActivity,
+      isAdmin,
+      idleTimeout,
+      timeLeft: idleTimeout - idleTime,
+      tokenExpiry: decoded.exp ? new Date(decoded.exp * 1000) : null
+    };
+  } catch (error) {
+    console.error('❌ Session validation error:', error.message);
+    console.error(error.stack);
+    return { valid: false, error: error.message };
   }
+}
 
   async updateActivity(sessionId) {
     try {

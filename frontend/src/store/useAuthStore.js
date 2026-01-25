@@ -292,50 +292,62 @@ export const useAuthStore = create(
       }),
       
       logout: productionErrorBoundary(async (isAdmin = false) => {
-        set({ loading: true });
-        
-        try {
-          // Call logout API
-          const authAPI = (await import('../api/auth')).authAPI;
-          await authAPI.logout();
-          
-          // Production cleanup
-          emergencyCleanup();
-          
-          // Clear state
-          set({ 
-            user: null,
-            isAuthenticated: false,
-            loading: false,
-            error: null,
-            lastActivity: 0
-          });
-          
-          // Production redirect (prevents back button issues)
-          if (typeof window !== 'undefined') {
-            // Clear history to prevent back navigation
-            window.history.replaceState(null, '', '/signin');
-            window.location.href = '/signin?logout=success&t=' + Date.now();
-          }
-          
-        } catch (error) {
-          console.error('Logout error:', error);
-          
-          // Fallback cleanup
-          emergencyCleanup();
-          
-          set({ 
-            user: null,
-            isAuthenticated: false,
-            loading: false,
-            error: null
-          });
-          
-          if (typeof window !== 'undefined') {
-            window.location.href = '/signin?logout=fallback&t=' + Date.now();
-          }
+  set({ loading: true });
+  
+  try {
+    // Call logout API
+    const authAPI = (await import('../api/auth')).authAPI;
+    await authAPI.logout();
+    
+    // Production cleanup - clear ALL storage
+    emergencyCleanup();
+    
+    // Clear ALL local storage (not just vorkanna keys)
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Clear all cookies client-side too
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.trim().split('=');
+        if (name) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;`;
         }
-      }),
+      });
+    }
+    
+    // Clear state
+    set({ 
+      user: null,
+      isAuthenticated: false,
+      loading: false,
+      error: null,
+      lastActivity: 0
+    });
+    
+    console.log('✅ Logout completed - all storage cleared');
+
+  } catch (error) {
+    console.error('Logout error:', error);
+    
+    // Fallback cleanup
+    emergencyCleanup();
+    
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+    
+    set({ 
+      user: null,
+      isAuthenticated: false,
+      loading: false,
+      error: null
+    });
+  }
+}),
       
       adminLogout: productionErrorBoundary(async () => {
         return get().logout(true);

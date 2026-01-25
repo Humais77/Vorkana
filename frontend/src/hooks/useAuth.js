@@ -278,8 +278,6 @@ export const useRegister = () => {
     onSettled: () => setLoading(false),
   });
 };
-
-// hooks/useAuth.js - UPDATE useLogout
 export const useLogout = () => {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
@@ -290,18 +288,31 @@ export const useLogout = () => {
       toast.loading('Logging out...');
     },
     onSuccess: () => {
-      logout(); // This updates the store
+      // Force clear auth store
+      logout();
+      
+      // Ensure all storage is cleared
+      localStorage.clear();
+      sessionStorage.clear();
+      
       toast.success('Logged out successfully');
-      navigate('/signin');
+      
+      // Use window.location instead of navigate to ensure full page reload
+      window.location.href = '/signin';
     },
     onError: (error) => {
-      logout(); // Still update store on error
+      console.error('Logout error:', error);
+      
+      // Still clear everything on error
+      logout();
+      localStorage.clear();
+      sessionStorage.clear();
+      
       toast.success('Logged out');
-      navigate('/signin');
+      window.location.href = '/signin';
     }
   });
 };
-
 export const useRefreshSession = () => {
   return useMutation({
     mutationFn: authAPI.refreshSession,
