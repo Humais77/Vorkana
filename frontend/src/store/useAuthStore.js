@@ -1,191 +1,306 @@
-// store/useAuthStore.js
+// store/useAuthStore.js - PRODUCTION READY
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-// Unified logout utility function
-const comprehensiveLogout = async () => {
-  try {
-    // Array of logout endpoints to call
-    const logoutEndpoints = [
-      '/api/admin/logout',
-      '/api/auth/logout'
-    ];
-
-    // Call all logout endpoints concurrently
-    const logoutPromises = logoutEndpoints.map(endpoint => 
-      fetch(endpoint, {
-        method: 'POST',
-        credentials: 'include', // Important for cookies
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }).catch(err => {
-        console.error(`Logout failed for ${endpoint}:`, err);
-        return null;
-      })
-    );
-
-    await Promise.all(logoutPromises);
-
-    return true;
-  } catch (error) {
-    console.error('Comprehensive logout error:', error);
-    return false;
-  }
+// Production storage keys (versioned to avoid conflicts)
+const PRODUCTION_STORAGE_KEYS = {
+  USER_INFO: 'vorkanna_user_v1',
+  AUTH_STATE: 'vorkanna_auth_state_v1',
+  CSRF_TOKEN: 'vorkanna_csrf_v1',
+  SESSION_ID: 'vorkanna_session_v1'
 };
 
-// Clear all browser storage
-const clearAllStorage = () => {
-  // Clear localStorage
-  const localStorageKeys = [
-    'userInfo',
-    'adminToken',
-    'adminRefreshToken',
-    'adminInfo',
-    'token',
-    'refreshToken',
-    'auth-storage',
-    'admin-storage'
-  ];
-
-  localStorageKeys.forEach(key => {
-    localStorage.removeItem(key);
-  });
-
-  // Clear sessionStorage
-  sessionStorage.clear();
-
-  // Clear cookies (by setting expiration)
-  if (typeof document !== 'undefined') {
-    document.cookie.split(';').forEach(cookie => {
-      const [name] = cookie.trim().split('=');
-      if (name) {
-        // Clear for all paths and domains
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+// Emergency cleanup utility
+const emergencyCleanup = () => {
+  try {
+    // Clear ALL localStorage items related to auth
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach(key => {
+      if (
+        key.includes('auth') || 
+        key.includes('token') || 
+        key.includes('user') || 
+        key.includes('csrf') || 
+        key.includes('session') ||
+        key.includes('vorkanna') ||
+        key.includes('admin')
+      ) {
+        localStorage.removeItem(key);
       }
     });
+    
+    // Clear sessionStorage
+    sessionStorage.clear();
+    
+    // Clear cookies
+    if (typeof document !== 'undefined') {
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.trim().split('=');
+        if (name) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+        }
+      });
+    }
+    
+    console.log('🧹 Emergency cleanup completed');
+  } catch (error) {
+    console.error('Emergency cleanup error:', error);
   }
 };
 
-const getUserFromStorage = () => {
-  try {
-    const userInfo = localStorage.getItem('userInfo');
-    if (userInfo) {
-      const parsed = JSON.parse(userInfo);
+// Production error boundary for actions
+const productionErrorBoundary = (action) => {
+  return (...args) => {
+    try {
+      return action(...args);
+    } catch (error) {
+      console.error('🚨 Production error in auth store action:', {
+        action: action.name || 'anonymous',
+        error: error.message,
+        stack: error.stack
+      });
       
-      // Validate required fields
-      if (!parsed._id || !parsed.email || !parsed.name) {
-        console.warn('Invalid user data in storage');
-        return null;
+      emergencyCleanup();
+      
+      // Force logout state
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.location.href = '/signin?error=auth_store&time=' + Date.now();
+        }, 100);
       }
       
-      return parsed;
+      throw error;
     }
-    return null;
+  };
+};
+
+// Validate and sanitize user data for production
+const validateAndSanitizeUser = (userData) => {
+  try {
+    // Basic validation
+    if (!userData || typeof userData !== 'object') {
+      console.warn('Invalid user data: not an object');
+      return null;
+    }
+    
+    // REQUIRED FIELDS validation
+    const requiredFields = {
+      _id: userData._id,
+      email: userData.email,
+      name: userData.name
+    };
+    
+    for (const [field, value] of Object.entries(requiredFields)) {
+      if (!value || typeof value !== 'string' || value.trim().length === 0) {
+        console.warn(`Invalid user data: missing or invalid ${field}`);
+        return null;
+      }
+    }
+    
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email.trim())) {
+      console.warn('Invalid user data: invalid email format');
+      return null;
+    }
+    
+    // Return sanitized user object
+    return {
+      // Required fields (sanitized)
+      _id: userData._id.toString().trim(),
+      email: userData.email.toLowerCase().trim(),
+      name: userData.name.trim(),
+      role: userData.role === 'admin' ? 'admin' : 'user',
+      
+      // Optional fields with validation
+      picture: typeof userData.picture === 'string' && 
+                userData.picture.startsWith('http') ? 
+                userData.picture : null,
+      
+      emailVerified: Boolean(userData.emailVerified),
+      isOnline: Boolean(userData.isOnline),
+      lastSeenAt: userData.lastSeenAt || new Date().toISOString(),
+      accountType: ['basic', 'premium', 'business'].includes(userData.accountType) ? 
+                   userData.accountType : 'basic',
+      
+      // Safely handled optional fields
+      phoneNumber: typeof userData.phoneNumber === 'string' && 
+                   userData.phoneNumber.length <= 20 ? 
+                   userData.phoneNumber.trim() : null,
+      
+      country: typeof userData.country === 'string' && 
+               userData.country.length <= 100 ? 
+               userData.country.trim() : null,
+      
+      city: typeof userData.city === 'string' && 
+            userData.city.length <= 100 ? 
+            userData.city.trim() : null,
+      
+      bio: typeof userData.bio === 'string' && 
+           userData.bio.length <= 500 ? 
+           userData.bio.trim() : null,
+      
+      // Additional metadata
+      createdAt: userData.createdAt || null,
+      updatedAt: userData.updatedAt || null,
+      
+      // Prevent prototype pollution
+      __proto__: undefined,
+      constructor: undefined
+    };
   } catch (error) {
-    console.error('Error parsing user from storage:', error);
-    localStorage.removeItem('userInfo');
+    console.error('User validation error:', error);
     return null;
   }
 };
 
-const AUTH_STORAGE_KEY = 'auth-storage';
-const AUTH_VERSION = 4; // Increment version for logout changes
+// Get user from storage with production validation
+const getValidUserFromStorage = () => {
+  try {
+    const userInfo = localStorage.getItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
+    
+    if (!userInfo) return null;
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(userInfo);
+    } catch (parseError) {
+      console.error('❌ Corrupted userInfo JSON:', parseError.message);
+      localStorage.removeItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
+      return null;
+    }
+    
+    const validatedUser = validateAndSanitizeUser(parsed);
+    
+    if (!validatedUser) {
+      console.warn('🚨 Invalid user data found in storage, removing');
+      localStorage.removeItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
+      return null;
+    }
+    
+    return validatedUser;
+  } catch (error) {
+    console.error('Critical error in getValidUserFromStorage:', error);
+    emergencyCleanup();
+    return null;
+  }
+};
 
 export const useAuthStore = create(
   persist(
     (set, get) => ({
       // State
-      user: getUserFromStorage(),
+      user: getValidUserFromStorage(),
       isAuthenticated: false,
       loading: false,
       error: null,
       lastActivity: Date.now(),
       
-      // Actions
-      setLoading: (loading) => set({ loading }),
+      // Actions with production error boundaries
+      setLoading: productionErrorBoundary((loading) => {
+        set({ loading });
+      }),
       
-      setError: (error) => set({ error }),
+      setError: productionErrorBoundary((error) => {
+        set({ error });
+      }),
       
-      clearError: () => set({ error: null }),
+      clearError: productionErrorBoundary(() => {
+        set({ error: null });
+      }),
       
-      updateLastActivity: () => set({ lastActivity: Date.now() }),
+      updateLastActivity: productionErrorBoundary(() => {
+        set({ lastActivity: Date.now() });
+      }),
       
-      setAuth: (user) => {
-        if (!user || !user._id) {
+      setAuth: productionErrorBoundary((user) => {
+        const validatedUser = validateAndSanitizeUser(user);
+        
+        if (!validatedUser) {
           console.error('Invalid user data provided to setAuth');
+          set({ error: 'Invalid user data' });
           return;
         }
         
-        const userInfo = {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role || 'user',
-          picture: user.picture || null,
-          emailVerified: user.emailVerified || false,
-          isOnline: user.isOnline || true,
-          lastSeenAt: user.lastSeenAt || new Date().toISOString(),
-          accountType: user.accountType || 'basic',
-          phoneNumber: user.phoneNumber || null,
-          country: user.country || null,
-          city: user.city || null,
-          bio: user.bio || null,
+        try {
+          // Store in production storage
+          localStorage.setItem(
+            PRODUCTION_STORAGE_KEYS.USER_INFO, 
+            JSON.stringify(validatedUser)
+          );
+          
+          set({ 
+            user: validatedUser,
+            isAuthenticated: true,
+            loading: false,
+            error: null,
+            lastActivity: Date.now()
+          });
+          
+          console.log('✅ Auth state set for user:', validatedUser.email);
+        } catch (storageError) {
+          console.error('Storage error in setAuth:', storageError);
+          emergencyCleanup();
+          set({ error: 'Storage error. Please refresh.' });
+        }
+      }),
+      
+      setUser: productionErrorBoundary((userUpdates) => {
+        const currentUser = get().user;
+        if (!currentUser) return;
+        
+        const updatedUser = { 
+          ...currentUser, 
+          ...validateAndSanitizeUser(userUpdates) 
         };
         
-        set({ 
-          user: userInfo,
-          isAuthenticated: true,
-          loading: false,
-          error: null,
-          lastActivity: Date.now()
-        });
+        // Re-validate after merge
+        const validatedUser = validateAndSanitizeUser(updatedUser);
+        if (!validatedUser) {
+          console.error('Invalid user data after update');
+          return;
+        }
         
-        localStorage.setItem('userInfo', JSON.stringify(userInfo));
-      },
+        localStorage.setItem(
+          PRODUCTION_STORAGE_KEYS.USER_INFO, 
+          JSON.stringify(validatedUser)
+        );
+        
+        set({ user: validatedUser });
+      }),
       
-      setUser: (userUpdates) => {
+      updateUserField: productionErrorBoundary((field, value) => {
         const currentUser = get().user;
         if (!currentUser) return;
         
-        const updatedUser = { ...currentUser, ...userUpdates };
-        set({ user: updatedUser });
-        localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-      },
-      
-      updateUserField: (field, value) => {
-        const currentUser = get().user;
-        if (!currentUser) return;
-        
+        // Validate field update
         const updatedUser = { ...currentUser, [field]: value };
-        set({ user: updatedUser });
-        localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-      },
+        const validatedUser = validateAndSanitizeUser(updatedUser);
+        
+        if (!validatedUser) {
+          console.error(`Invalid value for field ${field}:`, value);
+          return;
+        }
+        
+        localStorage.setItem(
+          PRODUCTION_STORAGE_KEYS.USER_INFO, 
+          JSON.stringify(validatedUser)
+        );
+        
+        set({ user: validatedUser });
+      }),
       
-      logout: async (isAdmin = false) => {
+      logout: productionErrorBoundary(async (isAdmin = false) => {
         set({ loading: true });
         
         try {
-          // Call appropriate logout endpoint
-          const endpoint = isAdmin ? '/api/admin/logout' : '/api/auth/logout';
+          // Call logout API
+          const authAPI = (await import('../api/auth')).authAPI;
+          await authAPI.logout();
           
-          await fetch(endpoint, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-          }).catch(() => {
-            // If main endpoint fails, try the other one
-            const fallbackEndpoint = isAdmin ? '/api/auth/logout' : '/api/admin/logout';
-            return fetch(fallbackEndpoint, {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-            });
-          });
-          
-          // Clear all storage
-          clearAllStorage();
+          // Production cleanup
+          emergencyCleanup();
           
           // Clear state
           set({ 
@@ -193,39 +308,43 @@ export const useAuthStore = create(
             isAuthenticated: false,
             loading: false,
             error: null,
-            lastActivity: Date.now()
+            lastActivity: 0
           });
           
-          // Dispatch appropriate logout event
-          const logoutEvent = new CustomEvent('auth-logout', { 
-            detail: { isAdmin } 
-          });
-          window.dispatchEvent(logoutEvent);
-          
-          console.log(`${isAdmin ? 'Admin' : 'User'} logout successful`);
+          // Production redirect (prevents back button issues)
+          if (typeof window !== 'undefined') {
+            // Clear history to prevent back navigation
+            window.history.replaceState(null, '', '/signin');
+            window.location.href = '/signin?logout=success&t=' + Date.now();
+          }
           
         } catch (error) {
           console.error('Logout error:', error);
-          set({ error: error.message, loading: false });
           
-          // Fallback: clear everything locally even if server logout fails
-          clearAllStorage();
+          // Fallback cleanup
+          emergencyCleanup();
+          
           set({ 
             user: null,
             isAuthenticated: false,
-            loading: false
+            loading: false,
+            error: null
           });
+          
+          if (typeof window !== 'undefined') {
+            window.location.href = '/signin?logout=fallback&t=' + Date.now();
+          }
         }
-      },
+      }),
       
-      // Admin-specific logout
-      adminLogout: async () => {
+      adminLogout: productionErrorBoundary(async () => {
         return get().logout(true);
-      },
+      }),
       
-      // Force logout (for security breaches, session timeout, etc.)
-      forceLogout: () => {
-        clearAllStorage();
+      forceLogout: productionErrorBoundary(() => {
+        console.log('🚨 Force logout triggered');
+        emergencyCleanup();
+        
         set({ 
           user: null,
           isAuthenticated: false,
@@ -233,52 +352,49 @@ export const useAuthStore = create(
           error: 'Session terminated for security reasons'
         });
         
-        window.dispatchEvent(new Event('force-logout'));
-      },
+        if (typeof window !== 'undefined') {
+          window.location.href = '/signin?force_logout=true&t=' + Date.now();
+        }
+      }),
       
-      syncFromStorage: () => {
-        const user = getUserFromStorage();
+      syncFromStorage: productionErrorBoundary(() => {
+        const user = getValidUserFromStorage();
         set({ 
           user,
           isAuthenticated: !!user
         });
-      },
+      }),
       
-      checkSessionValidity: () => {
+      checkSessionValidity: productionErrorBoundary(() => {
         const state = get();
         
-        // No user = no session
-        if (!state.user) return false;
+        if (!state.user) {
+          emergencyCleanup();
+          return false;
+        }
         
-        // Check inactivity timeout (30 minutes for users, 1 hour for admins)
+        // Check inactivity timeout
         const isAdmin = state.user?.role === 'admin';
         const INACTIVITY_TIMEOUT = isAdmin 
           ? 60 * 60 * 1000 // 1 hour for admins
-          : 30 * 60 * 1000; // 30 minutes for regular users
+          : 3 * 60 * 60 * 1000; // 3 hours for users
         
         const timeSinceLastActivity = Date.now() - state.lastActivity;
         
         if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
           console.log(`Session expired due to inactivity (${isAdmin ? 'admin' : 'user'})`);
           
-          // Auto-logout with appropriate message
-          const message = isAdmin 
-            ? 'Admin session timed out due to 1 hour of inactivity'
-            : 'Session timed out due to 30 minutes of inactivity';
-          
-          set({ error: message });
-          get().logout(isAdmin);
-          
+          get().forceLogout();
           return false;
         }
         
         return true;
-      },
+      }),
       
       // Computed getters
       isAdmin: () => {
         const user = get().user;
-        return user?.role === 'admin' || user?.isAdmin === true;
+        return user?.role === 'admin';
       },
       
       isAdminUser: () => {
@@ -329,7 +445,6 @@ export const useAuthStore = create(
         const user = get().user;
         if (!user) return false;
         
-        // Admins have all permissions
         if (user.role === 'admin') return true;
         
         const permissions = {
@@ -355,7 +470,6 @@ export const useAuthStore = create(
         const user = get().user;
         if (!user) return false;
         
-        // Admins can access all features
         if (user.role === 'admin') return true;
         
         const features = {
@@ -369,26 +483,31 @@ export const useAuthStore = create(
       },
       
       // Session management
-      updateSessionData: (data) => {
+      updateSessionData: productionErrorBoundary((data) => {
         const currentUser = get().user;
         if (!currentUser) return;
         
         const updatedUser = { 
           ...currentUser, 
-          ...data,
+          ...validateAndSanitizeUser(data),
           lastSeenAt: new Date().toISOString()
         };
         
-        set({ user: updatedUser, lastActivity: Date.now() });
-        localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-      },
+        const validatedUser = validateAndSanitizeUser(updatedUser);
+        if (!validatedUser) return;
+        
+        localStorage.setItem(
+          PRODUCTION_STORAGE_KEYS.USER_INFO, 
+          JSON.stringify(validatedUser)
+        );
+        
+        set({ user: validatedUser, lastActivity: Date.now() });
+      }),
       
-      // Quick check for admin panel access
       canAccessAdminPanel: () => {
         const user = get().user;
         if (!user) return false;
         
-        // Check if user is admin and has admin permissions
         if (user.role === 'admin') {
           const hasAdminPerms = user.permissions?.length > 0 || user.isSuperAdmin === true;
           return hasAdminPerms;
@@ -397,9 +516,38 @@ export const useAuthStore = create(
         return false;
       },
       
-      // Clear state without server call (for testing/dev)
-      clearAuthState: () => {
-        clearAllStorage();
+      // Storage maintenance
+      cleanupStorage: productionErrorBoundary(() => {
+        try {
+          const allKeys = Object.keys(localStorage);
+          let cleaned = 0;
+          
+          allKeys.forEach(key => {
+            // Remove non-production keys
+            if (!key.startsWith('vorkanna_')) {
+              try {
+                localStorage.removeItem(key);
+                cleaned++;
+              } catch (e) {
+                console.warn(`Failed to remove key ${key}:`, e);
+              }
+            }
+          });
+          
+          if (cleaned > 0) {
+            console.log(`🧹 Cleaned ${cleaned} non-production storage items`);
+          }
+          
+          return cleaned;
+        } catch (error) {
+          console.error('Storage cleanup error:', error);
+          return 0;
+        }
+      }),
+      
+      // Clear state (for testing/dev)
+      clearAuthState: productionErrorBoundary(() => {
+        emergencyCleanup();
         set({
           user: null,
           isAuthenticated: false,
@@ -407,41 +555,50 @@ export const useAuthStore = create(
           error: null,
           lastActivity: Date.now()
         });
-      }
+      })
     }),
     {
-      name: AUTH_STORAGE_KEY,
-      version: AUTH_VERSION,
+      name: PRODUCTION_STORAGE_KEYS.AUTH_STATE,
+      version: 1, // Production version
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        // Only persist minimal state
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         lastActivity: state.lastActivity,
       }),
       migrate: (persistedState, version) => {
-        if (version < 4) {
-          // Migration to version 4
-          const oldState = persistedState;
-          return {
-            user: oldState.user,
-            isAuthenticated: !!oldState.user,
-            lastActivity: Date.now(),
-            loading: false,
-            error: null,
-          };
-        }
-        return persistedState;
+        console.log(`🔧 Production migration from version ${version || 'none'} to 1`);
+        
+        // Clear all old data formats
+        emergencyCleanup();
+        
+        // Return clean slate for production
+        return {
+          user: null,
+          isAuthenticated: false,
+          lastActivity: Date.now()
+        };
       },
       onRehydrateStorage: () => {
-        // Called after rehydration
-        return (state, error) => {
-          if (error) {
-            console.error('Auth store rehydration error:', error);
-          } else if (state) {
-            // Check session validity on rehydration
+        return (state) => {
+          if (state) {
+            // Production rehydration checks
             setTimeout(() => {
+              // Validate stored user data
+              if (state.user && !validateAndSanitizeUser(state.user)) {
+                console.warn('Invalid user data after rehydration, clearing');
+                state.user = null;
+                state.isAuthenticated = false;
+                localStorage.removeItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
+              }
+              
+              // Check session validity
               state.checkSessionValidity();
-            }, 1000);
+              
+              // Run storage cleanup
+              state.cleanupStorage?.();
+            }, 500);
           }
         };
       },
@@ -449,17 +606,7 @@ export const useAuthStore = create(
   )
 );
 
-// Export helper functions
-export const getCurrentUser = () => useAuthStore.getState().user;
-export const isUserAuthenticated = () => useAuthStore.getState().isAuthenticated;
-export const isUserAdmin = () => useAuthStore.getState().isAdmin();
-export const isUserSuperAdmin = () => useAuthStore.getState().isSuperAdmin();
-export const isUserEmailVerified = () => useAuthStore.getState().isEmailVerified();
-
-// Export logout utilities
-export { comprehensiveLogout, clearAllStorage };
-
-// store/useAuthStore.js
+// Production initialization
 if (typeof window !== 'undefined') {
   // Track user activity
   const trackActivity = () => {
@@ -472,32 +619,33 @@ if (typeof window !== 'undefined') {
     window.addEventListener(event, trackActivity, { passive: true });
   });
   
-  // Optional: Keep session check but make it less frequent (30 minutes)
-  // setInterval(() => {
-  //   useAuthStore.getState().checkSessionValidity();
-  // }, 30 * 60 * 1000); // Check every 30 minutes
-  
-  // Listen for storage events (for multi-tab sync)
+  // Listen for storage events (multi-tab sync)
   window.addEventListener('storage', (event) => {
-    if (event.key === 'userInfo' || event.key === AUTH_STORAGE_KEY) {
-      console.log('Auth storage changed, syncing...');
+    if (event.key === PRODUCTION_STORAGE_KEYS.USER_INFO || 
+        event.key === PRODUCTION_STORAGE_KEYS.AUTH_STATE) {
+      console.log('Production storage changed, syncing...');
       useAuthStore.getState().syncFromStorage();
     }
   });
   
   // Listen for logout events
-  window.addEventListener('auth-logout', () => {
-    console.log('Auth logout event received');
-    useAuthStore.getState().clearAuthState();
+  window.addEventListener('auth-logout-complete', () => {
+    console.log('Production auth logout event received');
+    useAuthStore.getState().forceLogout();
   });
   
-  window.addEventListener('force-logout', () => {
-    console.log('Force logout event received');
-    useAuthStore.getState().clearAuthState();
-  });
-  
-  window.addEventListener('admin-logout', () => {
-    console.log('Admin logout event received');
-    // Additional admin-specific cleanup if needed
-  });
+  // Initial storage cleanup
+  setTimeout(() => {
+    useAuthStore.getState().cleanupStorage();
+  }, 1000);
 }
+
+// Export helper functions
+export const getCurrentUser = () => useAuthStore.getState().user;
+export const isUserAuthenticated = () => useAuthStore.getState().isAuthenticated;
+export const isUserAdmin = () => useAuthStore.getState().isAdmin();
+export const isUserSuperAdmin = () => useAuthStore.getState().isSuperAdmin();
+export const isUserEmailVerified = () => useAuthStore.getState().isEmailVerified();
+
+// Export production utilities
+export { emergencyCleanup, PRODUCTION_STORAGE_KEYS };

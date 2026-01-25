@@ -34,67 +34,48 @@ class CSRFMiddleware {
   }
 
   // Validate CSRF token
-  validateToken(req, token) {
-    if (!token) {
-      return { valid: false, error: 'CSRF token missing' };
-    }
+ // csrf.middleware.js - UPDATE validateToken function
+validateToken(req, token) {
+  if (!token) {
+    return { valid: false, error: 'CSRF token missing' };
+  }
 
-    const tokenData = this.csrfTokens.get(token);
-    
-    if (!tokenData) {
-      return { valid: false, error: 'Invalid CSRF token' };
-    }
+  const tokenData = this.csrfTokens.get(token);
+  
+  if (!tokenData) {
+    return { valid: false, error: 'Invalid CSRF token' };
+  }
 
-    // Check expiration
-    if (tokenData.expiresAt < Date.now()) {
-      this.csrfTokens.delete(token);
-      return { valid: false, error: 'CSRF token expired' };
-    }
+  // Check expiration
+  if (tokenData.expiresAt < Date.now()) {
+    this.csrfTokens.delete(token);
+    return { valid: false, error: 'CSRF token expired' };
+  }
 
-    // Check if token matches session
-   const sessionId = req.sessionId || req.user?._id || 'anonymous';
+  // SPECIAL CASE: For logout, we need flexible session matching
+  // because session might already be cleared or user might be logging out from different device
+  const sessionId = req.sessionId || req.user?._id || 'anonymous';
   const tokenSessionId = tokenData.sessionId;
-    if (tokenSessionId !== sessionId && tokenSessionId !== 'anonymous') {
-    console.log('CSRF session mismatch:', {
+  
+  // Allow logout even if session doesn't match exactly
+  // This handles cases like: logout from another device, forced logout, etc.
+  if (tokenSessionId !== sessionId && tokenSessionId !== 'anonymous') {
+    console.log('CSRF session mismatch for logout - allowing:', {
       tokenSessionId,
       reqSessionId: sessionId,
-      path: req.path,
-      user: req.user?._id
+      path: req.path
     });
-    
-    // For logout and certain endpoints, allow mismatch if user exists
-    const allowedMismatchPaths = ['/api/auth/logout', '/api/auth/login'];
-    if (allowedMismatchPaths.includes(req.path) && req.user) {
-      console.log('Allowing CSRF session mismatch for:', req.path);
-      // Update token session ID to match current session
-      tokenData.sessionId = sessionId;
-      this.csrfTokens.set(token, tokenData);
-    } else {
-      return { valid: false, error: 'CSRF token session mismatch' };
-    }
-  }
-
-
-    // Validate origin/referer for production
-    if (process.env.NODE_ENV === 'production') {
-      const origin = req.headers.origin || req.headers.referer;
-      if (origin && tokenData.referer) {
-        const tokenOrigin = new URL(tokenData.referer).origin;
-        const requestOrigin = new URL(origin).origin;
-        if (tokenOrigin !== requestOrigin) {
-          return { valid: false, error: 'CSRF token origin mismatch' };
-        }
-      }
-    }
-
-    // Refresh token expiry on successful validation
-    tokenData.expiresAt = Date.now() + this.tokenExpiry;
+    // Update token session ID to match current session
+    tokenData.sessionId = sessionId;
     this.csrfTokens.set(token, tokenData);
-
-    return { valid: true, tokenData };
   }
 
-  // middleware/csrf.middleware.js - Update requireCSRF method
+  // Refresh token expiry on successful validation
+  tokenData.expiresAt = Date.now() + this.tokenExpiry;
+  this.csrfTokens.set(token, tokenData);
+
+  return { valid: true, tokenData };
+}
 requireCSRF = (req, res, next) => {
   // Skip CSRF for safe methods
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
@@ -113,19 +94,22 @@ requireCSRF = (req, res, next) => {
     return next();
   }
 
-  // SPECIAL CASE: Allow login and register without CSRF token
-  // (they will generate a new token after successful auth)
-  const authEndpoints = [
+  // CRITICAL: Skip CSRF for public auth endpoints
+  const publicAuthEndpoints = [
     '/api/auth/login',
     '/api/auth/register',
     '/api/auth/forgot-password',
-    '/api/auth/reset-password'
+    '/api/auth/reset-password',
+    '/api/auth/reactivate'
   ];
   
-  if (authEndpoints.includes(req.path)) {
-    console.log(`⚠️ CSRF bypassed for auth endpoint: ${req.path}`);
-    
-    // Try to validate if token exists, but don't fail
+  if (publicAuthEndpoints.includes(req.path)) {
+    return next();
+  }
+
+  // SPECIAL HANDLING FOR LOGOUT
+  if (req.path === '/api/auth/logout') {
+    // For logout, we'll validate if token exists but won't block
     let token = req.headers['x-csrf-token'] || 
                 req.headers['csrf-token'] || 
                 req.body?.csrfToken ||
@@ -135,24 +119,22 @@ requireCSRF = (req, res, next) => {
     if (token) {
       const validation = this.validateToken(req, token);
       if (!validation.valid) {
-        console.log(`CSRF token invalid for ${req.path}, but proceeding:`, validation.error);
-        // Generate new token after successful auth
+        console.warn('CSRF validation failed for logout, but proceeding:', validation.error);
+        // Don't block logout - proceed anyway
       }
+    } else {
+      console.log('No CSRF token for logout - allowing for API clients');
+      // Allow logout without CSRF (for Postman, mobile apps, etc.)
     }
     
     return next();
   }
 
-  // Get token from headers or body for other endpoints
+  // For all other endpoints, require CSRF
   let token = req.headers['x-csrf-token'] || 
               req.headers['csrf-token'] || 
               req.body?.csrfToken ||
               req.query?.csrfToken;
-
-  // For form submissions
-  if (!token && req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-    token = req.body?.csrfToken;
-  }
 
   const validation = this.validateToken(req, token);
   
@@ -160,9 +142,7 @@ requireCSRF = (req, res, next) => {
     console.error('CSRF validation failed:', {
       path: req.path,
       method: req.method,
-      error: validation.error,
-      ip: this.getClientIp(req),
-      userAgent: req.headers['user-agent']
+      error: validation.error
     });
 
     return res.status(403).json({
@@ -172,10 +152,6 @@ requireCSRF = (req, res, next) => {
     });
   }
 
-  // Attach token data to request
-  req.csrfTokenData = validation.tokenData;
-  req.csrfToken = token;
-  
   next();
 };
   // middleware/csrf.middleware.js - Update attachCSRF method

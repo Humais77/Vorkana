@@ -226,27 +226,30 @@ router.post("/refresh",
   clearAuthCache,
   refreshSession
 );
-
-// ==================== PUBLIC ROUTES (Cached) ====================
-
-// Check auth status
+// auth.route.js - UPDATE check-auth route
 router.get("/check-auth", 
   SessionMiddleware.optionalAuth, 
   cacheControlMiddleware({ public: true, maxAge: 60 }),
-  (req, res) => {
+  async (req, res) => {
     if (req.user) {
+      // ENSURE ALL REQUIRED FIELDS ARE PRESENT
+      const userResponse = {
+        _id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        picture: req.user.picture,
+        emailVerified: req.user.emailVerified,
+        isOnline: req.user.isOnline,
+        // ADD THESE:
+        accountType: req.user.accountType || 'basic',
+        lastSeenAt: req.user.lastSeenAt || new Date().toISOString()
+      };
+      
       res.json({
         success: true,
         isAuthenticated: true,
-        user: {
-          _id: req.user._id,
-          name: req.user.name,
-          email: req.user.email,
-          role: req.user.role,
-          picture: req.user.picture,
-          emailVerified: req.user.emailVerified,
-          isOnline: req.user.isOnline
-        },
+        user: userResponse,
         cached: false
       });
     } else {
@@ -258,7 +261,6 @@ router.get("/check-auth",
     }
   }
 );
-
 // Get public profile
 router.get("/profile/:userId/public", 
   cacheControlMiddleware({ public: true, maxAge: 300 }),

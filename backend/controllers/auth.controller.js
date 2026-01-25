@@ -158,19 +158,8 @@ const logSecurityEvent = (event, userId, ip, details = {}) => {
   }
 };
 
-// ========== CONTROLLER FUNCTIONS ==========
-
-// Register new user
 const register = asyncHandler(async (req, res) => {
   try {
-    const csrfValidation = validateCSRF(req);
-    if (!csrfValidation.valid) {
-      return res.status(403).json({
-        success: false,
-        message: 'Security validation failed',
-        code: 'CSRF_TOKEN_INVALID'
-      });
-    }
     const { name, email, password, phoneNumber, dateOfBirth, gender, country, city } = req.body;
 
     // 1. Basic validations
@@ -233,11 +222,10 @@ const register = asyncHandler(async (req, res) => {
       registrationStatus: 'pending',
       emailVerified: false,
       isActive: false,
-      // Don't set other fields yet
     });
 
-    // 5. Generate verification token
-    const verificationToken = user.verificationToken();
+    // 5. Generate verification token - FIXED METHOD NAME
+    const verificationToken = user.generateVerificationToken();
     
     // 6. Save user with pending status
     await user.save({ validateBeforeSave: false });
@@ -249,7 +237,8 @@ const register = asyncHandler(async (req, res) => {
       console.error('Email sending error:', emailError.message);
       // Don't fail registration if email fails
     }
-  const csrfToken = CSRFMiddleware.generateToken(req, res);
+
+    const csrfToken = CSRFMiddleware.generateToken(req, res);
     console.log(`✅ Registration initiated for: ${email}`);
 
     res.status(201).json({
@@ -260,7 +249,7 @@ const register = asyncHandler(async (req, res) => {
         email: user.email,
         registrationStatus: 'pending'
       },
-       csrfToken
+      csrfToken
     });
 
   } catch (error) {
@@ -280,7 +269,6 @@ const register = asyncHandler(async (req, res) => {
     });
   }
 });
-
 
 
 const login = asyncHandler(async (req, res) => {
@@ -313,7 +301,7 @@ const login = asyncHandler(async (req, res) => {
       emailVerified: true,
       registrationStatus: 'verified',
       isActive: true
-    }).select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected name role picture phoneNumber country city bio rating');
+    }).select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected name role picture phoneNumber country city bio rating email');
     console.timeEnd('User lookup');
 
     if (!user) {
@@ -399,21 +387,24 @@ const login = asyncHandler(async (req, res) => {
     // 8. Set cookies
     SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken, csrfToken);
 
-    // 9. Prepare response
-    const userResponse = {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      picture: user.picture,
-      emailVerified: user.emailVerified,
-      phoneNumber: user.phoneNumber,
-      country: user.country,
-      city: user.city,
-      bio: user.bio,
-      rating: user.rating,
-      isOnline: true
-    };
+   const userResponse = {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    picture: user.picture,
+    emailVerified: user.emailVerified,
+    phoneNumber: user.phoneNumber,
+    country: user.country,
+    city: user.city,
+    bio: user.bio,
+    rating: user.rating,
+    isOnline: true,
+    accountType: user.accountType || 'basic',
+    lastSeenAt: new Date().toISOString(),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
 
     const responseTime = Date.now() - startTime;
     console.log(`✅ Login completed in ${responseTime}ms for:`, user.email);
@@ -861,8 +852,6 @@ const changePassword = async (req, res) => {
   }
 };
 
-// Verify email with token validation
-// auth.controller.js - Updated verifyEmail function
 const verifyEmail = asyncHandler(async (req, res) => {
   try {
     const { token } = req.params;
@@ -874,12 +863,11 @@ const verifyEmail = asyncHandler(async (req, res) => {
       });
     }
 
-    // Find user by verification token OR check if already verified
+    // Find user by verification token
     const user = await User.findByVerificationToken(token);
     
     if (!user) {
       // Check if user might already be verified
-      // Try to find the user by email (from token hash)
       const crypto = require('crypto');
       const hashedToken = crypto
         .createHash('sha256')
@@ -952,7 +940,6 @@ const verifyEmail = asyncHandler(async (req, res) => {
     });
   }
 });
-
 const resendVerificationEmail = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
@@ -972,8 +959,8 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
       });
     }
 
-    // Generate new verification token
-    const verificationToken = user.verificationToken();
+    // Generate new verification token - FIXED METHOD NAME
+    const verificationToken = user.generateVerificationToken();
     await user.save({ validateBeforeSave: false });
 
     // Send verification email
@@ -1000,8 +987,6 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
     });
   }
 });
-
-// ========== CHECK VERIFICATION STATUS ==========
 const checkVerificationStatus = asyncHandler(async (req, res) => {
   try {
     const { email } = req.query;
@@ -1037,14 +1022,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
-    const csrfValidation = validateCSRF(req);
-    if (!csrfValidation.valid) {
-      return res.status(403).json({
-        success: false,
-        message: 'Security validation failed',
-        code: 'CSRF_TOKEN_INVALID'
-      });
-    }
 
     const user = await User.findOne({ email: email.toLowerCase() });
     
@@ -1120,14 +1097,7 @@ const resetPassword = asyncHandler(async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
-    const csrfValidation = validateCSRF(req);
-    if (!csrfValidation.valid) {
-      return res.status(403).json({
-        success: false,
-        message: 'Security validation failed',
-        code: 'CSRF_TOKEN_INVALID'
-      });
-    }
+
     console.log('Reset password request received:', { 
       tokenLength: token?.length,
       hasPassword: !!newPassword 
@@ -1319,159 +1289,68 @@ const validateCSRF = (req) => {
   return CSRFMiddleware.validateToken(req, token);
 };
 
+// auth.controller.js - UPDATE logout function
 const logout = asyncHandler(async (req, res) => {
   try {
-    console.log('🚪 Logout request:', {
-      hasSessionId: !!req.sessionID,
-      hasUser: !!req.user,
-      userId: req.user?._id,
-      userEmail: req.user?.email,
-      isAdmin: req.isAdmin,
-      isAdminLogout: req.isAdminLogout,
-      adminId: req.adminId,
-      cookies: Object.keys(req.cookies || {}),
-      csrfTokenPresent: !!req.headers['x-csrf-token'] || !!req.body?.csrfToken
+    console.log('🚪 Logout request');
+    
+    // Logout session if we have one
+    if (req.sessionID && mongoose.Types.ObjectId.isValid(req.sessionID)) {
+      try {
+        await SessionService.logoutSession(
+          req.sessionID,
+          req.user?._id,
+          'manual'
+        );
+        console.log('✅ Session logged out');
+      } catch (error) {
+        console.error('Session logout error:', error.message);
+      }
+    }
+    
+    // Clear ALL cookies
+    const clearCookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
+
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+      res.clearCookie(cookie, clearCookieOptions);
     });
 
-    // SPECIAL HANDLING FOR LOGOUT: Get CSRF token before validation
-    let csrfToken = req.headers['x-csrf-token'] || req.body?.csrfToken;
-    
-    // If no CSRF token in headers/body, check cookies
-    if (!csrfToken && req.cookies?.csrfToken) {
-      csrfToken = req.cookies.csrfToken;
-    }
-    
-    console.log('CSRF Token for logout validation:', {
-      hasToken: !!csrfToken,
-      source: req.headers['x-csrf-token'] ? 'header' : req.body?.csrfToken ? 'body' : req.cookies?.csrfToken ? 'cookie' : 'none'
-    });
-
-    // For logout, we need to validate CSRF differently
-    if (csrfToken) {
-      const csrfValidation = validateCSRF(req);
-      if (!csrfValidation.valid) {
-        console.log('CSRF validation failed for logout:', csrfValidation.error);
-        // Even if CSRF fails, still attempt to logout but with warning
-        console.warn('⚠️ CSRF validation failed during logout, proceeding anyway for security');
-      }
-    } else {
-      console.log('No CSRF token provided for logout, proceeding with caution');
-    }
-
-    // Determine if this is an admin logout
-    const isAdminLogout = req.isAdminLogout || req.isAdmin || req.adminId || req.admin;
-    
-    // Check if user exists
-    if (!req.user && !isAdminLogout) {
-      console.log('No user found for logout, clearing cookies anyway');
-      SessionMiddleware.clearAuthCookies(res);
-      CSRFMiddleware.clearCSRFCookie(res);
-      return res.json({
-        success: true,
-        message: 'Logged out successfully (no active session)'
-      });
-    }
-
-    // Logout session if we have session info
-    if (req.sessionID && (req.user || isAdminLogout)) {
-      try {
-        const userId = req.user?._id || req.adminId;
-        const logoutReason = isAdminLogout ? 'admin_logout' : 'manual';
-        await SessionService.logoutSession(req.sessionID, userId, logoutReason);
-        console.log(`✅ Session logged out: ${req.sessionID}, reason: ${logoutReason}`);
-      } catch (sessionError) {
-        console.error('Session logout error:', sessionError);
-        // Continue with cookie clearing even if session logout fails
-      }
-    } else if (req.cookies?.refreshToken) {
-      // Try to find and logout session by refreshToken
-      try {
-        const session = await Session.findOne({ 
-          refreshToken: req.cookies.refreshToken,
-          isActive: true 
-        });
-        
-        if (session) {
-          const logoutReason = isAdminLogout ? 'admin_logout' : 'manual';
-          await SessionService.logoutSession(session._id, session.userId, logoutReason);
-          console.log(`✅ Session logged out by refresh token: ${session._id}, reason: ${logoutReason}`);
-        }
-      } catch (findError) {
-        console.error('Find session by refresh token error:', findError);
-      }
-    }
-    
-    // Always clear cookies - enhanced for admin logout
-    if (isAdminLogout) {
-      // Clear ALL cookies for admin logout
-      console.log('🔄 Clearing ALL cookies for admin logout');
-      
-      // Clear regular auth cookies
-      SessionMiddleware.clearAuthCookies(res);
-      
-      // Clear admin-specific cookies
-      res.clearCookie('adminToken', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/',
-        domain: process.env.COOKIE_DOMAIN || 'localhost'
-      });
-      
-      res.clearCookie('adminRefreshToken', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/api/auth/refresh',
-        domain: process.env.COOKIE_DOMAIN || 'localhost'
-      });
-      
-      // Clear any other potential cookies
-      ['token', 'refreshToken', 'adminToken', 'adminRefreshToken', 'admin-session'].forEach(cookieName => {
-        res.clearCookie(cookieName, { 
-          path: '/',
-          domain: process.env.COOKIE_DOMAIN || 'localhost'
-        });
-        res.clearCookie(cookieName, { 
-          path: '/admin',
-          domain: process.env.COOKIE_DOMAIN || 'localhost'
-        });
-      });
-    } else {
-      // Regular user logout
-      SessionMiddleware.clearAuthCookies(res);
-    }
-    
-    // Clear CSRF cookie (important for security)
+    // Clear CSRF cookie
     CSRFMiddleware.clearCSRFCookie(res);
     
-    console.log('✅ Logout completed successfully', {
-      type: isAdminLogout ? 'admin' : 'user',
-      userId: req.user?._id || req.adminId
+    console.log('✅ Logout completed');
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+
+  } catch (error) {
+    console.error('Logout error:', error);
+    
+    // Clear cookies on error
+    const clearCookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
+
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+      res.clearCookie(cookie, clearCookieOptions);
     });
 
     res.json({
       success: true,
-      message: 'Logged out successfully',
-      adminLogout: isAdminLogout,
-      csrfCleared: true
-    });
-  } catch (error) {
-    console.error('🔥 Logout error:', error);
-    
-    // Still try to clear cookies on error
-    SessionMiddleware.clearAuthCookies(res);
-    CSRFMiddleware.clearCSRFCookie(res);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Error during logout, but cookies cleared',
-      csrfCleared: true
+      message: 'Logged out'
     });
   }
 });
-
-// New: Get active sessions
 const getActiveSessions = asyncHandler(async (req, res) => {
   try {
     const sessions = await SessionService.getUserSessions(req.user._id);
@@ -1893,14 +1772,6 @@ const getPublicProfile = async (req, res) => {
 
 const deactivateAccount = async (req, res) => {
   try {
-     const csrfValidation = validateCSRF(req);
-    if (!csrfValidation.valid) {
-      return res.status(403).json({
-        success: false,
-        message: 'Security validation failed',
-        code: 'CSRF_TOKEN_INVALID'
-      });
-    }
     const { password, reason } = req.body;
     
     if (!password) {
@@ -1973,14 +1844,6 @@ const reactivateAccount = async (req, res) => {
   try {
     const { email, password } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
-    const csrfValidation = validateCSRF(req);
-    if (!csrfValidation.valid) {
-      return res.status(403).json({
-        success: false,
-        message: 'Security validation failed',
-        code: 'CSRF_TOKEN_INVALID'
-      });
-    }
 
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
     

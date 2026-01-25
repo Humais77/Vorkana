@@ -279,10 +279,10 @@ export const useRegister = () => {
   });
 };
 
+// hooks/useAuth.js - UPDATE useLogout
 export const useLogout = () => {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: authAPI.logout,
@@ -290,18 +290,15 @@ export const useLogout = () => {
       toast.loading('Logging out...');
     },
     onSuccess: () => {
-      logout();
-      queryClient.clear();
+      logout(); // This updates the store
       toast.success('Logged out successfully');
-      navigate('/');
+      navigate('/signin');
     },
     onError: (error) => {
-      logout();
-      queryClient.clear();
-      console.error('Logout error:', error);
+      logout(); // Still update store on error
       toast.success('Logged out');
-      navigate('/');
-    },
+      navigate('/signin');
+    }
   });
 };
 

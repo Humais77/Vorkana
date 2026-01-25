@@ -43,18 +43,15 @@ class SessionMiddleware {
     let token = req.cookies?.token;
     const refreshToken = req.cookies?.refreshToken;
 
-    // If no token at all
     if (!token && !refreshToken) {
       return this.handleUnauthorized(res, 'Please login to continue');
     }
 
-    // Validate session
     let sessionResult;
     
     if (token) {
       sessionResult = await SessionService.validateSession(token, refreshToken);
     } else if (refreshToken) {
-      // Try to refresh if only refresh token exists
       try {
         const refreshed = await SessionService.refreshSession(refreshToken);
         if (refreshed) {
@@ -75,23 +72,6 @@ class SessionMiddleware {
     }
 
     if (!sessionResult || !sessionResult.valid) {
-      // Check if it's a timeout
-      const isTimeout = sessionResult?.reason === 'timeout';
-      
-      if (isTimeout) {
-        console.log('[AUTH] Session timeout detected');
-        this.clearAuthCookies(res);
-        
-        // Return timeout-specific response
-        return res.status(401).json({
-          success: false,
-          message: 'Session timed out due to inactivity',
-          code: 'SESSION_TIMEOUT',
-          requiresLogin: true,
-          redirectUrl: '/signin?timeout=true'
-        });
-      }
-      
       this.clearAuthCookies(res);
       return this.handleUnauthorized(res, 'Session expired. Please login again.');
     }
@@ -105,17 +85,9 @@ class SessionMiddleware {
       return this.handleUnauthorized(res, 'Account not found or deactivated');
     }
 
-    // Special check for admin routes
-    const isAdminRoute = req.path.startsWith('/admin');
-    if (isAdminRoute && user.role !== 'admin') {
-      console.log(`[AUTH] Non-admin trying to access admin route: ${user.email}`);
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.',
-        code: 'ADMIN_ACCESS_REQUIRED'
-      });
-    }
-
+    // CRITICAL: Set sessionID on request object
+    req.sessionID = sessionResult.sessionId;
+    
     // Update last seen
     user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
@@ -123,12 +95,13 @@ class SessionMiddleware {
     // Set request data
     req.user = user;
     req.token = sessionResult.token;
-    req.sessionId = sessionResult.sessionId;
     req.isAdmin = user.role === 'admin';
- if (!req.cookies?.csrfToken) {
+
+    if (!req.cookies?.csrfToken) {
       CSRFMiddleware.generateToken(req, res);
     }
-    console.log(`✅ Authenticated: ${user.email}, Role: ${user.role}, Admin Route: ${isAdminRoute}, Is admin from token: ${sessionResult.isAdmin}`);
+
+    console.log(`✅ Authenticated: ${user.email}, Session: ${req.sessionID}`);
 
     next();
 

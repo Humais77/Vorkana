@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const UAParser = require('ua-parser-js');
 const geoip = require('geoip-lite');
-
+const mongoose = require('mongoose');
 class SessionService {
   constructor() {
      this.idleTimeout = 3 * 60 * 60 * 1000;
@@ -249,31 +249,48 @@ class SessionService {
     }
   }
 
-  // FIXED: Proper logoutSession method
   async logoutSession(sessionId, userId, reason = 'manual') {
-    try {
-      const session = await Session.findOne({
+  try {
+    // Check if sessionId is valid ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(sessionId);
+    
+    let session;
+    
+    if (isValidObjectId) {
+      // Find session by ID
+      session = await Session.findOne({
         _id: sessionId,
         userId,
         isActive: true
       });
-
-      if (session) {
-        session.isActive = false;
-        session.logoutReason = reason;
-        session.logoutAt = new Date();
-        await session.save({ validateBeforeSave: false });
-        console.log(`✅ Session logged out: ${sessionId} - ${reason}`);
-        return true;
-      }
-
-      console.log(`❌ Session not found or already inactive: ${sessionId}`);
-      return false;
-    } catch (error) {
-      console.error('Logout session error:', error);
-      return false;
+    } else if (sessionId && sessionId !== 'unknown') {
+      // Try to find by token or refreshToken
+      session = await Session.findOne({
+        $or: [
+          { token: sessionId },
+          { refreshToken: sessionId }
+        ],
+        userId,
+        isActive: true
+      });
     }
+    
+    if (session) {
+      session.isActive = false;
+      session.logoutReason = reason;
+      session.logoutAt = new Date();
+      await session.save({ validateBeforeSave: false });
+      console.log(`✅ Session logged out: ${session._id} - ${reason}`);
+      return true;
+    }
+
+    console.log(`ℹ️ Session not found or already inactive: ${sessionId}`);
+    return false;
+  } catch (error) {
+    console.error('Logout session error:', error.message);
+    return false;
   }
+}
 
   // Logout all user sessions
   async logoutAllUserSessions(userId, excludeSessionId = null) {
@@ -325,27 +342,37 @@ class SessionService {
 
   // Cleanup expired sessions
   async cleanupExpired() {
-    try {
-      const result = await Session.deleteMany({
-        $or: [
-          { expiresAt: { $lt: new Date() } },
-          { 
-            isActive: false,
-            logoutAt: { $lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
-          }
-        ]
-      });
-      
-      if (result.deletedCount > 0) {
-        console.log(`🧹 Cleaned up ${result.deletedCount} expired sessions`);
-      }
-      
-      return result.deletedCount;
-    } catch (error) {
-      console.error('Session cleanup error:', error);
-      return 0;
+  try {
+    const now = new Date();
+    
+    // Find and logout expired sessions
+    const expiredSessions = await Session.find({
+      expiresAt: { $lt: now },
+      isActive: true
+    });
+    
+    // Logout each expired session
+    for (const session of expiredSessions) {
+      await session.logout('expired');
     }
+    
+    // Delete very old inactive sessions (older than 7 days)
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oldSessions = await Session.deleteMany({
+      isActive: false,
+      logoutAt: { $lt: sevenDaysAgo }
+    });
+    
+    if (expiredSessions.length > 0 || oldSessions.deletedCount > 0) {
+      console.log(`🧹 Cleaned up ${expiredSessions.length} expired sessions, ${oldSessions.deletedCount} old sessions`);
+    }
+    
+    return expiredSessions.length + oldSessions.deletedCount;
+  } catch (error) {
+    console.error('Session cleanup error:', error);
+    return 0;
   }
+}
 
   // Check session status
   async getSessionStatus(sessionId) {
