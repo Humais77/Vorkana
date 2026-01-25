@@ -19,56 +19,28 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
 
   const handleLogout = async () => {
     try {
-      // Call the admin logout API
-      const response = await fetch('/api/admin/logout', {
-        method: 'POST',
-        credentials: 'include', // Important for cookies
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        // Clear admin-specific local storage
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminRefreshToken');
-        sessionStorage.removeItem('adminInfo');
-        
-        // Clear regular auth store
-        logout();
-        
-        // Clear all cookies by calling main logout
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        
-        // Navigate to home
-        navigate('/');
-      } else {
-        // Fallback to main logout if admin logout fails
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        localStorage.clear();
-        sessionStorage.clear();
-        logout();
-        navigate('/');
-      }
+      // Use the main logout function from auth store
+      await logout();
+      
+      // Show success message
+      toast.success('Admin logged out successfully');
+      
+      // Navigate to home page
+      navigate('/');
+      
     } catch (error) {
       console.error('Logout error:', error);
-      // Fallback cleanup
+      toast.error('Logout failed. Please try again.');
+      
+      // Force cleanup and redirect anyway
       localStorage.clear();
       sessionStorage.clear();
-      logout();
-      navigate('/');
+      navigate('/signin');
+    } finally {
+      // Close mobile sidebar
+      setIsMobileOpen(false);
     }
-    
-    // Close mobile sidebar if open
-    setIsMobileOpen(false);
   };
-
   const navItems = [
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },

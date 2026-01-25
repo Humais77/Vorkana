@@ -295,9 +295,14 @@ export const useAuthStore = create(
   set({ loading: true });
   
   try {
-    // Call logout API
-    const authAPI = (await import('../api/auth')).authAPI;
-    await authAPI.logout();
+    // Call appropriate logout API
+    if (isAdmin) {
+      const { adminAPI } = await import('../api/admin');
+      await adminAPI.adminLogout();
+    } else {
+      const authAPI = (await import('../api/auth')).authAPI;
+      await authAPI.logout();
+    }
     
     // Production cleanup - clear ALL storage
     emergencyCleanup();
@@ -314,6 +319,7 @@ export const useAuthStore = create(
           document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
           document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
           document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api/admin;`;
         }
       });
     }

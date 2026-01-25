@@ -106,46 +106,19 @@ router.get('/dashboard',
   adminController.getDashboardStats
 );
 
-// ==================== ADMIN AUTH ROUTES ====================
-
 router.post('/logout', 
   verifyAdmin,
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
+  // Remove the complex logout middleware - use simple approach
   (req, res, next) => {
-    const csrfToken = req.headers['x-csrf-token'] || req.body?.csrfToken;
-    
-    if (csrfToken) {
-      const validation = CSRFMiddleware.validateToken(req, csrfToken);
-      if (!validation.valid) {
-        console.warn('CSRF validation failed for admin logout, proceeding anyway:', validation.error);
-      }
-    }
-    
-    next();
-  },
-  (req, res, next) => {
-    console.log('🛡️ Admin logout middleware triggered for:', {
-      adminId: req.admin?._id,
-      email: req.admin?.email
-    });
-    
+    // Mark as admin logout for the controller
     req.isAdminLogout = true;
-    req.isAdmin = true;
-    req.adminId = req.admin._id;
-    
-    req.user = {
-      _id: req.admin._id,
-      email: req.admin.email,
-      name: req.admin.name,
-      role: req.admin.role
-    };
-    
     next();
   },
+  // Use the main logout controller
   logout
 );
-
 router.get('/session',
   verifyAdmin,
   cacheControlMiddleware({ public: false, maxAge: 60 }),

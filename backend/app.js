@@ -10,7 +10,7 @@ const compression = require('compression');
 const responseTime = require('response-time');
 const morgan = require('morgan');
 const csrfRoutes = require('./routes/csrf.route');
-
+const sessionCleanup = require('./cron/sessionCleanup');
 dotenv.config();
 
 // Validate environment variables
@@ -51,6 +51,7 @@ require("./config/passport.js");
 // Connect to database
 connectDB().then(() => {
   console.log('✅ Database connected');
+   sessionCleanup.init();
 });
 
 const app = express();

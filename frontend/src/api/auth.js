@@ -325,15 +325,6 @@ export const authAPI = {
     // Clear session storage
     sessionStorage.clear();
     
-    // Clear all cookies on client side
-    document.cookie.split(';').forEach(cookie => {
-      const [name] = cookie.trim().split('=');
-      if (name) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
-      }
-    });
-    
     return response.data;
   } catch (error) {
     // Even if API fails, clear local storage

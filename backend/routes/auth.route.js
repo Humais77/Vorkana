@@ -481,7 +481,29 @@ router.get("/debug/session",
   }
 }
 )
-// ==================== VERIFICATION ROUTES (No Cache) ====================
+router.get('/debug/sessions', 
+  SessionMiddleware.authenticate,
+  async (req, res) => {
+    const sessions = await Session.find({ userId: req.user._id });
+    const activeSessions = await Session.find({ 
+      userId: req.user._id, 
+      isActive: true 
+    });
+    
+    res.json({
+      totalSessions: sessions.length,
+      activeSessions: activeSessions.length,
+      sessions: sessions.map(s => ({
+        id: s._id,
+        isActive: s.isActive,
+        lastActivity: s.lastActivity,
+        expiresAt: s.expiresAt,
+        idleTime: Date.now() - s.lastActivity.getTime(),
+        idleMinutes: Math.round((Date.now() - s.lastActivity.getTime()) / 1000 / 60)
+      }))
+    });
+  }
+);
 
 // Verify email
 router.get("/verify-email/:token", 

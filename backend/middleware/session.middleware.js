@@ -38,75 +38,99 @@ class SessionMiddleware {
 };
  authenticate = async (req, res, next) => {
   try {
+    // Clean legacy cookies first
+    this.cleanupLegacyCookies(req, res);
+    
     let token = req.cookies?.token;
     const refreshToken = req.cookies?.refreshToken;
-
+    
+    // If no tokens, check headers
+    if (!token && req.headers.authorization?.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+    
+    // Special handling for OPTIONS requests
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+    
     if (!token && !refreshToken) {
+      console.log('🔐 No tokens found');
       return this.handleUnauthorized(res, 'Please login to continue');
     }
-
-    let sessionResult;
     
-    // Try to validate current token
+    let sessionResult;
+    let newTokenIssued = false;
+    
+    // Validate current session
     if (token) {
       sessionResult = await SessionService.validateSession(token, refreshToken);
     }
     
-    // If validation failed but we have refresh token, try refresh
+    // Handle token refresh if needed
     if ((!sessionResult || !sessionResult.valid) && refreshToken) {
-      console.log('Attempting session refresh...');
+      console.log('🔄 Attempting session refresh...');
       try {
         const refreshed = await SessionService.refreshSession(refreshToken);
         if (refreshed) {
           token = refreshed.token;
+          newTokenIssued = true;
           this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
           sessionResult = {
             valid: true,
             userId: refreshed.userId,
             sessionId: refreshed.sessionId,
             token: refreshed.token,
-            refreshToken: refreshed.refreshToken
+            refreshToken: refreshed.refreshToken,
+            lastActivity: new Date()
           };
         }
       } catch (refreshError) {
         console.error('Session refresh failed:', refreshError.message);
         this.clearAuthCookies(res);
-        return this.handleUnauthorized(res, 'Session expired');
+        return this.handleUnauthorized(res, 'Session expired. Please login again.');
       }
     }
-
+    
+    // If still invalid, clear and return
     if (!sessionResult || !sessionResult.valid) {
       this.clearAuthCookies(res);
-      return this.handleUnauthorized(res, 'Session expired. Please login again.');
+      return this.handleUnauthorized(res, 'Session expired or invalid');
     }
-
-    // Get user and validate
-    const user = await User.findById(sessionResult.userId);
     
+    // Get user
+    const user = await User.findById(sessionResult.userId);
     if (!user || !user.isActive) {
       await SessionService.logoutSession(sessionResult.sessionId, sessionResult.userId, 'inactive');
       this.clearAuthCookies(res);
       return this.handleUnauthorized(res, 'Account not found or deactivated');
     }
-
-    // Set session data
+    
+    // Set request properties
     req.sessionID = sessionResult.sessionId;
     req.user = user;
     req.token = sessionResult.token;
     req.isAdmin = user.role === 'admin';
-
-    // Update last seen
+    req.sessionValidatedAt = new Date();
+    
+    // Update user last seen
     user.lastSeenAt = new Date();
     await user.save({ validateBeforeSave: false });
-
-    // Generate CSRF token if not present
-    if (!req.cookies?.csrfToken) {
+    
+    // Generate CSRF if not present or if new token was issued
+    if (!req.cookies?.csrfToken || newTokenIssued) {
       CSRFMiddleware.generateToken(req, res);
     }
-
+    
+    // Add session validation header
+    res.setHeader('X-Session-Validated', 'true');
+    if (newTokenIssued) {
+      res.setHeader('X-Session-Refreshed', 'true');
+    }
+    
     next();
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('🔥 Authentication error:', error);
     this.clearAuthCookies(res);
     return this.handleUnauthorized(res, 'Authentication failed');
   }

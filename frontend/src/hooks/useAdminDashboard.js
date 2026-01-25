@@ -1523,14 +1523,18 @@ export const useCategoriesForDropdown = (includeSubcategories = true) => {
           return await adminAPI.getCategoriesForDropdown(includeSubcategories, csrfToken);
         });
         
-        console.log('[CATEGORIES DROPDOWN] Response:', response.data);
+        console.log('[CATEGORIES DROPDOWN] Response:', response);
+        console.log('[CATEGORIES DROPDOWN] Response data:', response.data);
         
         // Ensure data structure is consistent
-        if (response.data.success && response.data.data) {
+        if (response.data?.success) {
+          const data = response.data.data || [];
+          console.log('[CATEGORIES DROPDOWN] Processed data:', data);
+          console.log('[CATEGORIES DROPDOWN] First category:', data[0]);
           return {
             success: true,
-            data: response.data.data,
-            count: response.data.count || 0
+            data: data,
+            count: response.data.count || data.length || 0
           };
         }
         
@@ -1541,7 +1545,8 @@ export const useCategoriesForDropdown = (includeSubcategories = true) => {
           message: 'No data returned'
         };
       } catch (error) {
-        console.error('Categories dropdown error:', error);
+        console.error('[CATEGORIES DROPDOWN] Error:', error);
+        console.error('[CATEGORIES DROPDOWN] Error response:', error.response);
         return { 
           success: false, 
           data: [], 
@@ -1552,6 +1557,10 @@ export const useCategoriesForDropdown = (includeSubcategories = true) => {
     },
     staleTime: 300000,
     enabled: true,
+    retry: 3,
+    onError: (error) => {
+      console.error('[CATEGORIES DROPDOWN] Query error:', error);
+    }
   });
 };
 
@@ -2491,7 +2500,8 @@ export const useRecentActivities = (limit = 10) => {
           return await adminAPI.getRecentActivity(limit, csrfToken);
         });
         
-        if (response.data.success) {
+        // FIX: Check if response exists before accessing success
+        if (response && response.data && response.data.success) {
           const activities = response.data.data || [];
           
           // Process activities for display

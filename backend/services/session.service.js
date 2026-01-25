@@ -214,13 +214,9 @@ async validateSession(token, refreshToken) {
       return { valid: false, error: 'No token provided' };
     }
     
-    // First try to verify the token
     let decoded;
-    let tokenValid = false;
-    
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-      tokenValid = true;
       console.log('✅ Token verified successfully:', {
         id: decoded.id,
         role: decoded.role,
@@ -228,54 +224,42 @@ async validateSession(token, refreshToken) {
         expiresIn: Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60) + ' minutes'
       });
     } catch (verifyError) {
-      console.log('⚠️ Token verification error:', verifyError.name);
-      
       if (verifyError.name === 'TokenExpiredError') {
-        console.log('⏰ Token expired at:', new Date(verifyError.expiredAt).toISOString());
-        // Try to decode to get payload even if expired
-        decoded = jwt.decode(token);
-        
-        // If we have refresh token, try to refresh
+        console.log('⏰ Token expired, attempting refresh...');
         if (refreshToken) {
-          console.log('🔄 Attempting refresh with refresh token');
           return await this.refreshSession(refreshToken);
         }
-      } else if (verifyError.name === 'JsonWebTokenError') {
-        console.log('❌ Invalid token:', verifyError.message);
-        return { valid: false, error: 'Invalid token' };
+        return { valid: false, error: 'Token expired, no refresh token' };
       }
+      console.log('❌ Token verification failed:', verifyError.message);
+      return { valid: false, error: 'Invalid token' };
     }
     
-    if (!decoded) {
-      console.log('❌ Could not decode token');
-      return { valid: false, error: 'Invalid token format' };
-    }
-    
-    const isAdmin = decoded.role === 'admin';
-    const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
-    
-    // Find session in database
+    // FIX: Find session with proper criteria
     const session = await Session.findOne({
-      token: token, // Match exact token
+      userId: decoded.id,
       isActive: true,
       expiresAt: { $gt: new Date() }
     });
-
+    
     if (!session) {
       console.log('📝 Session not found in database');
-      // Try refresh if available
       if (refreshToken) {
         return await this.refreshSession(refreshToken);
       }
       return { valid: false, error: 'Session not found' };
     }
-
-    // Check idle timeout
+    
+    // FIX: Calculate idle time correctly (3 hours for users, 1 hour for admins)
+    const isAdmin = decoded.role === 'admin';
+    const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
     const idleTime = Date.now() - session.lastActivity.getTime();
+    
     console.log(`⏱️ Idle check: ${Math.round(idleTime/1000/60)}min / ${Math.round(idleTimeout/1000/60)}min timeout`);
     
+    // Only timeout if idle for too long
     if (idleTime > idleTimeout) {
-      console.log(`⏰ Session idle timeout reached`);
+      console.log(`⏰ Session idle timeout reached (${isAdmin ? 'admin' : 'user'})`);
       await this.logoutSession(session._id, session.userId, 'timeout');
       return { 
         valid: false, 
@@ -283,32 +267,26 @@ async validateSession(token, refreshToken) {
         reason: 'timeout'
       };
     }
-
-    // Update activity
+    
+    // Update activity only if not idle
     session.lastActivity = new Date();
-    // Extend session if close to expiration
-    if (session.expiresAt.getTime() - Date.now() < 24 * 60 * 60 * 1000) {
-      session.expiresAt = new Date(Date.now() + this.sessionDuration);
-    }
     await session.save({ validateBeforeSave: false });
-
+    
     console.log('✅ Session validated successfully');
     
     return {
       valid: true,
       userId: session.userId,
       sessionId: session._id,
-      token: session.token,
+      token: token, // Return original token
       refreshToken: session.refreshToken,
       lastActivity: session.lastActivity,
       isAdmin,
       idleTimeout,
-      timeLeft: idleTimeout - idleTime,
-      tokenExpiry: decoded.exp ? new Date(decoded.exp * 1000) : null
+      timeLeft: idleTimeout - idleTime
     };
   } catch (error) {
     console.error('❌ Session validation error:', error.message);
-    console.error(error.stack);
     return { valid: false, error: error.message };
   }
 }

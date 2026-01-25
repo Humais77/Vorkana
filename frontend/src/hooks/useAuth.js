@@ -281,35 +281,46 @@ export const useRegister = () => {
 export const useLogout = () => {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: authAPI.logout,
     onMutate: () => {
-      toast.loading('Logging out...');
+      // Show loading state
+      toast.loading('Logging out...', {
+        id: 'logout-toast',
+        duration: 3000
+      });
     },
-    onSuccess: () => {
-      // Force clear auth store
+    onSuccess: async (data) => {
+      // 1. Clear React Query cache
+      queryClient.clear();
+      
+      // 2. Clear auth store
       logout();
-      
-      // Ensure all storage is cleared
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      toast.success('Logged out successfully');
-      
-      // Use window.location instead of navigate to ensure full page reload
-      window.location.href = '/signin';
+      // 5. Update toast
+      toast.success('Logged out successfully', {
+        id: 'logout-toast',
+        duration: 2000
+      });
     },
     onError: (error) => {
-      console.error('Logout error:', error);
+      console.error('Logout mutation error:', error);
       
       // Still clear everything on error
-      logout();
       localStorage.clear();
       sessionStorage.clear();
+      logout();
+      queryClient.clear();
       
-      toast.success('Logged out');
-      window.location.href = '/signin';
+      toast.success('Logged out (local session cleared)', {
+        id: 'logout-toast',
+        duration: 2000
+      });
+      
+      setTimeout(() => {
+        window.location.href = '/signin?logout=clean';
+      }, 500);
     }
   });
 };

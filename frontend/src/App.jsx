@@ -111,7 +111,49 @@ const LoadingFallback = () => (
     </div>
   </div>
 );
-
+const SessionManager = () => {
+  const { isAuthenticated, validateAndSync, forceLogout } = useAuthStore();
+  const location = useLocation();
+  
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // Session sync interval
+    const syncInterval = setInterval(() => {
+      validateAndSync();
+    }, 2 * 60 * 1000); // Every 2 minutes
+    
+    // Listen for logout events from other tabs
+    const handleLogoutEvent = () => {
+      forceLogout();
+      window.location.href = '/signin?session=ended';
+    };
+    
+    window.addEventListener('auth-logout', handleLogoutEvent);
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'logout-event') {
+        forceLogout();
+      }
+    });
+    
+    // Check session on route change
+    const handleRouteChange = () => {
+      if (isAuthenticated) {
+        validateAndSync();
+      }
+    };
+    
+    // Initial check
+    validateAndSync();
+    
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('auth-logout', handleLogoutEvent);
+    };
+  }, [isAuthenticated, validateAndSync, forceLogout, location]);
+  
+  return null;
+};
 // Navigation Progress Component
 const NavigationProgress = () => {
   const [progress, setProgress] = useState(0);

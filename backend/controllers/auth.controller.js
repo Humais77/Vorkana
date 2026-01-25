@@ -1349,7 +1349,25 @@ const validateCSRF = (req) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
-    console.log('🚪 Logout request');
+    console.log('🚪 Logout request - isAdminLogout:', req.isAdminLogout);
+    
+    // Admin-specific cleanup
+    if (req.isAdminLogout || req.admin) {
+      console.log('🛡️ Admin logout cleanup');
+      
+      // Clear admin-specific cookies
+      res.clearCookie('isAdmin', {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/'
+      });
+      
+      // Clear admin-specific headers
+      res.removeHeader('X-Admin-Access');
+      res.removeHeader('X-Admin-User-Id');
+      res.removeHeader('X-Admin-Role');
+    }
     
     // Logout session if we have one
     if (req.sessionID) {
@@ -1374,9 +1392,22 @@ const logout = asyncHandler(async (req, res) => {
     };
 
     // Clear all possible auth cookies
-    const cookiesToClear = ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'oauth_state'];
+    const cookiesToClear = [
+      'token', 
+      'refreshToken', 
+      'csrfToken', 
+      'isAuthenticated', 
+      'oauth_state',
+      'adminToken',        // Add admin-specific cookies
+      'adminRefreshToken', // Add admin-specific cookies
+      'isAdmin'            // Add admin-specific cookies
+    ];
+    
     cookiesToClear.forEach(cookie => {
       res.clearCookie(cookie, clearCookieOptions);
+      // Also clear with admin path
+      res.clearCookie(cookie, { ...clearCookieOptions, path: '/admin' });
+      res.clearCookie(cookie, { ...clearCookieOptions, path: '/api/admin' });
     });
 
     // Clear CSRF cookie
@@ -1386,8 +1417,9 @@ const logout = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Logged out successfully',
-      requiresReload: true // Add this flag for frontend
+      message: req.isAdminLogout ? 'Admin logged out successfully' : 'Logged out successfully',
+      requiresReload: true,
+      isAdminLogout: req.isAdminLogout || false
     });
 
   } catch (error) {
@@ -1403,6 +1435,7 @@ const logout = asyncHandler(async (req, res) => {
 
     ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
       res.clearCookie(cookie, clearCookieOptions);
+      res.clearCookie(cookie, { ...clearCookieOptions, path: '/admin' });
     });
 
     res.json({
