@@ -13,11 +13,21 @@ class SessionService {
     this.sessionDuration = 30 * 24 * 60 * 60 * 1000; // 30 days for refresh tokens
     this.tokenDuration = 3 * 60 * 60 * 1000; // 3 hours for access token
     this.maxSessionsPerUser = 10;
-
+ 
+  console.log('⏰ Session service initialized:', {
+    sessionDuration: this.sessionDuration + 'ms',
+    sessionDurationDays: this.sessionDuration / (24 * 60 * 60 * 1000),
+    idleTimeout: this.idleTimeout + 'ms',
+    idleTimeoutHours: this.idleTimeout / (60 * 60 * 1000)
+  });
   }
 
  generateTokens(userId, role = 'user') {
   console.log('🔐 Generating production tokens for:', { userId, role });
+  console.log('🔐 Token generation debug:', {
+    currentTime: new Date().toISOString(),
+    currentTimestamp: Math.floor(Date.now() / 1000)
+  });
   
   try {
     // Define expiration in seconds (NOT milliseconds)
@@ -58,6 +68,11 @@ class SessionService {
         expiresAtISO: new Date(refreshTokenPayload.exp * 1000).toISOString()
       }
     });
+console.log('📊 Token timing:', {
+    accessTokenExpiresAt: new Date((currentTimestamp + accessTokenExpiresIn) * 1000).toISOString(),
+    refreshTokenExpiresAt: new Date((currentTimestamp + refreshTokenExpiresIn) * 1000).toISOString(),
+    currentTime: new Date().toISOString()
+  });
 
     // Generate tokens
     const token = jwt.sign(
@@ -93,41 +108,32 @@ class SessionService {
     
     const { token, refreshToken } = this.generateTokens(userId, user.role);
     
-    // Clean up old sessions with proper date calculation
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    await Session.deleteMany({
-      userId,
-      isActive: false,
-      logoutAt: { $lt: oneDayAgo }
-    });
-
-    // Check active sessions count
-    const activeSessions = await Session.countDocuments({
-      userId,
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    });
-
-    // Enforce maximum sessions
-    if (activeSessions >= this.maxSessionsPerUser) {
-      const oldestSession = await Session.findOne({
-        userId,
-        isActive: true
-      }).sort({ lastActivity: 1 });
-
-      if (oldestSession) {
-        await oldestSession.logout('multiple_login');
-      }
-    }
-
     // Get device info
     const parser = new UAParser(req.headers['user-agent']);
     const uaResult = parser.getResult();
     const ip = this.getClientIp(req);
     const geo = geoip.lookup(ip) || {};
-
-    // Calculate session expiration correctly (30 days from now)
-    const expiresAt = new Date(Date.now() + this.sessionDuration);
+    
+    // Get CURRENT TIME for everything
+    const currentTime = new Date();
+    
+    // CRITICAL: Logout old sessions with same device/ip to prevent conflicts
+    await Session.updateMany(
+      {
+        userId,
+        isActive: true,
+        'deviceInfo.ip': ip,
+        'deviceInfo.userAgent': req.headers['user-agent']
+      },
+      {
+        isActive: false,
+        logoutReason: 'new_login_same_device',
+        logoutAt: currentTime
+      }
+    );
+    
+    // Calculate session expiration (30 days from NOW)
+    const expiresAt = new Date(currentTime.getTime() + this.sessionDuration);
     
     // Create session object
     const sessionData = {
@@ -147,18 +153,18 @@ class SessionService {
         }
       },
       expiresAt: expiresAt,
+      lastActivity: currentTime,
+      loginAt: currentTime,
       metadata
     };
 
     const session = new Session(sessionData);
     await session.save();
 
-    console.log('✅ Session created:', {
+    console.log('✅ New session created, old sessions logged out:', {
       sessionId: session._id,
-      userId: session.userId,
-      expiresAt: expiresAt.toISOString(),
-      localTime: expiresAt.toLocaleString(),
-      timeFromNow: Math.round((expiresAt.getTime() - Date.now()) / 1000 / 60 / 60 / 24) + ' days'
+      loginAt: session.loginAt.toISOString(),
+      tokenPreview: token.substring(0, 20) + '...'
     });
 
     return {
@@ -254,27 +260,69 @@ async validateSession(token, refreshToken) {
       return { valid: false, error: 'Invalid token' };
     }
     
-    // FIX: Find session with proper criteria
+    // CRITICAL FIX: Find session by token (not just userId)
     const session = await Session.findOne({
+      token: token,  // Match the exact token
       userId: decoded.id,
-      isActive: true,
-      expiresAt: { $gt: new Date() }
+      isActive: true
     });
     
     if (!session) {
-      console.log('📝 Session not found in database');
+      console.log('📝 Session not found in database for this token');
+      
+      // Try to find by refresh token
+      const refreshSession = await Session.findOne({
+        refreshToken: refreshToken,
+        userId: decoded.id,
+        isActive: true
+      });
+      
+      if (refreshSession) {
+        console.log('🔄 Found session by refresh token');
+        return {
+          valid: true,
+          userId: refreshSession.userId,
+          sessionId: refreshSession._id,
+          token: refreshSession.token,
+          refreshToken: refreshSession.refreshToken,
+          lastActivity: refreshSession.lastActivity,
+          isAdmin: decoded.role === 'admin'
+        };
+      }
+      
       if (refreshToken) {
         return await this.refreshSession(refreshToken);
       }
       return { valid: false, error: 'Session not found' };
     }
     
-    // FIX: Calculate idle time correctly (3 hours for users, 1 hour for admins)
+    // Check if session is expired (by expiresAt field)
+    if (session.expiresAt < new Date()) {
+      console.log('⏰ Session expired in database');
+      await this.logoutSession(session._id, session.userId, 'expired');
+      if (refreshToken) {
+        return await this.refreshSession(refreshToken);
+      }
+      return { valid: false, error: 'Session expired' };
+    }
+    
+    // Calculate idle time correctly
     const isAdmin = decoded.role === 'admin';
     const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
     const idleTime = Date.now() - session.lastActivity.getTime();
     
     console.log(`⏱️ Idle check: ${Math.round(idleTime/1000/60)}min / ${Math.round(idleTimeout/1000/60)}min timeout`);
+    console.log('⏱️ Detailed idle check:', {
+      idleTimeMs: idleTime,
+      idleTimeMinutes: Math.round(idleTime / 1000 / 60),
+      idleTimeoutMs: idleTimeout,
+      idleTimeoutMinutes: Math.round(idleTimeout / 1000 / 60),
+      lastActivity: session.lastActivity,
+      currentTime: new Date(),
+      sessionId: session._id,
+      tokenMatches: session.token === token,
+      expiresAt: session.expiresAt
+    });
     
     // Only timeout if idle for too long
     if (idleTime > idleTimeout) {
@@ -291,13 +339,16 @@ async validateSession(token, refreshToken) {
     session.lastActivity = new Date();
     await session.save({ validateBeforeSave: false });
     
-    console.log('✅ Session validated successfully');
+    console.log('✅ Session validated successfully:', {
+      sessionId: session._id,
+      lastActivityUpdated: session.lastActivity.toISOString()
+    });
     
     return {
       valid: true,
       userId: session.userId,
       sessionId: session._id,
-      token: token, // Return original token
+      token: session.token,
       refreshToken: session.refreshToken,
       lastActivity: session.lastActivity,
       isAdmin,

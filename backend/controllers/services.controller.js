@@ -1787,7 +1787,6 @@ const sendServiceResponse = (res, service, requestId, startTime, cached) => {
   });
 };
 
-// In the updateService function, fix the version handling
 const updateService = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
@@ -1814,6 +1813,7 @@ const updateService = async (req, res, next) => {
       });
     }
 
+    // Find service first to check ownership and get current version
     const service = await Service.findById(id);
     
     if (!service) {
@@ -1837,16 +1837,36 @@ const updateService = async (req, res, next) => {
       });
     }
 
+    const currentDbVersion = service.version || 1;
+    let clientVersion = currentDbVersion; // Default to current DB version
     let updateData = {};
-    
+
+    console.log(`[${requestId}] Service ${id} - DB Version: ${currentDbVersion}`);
+
     // Handle FormData
     if (req.headers['content-type']?.includes('multipart/form-data')) {
+      console.log(`[${requestId}] Processing FormData update`);
+      
+      // Try to get client version from FormData
+      if (req.body.version) {
+        try {
+          const versionNum = parseInt(req.body.version);
+          if (!isNaN(versionNum)) {
+            clientVersion = versionNum;
+            console.log(`[${requestId}] Client version from FormData: ${clientVersion}`);
+          }
+        } catch (e) {
+          console.warn(`[${requestId}] Could not parse version:`, req.body.version);
+        }
+      }
+      
       // Parse JSON data from FormData
       if (req.body.data) {
         try {
           updateData = JSON.parse(req.body.data);
+          console.log(`[${requestId}] Successfully parsed data from FormData`);
         } catch (error) {
-          console.error('Error parsing JSON data:', error);
+          console.error(`[${requestId}] Error parsing JSON data:`, error);
           return res.status(400).json({
             success: false,
             message: 'Invalid JSON data in FormData',
@@ -1855,12 +1875,52 @@ const updateService = async (req, res, next) => {
           });
         }
       } else {
-        // Handle direct form fields
-        updateData = req.body;
+        // If no data field, use all body fields except version
+        updateData = { ...req.body };
+        delete updateData.version;
       }
     } else {
       // Handle JSON request
       updateData = req.body;
+      
+      if (updateData.version !== undefined) {
+        try {
+          const versionNum = parseInt(updateData.version);
+          if (!isNaN(versionNum)) {
+            clientVersion = versionNum;
+          }
+        } catch (e) {
+          console.warn(`[${requestId}] Could not parse version in JSON:`, updateData.version);
+        }
+        delete updateData.version;
+      }
+    }
+
+    console.log(`[${requestId}] Version check - Client: ${clientVersion}, DB: ${currentDbVersion}`);
+
+    // **IMPROVED VERSION CONFLICT HANDLING**
+    // Only show conflict if client version is significantly behind
+    if (clientVersion < currentDbVersion) {
+      const versionDiff = currentDbVersion - clientVersion;
+      
+      if (versionDiff > 5) {
+        // Significant conflict - require refresh
+        console.warn(`[${requestId}] Significant version conflict: diff=${versionDiff}`);
+        return res.status(409).json({
+          success: false,
+          message: 'This service has been modified multiple times. Please refresh and review changes.',
+          code: 'VERSION_CONFLICT_SIGNIFICANT',
+          currentVersion: currentDbVersion,
+          requestId
+        });
+      } else if (versionDiff > 1) {
+        // Minor conflict - warn but allow
+        console.log(`[${requestId}] Minor version mismatch: diff=${versionDiff}. Allowing update.`);
+        // Log this for audit but don't block
+      }
+      
+      // Update client version to match DB version
+      clientVersion = currentDbVersion;
     }
 
     // Sanitize input
@@ -1874,60 +1934,142 @@ const updateService = async (req, res, next) => {
       delete sanitizedData.isPopular;
     }
 
-    // Extract version from data before processing
-    const clientVersion = sanitizedData.version;
-    delete sanitizedData.version; // Remove version from update data
-
-    // Version conflict check (except for admin overrides)
-    if (!isAdmin && clientVersion !== undefined && clientVersion !== service.version) {
-      console.warn(`Version conflict: client=${clientVersion}, server=${service.version}`);
-      return res.status(409).json({
-        success: false,
-        message: 'Service was modified by another user. Please refresh and try again.',
-        code: 'VERSION_CONFLICT',
-        currentVersion: service.version,
-        requestId
+    // Validate subcategory if provided
+    if (sanitizedData.subcategory) {
+      const subcategory = await Subcategory.findOne({
+        _id: sanitizedData.subcategory,
+        category: sanitizedData.category || service.category,
+        isActive: true
       });
+
+      if (!subcategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory not found or does not belong to selected category',
+          code: 'SUBCATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
     }
 
-    // ... rest of validation (subcategory, category, etc.) ...
-
-    // Prepare update - CRITICAL FIX: Don't include version in the set operation
+    // Prepare update
     const updateFields = {
       $set: {
         ...sanitizedData,
         lastUpdatedBy: req.user._id,
         updatedAt: new Date(),
       },
-      $inc: { version: 1 } // Only increment, don't set directly
+      $inc: { version: 1 }
     };
 
-    // Remove any version field from $set if it exists
-    delete updateFields.$set.version;
-
-    // OPTIMIZATION: Remove empty fields to avoid unnecessary updates
+    // Clean up empty fields
     Object.keys(updateFields.$set).forEach(key => {
-      if (updateFields.$set[key] === undefined || updateFields.$set[key] === null) {
+      const val = updateFields.$set[key];
+      if (val === undefined || val === null || val === '') {
         delete updateFields.$set[key];
       }
     });
 
-    // Add thumbnail/upload handling if needed
+    // Handle file uploads
     if (req.files) {
-      // ... handle thumbnail and image uploads ...
+      if (req.files.thumbnail && req.files.thumbnail[0]) {
+        const thumbnailFile = req.files.thumbnail[0];
+        const thumbnailUpload = await processUploadToCloudinary([thumbnailFile], 'thumbnails');
+        
+        if (thumbnailUpload.length > 0) {
+          updateFields.$set.thumbnail = {
+            url: thumbnailUpload[0].url,
+            public_id: thumbnailUpload[0].public_id,
+            width: thumbnailUpload[0].width,
+            height: thumbnailUpload[0].height,
+            size: thumbnailUpload[0].size,
+            format: thumbnailUpload[0].format,
+            uploadedAt: new Date()
+          };
+          
+          if (service.thumbnail && service.thumbnail.public_id) {
+            await deleteCloudinaryImages([{ public_id: service.thumbnail.public_id }]);
+          }
+        }
+      }
+      
+      if (req.files.images && req.files.images.length > 0) {
+        const imageUploads = await processUploadToCloudinary(req.files.images, 'services');
+        const newImages = imageUploads.map(img => ({
+          url: img.url,
+          public_id: img.public_id,
+          width: img.width,
+          height: img.height,
+          size: img.size,
+          format: img.format,
+          uploadedAt: new Date()
+        }));
+        
+        const existingImages = service.images || [];
+        updateFields.$set.images = [...existingImages, ...newImages].slice(0, 10);
+      }
     }
 
-    console.log('Update fields:', JSON.stringify(updateFields, null, 2));
+    // Manual validation
+    const validationErrors = [];
+    
+    const title = sanitizedData.title || service.title;
+    if (!title || title.trim().length < 5) {
+      validationErrors.push({
+        field: 'title',
+        message: 'Title must be at least 5 characters',
+        type: 'minlength'
+      });
+    }
+    
+    const description = sanitizedData.description || service.description;
+    if (!description || description.trim().length < 50) {
+      validationErrors.push({
+        field: 'description',
+        message: 'Description must be at least 50 characters',
+        type: 'minlength'
+      });
+    }
+    
+    const price = sanitizedData.price !== undefined ? sanitizedData.price : service.price;
+    if (price === undefined || price === null || isNaN(parseFloat(price)) || parseFloat(price) < 1) {
+      validationErrors.push({
+        field: 'price',
+        message: 'Price must be a number greater than 0',
+        type: 'number.base'
+      });
+    }
+    
+    const category = sanitizedData.category || service.category;
+    if (!category) {
+      validationErrors.push({
+        field: 'category',
+        message: 'Category is required',
+        type: 'required'
+      });
+    }
 
-    // Perform update - Optimized for speed
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: validationErrors,
+        code: 'VALIDATION_ERROR',
+        requestId
+      });
+    }
+
+    console.log(`[${requestId}] Performing update from version ${currentDbVersion} to ${currentDbVersion + 1}`);
+
+    // Perform update WITHOUT Mongoose validators to avoid version field issues
     const updatedService = await Service.findOneAndUpdate(
       { _id: id },
       updateFields,
       {
         new: true,
-        runValidators: true,
+        runValidators: false, // Critical: Disable Mongoose validators
         context: 'query',
-        maxTimeMS: 3000 // Faster timeout
+        maxTimeMS: 5000
       }
     )
     .select('-__v -lastUpdatedBy -version -deletedAt -deletedBy')
@@ -1945,10 +2087,14 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // FAST: Invalidate cache immediately and trigger update
+    // Invalidate cache
     await invalidateServiceCache(id);
 
     const responseTime = Date.now() - startTime;
+    const newVersion = currentDbVersion + 1;
+    
+    // Log successful update
+    console.log(`[${requestId}] Update successful - New version: ${newVersion}, Time: ${responseTime}ms`);
     
     // Return response with new version
     res.json({
@@ -1956,8 +2102,10 @@ const updateService = async (req, res, next) => {
       message: 'Service updated successfully',
       service: {
         ...updatedService,
-        version: (service.version || 1) + 1 // Incremented version
+        version: newVersion
       },
+      version: newVersion,
+      previousVersion: currentDbVersion,
       requestId,
       timestamp: new Date().toISOString(),
       responseTime: `${responseTime}ms`
@@ -1965,20 +2113,16 @@ const updateService = async (req, res, next) => {
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    console.error('Update service error after', responseTime, 'ms:', error);
+    console.error(`[${requestId}] Update error after ${responseTime}ms:`, error);
     
-    // Handle MongoDB update conflict error
-    if (error.code === 40 || error.codeName === 'ConflictingUpdateOperators') {
-      return res.status(400).json({
-        success: false,
-        message: 'Update conflict detected. Please try again.',
-        code: 'UPDATE_CONFLICT',
-        requestId
-      });
-    }
-    
+    // Handle specific errors
     if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
+      const messages = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message,
+        type: err.kind
+      }));
+      
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -1988,31 +2132,26 @@ const updateService = async (req, res, next) => {
       });
     }
     
+    // Handle other errors
+    const errorResponse = {
+      success: false,
+      message: error.message || 'Failed to update service',
+      code: 'UPDATE_ERROR',
+      requestId,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (error.name === 'MongoError' && error.code === 11000) {
+      errorResponse.message = 'Service with similar title already exists';
+      errorResponse.code = 'DUPLICATE_SERVICE';
+    }
+    
     if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid data format',
-        code: 'INVALID_DATA_FORMAT',
-        requestId
-      });
+      errorResponse.message = 'Invalid data format';
+      errorResponse.code = 'INVALID_DATA_FORMAT';
     }
     
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Service with similar title already exists',
-        code: 'DUPLICATE_SERVICE',
-        requestId
-      });
-    }
-    
-    logAudit('ERROR', 'SERVICE', 'UPDATE', req.user?._id, { 
-      id: req.params.id, 
-      error: error.message,
-      responseTime
-    });
-    
-    next(error);
+    res.status(error.status || 500).json(errorResponse);
   }
 };
 

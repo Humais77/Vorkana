@@ -1,6 +1,7 @@
-// AdminSidebar.jsx - Update the logout function
+// AdminSidebar.jsx - Fixed with proper admin logout
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast'; // Add toast import
 import {
   FiHome,
   FiUsers,
@@ -11,36 +12,62 @@ import {
   FiX,
   FiFolderMinus
 } from 'react-icons/fi';
-import { useAuthStore } from '../../store/useAuthStore'; // Add this import
+import { useAuthStore } from '../../store/useAuthStore';
 
 const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
   const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout); // Get logout from auth store
+  const adminLogout = useAuthStore((state) => state.adminLogout); // Use adminLogout
+  const clearAuthData = useAuthStore((state) => state.clearAuthState); // Optional: for cleanup
 
   const handleLogout = async () => {
     try {
-      // Use the main logout function from auth store
-      await logout();
+      // Clear cookies manually first
+      const clearAllCookies = () => {
+        document.cookie.split(';').forEach(cookie => {
+          const [name] = cookie.trim().split('=');
+          if (name) {
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+          }
+        });
+      };
+      
+      // Clear cookies before API call
+      clearAllCookies();
+      
+      // Clear local storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Call admin logout
+      await adminLogout();
       
       // Show success message
       toast.success('Admin logged out successfully');
       
-      // Navigate to home page
-      navigate('/');
+      // Force redirect and reload to clear all state
+      setTimeout(() => {
+        window.location.href = '/';
+        window.location.reload(); // Force reload to clear React state
+      }, 500);
       
     } catch (error) {
-      console.error('Logout error:', error);
-      toast.error('Logout failed. Please try again.');
+      console.error('Admin logout error:', error);
+      toast.error('Admin logout failed');
       
-      // Force cleanup and redirect anyway
+      // Force cleanup anyway
       localStorage.clear();
       sessionStorage.clear();
-      navigate('/signin');
+      
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 300);
     } finally {
       // Close mobile sidebar
       setIsMobileOpen(false);
     }
   };
+
   const navItems = [
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },
@@ -129,7 +156,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
             className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors duration-200"
           >
             <FiLogOut className="h-5 w-5" />
-            <span className="font-medium">Logout</span>
+            <span className="font-medium">Admin Logout</span>
           </button>
         </div>
       </aside>

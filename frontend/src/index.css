@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* In your global CSS file */
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* Add this to ensure all sections handle overflow properly */
+section {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Prevent horizontal scrolling on all containers */
+.container, .max-w-7xl, .max-w-6xl, .max-w-4xl, .max-w-5xl {
+  overflow-x: hidden;
+  max-width: 100%;
+}

@@ -582,9 +582,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   <div className="shrink-0">
                     <button
                       onClick={() => {
-                        closeAllDropdowns();
-                        onSigninClick?.();
-                      }}
+  closeAllDropdowns();
+  if (window.location.pathname === '/signin' || window.location.pathname === '/signup') {
+    return; 
+  }
+  onSigninClick?.();
+}}
+
                       className="text-gray-700 hover:text-black font-medium px-2 xl:px-3 2xl:px-4 py-2.5 transition-colors duration-150 whitespace-nowrap text-sm xl:text-base"
                     >
                       Sign In
@@ -592,10 +596,13 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                   </div>
                   <div className="shrink-0">
                     <button
-                      onClick={() => {
-                        closeAllDropdowns();
-                        onSignupClick?.();
-                      }}
+                     onClick={() => {
+  closeAllDropdowns();
+  if (window.location.pathname === '/signin' || window.location.pathname === '/signup') {
+    return; 
+  }
+  onSignupClick?.();
+}}
                       className="px-3 xl:px-4 2xl:px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 shadow-sm hover:shadow-md whitespace-nowrap text-sm xl:text-base"
                     >
                       Join Free

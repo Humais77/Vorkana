@@ -12,7 +12,6 @@ const morgan = require('morgan');
 const csrfRoutes = require('./routes/csrf.route');
 const sessionCleanup = require('./cron/sessionCleanup');
 dotenv.config();
-process.env.TZ = 'UTC';
 // Validate environment variables
 const validateEnv = () => {
   const requiredEnvVars = ['JWT_SECRET', 'MONGO_URL', 'FRONTEND_URL'];
@@ -56,21 +55,7 @@ connectDB().then(() => {
 
 const app = express();
 const server = http.createServer(app);
-app.use((req, res, next) => {
-  // Log timezone information
-  const serverTime = {
-    iso: new Date().toISOString(),
-    utc: new Date().toUTCString(),
-    timestamp: Date.now(),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-  };
-  
-  // Add to response headers for debugging
-  res.set('X-Server-Time-ISO', serverTime.iso);
-  res.set('X-Server-Timestamp', serverTime.timestamp.toString());
-  
-  next();
-});
+
 // ==================== PERFORMANCE MIDDLEWARE ====================
 
 // 1. Compression

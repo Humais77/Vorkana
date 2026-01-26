@@ -1,23 +1,30 @@
-// Home.jsx - Updated version
-import React from 'react'
+import { useState } from 'react'
+import { useLocation } from 'react-router-dom' // Import useLocation
 import Hero from './Hero'
 import CategoryGrid from '../../../components/categories/CategoryGrid'
 import Testimonials from './Testimonal'
 import CallToAction from '../footer/CallToAction'
 import MakeItHappen from './MakeItHappen'
-
 import LogoMakerBanner from './LogoMakerBanner'
-import { useState } from 'react'
 import GetQuoteBanner from './GetQuoteBanner'
 import PopularCategoriesSection from '../../../components/home/PopularCategoriesSection'
-import { SeoWrapper } from '../../../components/SeoWrapper' // Import SeoWrapper
+import { SeoWrapper } from '../../../components/SeoWrapper' 
 import AuthModal from '../../../components/authModal/AuthModal'
 
 const Home = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('signin'); 
+  const location = useLocation(); // Get current location
+
+  // Check if user is on auth pages
+  const isOnAuthPage = location.pathname === '/signin' || location.pathname === '/signup';
 
   const openAuthModal = (tab = 'signin') => {
+    // Don't open modal if user is already on auth pages
+    if (isOnAuthPage) {
+      return;
+    }
+    
     setActiveTab(tab);
     setIsAuthModalOpen(true);
   };
@@ -52,7 +59,8 @@ const Home = () => {
       ]}
     >
       <div>
-        <Hero openAuthModal={openAuthModal} />
+        {/* Pass null or conditionally render based on auth page */}
+        <Hero openAuthModal={isOnAuthPage ? null : openAuthModal} />
 
         {isAuthModalOpen && (
           <AuthModal
@@ -64,11 +72,11 @@ const Home = () => {
 
         <CategoryGrid />
         <PopularCategoriesSection/>
-        <GetQuoteBanner openAuthModal={openAuthModal} />
+        <GetQuoteBanner openAuthModal={isOnAuthPage ? null : openAuthModal} />
         <Testimonials />
-        <MakeItHappen openAuthModal={openAuthModal} />
+        <MakeItHappen openAuthModal={isOnAuthPage ? null : openAuthModal} />
         <LogoMakerBanner/>
-        <CallToAction openAuthModal={openAuthModal} />
+        <CallToAction openAuthModal={isOnAuthPage ? null : openAuthModal} />
       </div>
     </SeoWrapper>
   );

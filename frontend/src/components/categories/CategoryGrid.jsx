@@ -127,8 +127,6 @@ const CategoryGrid = () => {
     fetchData();
   }, []);
 
- 
-
   // Toggle category expansion
   const toggleCategory = (categoryId) => {
     if (expandedCategory === categoryId) {
@@ -141,8 +139,8 @@ const CategoryGrid = () => {
   // Loading state
   if (isLoading) {
     return (
-      <section className="py-6 px-4 bg-white mt-10">
-        <div className="max-w-7xl mx-auto">
+      <section className="py-6 px-4 bg-white mt-10 overflow-x-hidden">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="text-left mb-6">
             <h2 className="text-4xl font-bold text-gray-900 mb-2">
               Browse Categories
@@ -151,7 +149,7 @@ const CategoryGrid = () => {
               Loading categories...
             </p>
           </div>
-         <div className="flex flex-wrap items-start gap-3 md:gap-4">
+          <div className="flex flex-wrap items-start gap-3 md:gap-4">
             {[...Array(10)].map((_, index) => (
               <div
                 key={index}
@@ -173,8 +171,8 @@ const CategoryGrid = () => {
   // Error state
   if (error) {
     return (
-      <section className="py-6 px-4 bg-white mt-10">
-        <div className="max-w-7xl mx-auto">
+      <section className="py-6 px-4 bg-white mt-10 overflow-x-hidden">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="text-left mb-6">
             <h2 className="text-4xl font-bold text-gray-900 mb-2">
               Browse Categories
@@ -215,8 +213,8 @@ const CategoryGridView = ({
   
   if (categories.length === 0) {
     return (
-      <section className="py-6 px-4 bg-white mt-10">
-        <div className="max-w-7xl mx-auto text-center py-8">
+      <section className="py-6 px-4 bg-white mt-10 overflow-x-hidden">
+        <div className="max-w-7xl mx-auto px-4 text-center py-8">
           <p className="text-gray-500">No categories available.</p>
         </div>
       </section>
@@ -226,8 +224,8 @@ const CategoryGridView = ({
   const displayCategories = showAll ? categories : categories.slice(0, 10);
   
   return (
-    <section className="py-6 px-4 bg-white mt-10">
-      <div className="max-w-7xl mx-auto">
+    <section className="py-6 px-4 bg-white mt-10 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto px-4">
         {/* Header */}
         <div className="text-left mb-8">
           <h2 className="text-4xl font-bold text-gray-900 mb-3">
@@ -239,8 +237,8 @@ const CategoryGridView = ({
         </div>
 
         {/* Category Grid */}
-        <div className="relative">
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 lg:grid-cols-10 gap-3 md:gap-4 items-start">
+        <div className="relative overflow-visible">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3 md:gap-4 items-start">
             {displayCategories.map((cat) => {
               const subcategories = subcategoriesMap[cat.id] || [];
               const hasSubcategories = subcategories.length > 0;
@@ -253,7 +251,7 @@ const CategoryGridView = ({
                 >
                   <div
                     className="flex flex-col items-center justify-center
-                      w-28 h-34       
+                      w-24 h-28 sm:w-28 sm:h-34       
                       bg-white rounded-lg shadow-sm
                       hover:shadow-md transition-all duration-200
                       border border-gray-100 hover:border-blue-100
@@ -268,7 +266,7 @@ const CategoryGridView = ({
                       </div>
                       
                       <div className="h-[40px] flex items-center justify-center">
-                        <span className="line-clamp-2 leading-snug break-words text-center text-sm">
+                        <span className="line-clamp-2 leading-snug break-words text-center text-xs sm:text-sm">
                           {cat.name}
                         </span>
                       </div>
@@ -281,12 +279,12 @@ const CategoryGridView = ({
                           e.stopPropagation();
                           toggleCategory(cat.id);
                         }}
-                        className="absolute top-2 right-2 text-gray-400 hover:text-blue-600 transition-colors"
+                        className="absolute top-1 right-1 sm:top-2 sm:right-2 text-gray-400 hover:text-blue-600 transition-colors p-1"
                       >
                         {isExpanded ? (
-                          <ChevronDown className="w-4 h-4" />
+                          <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4" />
                         ) : (
-                          <ChevronRight className="w-4 h-4" />
+                          <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                         )}
                       </button>
                     )}

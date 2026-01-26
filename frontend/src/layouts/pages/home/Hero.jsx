@@ -314,7 +314,7 @@ useEffect(() => {
 
       {/* CONTENT */}
       <div className="relative z-10 max-w-4xl w-full px-8 md:px-16 text-left text-white">
-        <h1 className="font-bold text-4xl md:text-6xl lg:text-7xl leading-tight mb-8">
+        <h1 className="font-bold text-5xl md:text-6xl lg:text-7xl leading-tight mb-8">
           Our freelancers <br /> will take it from here
         </h1>
 

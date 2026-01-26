@@ -244,56 +244,64 @@ const EditService = () => {
 
   // Populate form with service data - OPTIMIZED
   useEffect(() => {
-    if (currentService && !hasPopulatedRef.current) {
-      hasPopulatedRef.current = true;
+  if (currentService && !hasPopulatedRef.current) {
+    hasPopulatedRef.current = true;
 
-      // Check ownership - EARLY RETURN
-      if (currentUser && currentService.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
-        showServiceError('You can only edit your own services');
-        navigate(`/services/${id}`);
-        return;
-      }
-
-      // Create new form data object ONCE
-      const newFormData = {
-        title: currentService.title || "",
-        description: currentService.description || "",
-        shortDescription: currentService.shortDescription || "",
-        category: currentService.category?._id || currentService.category || "",
-        subcategory: currentService.subcategory?._id || currentService.subcategory || "",
-        price: currentService.price?.toString() || "",
-        currency: currentService.currency || "USD",
-        deliveryTime: currentService.deliveryTime?.toString() || "",
-        deliveryTimeUnit: currentService.deliveryTimeUnit || "days",
-        revisions: currentService.revisions?.toString() || "1",
-        tags: currentService.tags || [],
-        searchKeywords: currentService.searchKeywords || [],
-        features: currentService.features || [],
-        requirements: currentService.requirements || [],
-        faqs: currentService.faqs || [],
-        metaTitle: currentService.metaTitle || "",
-        metaDescription: currentService.metaDescription || "",
-        status: currentService.status || "active",
-        version: currentService.version || 1
-      };
-
-      setFormData(newFormData);
-
-      // Set existing images if they exist
-      if (currentService.images && Array.isArray(currentService.images)) {
-        setExistingImages(currentService.images);
-      }
-
-      // Set existing thumbnail if it exists
-      if (currentService.thumbnail) {
-        setExistingThumbnail(currentService.thumbnail);
-      }
-
-      // Reset conflict states
-      setVersionConflict(false);
-      setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+    // Check ownership
+    if (currentUser && currentService.createdBy?._id !== currentUser._id && currentUser.role !== 'admin') {
+      showServiceError('You can only edit your own services');
+      navigate(`/services/${id}`);
+      return;
     }
-  }, [currentService, currentUser, id, navigate, showServiceError]);
+
+    // Log current version for debugging
+    console.log(`Loading service ${id} with version ${currentService.version}`);
+
+    // Create new form data object with correct version
+    const newFormData = {
+      title: currentService.title || "",
+      description: currentService.description || "",
+      shortDescription: currentService.shortDescription || "",
+      category: currentService.category?._id || currentService.category || "",
+      subcategory: currentService.subcategory?._id || currentService.subcategory || "",
+      price: currentService.price?.toString() || "",
+      currency: currentService.currency || "USD",
+      deliveryTime: currentService.deliveryTime?.toString() || "",
+      deliveryTimeUnit: currentService.deliveryTimeUnit || "days",
+      revisions: currentService.revisions?.toString() || "1",
+      tags: currentService.tags || [],
+      searchKeywords: currentService.searchKeywords || [],
+      features: currentService.features || [],
+      requirements: currentService.requirements || [],
+      faqs: currentService.faqs || [],
+      metaTitle: currentService.metaTitle || "",
+      metaDescription: currentService.metaDescription || "",
+      status: currentService.status || "active",
+      version: currentService.version || 1 // IMPORTANT: Use version from service
+    };
+
+    setFormData(newFormData);
+
+    // Set existing images if they exist
+    if (currentService.images && Array.isArray(currentService.images)) {
+      setExistingImages(currentService.images);
+    }
+
+    // Set existing thumbnail if it exists
+    if (currentService.thumbnail) {
+      setExistingThumbnail(currentService.thumbnail);
+    }
+
+    // Reset conflict states
+    setVersionConflict(false);
+    setConflictResolution({ show: false, serverVersion: 1, serverData: null });
+    
+    // Force a small delay to ensure form is properly populated
+    setTimeout(() => {
+      console.log('Form populated with version:', newFormData.version);
+    }, 100);
+  }
+}, [currentService, currentUser, id, navigate, showServiceError]);
 
   // Handle successful update - OPTIMIZED
   useEffect(() => {
@@ -790,97 +798,109 @@ const EditService = () => {
     showServiceInfo('Thumbnail removed');
   }, [thumbnailFile, existingThumbnail, showServiceInfo]);
 
-  // Optimized submit handler
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (isSubmitting) return;
+  if (isSubmitting) return;
 
-    setIsSubmitting(true);
-    setVersionConflict(false);
+  setIsSubmitting(true);
+  setVersionConflict(false);
 
-    if (!isAuthenticated) {
-      showServiceError("Please sign in to update services");
-      setIsSubmitting(false);
-      return;
+  if (!isAuthenticated) {
+    showServiceError("Please sign in to update services");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (!validateForm()) {
+    setIsSubmitting(false);
+    return;
+  }
+
+  try {
+    // Get the LATEST version from service data, not form data
+    const currentVersionNum = currentService?.version || formData.version || 1;
+    
+    console.log(`Submitting update for service ${id} with version ${currentVersionNum}`);
+
+    // Prepare update data with current version
+    const updateData = {
+      title: (formData.title || '').trim(),
+      description: (formData.description || '').trim(),
+      shortDescription: formData.shortDescription?.trim() ||
+        (formData.description ? formData.description.substring(0, 150) + '...' : ''),
+      category: formData.category,
+      subcategory: formData.subcategory || null,
+      price: parseFloat(formData.price || 0),
+      currency: formData.currency || "USD",
+      deliveryTime: parseInt(formData.deliveryTime || 1),
+      deliveryTimeUnit: formData.deliveryTimeUnit || "days",
+      revisions: parseInt(formData.revisions || 1),
+      status: formData.status || "active",
+      tags: formData.tags || [],
+      searchKeywords: formData.searchKeywords || [],
+      features: formData.features || [],
+      requirements: formData.requirements || [],
+      faqs: formData.faqs || [],
+      metaTitle: formData.metaTitle?.trim() || '',
+      metaDescription: formData.metaDescription?.trim() || '',
+      version: currentVersionNum // Include current version
+    };
+
+    showServiceLoading('Updating service...');
+
+    // Create FormData
+    const formDataToSend = new FormData();
+    
+    // Append version separately
+    formDataToSend.append('version', currentVersionNum.toString());
+    
+    // Append data as JSON
+    const { version, ...dataWithoutVersion } = updateData;
+    formDataToSend.append('data', JSON.stringify(dataWithoutVersion));
+
+    // Append files
+    if (thumbnailFile?.file) {
+      formDataToSend.append('thumbnail', thumbnailFile.file);
     }
 
-    if (!validateForm()) {
-      setIsSubmitting(false);
-      return;
-    }
-
-    try {
-      // Prepare update data
-      const updateData = {
-        title: (formData.title || '').trim(),
-        description: (formData.description || '').trim(),
-        shortDescription: formData.shortDescription?.trim() ||
-          (formData.description ? formData.description.substring(0, 150) + '...' : ''),
-        category: formData.category,
-        subcategory: formData.subcategory || null,
-        price: parseFloat(formData.price || 0),
-        currency: formData.currency || "USD",
-        deliveryTime: parseInt(formData.deliveryTime || 1),
-        deliveryTimeUnit: formData.deliveryTimeUnit || "days",
-        revisions: parseInt(formData.revisions || 1),
-        status: formData.status || "active",
-        tags: formData.tags || [],
-        searchKeywords: formData.searchKeywords || [],
-        features: formData.features || [],
-        requirements: formData.requirements || [],
-        faqs: formData.faqs || [],
-        metaTitle: formData.metaTitle?.trim() || '',
-        metaDescription: formData.metaDescription?.trim() || '',
-        version: formData.version || currentVersion
-      };
-
-      showServiceLoading('Updating service...');
-
-      // Create FormData
-      const formDataToSend = new FormData();
-      formDataToSend.append('data', JSON.stringify(updateData));
-
-      if (thumbnailFile?.file) {
-        formDataToSend.append('thumbnail', thumbnailFile.file);
-      }
-
-      if (uploadedImages.length > 0) {
-        uploadedImages.forEach((img) => {
-          if (img.file) {
-            formDataToSend.append('images', img.file);
-          }
-        });
-      }
-
-      // Call updateService
-      updateService({
-        id: id,
-        data: formDataToSend,
-        headers: {
-          'Content-Type': 'multipart/form-data'
+    if (uploadedImages.length > 0) {
+      uploadedImages.forEach((img) => {
+        if (img.file) {
+          formDataToSend.append('images', img.file);
         }
       });
-
-    } catch (error) {
-      dismissServiceToast();
-
-      if (error.code === 'VERSION_CONFLICT') {
-        return;
-      } else if (error.message?.includes('SUBCATEGORY')) {
-        setErrors(prev => ({ ...prev, subcategory: 'Invalid subcategory selection' }));
-        showServiceError('Please select a valid subcategory');
-      } else if (error.message?.includes('Category not found')) {
-        showServiceError('Selected category no longer exists. Please refresh and select again.');
-      } else if (error.message?.includes('Validation failed')) {
-        showServiceError('Please check your input and try again.');
-      } else {
-        showServiceError(error.message || 'Failed to update service. Please try again.');
-      }
-
-      setIsSubmitting(false);
     }
-  }, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, currentVersion, isSubmitting, showServiceLoading, showServiceError, dismissServiceToast]);
+
+    console.log('Submitting with FormData:', {
+      version: currentVersionNum,
+      hasThumbnail: !!thumbnailFile,
+      hasImages: uploadedImages.length > 0
+    });
+
+    // Call updateService
+    updateService({
+      id: id,
+      data: formDataToSend,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+  } catch (error) {
+    dismissServiceToast();
+    setIsSubmitting(false);
+    
+    if (error.code === 'VERSION_CONFLICT') {
+      showServiceError('This service has been modified. Please refresh and try again.');
+      setTimeout(() => {
+        handleRefreshService();
+      }, 1500);
+    } else {
+      showServiceError(error.message || 'Failed to update service. Please try again.');
+    }
+  }
+}, [formData, id, thumbnailFile, uploadedImages, validateForm, updateService, isAuthenticated, isSubmitting, showServiceLoading, showServiceError, dismissServiceToast, handleRefreshService, currentService]);
 
   // Helper function
   const formatPrice = useCallback((price) => {

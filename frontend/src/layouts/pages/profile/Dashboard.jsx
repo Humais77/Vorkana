@@ -9,7 +9,7 @@ import {
   extractGigsFromResponse,
   gigKeys
 } from '../../../hooks/useGigs';
-import { useMyServices, useDeleteService ,serviceKeys,extractServicesFromResponse} from '../../../hooks/useServices';
+import { useMyServices, useDeleteService, serviceKeys, extractServicesFromResponse } from '../../../hooks/useServices';
 import { useGetProfile } from '../../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
 import { isProfileCompleteEnough, calculateProfileCompletion, getProfileSuggestions } from '../../../utils/profileUtils';
@@ -58,6 +58,8 @@ import { useGigToast } from '../../../hooks/useGigToast';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { SeoWrapper } from '../../../components/SeoWrapper'; // Add this import
+
 // ImageWithFallback component
 const ImageWithFallback = memo(({ src, alt, className, fallback = null, type, itemId, forceRefresh }) => {
   const [error, setError] = useState(false);
@@ -475,7 +477,7 @@ const DeleteConfirmationDialog = memo(({
                   <p className="text-gray-700 mb-4">
                     {count > 1 ? (
                       <>
-                        You are about to delete <span className="font-bold text-red-600">{count} {pluralItemLabel}</span>.
+                        You are about to delete <span className="font-bold text-red-600">{count} ${pluralItemLabel}</span>.
                         This action cannot be undone.
                       </>
                     ) : (
@@ -483,7 +485,7 @@ const DeleteConfirmationDialog = memo(({
                         You are about to delete {itemName ? (
                           <span className="font-bold text-gray-900">"{itemName}"</span>
                         ) : (
-                          <span className="font-bold text-red-600">this {itemLabel}</span>
+                          <span className="font-bold text-red-600">this ${itemLabel}</span>
                         )}.
                         This action cannot be undone.
                       </>
@@ -502,7 +504,7 @@ const DeleteConfirmationDialog = memo(({
                   {requiresTyping && (
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Type <span className="font-mono text-red-600">delete {count > 1 ? `${count} ${itemLabel}s` : itemLabel}</span> to confirm:
+                        Type <span className="font-mono text-red-600">delete ${count > 1 ? `${count} ${itemLabel}s` : itemLabel}</span> to confirm:
                       </label>
                       <input
                         type="text"
@@ -978,7 +980,7 @@ const BulkActionsBar = memo(({
         <div className="flex items-center">
           <CheckSquare className={`w-5 h-5 text-${primaryColor}-600 mr-2 flex-shrink-0`} />
           <span className={`font-medium text-${primaryColor}-900`}>
-            {selectedCount} {activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
+            {selectedCount} ${activeTab === 'services' ? 'service(s)' : 'gig(s)'} selected
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1242,9 +1244,9 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user: authUser, isAuthenticated } = useAuthStore();
-   const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
   const prevStatsRef = useRef(null);
-   const lastActionRef = useRef(null);
+  const lastActionRef = useRef(null);
   
   const { 
     showServiceDeleteSuccess, 
@@ -1360,7 +1362,8 @@ const Dashboard = () => {
   const deleteMultipleGigsMutation = useDeleteMultipleGigs();
   const updateMultipleGigsStatusMutation = useUpdateMultipleGigsStatus();
   const deleteServiceMutation = useDeleteService();
-useEffect(() => {
+
+  useEffect(() => {
     if (services && gigs && (immediateUpdates.services.deleted.length > 0 || immediateUpdates.gigs.deleted.length > 0)) {
       // After successful refetch, clear the immediate updates
       setImmediateUpdates({
@@ -1369,6 +1372,7 @@ useEffect(() => {
       });
     }
   }, [services, gigs]);
+
   const stats = useMemo(() => {
     if (servicesLoading || gigsLoading) {
       return prevStatsRef.current || {
@@ -1405,7 +1409,8 @@ useEffect(() => {
     
     return newStats;
   }, [gigs, services, servicesLoading, gigsLoading, immediateUpdates]);
-const performOptimisticDelete = useCallback((ids, type) => {
+
+  const performOptimisticDelete = useCallback((ids, type) => {
     const itemType = type === 'gig' ? 'gigs' : 'services';
     const currentItems = itemType === 'gigs' ? gigs : services;
     
@@ -1518,12 +1523,14 @@ const performOptimisticDelete = useCallback((ids, type) => {
   useEffect(() => {
     resetSelection();
   }, [gigs, services, resetSelection]);
-useEffect(() => {
-  console.log('Current active tab:', activeTab);
-  console.log('Selected gigs:', selectedGigs);
-  console.log('Selected services:', selectedServices);
-  console.log('Delete dialog:', deleteDialog);
-}, [activeTab, selectedGigs, selectedServices, deleteDialog]);
+
+  useEffect(() => {
+    console.log('Current active tab:', activeTab);
+    console.log('Selected gigs:', selectedGigs);
+    console.log('Selected services:', selectedServices);
+    console.log('Delete dialog:', deleteDialog);
+  }, [activeTab, selectedGigs, selectedServices, deleteDialog]);
+
   const handleCreateService = useCallback(() => {
     if (!canCreateContent) {
       toast.error('Complete your profile to create services');
@@ -1612,29 +1619,29 @@ useEffect(() => {
   }, [activeTab]);
 
   const handleBulkDelete = useCallback(() => {
-  const ids = activeTab === 'services' ? selectedServices : selectedGigs;
-  if (ids.length === 0) return;
-  
-  console.log('Bulk delete called:', { 
-    activeTab, 
-    ids, 
-    selectedServicesCount: selectedServices.length,
-    selectedGigsCount: selectedGigs.length 
-  });
-  
-  // FIXED: Always use activeTab to determine type
-  const deleteType = activeTab === 'services' ? 'service' : 'gig';
-  
-  console.log('Setting delete dialog type to:', deleteType);
-  
-  setDeleteDialog({
-    isOpen: true,
-    type: deleteType,
-    ids,
-    itemName: '',
-    isLoading: false
-  });
-}, [activeTab, selectedServices, selectedGigs]);
+    const ids = activeTab === 'services' ? selectedServices : selectedGigs;
+    if (ids.length === 0) return;
+    
+    console.log('Bulk delete called:', { 
+      activeTab, 
+      ids, 
+      selectedServicesCount: selectedServices.length,
+      selectedGigsCount: selectedGigs.length 
+    });
+    
+    // FIXED: Always use activeTab to determine type
+    const deleteType = activeTab === 'services' ? 'service' : 'gig';
+    
+    console.log('Setting delete dialog type to:', deleteType);
+    
+    setDeleteDialog({
+      isOpen: true,
+      type: deleteType,
+      ids,
+      itemName: '',
+      isLoading: false
+    });
+  }, [activeTab, selectedServices, selectedGigs]);
 
   const handleDeleteConfirm = useCallback(async () => {
     setDeleteDialog(prev => ({ ...prev, isLoading: true }));
@@ -1843,6 +1850,7 @@ useEffect(() => {
     );
     return [...createdServices, ...filtered];
   }, [serviceStatusFilter, immediateUpdates.services]);
+
   useEffect(() => {
     const handlePageShow = async (event) => {
       if (event.persisted) {
@@ -1863,6 +1871,7 @@ useEffect(() => {
       window.removeEventListener('pageshow', handlePageShow);
     };
   }, [refetchProfile, refetchServices, refetchGigs]);
+
   useEffect(() => {
     let pollInterval;
     
@@ -2063,399 +2072,481 @@ useEffect(() => {
     : selectedGigs.length;
   const items = activeTab === 'services' ? filteredServices : filteredGigs;
 
+  // Generate SEO structured data
+  const websiteUrl = window.location.origin;
+  const breadcrumbItems = [
+    { name: 'Home', url: '/' },
+    { name: 'Dashboard', url: '/dashboard' }
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DeleteConfirmationDialog
-        isOpen={deleteDialog.isOpen}
-        onClose={() => !deleteDialog.isLoading && setDeleteDialog(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={handleDeleteConfirm}
-        itemType={deleteDialog.type}
-        count={deleteDialog.ids.length}
-        isLoading={deleteDialog.isLoading}
-        itemName={deleteDialog.itemName}
-      />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-gray-600 mt-2">
-                Manage your services and gigs, track your performance, and grow your freelance business.
-                {!canCreateContent && " Complete your profile to unlock all features!"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Profile Sections */}
-        <ProfileWarningBanner
-          profileCompletion={profileCompletion}
-          profileSuggestions={profileSuggestions}
-          onCompleteProfile={handleCompleteProfile}
-          isLoading={isProfileLoading}
+    <SeoWrapper
+      title="Dashboard | Manage Your Freelance Services & Gigs | Vorkanna"
+      description={`Manage your freelance services and gigs on Vorkanna. ${stats.totalServices} services, ${stats.totalGigs} gigs, ${profileCompletion}% profile completion. Track performance and grow your business.`}
+      canonical="/dashboard"
+      keywords="freelance dashboard, manage gigs, manage services, freelancer profile, freelance analytics, Vorkanna"
+      ogTitle="Freelance Dashboard | Vorkanna"
+      ogDescription="Manage your freelance services, gigs, and track your performance on Vorkanna"
+      ogImage={`${websiteUrl}/images/dashboard-og.jpg`}
+      ogType="website"
+      ogUrl={`${websiteUrl}/dashboard`}
+      twitterCard="summary_large_image"
+      twitterSite="@Vorkanna"
+      robots="index, follow"
+      lang="en"
+      breadcrumb={breadcrumbItems}
+      structuredData={[
+        {
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "name": "Freelancer Dashboard | Vorkanna",
+          "description": "Dashboard for managing freelance services and gigs on Vorkanna marketplace",
+          "url": `${websiteUrl}/dashboard`,
+          "mainEntity": {
+            "@type": "Service",
+            "name": "Freelance Management Dashboard",
+            "description": "Dashboard for freelancers to manage their services, gigs, and track performance",
+            "provider": {
+              "@type": "Person",
+              "name": user?.name || "Freelancer"
+            }
+          },
+          "breadcrumb": {
+            "@type": "BreadcrumbList",
+            "itemListElement": breadcrumbItems.map((item, index) => ({
+              "@type": "ListItem",
+              "position": index + 1,
+              "name": item.name,
+              "item": `${websiteUrl}${item.url}`
+            }))
+          }
+        },
+        {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          "name": "Freelancer Dashboard Statistics",
+          "description": "Performance metrics and statistics for freelancers",
+          "url": `${websiteUrl}/dashboard`,
+          "numberOfItems": stats.totalServices + stats.totalGigs,
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "Services",
+              "description": `Total: ${stats.totalServices}, Active: ${stats.activeServices}`,
+              "item": `${websiteUrl}/dashboard?tab=services`
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "Gigs",
+              "description": `Total: ${stats.totalGigs}, Active: ${stats.activeGigs}`,
+              "item": `${websiteUrl}/dashboard?tab=gigs`
+            },
+            {
+              "@type": "ListItem",
+              "position": 3,
+              "name": "Profile Completion",
+              "description": `${profileCompletion}% complete`,
+              "item": `${websiteUrl}/profile`
+            }
+          ]
+        }
+      ]}
+    >
+      <div className="min-h-screen bg-gray-50">
+        <DeleteConfirmationDialog
+          isOpen={deleteDialog.isOpen}
+          onClose={() => !deleteDialog.isLoading && setDeleteDialog(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={handleDeleteConfirm}
+          itemType={deleteDialog.type}
+          count={deleteDialog.ids.length}
+          isLoading={deleteDialog.isLoading}
+          itemName={deleteDialog.itemName}
         />
-
-        <ProfileInfoBar
-          profileCompletion={profileCompletion}
-          canCreateContent={canCreateContent}
-          onImproveProfile={handleCompleteProfile}
-          isLoading={isProfileLoading}
-        />
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <StatsCard
-            title="Total Services"
-            value={stats.totalServices}
-            subValue={`(${stats.activeServices} active)`}
-            icon={Package}
-            colorClass="blue"
-            onClick={() => {
-              setActiveTab('services');
-              setServiceStatusFilter('all');
-            }}
-          />
-          <StatsCard
-            title="Active Services"
-            value={stats.activeServices}
-            subValue={`of ${stats.totalServices} total`}
-            icon={CheckCircle}
-            colorClass="blue"
-            onClick={() => {
-              setActiveTab('services');
-              setServiceStatusFilter('active');
-            }}
-          />
-          <StatsCard
-            title="Total Gigs"
-            value={stats.totalGigs}
-            subValue={`(${stats.activeGigs} active)`}
-            icon={FileText}
-            colorClass="green"
-            onClick={() => {
-              setActiveTab('gigs');
-              setStatusFilter('all');
-            }}
-          />
-          <StatsCard
-            title="Active Gigs"
-            value={stats.activeGigs}
-            subValue={`of ${stats.totalGigs} total`}
-            icon={TrendingUp}
-            colorClass="green"
-            onClick={handleActiveGigsClick}
-          />
-        </div>
-
-        {/* Quick Info Buttons */}
-        <div className="flex flex-wrap gap-3 mb-8">
-          <Link
-            to="/what-are-services"
-            className="inline-flex items-center px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            <Briefcase className="w-5 h-5 mr-2" />
-            What are Services?
-            <HelpCircle className="w-5 h-5 ml-2 opacity-80" />
-          </Link>
-          <Link
-            to="/what-are-gigs"
-            className="inline-flex items-center px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-          >
-            <FileText className="w-5 h-5 mr-2" />
-            What are Gigs?
-            <HelpCircle className="w-5 h-5 ml-2 opacity-80" />
-          </Link>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div className="flex-1">
-              <div className="flex items-center">
-                <h2 className="text-xl font-bold text-gray-900 mr-4">Manage Your Work</h2>
-                <div className="hidden sm:flex items-center gap-2">
-                  <span className="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded-full">
-                    {stats.totalServices} Services
-                  </span>
-                  <span className="text-sm px-3 py-1 bg-green-100 text-green-700 rounded-full">
-                    {stats.totalGigs} Gigs
-                  </span>
-                </div>
-              </div>
-              <p className="text-gray-600 mt-1">
-                {activeTab === 'services' 
-                  ? 'Manage your pre-defined service offerings'
-                  : 'Manage your project-based gigs and applications'}
-              </p>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={handleCreateGig}
-                disabled={!canCreateContent || isLoading}
-                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                  canCreateContent 
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
-                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                title={!canCreateContent ? "Complete your profile to create gigs" : ""}
-              >
-                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-                Create Gig
-                {!canCreateContent && (
-                  <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="font-medium">Profile Incomplete</span>
-                    </div>
-                    <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs.</p>
-                    <button
-                      onClick={handleCompleteProfile}
-                      className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
-                    >
-                      Complete Profile Now
-                    </button>
-                  </div>
-                )}
-              </button>
-              <button
-                onClick={handleCreateService}
-                disabled={!canCreateContent || isLoading}
-                className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                  canCreateContent 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
-                } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                title={!canCreateContent ? "Complete your profile to create services" : ""}
-              >
-                <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
-                Create Service
-                {!canCreateContent && (
-                  <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="font-medium">Profile Incomplete</span>
-                    </div>
-                    <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create services.</p>
-                    <button
-                      onClick={handleCompleteProfile}
-                      className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
-                    >
-                      Complete Profile Now
-                    </button>
-                  </div>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Info message */}
-          {!canCreateContent && (
-            <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Info className="w-5 h-5 text-gray-600 flex-shrink-0" />
-                <p className="text-gray-700 text-sm">
-                  Complete your profile to unlock the ability to create gigs and services. 
-                  A complete profile helps build trust with clients and increases your chances of success.
+          <div className="mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex-1">
+                <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+                <p className="text-gray-600 mt-2">
+                  Manage your services and gigs, track your performance, and grow your freelance business.
+                  {!canCreateContent && " Complete your profile to unlock all features!"}
                 </p>
               </div>
             </div>
-          )}
-
-          {/* Tab Navigation */}
-          <div className="bg-gray-50 rounded-lg p-1 mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex">
-                <button
-                  onClick={() => setActiveTab('services')}
-                  className={`px-5 py-2.5 font-medium transition-colors flex-shrink-0 rounded-l-lg ${
-                    activeTab === 'services'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Briefcase className="w-4 h-4 flex-shrink-0" />
-                    <span className="whitespace-nowrap">Services ({stats.totalServices})</span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => setActiveTab('gigs')}
-                  className={`px-5 py-2.5 font-medium transition-colors flex-shrink-0 rounded-r-lg ${
-                    activeTab === 'gigs'
-                      ? 'bg-green-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 flex-shrink-0" />
-                    <span className="whitespace-nowrap">Gigs ({stats.totalGigs})</span>
-                  </div>
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-2 ${viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-                  >
-                    <Grid3x3 className="w-5 h-5 text-gray-600" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-2 ${viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-                  >
-                    <List className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Bulk Actions */}
-          <BulkActionsBar
-            activeTab={activeTab}
-            selectedCount={selectedCount}
-            onUpdateStatus={activeTab === 'gigs' ? handleUpdateGigStatus : handleUpdateServiceStatus}
-            onDelete={activeTab === 'gigs' ? handleDeleteGigs : handleDeleteServices}
-            isUpdating={updateMultipleGigsStatusMutation.isPending}
-            isDeleting={activeTab === 'gigs' 
-              ? deleteMultipleGigsMutation.isPending 
-              : deleteServiceMutation.isPending}
+          {/* Profile Sections */}
+          <ProfileWarningBanner
+            profileCompletion={profileCompletion}
+            profileSuggestions={profileSuggestions}
+            onCompleteProfile={handleCompleteProfile}
+            isLoading={isProfileLoading}
           />
 
-          {/* Filter Bar */}
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center">
-                  <button
-                    onClick={activeTab === 'services' ? handleSelectAllServices : handleSelectAll}
-                    disabled={isLoading || items.length === 0}
-                    className="flex items-center mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {activeTab === 'services' 
-                      ? allServicesSelected
-                        ? <CheckSquare className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                        : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                      : allSelected
-                        ? <CheckSquare className="w-5 h-5 text-green-600 flex-shrink-0" />
-                        : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                    }
-                  </button>
-                  <span className="text-gray-600 whitespace-nowrap">Select All</span>
-                </div>
-                <span className="text-gray-500 whitespace-nowrap">
-                  {items.length} {activeTab === 'services' ? 'service' : 'gig'}{items.length !== 1 ? 's' : ''} found
-                </span>
-              </div>
-              <div className="flex items-center space-x-4">
-                <select
-                  value={activeTab === 'services' ? serviceStatusFilter : statusFilter}
-                  onChange={(e) => {
-                    if (activeTab === 'services') {
-                      setServiceStatusFilter(e.target.value);
-                    } else {
-                      setStatusFilter(e.target.value);
-                    }
-                    setImageRefreshKey(Date.now());
-                  }}
-                  disabled={isLoading}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 min-w-[150px]"
-                >
-                  <option value="all">All Status</option>
-                  {activeTab === 'services' ? (
-                    <>
-                      <option value="draft">Draft</option>
-                      <option value="pending">Pending</option>
-                      <option value="active">Active</option>
-                      <option value="paused">Paused</option>
-                      <option value="denied">Denied</option>
-                      <option value="suspended">Suspended</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="open">Open</option>
-                      <option value="active">Active</option>
-                      <option value="draft">Draft</option>
-                      <option value="paused">Paused</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                      <option value="closed">Closed</option>
-                    </>
-                  )}
-                </select>
-              </div>
-            </div>
+          <ProfileInfoBar
+            profileCompletion={profileCompletion}
+            canCreateContent={canCreateContent}
+            onImproveProfile={handleCompleteProfile}
+            isLoading={isProfileLoading}
+          />
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <StatsCard
+              title="Total Services"
+              value={stats.totalServices}
+              subValue={`(${stats.activeServices} active)`}
+              icon={Package}
+              colorClass="blue"
+              onClick={() => {
+                setActiveTab('services');
+                setServiceStatusFilter('all');
+              }}
+            />
+            <StatsCard
+              title="Active Services"
+              value={stats.activeServices}
+              subValue={`of ${stats.totalServices} total`}
+              icon={CheckCircle}
+              colorClass="blue"
+              onClick={() => {
+                setActiveTab('services');
+                setServiceStatusFilter('active');
+              }}
+            />
+            <StatsCard
+              title="Total Gigs"
+              value={stats.totalGigs}
+              subValue={`(${stats.activeGigs} active)`}
+              icon={FileText}
+              colorClass="green"
+              onClick={() => {
+                setActiveTab('gigs');
+                setStatusFilter('all');
+              }}
+            />
+            <StatsCard
+              title="Active Gigs"
+              value={stats.activeGigs}
+              subValue={`of ${stats.totalGigs} total`}
+              icon={TrendingUp}
+              colorClass="green"
+              onClick={handleActiveGigsClick}
+            />
           </div>
 
-          {/* Content Area */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${activeTab}-${viewMode}-${imageRefreshKey}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
+          {/* Quick Info Buttons */}
+          <div className="flex flex-wrap gap-3 mb-8">
+            <Link
+              to="/what-are-services"
+              className="inline-flex items-center px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              {isLoading ? (
-                <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                  <div className="p-12 text-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-gray-600 mx-auto mb-4" />
-                    <p className="text-gray-600">Loading your {activeTab}...</p>
+              <Briefcase className="w-5 h-5 mr-2" />
+              What are Services?
+              <HelpCircle className="w-5 h-5 ml-2 opacity-80" />
+            </Link>
+            <Link
+              to="/what-are-gigs"
+              className="inline-flex items-center px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+            >
+              <FileText className="w-5 h-5 mr-2" />
+              What are Gigs?
+              <HelpCircle className="w-5 h-5 ml-2 opacity-80" />
+            </Link>
+          </div>
+
+          {/* Main Content Area */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex-1">
+                <div className="flex items-center">
+                  <h2 className="text-xl font-bold text-gray-900 mr-4">Manage Your Work</h2>
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded-full">
+                      {stats.totalServices} Services
+                    </span>
+                    <span className="text-sm px-3 py-1 bg-green-100 text-green-700 rounded-full">
+                      {stats.totalGigs} Gigs
+                    </span>
                   </div>
                 </div>
-              ) : items.length === 0 ? (
-                <EmptyState
-                  type={activeTab}
-                  filter={activeTab === 'services' ? serviceStatusFilter : statusFilter}
-                  onCreate={activeTab === 'services' ? handleCreateService : handleCreateGig}
-                  icon={activeTab === 'services' ? Briefcase : FileText}
-                  createButtonText={`Create Your First ${activeTab === 'services' ? 'Service' : 'Gig'}`}
-                  primaryColor={activeTab === 'services' ? 'blue' : 'green'}
-                />
-              ) : viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {items.map((item) => (
-                    <ItemCard
-  key={`${item._id || item.id}-${imageRefreshKey}`}
-  item={item}
-  type={activeTab} // This should be 'gigs' or 'services'
-  isSelected={activeTab === 'services' 
-    ? selectedServices.includes(item._id || item.id)
-    : selectedGigs.includes(item._id || item.id)
-  }
-  onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
-  onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
-  getStatusColor={getStatusColor}
-  getStatusIcon={getStatusIcon}
-  imageRefreshKey={imageRefreshKey}
-  onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')} // FIX THIS LINE
-/>
-                  ))}
+                <p className="text-gray-600 mt-1">
+                  {activeTab === 'services' 
+                    ? 'Manage your pre-defined service offerings'
+                    : 'Manage your project-based gigs and applications'}
+                </p>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreateGig}
+                  disabled={!canCreateContent || isLoading}
+                  className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                    canCreateContent 
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+                  } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                  title={!canCreateContent ? "Complete your profile to create gigs" : ""}
+                >
+                  <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+                  Create Gig
+                  {!canCreateContent && (
+                    <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="font-medium">Profile Incomplete</span>
+                      </div>
+                      <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create gigs.</p>
+                      <button
+                        onClick={handleCompleteProfile}
+                        className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+                      >
+                        Complete Profile Now
+                      </button>
+                    </div>
+                  )}
+                </button>
+                <button
+                  onClick={handleCreateService}
+                  disabled={!canCreateContent || isLoading}
+                  className={`flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                    canCreateContent 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed relative group'
+                  } disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                  title={!canCreateContent ? "Complete your profile to create services" : ""}
+                >
+                  <Plus className="w-4 h-4 mr-2 flex-shrink-0" />
+                  Create Service
+                  {!canCreateContent && (
+                    <div className="absolute invisible group-hover:visible bottom-full mb-2 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-lg z-50">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="font-medium">Profile Incomplete</span>
+                      </div>
+                      <p>Your profile is {profileCompletion}% complete. You need at least 70% completion to create services.</p>
+                      <button
+                        onClick={handleCompleteProfile}
+                        className="mt-2 w-full bg-white text-gray-900 py-1.5 rounded text-sm font-medium hover:bg-gray-100"
+                      >
+                        Complete Profile Now
+                      </button>
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Info message */}
+            {!canCreateContent && (
+              <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Info className="w-5 h-5 text-gray-600 flex-shrink-0" />
+                  <p className="text-gray-700 text-sm">
+                    Complete your profile to unlock the ability to create gigs and services. 
+                    A complete profile helps build trust with clients and increases your chances of success.
+                  </p>
                 </div>
-              ) : (
-                <ListView
-                  items={items}
-                  type={activeTab}
-                  selectedIds={activeTab === 'services' ? selectedServices : selectedGigs}
-                  onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
-                  onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
-                  getStatusColor={getStatusColor}
-                  getStatusIcon={getStatusIcon}
-                  imageRefreshKey={imageRefreshKey}
-                  onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+              </div>
+            )}
+
+            {/* Tab Navigation */}
+            <div className="bg-gray-50 rounded-lg p-1 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex">
+                  <button
+                    onClick={() => setActiveTab('services')}
+                    className={`px-5 py-2.5 font-medium transition-colors flex-shrink-0 rounded-l-lg ${
+                      activeTab === 'services'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Services ({stats.totalServices})</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('gigs')}
+                    className={`px-5 py-2.5 font-medium transition-colors flex-shrink-0 rounded-r-lg ${
+                      activeTab === 'gigs'
+                        ? 'bg-green-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">Gigs ({stats.totalGigs})</span>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setViewMode('grid')}
+                      className={`p-2 ${viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+                    >
+                      <Grid3x3 className="w-5 h-5 text-gray-600" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-2 ${viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+                    >
+                      <List className="w-5 h-5 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bulk Actions */}
+            <BulkActionsBar
+              activeTab={activeTab}
+              selectedCount={selectedCount}
+              onUpdateStatus={activeTab === 'gigs' ? handleUpdateGigStatus : handleUpdateServiceStatus}
+              onDelete={activeTab === 'gigs' ? handleDeleteGigs : handleDeleteServices}
+              isUpdating={updateMultipleGigsStatusMutation.isPending}
+              isDeleting={activeTab === 'gigs' 
+                ? deleteMultipleGigsMutation.isPending 
+                : deleteServiceMutation.isPending}
+            />
+
+            {/* Filter Bar */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center">
+                    <button
+                      onClick={activeTab === 'services' ? handleSelectAllServices : handleSelectAll}
+                      disabled={isLoading || items.length === 0}
+                      className="flex items-center mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {activeTab === 'services' 
+                        ? allServicesSelected
+                          ? <CheckSquare className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                          : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                        : allSelected
+                          ? <CheckSquare className="w-5 h-5 text-green-600 flex-shrink-0" />
+                          : <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      }
+                    </button>
+                    <span className="text-gray-600 whitespace-nowrap">Select All</span>
+                  </div>
+                  <span className="text-gray-500 whitespace-nowrap">
+                    {items.length} {activeTab === 'services' ? 'service' : 'gig'}{items.length !== 1 ? 's' : ''} found
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <select
+                    value={activeTab === 'services' ? serviceStatusFilter : statusFilter}
+                    onChange={(e) => {
+                      if (activeTab === 'services') {
+                        setServiceStatusFilter(e.target.value);
+                      } else {
+                        setStatusFilter(e.target.value);
+                      }
+                      setImageRefreshKey(Date.now());
+                    }}
+                    disabled={isLoading}
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 min-w-[150px]"
+                  >
+                    <option value="all">All Status</option>
+                    {activeTab === 'services' ? (
+                      <>
+                        <option value="draft">Draft</option>
+                        <option value="pending">Pending</option>
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                        <option value="denied">Denied</option>
+                        <option value="suspended">Suspended</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="open">Open</option>
+                        <option value="active">Active</option>
+                        <option value="draft">Draft</option>
+                        <option value="paused">Paused</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="closed">Closed</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${activeTab}-${viewMode}-${imageRefreshKey}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                {isLoading ? (
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="p-12 text-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-600 mx-auto mb-4" />
+                      <p className="text-gray-600">Loading your {activeTab}...</p>
+                    </div>
+                  </div>
+                ) : items.length === 0 ? (
+                  <EmptyState
+                    type={activeTab}
+                    filter={activeTab === 'services' ? serviceStatusFilter : statusFilter}
+                    onCreate={activeTab === 'services' ? handleCreateService : handleCreateGig}
+                    icon={activeTab === 'services' ? Briefcase : FileText}
+                    createButtonText={`Create Your First ${activeTab === 'services' ? 'Service' : 'Gig'}`}
+                    primaryColor={activeTab === 'services' ? 'blue' : 'green'}
+                  />
+                ) : viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {items.map((item) => (
+                      <ItemCard
+                        key={`${item._id || item.id}-${imageRefreshKey}`}
+                        item={item}
+                        type={activeTab} // This should be 'gigs' or 'services'
+                        isSelected={activeTab === 'services' 
+                          ? selectedServices.includes(item._id || item.id)
+                          : selectedGigs.includes(item._id || item.id)
+                        }
+                        onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
+                        onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
+                        getStatusColor={getStatusColor}
+                        getStatusIcon={getStatusIcon}
+                        imageRefreshKey={imageRefreshKey}
+                        onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')} // FIX THIS LINE
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <ListView
+                    items={items}
+                    type={activeTab}
+                    selectedIds={activeTab === 'services' ? selectedServices : selectedGigs}
+                    onSelect={activeTab === 'services' ? handleSelectService : handleSelectGig}
+                    onClick={activeTab === 'services' ? handleServiceClick : handleGigClick}
+                    getStatusColor={getStatusColor}
+                    getStatusIcon={getStatusIcon}
+                    imageRefreshKey={imageRefreshKey}
+                    onDelete={(id, name) => handleSingleDelete(id, name, activeTab === 'services' ? 'service' : 'gig')}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
-    </div>
+    </SeoWrapper>
   );
 };
 

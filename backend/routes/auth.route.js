@@ -342,7 +342,24 @@ router.delete("/sessions/:sessionId",
   clearAuthCache,
   terminateSession
 );
-
+// Add to auth.route.js
+router.get("/test/session-timing", 
+  SessionMiddleware.authenticate,
+  async (req, res) => {
+    const token = req.cookies?.token;
+    const decoded = jwt.decode(token);
+    
+    res.json({
+      tokenExpiresAt: new Date(decoded.exp * 1000).toISOString(),
+      tokenExpiresIn: Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60) + ' minutes',
+      cookies: req.cookies,
+      session: {
+        lastActivity: req.session?.lastActivity,
+        idleTimeout: req.user?.role === 'admin' ? '1 hour' : '3 hours'
+      }
+    });
+  }
+);
 // Terminate all other sessions
 router.delete("/sessions/others", 
   SessionMiddleware.authenticate,

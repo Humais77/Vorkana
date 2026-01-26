@@ -15,10 +15,7 @@ const LogoMakerBanner = ({ onSignupClick }) => {
         
         {/* Left Side: Content */}
         <div className="w-full md:w-1/2 space-y-6 z-20">
-          <div className="flex items-center gap-1">
-            <span className="font-bold text-3xl tracking-tighter text-gray-900">Vorkanna</span>
-            <span className="text-3xl text-gray-800 font-light">creative services.</span>
-          </div>
+          
           
           <h2 className="text-5xl md:text-7xl font-bold text-slate-800 leading-[1.1] tracking-tight">
             Professional <br />
@@ -76,7 +73,7 @@ const LogoMakerBanner = ({ onSignupClick }) => {
           </div>
 
           {/* 4. Design Elements */}
-          <div className="absolute bottom-6 left-[25%] flex gap-3 z-50">
+          <div className="absolute bottom-6 left-[25%] flex gap-3">
              <div className="bg-white p-3 rounded-2xl shadow-xl border border-gray-100 flex items-center justify-center w-12 h-12">
                 <span className="font-black text-xl text-slate-900">L</span>
              </div>
