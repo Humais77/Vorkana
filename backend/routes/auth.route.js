@@ -227,33 +227,42 @@ router.post("/refresh",
   clearAuthCache,
   refreshSession
 );
-// auth.route.js - UPDATE check-auth route
 router.get("/check-auth", 
   SessionMiddleware.optionalAuth, 
   cacheControlMiddleware({ public: true, maxAge: 60 }),
   async (req, res) => {
-    if (req.user) {
-      // ENSURE ALL REQUIRED FIELDS ARE PRESENT
-      const userResponse = {
-        _id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        role: req.user.role,
-        picture: req.user.picture,
-        emailVerified: req.user.emailVerified,
-        isOnline: req.user.isOnline,
-        // ADD THESE:
-        accountType: req.user.accountType || 'basic',
-        lastSeenAt: req.user.lastSeenAt || new Date().toISOString()
-      };
-      
-      res.json({
-        success: true,
-        isAuthenticated: true,
-        user: userResponse,
-        cached: false
-      });
-    } else {
+    try {
+      if (req.user) {
+        // Don't trigger full session validation here
+        // Just return basic user info
+        const userResponse = {
+          _id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          role: req.user.role,
+          picture: req.user.picture,
+          emailVerified: req.user.emailVerified,
+          isOnline: req.user.isOnline,
+          accountType: req.user.accountType || 'basic',
+          lastSeenAt: req.user.lastSeenAt || new Date().toISOString()
+        };
+        
+        res.json({
+          success: true,
+          isAuthenticated: true,
+          user: userResponse,
+          cached: false
+        });
+      } else {
+        // User is not authenticated
+        res.json({
+          success: true,
+          isAuthenticated: false,
+          cached: false
+        });
+      }
+    } catch (error) {
+      console.error('Check auth error:', error);
       res.json({
         success: true,
         isAuthenticated: false,
@@ -685,5 +694,48 @@ router.get("/health",
     });
   }
 );
-
+router.get("/test/cookie-behavior", (req, res) => {
+  const now = Date.now();
+  const testExpiration = 5 * 60 * 1000; // 5 minutes
+  
+  // Set test cookies with different configurations
+  res.cookie('test_cookie_maxage', 'maxage_value', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: testExpiration // 5 minutes in milliseconds
+  });
+  
+  res.cookie('test_cookie_expires', 'expires_value', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    expires: new Date(now + testExpiration) // Absolute time
+  });
+  
+  res.json({
+    success: true,
+    message: 'Test cookies set',
+    server: {
+      timeISO: new Date().toISOString(),
+      timeUTC: new Date().toUTCString(),
+      timestamp: now,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    },
+    cookies: {
+      maxAge: {
+        value: testExpiration,
+        description: `${testExpiration / 1000} seconds from now`,
+        expiresAt: new Date(now + testExpiration).toISOString()
+      },
+      expires: {
+        value: new Date(now + testExpiration).toUTCString(),
+        description: 'Absolute time in GMT'
+      }
+    },
+    recommendation: 'USE maxAge FOR CROSS-TIMEZONE COMPATIBILITY'
+  });
+});
 module.exports = router;

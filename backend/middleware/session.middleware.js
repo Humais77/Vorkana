@@ -146,43 +146,64 @@ class SessionMiddleware {
     });
   };
 
+optionalAuth = async (req, res, next) => {
+  try {
+    let token = req.cookies?.token;
+    let refreshToken = req.cookies?.refreshToken;
 
-  // Optional authentication (for public routes)
-  optionalAuth = async (req, res, next) => {
+    if (!token && req.headers.authorization?.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      // No token, skip auth check
+      req.user = null;
+      req.isAuthenticated = false;
+      return next();
+    }
+
     try {
-      let token = req.cookies?.token;
-      let refreshToken = req.cookies?.refreshToken;
+      const sessionResult = await this.sessionService.validateSession(
+        token,
+        refreshToken
+      );
 
-      if (!token && req.headers.authorization?.startsWith('Bearer')) {
-        token = req.headers.authorization.split(' ')[1];
-      }
+      if (sessionResult.valid) {
+        // Check for idle timeout here too
+        const isAdmin = sessionResult.isAdmin;
+        const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
+        const idleTime = Date.now() - sessionResult.lastActivity.getTime();
+        
+        if (idleTime > idleTimeout) {
+          console.log(`Session idle timeout in optionalAuth (${isAdmin ? 'admin' : 'user'})`);
+          req.user = null;
+          req.isAuthenticated = false;
+          return next();
+        }
 
-      if (token) {
-        const sessionResult = await this.sessionService.validateSession(
-          token,
-          refreshToken
-        );
-
-        if (sessionResult.valid) {
-          const user = await User.findById(sessionResult.userId);
-          if (user && user.isActive) {
-            req.user = user;
-            req.token = token;
-            req.sessionId = sessionResult.sessionId;
-            
-            // Update last seen
-            user.lastSeenAt = new Date();
-            await user.save({ validateBeforeSave: false });
-          }
+        const user = await User.findById(sessionResult.userId);
+        if (user && user.isActive) {
+          req.user = user;
+          req.token = token;
+          req.sessionId = sessionResult.sessionId;
+          req.isAuthenticated = true;
+          
+          // Update last seen
+          user.lastSeenAt = new Date();
+          await user.save({ validateBeforeSave: false });
         }
       }
-
-      next();
     } catch (error) {
-      // Silent fail for optional auth
-      next();
+      console.log('Optional auth session validation failed:', error.message);
+      // Silent fail - don't logout, just set as not authenticated
     }
-  };
+
+    next();
+  } catch (error) {
+    console.error('Optional auth error:', error);
+    next();
+  }
+};
 
   // Check idle timeout (to be called before sensitive operations)
   checkIdleTimeout = async (req, res, next) => {
@@ -301,84 +322,98 @@ handleRefresh = async (req, res) => {
   };
 setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
   const isProduction = process.env.NODE_ENV === 'production';
-  const isSecure = isProduction;
   
-  // Access token cookie (3 hours for users, 1 hour for admins)
-  // Extract role from token to set appropriate expiry
-  let decoded;
-  try {
-    decoded = jwt.decode(token);
-  } catch (error) {
-    decoded = { role: 'user' };
-  }
+  // DECODE tokens to get expiration timestamps
+  const tokenDecoded = jwt.decode(token);
+  const refreshDecoded = jwt.decode(refreshToken);
   
-  const isAdmin = decoded.role === 'admin';
-  const accessTokenMaxAge = isAdmin ? 60 * 60 * 1000 : 3 * 60 * 60 * 1000;
+  // Calculate MAXAGE ONLY (in milliseconds) - NO DATE OBJECTS
+  const tokenMaxAge = tokenDecoded?.exp ? 
+    Math.max(60000, (tokenDecoded.exp * 1000) - Date.now()) : 
+    3 * 60 * 60 * 1000; // Fallback: 3 hours
+  
+  const refreshMaxAge = refreshDecoded?.exp ?
+    Math.max(60000, (refreshDecoded.exp * 1000) - Date.now()) :
+    30 * 24 * 60 * 60 * 1000; // Fallback: 30 days
+  
+  console.log('🍪 PRODUCTION COOKIES SET:', {
+    token: {
+      maxAgeMs: tokenMaxAge,
+      maxAgeHours: (tokenMaxAge / 1000 / 60 / 60).toFixed(2),
+      expiresAtUnix: tokenDecoded?.exp,
+      expiresAtUTC: tokenDecoded?.exp ? new Date(tokenDecoded.exp * 1000).toISOString() : null
+    },
+    refresh: {
+      maxAgeMs: refreshMaxAge,
+      maxAgeDays: (refreshMaxAge / 1000 / 60 / 60 / 24).toFixed(2),
+      expiresAtUnix: refreshDecoded?.exp,
+      expiresAtUTC: refreshDecoded?.exp ? new Date(refreshDecoded.exp * 1000).toISOString() : null
+    }
+  });
 
+  // BASE COOKIE CONFIG - Use exact same config for all cookies
+  const baseCookieConfig = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {})
+  };
+
+  // 1. ACCESS TOKEN COOKIE - MAXAGE ONLY
   res.cookie('token', token, {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: isProduction ? 'none' : 'lax',
-    path: '/',
-    maxAge: accessTokenMaxAge,
-    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-    partitioned: true
+    ...baseCookieConfig,
+    maxAge: tokenMaxAge
   });
 
-  // Refresh token cookie (30 days)
+  // 2. REFRESH TOKEN COOKIE - MAXAGE ONLY
   res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: isProduction ? 'none' : 'lax',
-    path: '/',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-    partitioned: true
+    ...baseCookieConfig,
+    maxAge: refreshMaxAge
   });
 
-  // CSRF token cookie (24 hours)
+  // 3. CSRF TOKEN COOKIE - MAXAGE ONLY (24 hours)
   if (csrfToken) {
     res.cookie('csrfToken', csrfToken, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: isProduction ? 'none' : 'lax',
-      path: '/',
-      maxAge: 24 * 60 * 60 * 1000,
-      ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-      partitioned: true
+      ...baseCookieConfig,
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
   }
 
-  // Client-side auth flag (same as token)
+  // 4. CLIENT-SIDE FLAG - NO HTTPONLY, SAME MAXAGE
   res.cookie('isAuthenticated', 'true', {
-    httpOnly: false,
-    secure: isSecure,
-    sameSite: isProduction ? 'none' : 'lax',
-    path: '/',
-    maxAge: accessTokenMaxAge,
-    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-    partitioned: true
+    ...baseCookieConfig,
+    httpOnly: false, // Client can read this
+    maxAge: tokenMaxAge
+  });
+
+  // Add helpful response headers for debugging
+  res.set({
+    'X-Auth-Token-Expiry-Seconds': Math.floor(tokenMaxAge / 1000),
+    'X-Refresh-Token-Expiry-Days': (refreshMaxAge / 1000 / 60 / 60 / 24).toFixed(1),
+    'X-Server-Timestamp': Date.now().toString()
   });
 };
 clearAuthCookies = (res) => {
-  const clearOpts = {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  const clearConfig = {
     path: '/',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax'
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {})
   };
 
-  // Clear all possible auth cookies
-  const cookies = ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'oauth_state'];
-  cookies.forEach(cookie => {
-    res.clearCookie(cookie, clearOpts);
+  // Clear all auth cookies
+  ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+    res.clearCookie(cookie, {
+      ...clearConfig,
+      httpOnly: cookie !== 'isAuthenticated' // isAuthenticated is not httpOnly
+    });
   });
-
-  // Also clear with different paths
-  res.clearCookie('token', { ...clearOpts, path: '/' });
-  res.clearCookie('refreshToken', { ...clearOpts, path: '/' });
-  res.clearCookie('csrfToken', { ...clearOpts, path: '/' });
-  res.clearCookie('isAuthenticated', { ...clearOpts, path: '/', httpOnly: false });
+  
+  console.log('🧹 All auth cookies cleared');
 };
 
   // Handle session errors

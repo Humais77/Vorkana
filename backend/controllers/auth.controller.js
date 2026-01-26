@@ -14,19 +14,22 @@ const SessionMiddleware = require("../middleware/session.middleware.js")
 const cache = require('../utils/cache.js');
 const Session = require('../models/session.model');
 const CSRFMiddleware = require('../middleware/csrf.middleware');
-// auth.controller.js - REPLACE these functions at the top
-
 const generateToken = (id, role = 'user') => {
   try {
     const expiresIn = role === 'admin' ? '1h' : '3h';
     console.log(`🔐 Generating ${role} token, expires in: ${expiresIn}`);
+    
+    // Calculate expiration timestamp correctly
+    const expiresInSeconds = role === 'admin' ? 3600 : 10800; // 1h or 3h in seconds
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresInSeconds;
     
     const token = jwt.sign(
       { 
         id, 
         role,
         type: 'access',
-        iat: Math.floor(Date.now() / 1000)
+        iat: Math.floor(Date.now() / 1000),
+        exp: expiresAt  // Explicitly set expiration
       }, 
       process.env.JWT_SECRET, 
       {
@@ -38,9 +41,11 @@ const generateToken = (id, role = 'user') => {
     
     // Verify it was created correctly
     const decoded = jwt.decode(token);
+    const expirationDate = new Date(decoded.exp * 1000);
     console.log(`✅ Token generated for ${id}:`, {
-      expiresAt: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : 'unknown',
-      expiresIn: decoded.exp ? `${Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60)} minutes` : 'unknown'
+      expiresAt: expirationDate.toISOString(),
+      localTime: expirationDate.toLocaleString(),
+      expiresIn: `${Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60)} minutes from now`
     });
     
     return token;
@@ -55,12 +60,17 @@ const generateRefreshToken = (id, role = 'user') => {
     const expiresIn = role === 'admin' ? '7d' : '30d';
     console.log(`🔐 Generating ${role} refresh token, expires in: ${expiresIn}`);
     
+    // Calculate expiration for refresh token
+    const expiresInSeconds = role === 'admin' ? 7 * 24 * 60 * 60 : 30 * 24 * 60 * 60;
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    
     const token = jwt.sign(
       { 
         id, 
         role,
         type: 'refresh',
-        iat: Math.floor(Date.now() / 1000)
+        iat: Math.floor(Date.now() / 1000),
+        exp: expiresAt
       },
       process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
       {
@@ -69,6 +79,14 @@ const generateRefreshToken = (id, role = 'user') => {
         audience: 'Vorkanna-web'
       }
     );
+    
+    const decoded = jwt.decode(token);
+    const expirationDate = new Date(decoded.exp * 1000);
+    console.log(`✅ Refresh token generated:`, {
+      expiresAt: expirationDate.toISOString(),
+      localTime: expirationDate.toLocaleString(),
+      expiresInDays: Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60 / 60 / 24)
+    });
     
     return token;
   } catch (error) {
@@ -1349,27 +1367,38 @@ const validateCSRF = (req) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
-    console.log('🚪 Logout request - isAdminLogout:', req.isAdminLogout);
+    console.log('🚪 Logout request');
     
-    // Admin-specific cleanup
-    if (req.isAdminLogout || req.admin) {
-      console.log('🛡️ Admin logout cleanup');
-      
-      // Clear admin-specific cookies
-      res.clearCookie('isAdmin', {
-        httpOnly: false,
+    // Get current cookies to clear
+    const cookiesToClear = [
+      'token', 
+      'refreshToken', 
+      'csrfToken', 
+      'isAuthenticated',
+      'isAdmin'
+    ];
+    
+    // Clear ALL cookies with multiple paths
+    cookiesToClear.forEach(cookie => {
+      res.clearCookie(cookie, {
+        httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/'
       });
       
-      // Clear admin-specific headers
-      res.removeHeader('X-Admin-Access');
-      res.removeHeader('X-Admin-User-Id');
-      res.removeHeader('X-Admin-Role');
-    }
+      res.clearCookie(cookie, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/admin'
+      });
+    });
     
-    // Logout session if we have one
+    // Clear CSRF specifically
+    CSRFMiddleware.clearCSRFCookie(res);
+    
+    // If we have a session, end it
     if (req.sessionID) {
       try {
         await SessionService.logoutSession(
@@ -1377,70 +1406,35 @@ const logout = asyncHandler(async (req, res) => {
           req.user?._id,
           'manual'
         );
-        console.log('✅ Session logged out');
-      } catch (error) {
-        console.error('Session logout error:', error.message);
+      } catch (sessionError) {
+        console.error('Session logout error:', sessionError.message);
       }
     }
     
-    // Clear ALL cookies more aggressively
-    const clearCookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    };
-
-    // Clear all possible auth cookies
-    const cookiesToClear = [
-      'token', 
-      'refreshToken', 
-      'csrfToken', 
-      'isAuthenticated', 
-      'oauth_state',
-      'adminToken',        // Add admin-specific cookies
-      'adminRefreshToken', // Add admin-specific cookies
-      'isAdmin'            // Add admin-specific cookies
-    ];
+    console.log('✅ Logout completed - cookies cleared');
     
-    cookiesToClear.forEach(cookie => {
-      res.clearCookie(cookie, clearCookieOptions);
-      // Also clear with admin path
-      res.clearCookie(cookie, { ...clearCookieOptions, path: '/admin' });
-      res.clearCookie(cookie, { ...clearCookieOptions, path: '/api/admin' });
-    });
-
-    // Clear CSRF cookie
-    CSRFMiddleware.clearCSRFCookie(res);
-    
-    console.log('✅ Logout completed - all cookies cleared');
-
     res.json({
       success: true,
-      message: req.isAdminLogout ? 'Admin logged out successfully' : 'Logged out successfully',
-      requiresReload: true,
-      isAdminLogout: req.isAdminLogout || false
+      message: 'Logged out successfully',
+      requiresReload: true
     });
 
   } catch (error) {
     console.error('Logout error:', error);
     
     // Still clear cookies on error
-    const clearCookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    };
-
     ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
-      res.clearCookie(cookie, clearCookieOptions);
-      res.clearCookie(cookie, { ...clearCookieOptions, path: '/admin' });
+      res.clearCookie(cookie, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/'
+      });
     });
-
+    
     res.json({
       success: true,
-      message: 'Logged out',
+      message: 'Logged out (cookies cleared)',
       requiresReload: true
     });
   }

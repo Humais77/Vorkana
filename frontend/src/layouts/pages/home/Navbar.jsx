@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
-import { useSessionWatcher } from '../../../hooks/useAuth';
+import { useSessionWatcher ,clearAllCookies} from '../../../hooks/useAuth';
 
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
@@ -142,25 +142,38 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   const handleLogout = useCallback(async () => {
   try {
-    // Close all dropdowns first
+    // Close all dropdowns
     setActiveDropdown(null);
     setMobileMenuOpen(false);
     setMobileProfileOpen(false);
     
+    // Manual cookie clearing BEFORE API call
+    clearAllCookies(); // Import this function
     
-    // Execute logout
-    await logoutMutation.mutateAsync();
-    
-    // Force clear any remaining state
+    // Clear local storage
     localStorage.clear();
     sessionStorage.clear();
+    
+    // Call logout API
+    await logoutMutation.mutateAsync();
+    
+    // Force redirect after a small delay
+    setTimeout(() => {
+      window.location.href = '/signin?logout=true';
+      window.location.reload(); // Force reload to clear React state
+    }, 300);
     
   } catch (error) {
     console.error('Logout error:', error);
     
-    // Fallback cleanup
+    // Fallback: redirect anyway
+    clearAllCookies();
     localStorage.clear();
     sessionStorage.clear();
+    
+    setTimeout(() => {
+      window.location.href = '/signin?logout=fallback';
+    }, 300);
   }
 }, [logoutMutation]);
 

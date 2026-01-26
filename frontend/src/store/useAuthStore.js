@@ -303,58 +303,38 @@ export const useAuthStore = create(
       const authAPI = (await import('../api/auth')).authAPI;
       await authAPI.logout();
     }
-    
-    // Production cleanup - clear ALL storage
-    emergencyCleanup();
-    
-    // Clear ALL local storage (not just vorkanna keys)
-    if (typeof window !== 'undefined') {
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // Clear all cookies client-side too
-      document.cookie.split(';').forEach(cookie => {
-        const [name] = cookie.trim().split('=');
-        if (name) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;`;
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api/admin;`;
-        }
-      });
-    }
-    
-    // Clear state
-    set({ 
-      user: null,
-      isAuthenticated: false,
-      loading: false,
-      error: null,
-      lastActivity: 0
-    });
-    
-    console.log('✅ Logout completed - all storage cleared');
-
   } catch (error) {
-    console.error('Logout error:', error);
-    
-    // Fallback cleanup
-    emergencyCleanup();
-    
-    if (typeof window !== 'undefined') {
-      localStorage.clear();
-      sessionStorage.clear();
-    }
-    
-    set({ 
-      user: null,
-      isAuthenticated: false,
-      loading: false,
-      error: null
+    console.error('Logout API error:', error);
+    // Don't fail on API error
+  }
+  
+  // ALWAYS clear local state regardless of API response
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // Clear all cookies client-side
+  if (typeof document !== 'undefined') {
+    document.cookie.split(';').forEach(cookie => {
+      const [name] = cookie.trim().split('=');
+      if (name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;`;
+      }
     });
   }
+  
+  // Clear state
+  set({ 
+    user: null,
+    isAuthenticated: false,
+    loading: false,
+    error: null,
+    lastActivity: 0
+  });
+  
+  console.log('✅ Logout completed');
 }),
-      
       adminLogout: productionErrorBoundary(async () => {
         return get().logout(true);
       }),

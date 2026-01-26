@@ -311,23 +311,32 @@ export const authAPI = {
   },
   logout: async () => {
   try {
-    const response = await axiosInstance.post('/api/auth/logout');
+    // Don't send CSRF token for logout - the server will ignore it anyway
+    const response = await axiosInstance.post('/api/auth/logout', {}, {
+      headers: {
+        'X-CSRF-Token': null, // Explicitly remove CSRF header
+        'X-Request-ID': `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+      },
+      timeout: 10000
+    });
     
     // Clear ALL local storage
-    localStorage.removeItem('userInfo');
-    localStorage.removeItem('csrfToken');
-    localStorage.removeItem('csrfTokenExpiry');
-    localStorage.removeItem('vorkanna_user_v1');
-    localStorage.removeItem('vorkanna_auth_state_v1');
-    localStorage.removeItem('vorkanna_csrf_v1');
-    localStorage.removeItem('vorkanna_session_v1');
-    
-    // Clear session storage
+    localStorage.clear();
     sessionStorage.clear();
+    
+    // Clear cookies
+    document.cookie.split(';').forEach(cookie => {
+      const [name] = cookie.trim().split('=');
+      if (name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      }
+    });
     
     return response.data;
   } catch (error) {
-    // Even if API fails, clear local storage
+    console.error('Logout error:', error);
+    
+    // Even if API fails, clear everything
     localStorage.clear();
     sessionStorage.clear();
     

@@ -293,12 +293,32 @@ export const useLogout = () => {
       });
     },
     onSuccess: async (data) => {
-      // 1. Clear React Query cache
+      // 1. Clear React Query cache FIRST
       queryClient.clear();
+      queryClient.removeQueries();
       
       // 2. Clear auth store
       logout();
-      // 5. Update toast
+      
+      // 3. Clear ALL cookies from browser
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.trim().split('=');
+        if (name) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
+        }
+      });
+      
+      // 4. Clear ALL storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // 5. Force reload to clear any memory state
+      setTimeout(() => {
+        window.location.href = '/signin';
+        window.location.reload();
+      }, 500);
+      
       toast.success('Logged out successfully', {
         id: 'logout-toast',
         duration: 2000
@@ -307,7 +327,7 @@ export const useLogout = () => {
     onError: (error) => {
       console.error('Logout mutation error:', error);
       
-      // Still clear everything on error
+      // Fallback cleanup on error
       localStorage.clear();
       sessionStorage.clear();
       logout();
@@ -323,6 +343,33 @@ export const useLogout = () => {
       }, 500);
     }
   });
+};
+export const clearAllCookies = () => {
+  try {
+    const cookies = document.cookie.split(';');
+    
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i];
+      const eqPos = cookie.indexOf('=');
+      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+      
+      // Clear cookie with multiple paths
+      document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;';
+      document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;';
+      
+      // Clear domain cookies if applicable
+      if (window.location.hostname.includes('localhost')) {
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost;';
+      }
+    }
+    
+    console.log('✅ All cookies cleared');
+    return true;
+  } catch (error) {
+    console.error('Error clearing cookies:', error);
+    return false;
+  }
 };
 export const useRefreshSession = () => {
   return useMutation({

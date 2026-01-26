@@ -17,53 +17,66 @@ class SessionService {
   }
 
  generateTokens(userId, role = 'user') {
-  console.log('🔐 Generating tokens for:', { userId, role });
+  console.log('🔐 Generating production tokens for:', { userId, role });
   
   try {
-    // Generate access token
-    const token = jwt.sign(
-      { 
-        id: userId, 
-        type: 'access',
-        role: role
-      },
-      process.env.JWT_SECRET,
-      { 
-        expiresIn: role === 'admin' ? '1h' : '3h',
-        issuer: 'Vorkanna',
-        audience: 'Vorkanna-web'
-      }
-    );
-
-    // Generate refresh token
-    const refreshToken = jwt.sign(
-      {
-        id: userId,
-        type: 'refresh',
-        role: role
-      },
-      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
-      {
-        expiresIn: role === 'admin' ? '7d' : '30d',
-        issuer: 'Vorkanna',
-        audience: 'Vorkanna-web'
-      }
-    );
-
-    // Verify tokens were created
-    const decodedToken = jwt.decode(token);
-    const decodedRefresh = jwt.decode(refreshToken);
+    // Define expiration in seconds (NOT milliseconds)
+    const accessTokenExpiresIn = role === 'admin' ? 3600 : 10800; // 1h or 3h
+    const refreshTokenExpiresIn = role === 'admin' ? 
+      7 * 24 * 60 * 60 :  // 7 days
+      30 * 24 * 60 * 60;  // 30 days
     
-    console.log('✅ Tokens generated successfully:', {
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    
+    // Access token payload
+    const accessTokenPayload = {
+      id: userId,
+      type: 'access',
+      role: role,
+      iat: currentTimestamp,
+      exp: currentTimestamp + accessTokenExpiresIn
+    };
+    
+    // Refresh token payload
+    const refreshTokenPayload = {
+      id: userId,
+      type: 'refresh',
+      role: role,
+      iat: currentTimestamp,
+      exp: currentTimestamp + refreshTokenExpiresIn
+    };
+    
+    console.log('📊 Token payloads:', {
       accessToken: {
-        expiresAt: decodedToken.exp ? new Date(decodedToken.exp * 1000).toISOString() : null,
-        expiresInMinutes: decodedToken.exp ? Math.round((decodedToken.exp * 1000 - Date.now()) / 1000 / 60) : null
+        expiresInSeconds: accessTokenExpiresIn,
+        expiresAtTimestamp: accessTokenPayload.exp,
+        expiresAtISO: new Date(accessTokenPayload.exp * 1000).toISOString()
       },
       refreshToken: {
-        expiresAt: decodedRefresh.exp ? new Date(decodedRefresh.exp * 1000).toISOString() : null,
-        expiresInDays: decodedRefresh.exp ? Math.round((decodedRefresh.exp * 1000 - Date.now()) / 1000 / 60 / 60 / 24) : null
+        expiresInSeconds: refreshTokenExpiresIn,
+        expiresAtTimestamp: refreshTokenPayload.exp,
+        expiresAtISO: new Date(refreshTokenPayload.exp * 1000).toISOString()
       }
     });
+
+    // Generate tokens
+    const token = jwt.sign(
+      accessTokenPayload,
+      process.env.JWT_SECRET,
+      { 
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
+
+    const refreshToken = jwt.sign(
+      refreshTokenPayload,
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+      {
+        issuer: 'Vorkanna',
+        audience: 'Vorkanna-web'
+      }
+    );
 
     return { token, refreshToken };
   } catch (error) {
@@ -72,90 +85,96 @@ class SessionService {
   }
 }
   async createSession(userId, req, metadata = {}) {
-    try {
-      const user = await User.findById(userId);
+  try {
+    const user = await User.findById(userId);
     if (!user) {
       throw new Error('User not found');
     }
-      const { token, refreshToken } = this.generateTokens(userId, user.role);
-      
-      // Clean up old sessions
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      await Session.deleteMany({
+    
+    const { token, refreshToken } = this.generateTokens(userId, user.role);
+    
+    // Clean up old sessions with proper date calculation
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await Session.deleteMany({
+      userId,
+      isActive: false,
+      logoutAt: { $lt: oneDayAgo }
+    });
+
+    // Check active sessions count
+    const activeSessions = await Session.countDocuments({
+      userId,
+      isActive: true,
+      expiresAt: { $gt: new Date() }
+    });
+
+    // Enforce maximum sessions
+    if (activeSessions >= this.maxSessionsPerUser) {
+      const oldestSession = await Session.findOne({
         userId,
-        isActive: false,
-        logoutAt: { $lt: oneDayAgo }
-      });
+        isActive: true
+      }).sort({ lastActivity: 1 });
 
-      // Check active sessions count
-      const activeSessions = await Session.countDocuments({
-        userId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      });
-
-      // Enforce maximum sessions
-      if (activeSessions >= this.maxSessionsPerUser) {
-        const oldestSession = await Session.findOne({
-          userId,
-          isActive: true
-        }).sort({ lastActivity: 1 });
-
-        if (oldestSession) {
-          await oldestSession.logout('multiple_login');
-        }
+      if (oldestSession) {
+        await oldestSession.logout('multiple_login');
       }
-
-      // Get device info
-      const parser = new UAParser(req.headers['user-agent']);
-      const uaResult = parser.getResult();
-      const ip = this.getClientIp(req);
-      const geo = geoip.lookup(ip) || {};
-
-      // Create session object
-      const sessionData = {
-        userId,
-        token,
-        refreshToken,
-        deviceInfo: {
-          userAgent: req.headers['user-agent'],
-          ip,
-          browser: uaResult.browser.name || 'Unknown',
-          os: uaResult.os.name || 'Unknown',
-          device: uaResult.device.type || 'Desktop',
-          location: {
-            country: geo.country || 'Unknown',
-            region: geo.region || 'Unknown',
-            city: geo.city || 'Unknown'
-          }
-        },
-        expiresAt: new Date(Date.now() + this.sessionDuration),
-        metadata
-      };
-
-      const session = new Session(sessionData);
-      await session.save();
-
-      console.log('✅ Session created:', {
-        sessionId: session._id,
-        userId: session.userId,
-        expiresAt: session.expiresAt
-      });
-
-      return {
-        sessionId: session._id,
-        token,
-        refreshToken,
-        expiresAt: session.expiresAt,
-        idleTimeout: this.idleTimeout,
-        userRole: user.role
-      };
-
-    } catch (error) {
-      console.error('❌ Session creation error:', error);
-      throw new Error(`Failed to create session: ${error.message}`);
     }
+
+    // Get device info
+    const parser = new UAParser(req.headers['user-agent']);
+    const uaResult = parser.getResult();
+    const ip = this.getClientIp(req);
+    const geo = geoip.lookup(ip) || {};
+
+    // Calculate session expiration correctly (30 days from now)
+    const expiresAt = new Date(Date.now() + this.sessionDuration);
+    
+    // Create session object
+    const sessionData = {
+      userId,
+      token,
+      refreshToken,
+      deviceInfo: {
+        userAgent: req.headers['user-agent'],
+        ip,
+        browser: uaResult.browser.name || 'Unknown',
+        os: uaResult.os.name || 'Unknown',
+        device: uaResult.device.type || 'Desktop',
+        location: {
+          country: geo.country || 'Unknown',
+          region: geo.region || 'Unknown',
+          city: geo.city || 'Unknown'
+        }
+      },
+      expiresAt: expiresAt,
+      metadata
+    };
+
+    const session = new Session(sessionData);
+    await session.save();
+
+    console.log('✅ Session created:', {
+      sessionId: session._id,
+      userId: session.userId,
+      expiresAt: expiresAt.toISOString(),
+      localTime: expiresAt.toLocaleString(),
+      timeFromNow: Math.round((expiresAt.getTime() - Date.now()) / 1000 / 60 / 60 / 24) + ' days'
+    });
+
+    return {
+      sessionId: session._id,
+      token,
+      refreshToken,
+      expiresAt: session.expiresAt,
+      idleTimeout: this.idleTimeout,
+      userRole: user.role
+    };
+
+  } catch (error) {
+    console.error('❌ Session creation error:', error);
+    throw new Error(`Failed to create session: ${error.message}`);
   }
+}
 
   async refreshSession(refreshToken) {
     try {
