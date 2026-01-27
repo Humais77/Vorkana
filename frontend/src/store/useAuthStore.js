@@ -195,26 +195,12 @@ export const useAuthStore = create(
       isAuthenticated: false,
       loading: false,
       error: null,
-      lastActivity: Date.now(),
       
-      // Actions with production error boundaries
-      setLoading: productionErrorBoundary((loading) => {
-        set({ loading });
-      }),
+    setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
+      clearError: () => set({ error: null }),
       
-      setError: productionErrorBoundary((error) => {
-        set({ error });
-      }),
-      
-      clearError: productionErrorBoundary(() => {
-        set({ error: null });
-      }),
-      
-      updateLastActivity: productionErrorBoundary(() => {
-        set({ lastActivity: Date.now() });
-      }),
-      
-      setAuth: productionErrorBoundary((user) => {
+  setAuth: (user) => {
         const validatedUser = validateAndSanitizeUser(user);
         
         if (!validatedUser) {
@@ -224,7 +210,6 @@ export const useAuthStore = create(
         }
         
         try {
-          // Store in production storage
           localStorage.setItem(
             PRODUCTION_STORAGE_KEYS.USER_INFO, 
             JSON.stringify(validatedUser)
@@ -234,17 +219,14 @@ export const useAuthStore = create(
             user: validatedUser,
             isAuthenticated: true,
             loading: false,
-            error: null,
-            lastActivity: Date.now()
+            error: null
           });
-          
-          console.log('✅ Auth state set for user:', validatedUser.email);
         } catch (storageError) {
           console.error('Storage error in setAuth:', storageError);
-          emergencyCleanup();
           set({ error: 'Storage error. Please refresh.' });
         }
-      }),
+      },
+      
       
       setUser: productionErrorBoundary((userUpdates) => {
         const currentUser = get().user;
@@ -291,50 +273,27 @@ export const useAuthStore = create(
         set({ user: validatedUser });
       }),
       
-      logout: productionErrorBoundary(async (isAdmin = false) => {
-  set({ loading: true });
-  
-  try {
-    // Call appropriate logout API
-    if (isAdmin) {
-      const { adminAPI } = await import('../api/admin');
-      await adminAPI.adminLogout();
-    } else {
-      const authAPI = (await import('../api/auth')).authAPI;
-      await authAPI.logout();
-    }
-  } catch (error) {
-    console.error('Logout API error:', error);
-    // Don't fail on API error
-  }
-  
-  // ALWAYS clear local state regardless of API response
-  localStorage.clear();
-  sessionStorage.clear();
-  
-  // Clear all cookies client-side
-  if (typeof document !== 'undefined') {
-    document.cookie.split(';').forEach(cookie => {
-      const [name] = cookie.trim().split('=');
-      if (name) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/api;`;
-      }
-    });
-  }
-  
-  // Clear state
-  set({ 
-    user: null,
-    isAuthenticated: false,
-    loading: false,
-    error: null,
-    lastActivity: 0
-  });
-  
-  console.log('✅ Logout completed');
-}),
+     logout: () => {
+        console.log('🧹 AuthStore: Logging out user');
+        
+        // 1. Clear state first
+        set({
+          user: null,
+          isAuthenticated: false,
+          loading: false,
+          error: null
+        });
+
+        // 2. Clear localStorage
+        localStorage.removeItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
+        
+        // 3. Clear CSRF token storage
+        localStorage.removeItem('csrfToken');
+        localStorage.removeItem('csrfTokenExpiry');
+        
+        console.log('✅ AuthStore: User logged out and state cleared');
+      },
+      
       adminLogout: productionErrorBoundary(async () => {
         return get().logout(true);
       }),
@@ -362,32 +321,7 @@ export const useAuthStore = create(
           isAuthenticated: !!user
         });
       }),
-      
-      checkSessionValidity: productionErrorBoundary(() => {
-        const state = get();
-        
-        if (!state.user) {
-          emergencyCleanup();
-          return false;
-        }
-        
-        // Check inactivity timeout
-        const isAdmin = state.user?.role === 'admin';
-        const INACTIVITY_TIMEOUT = isAdmin 
-          ? 60 * 60 * 1000 // 1 hour for admins
-          : 3 * 60 * 60 * 1000; // 3 hours for users
-        
-        const timeSinceLastActivity = Date.now() - state.lastActivity;
-        
-        if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
-          console.log(`Session expired due to inactivity (${isAdmin ? 'admin' : 'user'})`);
-          
-          get().forceLogout();
-          return false;
-        }
-        
-        return true;
-      }),
+    
       
       // Computed getters
       isAdmin: () => {
@@ -480,27 +414,6 @@ export const useAuthStore = create(
         return features[accountType]?.includes(feature) || false;
       },
       
-      // Session management
-      updateSessionData: productionErrorBoundary((data) => {
-        const currentUser = get().user;
-        if (!currentUser) return;
-        
-        const updatedUser = { 
-          ...currentUser, 
-          ...validateAndSanitizeUser(data),
-          lastSeenAt: new Date().toISOString()
-        };
-        
-        const validatedUser = validateAndSanitizeUser(updatedUser);
-        if (!validatedUser) return;
-        
-        localStorage.setItem(
-          PRODUCTION_STORAGE_KEYS.USER_INFO, 
-          JSON.stringify(validatedUser)
-        );
-        
-        set({ user: validatedUser, lastActivity: Date.now() });
-      }),
       
       canAccessAdminPanel: () => {
         const user = get().user;
@@ -557,46 +470,18 @@ export const useAuthStore = create(
     }),
     {
       name: PRODUCTION_STORAGE_KEYS.AUTH_STATE,
-      version: 1, // Production version
+      version: 1,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        // Only persist minimal state
+        // Only persist user data
         user: state.user,
-        isAuthenticated: state.isAuthenticated,
-        lastActivity: state.lastActivity,
+        // DO NOT persist isAuthenticated - it should be computed from user
       }),
-      migrate: (persistedState, version) => {
-        console.log(`🔧 Production migration from version ${version || 'none'} to 1`);
-        
-        // Clear all old data formats
-        emergencyCleanup();
-        
-        // Return clean slate for production
-        return {
-          user: null,
-          isAuthenticated: false,
-          lastActivity: Date.now()
-        };
-      },
       onRehydrateStorage: () => {
         return (state) => {
           if (state) {
-            // Production rehydration checks
-            setTimeout(() => {
-              // Validate stored user data
-              if (state.user && !validateAndSanitizeUser(state.user)) {
-                console.warn('Invalid user data after rehydration, clearing');
-                state.user = null;
-                state.isAuthenticated = false;
-                localStorage.removeItem(PRODUCTION_STORAGE_KEYS.USER_INFO);
-              }
-              
-              // Check session validity
-              state.checkSessionValidity();
-              
-              // Run storage cleanup
-              state.cleanupStorage?.();
-            }, 500);
+            // Compute isAuthenticated from user on rehydration
+            state.isAuthenticated = !!state.user;
           }
         };
       },
@@ -604,39 +489,7 @@ export const useAuthStore = create(
   )
 );
 
-// Production initialization
-if (typeof window !== 'undefined') {
-  // Track user activity
-  const trackActivity = () => {
-    useAuthStore.getState().updateLastActivity();
-  };
-  
-  // Add activity listeners
-  const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
-  activityEvents.forEach(event => {
-    window.addEventListener(event, trackActivity, { passive: true });
-  });
-  
-  // Listen for storage events (multi-tab sync)
-  window.addEventListener('storage', (event) => {
-    if (event.key === PRODUCTION_STORAGE_KEYS.USER_INFO || 
-        event.key === PRODUCTION_STORAGE_KEYS.AUTH_STATE) {
-      console.log('Production storage changed, syncing...');
-      useAuthStore.getState().syncFromStorage();
-    }
-  });
-  
-  // Listen for logout events
-  window.addEventListener('auth-logout-complete', () => {
-    console.log('Production auth logout event received');
-    useAuthStore.getState().forceLogout();
-  });
-  
-  // Initial storage cleanup
-  setTimeout(() => {
-    useAuthStore.getState().cleanupStorage();
-  }, 1000);
-}
+
 
 // Export helper functions
 export const getCurrentUser = () => useAuthStore.getState().user;

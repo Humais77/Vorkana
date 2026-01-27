@@ -14,14 +14,13 @@ const SessionMiddleware = require("../middleware/session.middleware.js")
 const cache = require('../utils/cache.js');
 const Session = require('../models/session.model');
 const CSRFMiddleware = require('../middleware/csrf.middleware');
+// OR use this version if you want to calculate exp manually:
 const generateToken = (id, role = 'user') => {
   try {
-    const expiresIn = role === 'admin' ? '1h' : '3h';
-    console.log(`🔐 Generating ${role} token, expires in: ${expiresIn}`);
-    
-    // Calculate expiration timestamp correctly
-    const expiresInSeconds = role === 'admin' ? 3600 : 10800; // 1h or 3h in seconds
+    const expiresInSeconds = role === 'admin' ? 3600 : 10800; // 1h or 3h
     const expiresAt = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    
+    console.log(`🔐 Generating ${role} token, expires in: ${expiresInSeconds}s`);
     
     const token = jwt.sign(
       { 
@@ -29,11 +28,11 @@ const generateToken = (id, role = 'user') => {
         role,
         type: 'access',
         iat: Math.floor(Date.now() / 1000),
-        exp: expiresAt  // Explicitly set expiration
+        exp: expiresAt  // Set exp in payload
       }, 
       process.env.JWT_SECRET, 
       {
-        expiresIn,
+        // REMOVE expiresIn option when exp is in payload
         issuer: 'Vorkanna',
         audience: 'Vorkanna-web'
       }
@@ -57,12 +56,10 @@ const generateToken = (id, role = 'user') => {
 
 const generateRefreshToken = (id, role = 'user') => {
   try {
-    const expiresIn = role === 'admin' ? '7d' : '30d';
-    console.log(`🔐 Generating ${role} refresh token, expires in: ${expiresIn}`);
-    
-    // Calculate expiration for refresh token
     const expiresInSeconds = role === 'admin' ? 7 * 24 * 60 * 60 : 30 * 24 * 60 * 60;
     const expiresAt = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    
+    console.log(`🔐 Generating ${role} refresh token, expires in: ${expiresInSeconds}s`);
     
     const token = jwt.sign(
       { 
@@ -74,7 +71,7 @@ const generateRefreshToken = (id, role = 'user') => {
       },
       process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
       {
-        expiresIn,
+        // NO expiresIn option when exp is in payload
         issuer: 'Vorkanna',
         audience: 'Vorkanna-web'
       }
@@ -94,7 +91,6 @@ const generateRefreshToken = (id, role = 'user') => {
     throw error;
   }
 };
-
 // UPDATED verifyToken functions
 const verifyToken = async (token) => {
   try {
@@ -1367,35 +1363,22 @@ const validateCSRF = (req) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
-    console.log('🚪 Logout request');
+    console.log('🚪 Logout request for all user types');
     
-    // Get current cookies to clear
-    const cookiesToClear = [
-      'token', 
-      'refreshToken', 
-      'csrfToken', 
-      'isAuthenticated',
-      'isAdmin'
-    ];
+    // Clear ALL cookies (works for all users: Google, admin, regular)
+    const clearCookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
     
-    // Clear ALL cookies with multiple paths
-    cookiesToClear.forEach(cookie => {
-      res.clearCookie(cookie, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/'
-      });
-      
-      res.clearCookie(cookie, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/admin'
-      });
+    // Clear all auth cookies
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin'].forEach(cookie => {
+      res.clearCookie(cookie, clearCookieOptions);
     });
     
-    // Clear CSRF specifically
+    // Clear CSRF token
     CSRFMiddleware.clearCSRFCookie(res);
     
     // If we have a session, end it
@@ -1411,7 +1394,7 @@ const logout = asyncHandler(async (req, res) => {
       }
     }
     
-    console.log('✅ Logout completed - cookies cleared');
+    console.log('✅ Logout completed for all user types');
     
     res.json({
       success: true,
@@ -1423,7 +1406,7 @@ const logout = asyncHandler(async (req, res) => {
     console.error('Logout error:', error);
     
     // Still clear cookies on error
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin'].forEach(cookie => {
       res.clearCookie(cookie, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',

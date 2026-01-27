@@ -279,68 +279,15 @@ export const useRegister = () => {
   });
 };
 export const useLogout = () => {
-  const logout = useAuthStore((state) => state.logout);
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  
   return useMutation({
     mutationFn: authAPI.logout,
-    onMutate: () => {
-      // Show loading state
-      toast.loading('Logging out...', {
-        id: 'logout-toast',
-        duration: 3000
-      });
-    },
-    onSuccess: async (data) => {
-      // 1. Clear React Query cache FIRST
-      queryClient.clear();
-      queryClient.removeQueries();
-      
-      // 2. Clear auth store
-      logout();
-      
-      // 3. Clear ALL cookies from browser
-      document.cookie.split(';').forEach(cookie => {
-        const [name] = cookie.trim().split('=');
-        if (name) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
-        }
-      });
-      
-      // 4. Clear ALL storage
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // 5. Force reload to clear any memory state
-      setTimeout(() => {
-        window.location.href = '/signin';
-        window.location.reload();
-      }, 500);
-      
-      toast.success('Logged out successfully', {
-        id: 'logout-toast',
-        duration: 2000
-      });
+    onSuccess: async () => {
+      // Show success message
+      toast.success('Logged out successfully');
     },
     onError: (error) => {
-      console.error('Logout mutation error:', error);
-      
-      // Fallback cleanup on error
-      localStorage.clear();
-      sessionStorage.clear();
-      logout();
-      queryClient.clear();
-      
-      toast.success('Logged out (local session cleared)', {
-        id: 'logout-toast',
-        duration: 2000
-      });
-      
-      setTimeout(() => {
-        window.location.href = '/signin?logout=clean';
-      }, 500);
+      console.error('Logout error:', error);
+      toast.error('Logout failed');
     }
   });
 };
@@ -371,25 +318,7 @@ export const clearAllCookies = () => {
     return false;
   }
 };
-export const useRefreshSession = () => {
-  return useMutation({
-    mutationFn: authAPI.refreshSession,
-    onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Session refresh failed');
-      console.error('Session refresh error:', errorMessage);
-    },
-  });
-};
 
-export const useCheckSessionStatus = () => {
-  return useQuery({
-    queryKey: ['sessionStatus'],
-    queryFn: () => authAPI.checkSessionStatus(), // Add the queryFn
-    staleTime: 30000,
-    retry: 1,
-    refetchOnWindowFocus: true,
-  });
-};
 
 // Profile hooks
 export const useGetProfile = (options = {}) => {
@@ -802,47 +731,6 @@ export const useCSRFValidation = () => {
   };
 };
 
-// Sessions management hooks
-export const useGetActiveSessions = () => {
-  return useQuery({
-    queryKey: ['activeSessions'],
-    queryFn: authAPI.getActiveSessions,
-    staleTime: 30000,
-    retry: 1,
-  });
-};
-
-export const useTerminateSession = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: authAPI.terminateSession,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['activeSessions']);
-      toast.success('Session terminated');
-    },
-    onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to terminate session');
-      toast.error(errorMessage);
-    },
-  });
-};
-
-export const useTerminateAllOtherSessions = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: authAPI.terminateAllOtherSessions,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['activeSessions']);
-      toast.success('All other sessions terminated');
-    },
-    onError: (error) => {
-      const { errorMessage } = handleAuthError(error, 'Failed to terminate sessions');
-      toast.error(errorMessage);
-    },
-  });
-};
 
 // Public profile hooks
 export const useGetPublicProfile = (userId) => {
@@ -1051,89 +939,4 @@ export const usePasswordStrength = (password) => {
   }, [password]);
   
   return strength;
-};
-export const useSessionToast = () => {
-  const navigate = useNavigate();
-  const { clearAuth } = useAuthStore();
-
-  const showSessionTimeoutToast = useCallback((message = 'Your session has timed out. Please login again.') => {
-    toast.error(message, {
-      duration: 5000,
-      position: 'top-center',
-      icon: '⏰',
-      style: {
-        background: '#fef2f2',
-        color: '#dc2626',
-        border: '1px solid #fecaca',
-      },
-    });
-
-    // Clear auth and redirect after toast
-    setTimeout(() => {
-      clearAuth();
-      navigate('/signin?timeout=true');
-    }, 2000);
-  }, [navigate, clearAuth]);
-
-  return { showSessionTimeoutToast };
-};
-export const useSessionWatcher = () => {
-  const { isAuthenticated, logout } = useAuthStore();
-  const { showSessionTimeoutToast } = useSessionToast();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    let sessionCheckInterval;
-    let activityListeners = [];
-
-    const checkSessionStatus = async () => {
-      try {
-        const response = await authAPI.checkSessionStatus();
-        
-        if (!response.authenticated) {
-          if (response.message?.includes('timeout')) {
-            showSessionTimeoutToast('Session timed out due to 3 hours of inactivity');
-          } else {
-            logout();
-            navigate('/signin?session=expired');
-          }
-        }
-      } catch (error) {
-        console.error('Session check error:', error);
-      }
-    };
-
-    // Reset activity timer on user interaction
-    const resetActivityTimer = () => {
-      // Clear existing interval
-      if (sessionCheckInterval) clearInterval(sessionCheckInterval);
-      
-      // Set new interval
-      sessionCheckInterval = setInterval(checkSessionStatus, 60000); // Check every minute
-    };
-
-    // Set up activity listeners
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
-    
-    events.forEach(event => {
-      const handler = () => resetActivityTimer();
-      window.addEventListener(event, handler);
-      activityListeners.push({ event, handler });
-    });
-
-    // Initial setup
-    resetActivityTimer();
-
-    // Cleanup
-    return () => {
-      if (sessionCheckInterval) clearInterval(sessionCheckInterval);
-      activityListeners.forEach(({ event, handler }) => {
-        window.removeEventListener(event, handler);
-      });
-    };
-  }, [isAuthenticated, logout, navigate, showSessionTimeoutToast]);
-
-  return null;
 };

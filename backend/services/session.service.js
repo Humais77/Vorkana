@@ -230,136 +230,73 @@ console.log('📊 Token timing:', {
       throw error;
     }
   }
-async validateSession(token, refreshToken) {
-  try {
-    console.log('🔍 Session validation started');
-    
-    if (!token) {
-      console.log('❌ No token provided');
-      return { valid: false, error: 'No token provided' };
-    }
-    
-    let decoded;
+validateSession = async (token, refreshToken) => {
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-      console.log('✅ Token verified successfully:', {
-        id: decoded.id,
-        role: decoded.role,
-        expiresAt: new Date(decoded.exp * 1000).toISOString(),
-        expiresIn: Math.round((decoded.exp * 1000 - Date.now()) / 1000 / 60) + ' minutes'
-      });
-    } catch (verifyError) {
-      if (verifyError.name === 'TokenExpiredError') {
-        console.log('⏰ Token expired, attempting refresh...');
-        if (refreshToken) {
-          return await this.refreshSession(refreshToken);
+      // 1. Check if token exists
+      if (!token && !refreshToken) {
+        return { valid: false, reason: 'NO_TOKENS' };
+      }
+      
+      // 2. Try to decode and validate access token
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          
+          // Check expiration
+          if (decoded.exp * 1000 < Date.now()) {
+            return { valid: false, reason: 'TOKEN_EXPIRED' };
+          }
+          
+          // Check session in database
+          const session = await Session.findOne({
+            token,
+            isActive: true,
+            expiresAt: { $gt: new Date() }
+          });
+          
+          if (!session) {
+            return { valid: false, reason: 'SESSION_NOT_FOUND' };
+          }
+          
+          // Check idle timeout (3 hours for users, 1 hour for admins)
+          const isAdmin = decoded.role === 'admin';
+          const idleTimeout = isAdmin ? 3600000 : 10800000; // 1h or 3h
+          
+          if (Date.now() - session.lastActivity.getTime() > idleTimeout) {
+            // Mark session as inactive
+            await session.logout('idle_timeout');
+            return { valid: false, reason: 'SESSION_IDLE' };
+          }
+          
+          // Update activity
+          session.lastActivity = new Date();
+          await session.save({ validateBeforeSave: false });
+          
+          return { 
+            valid: true, 
+            userId: session.userId, 
+            sessionId: session._id 
+          };
+        } catch (verifyError) {
+          // Token invalid or expired
         }
-        return { valid: false, error: 'Token expired, no refresh token' };
-      }
-      console.log('❌ Token verification failed:', verifyError.message);
-      return { valid: false, error: 'Invalid token' };
-    }
-    
-    // CRITICAL FIX: Find session by token (not just userId)
-    const session = await Session.findOne({
-      token: token,  // Match the exact token
-      userId: decoded.id,
-      isActive: true
-    });
-    
-    if (!session) {
-      console.log('📝 Session not found in database for this token');
-      
-      // Try to find by refresh token
-      const refreshSession = await Session.findOne({
-        refreshToken: refreshToken,
-        userId: decoded.id,
-        isActive: true
-      });
-      
-      if (refreshSession) {
-        console.log('🔄 Found session by refresh token');
-        return {
-          valid: true,
-          userId: refreshSession.userId,
-          sessionId: refreshSession._id,
-          token: refreshSession.token,
-          refreshToken: refreshSession.refreshToken,
-          lastActivity: refreshSession.lastActivity,
-          isAdmin: decoded.role === 'admin'
-        };
       }
       
+      // 3. Try to refresh using refresh token
       if (refreshToken) {
-        return await this.refreshSession(refreshToken);
+        try {
+          return await this.refreshSession(refreshToken);
+        } catch (refreshError) {
+          return { valid: false, reason: 'REFRESH_FAILED' };
+        }
       }
-      return { valid: false, error: 'Session not found' };
+      
+      return { valid: false, reason: 'INVALID_TOKENS' };
+    } catch (error) {
+      console.error('Session validation error:', error);
+      return { valid: false, reason: 'VALIDATION_ERROR' };
     }
-    
-    // Check if session is expired (by expiresAt field)
-    if (session.expiresAt < new Date()) {
-      console.log('⏰ Session expired in database');
-      await this.logoutSession(session._id, session.userId, 'expired');
-      if (refreshToken) {
-        return await this.refreshSession(refreshToken);
-      }
-      return { valid: false, error: 'Session expired' };
-    }
-    
-    // Calculate idle time correctly
-    const isAdmin = decoded.role === 'admin';
-    const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
-    const idleTime = Date.now() - session.lastActivity.getTime();
-    
-    console.log(`⏱️ Idle check: ${Math.round(idleTime/1000/60)}min / ${Math.round(idleTimeout/1000/60)}min timeout`);
-    console.log('⏱️ Detailed idle check:', {
-      idleTimeMs: idleTime,
-      idleTimeMinutes: Math.round(idleTime / 1000 / 60),
-      idleTimeoutMs: idleTimeout,
-      idleTimeoutMinutes: Math.round(idleTimeout / 1000 / 60),
-      lastActivity: session.lastActivity,
-      currentTime: new Date(),
-      sessionId: session._id,
-      tokenMatches: session.token === token,
-      expiresAt: session.expiresAt
-    });
-    
-    // Only timeout if idle for too long
-    if (idleTime > idleTimeout) {
-      console.log(`⏰ Session idle timeout reached (${isAdmin ? 'admin' : 'user'})`);
-      await this.logoutSession(session._id, session.userId, 'timeout');
-      return { 
-        valid: false, 
-        error: isAdmin ? 'Admin session timeout (1 hour)' : 'Session timeout (3 hours)',
-        reason: 'timeout'
-      };
-    }
-    
-    // Update activity only if not idle
-    session.lastActivity = new Date();
-    await session.save({ validateBeforeSave: false });
-    
-    console.log('✅ Session validated successfully:', {
-      sessionId: session._id,
-      lastActivityUpdated: session.lastActivity.toISOString()
-    });
-    
-    return {
-      valid: true,
-      userId: session.userId,
-      sessionId: session._id,
-      token: session.token,
-      refreshToken: session.refreshToken,
-      lastActivity: session.lastActivity,
-      isAdmin,
-      idleTimeout,
-      timeLeft: idleTimeout - idleTime
-    };
-  } catch (error) {
-    console.error('❌ Session validation error:', error.message);
-    return { valid: false, error: error.message };
-  }
-}
+  };
 
   async updateActivity(sessionId) {
     try {
@@ -469,36 +406,38 @@ async validateSession(token, refreshToken) {
     }
   }
 
-  // Cleanup expired sessions
   async cleanupExpired() {
   try {
     const now = new Date();
+    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
     
-    // Find and logout expired sessions
-    const expiredSessions = await Session.find({
-      expiresAt: { $lt: now },
-      isActive: true
+    // Find sessions to delete
+    const sessionsToDelete = await Session.find({
+      $or: [
+        { expiresAt: { $lt: now } },
+        { 
+          lastActivity: { $lt: threeHoursAgo },
+          isActive: true
+        }
+      ]
     });
     
-    // Logout each expired session
-    for (const session of expiredSessions) {
-      await session.logout('expired');
-    }
-    
-    // Delete very old inactive sessions (older than 7 days)
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const oldSessions = await Session.deleteMany({
-      isActive: false,
-      logoutAt: { $lt: sevenDaysAgo }
+    // Delete them
+    const deleteResult = await Session.deleteMany({
+      $or: [
+        { expiresAt: { $lt: now } },
+        { 
+          lastActivity: { $lt: threeHoursAgo },
+          isActive: true
+        }
+      ]
     });
     
-    if (expiredSessions.length > 0 || oldSessions.deletedCount > 0) {
-      console.log(`🧹 Cleaned up ${expiredSessions.length} expired sessions, ${oldSessions.deletedCount} old sessions`);
-    }
+    console.log(`🧹 Service cleanup deleted ${deleteResult.deletedCount} sessions`);
     
-    return expiredSessions.length + oldSessions.deletedCount;
+    return deleteResult.deletedCount;
   } catch (error) {
-    console.error('Session cleanup error:', error);
+    console.error('Service cleanup error:', error);
     return 0;
   }
 }

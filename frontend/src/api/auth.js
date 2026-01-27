@@ -23,46 +23,22 @@ const generateRequestId = () => {
 
 axiosInstance.interceptors.request.use(
   async (config) => {
-    const requestId = generateRequestId();
-    config.headers['X-Request-ID'] = requestId;
-    
-    // SPECIAL HANDLING FOR LOGOUT: Don't try to refresh CSRF token
-    const isLogoutRequest = config.url === '/api/auth/logout' && config.method === 'post';
-    
-    if (isLogoutRequest) {
-      console.log('Logout request detected, using current CSRF token if available');
-      // Just use whatever CSRF token we have, don't try to refresh
-      if (csrfToken) {
-        config.headers['X-CSRF-Token'] = csrfToken;
-        if (config.data && typeof config.data === 'object') {
-          config.data.csrfToken = csrfToken;
-        }
-      }
-      return config;
-    }
-    
-    // Add CSRF token for other non-GET requests
+    // Add CSRF token for non-GET requests
     if (config.method !== 'get' && config.method !== 'GET') {
-      // Check if token is expired
-      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
-        try {
-          await refreshCSRFToken();
-        } catch (error) {
-          console.warn('Failed to refresh CSRF token:', error.message);
-        }
+      // Get CSRF token from storage or cookie
+      let csrfToken = localStorage.getItem('csrfToken');
+      
+      if (!csrfToken) {
+        // Try to get from cookie
+        csrfToken = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('csrfToken='))
+          ?.split('=')[1];
       }
       
       if (csrfToken) {
         config.headers['X-CSRF-Token'] = csrfToken;
-        // Also add to body for form submissions
-        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
-          config.data.csrfToken = csrfToken;
-        }
       }
-    }
-    
-    if (DEBUG) {
-      console.log(`📤 Request: ${config.method?.toUpperCase()} ${config.url}`);
     }
     
     return config;
@@ -72,62 +48,26 @@ axiosInstance.interceptors.request.use(
     return Promise.reject(error);
   }
 );
-
-// Update response interceptor for logout
 axiosInstance.interceptors.response.use(
-  (response) => {
-    // Update CSRF token from response
-    if (response.data?.csrfToken) {
-      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
-    }
-    
-    if (DEBUG) {
-      console.log(`📥 Response: ${response.status} ${response.config.url}`);
-    }
-    
-    return response;
-  },
-  async (error) => {
-    const isLogoutRequest = error.config?.url === '/api/auth/logout' && error.config?.method === 'post';
-    
-    // SPECIAL HANDLING FOR LOGOUT 403: Clear everything and proceed
-    if (isLogoutRequest && error.response?.status === 403) {
-      console.log('Logout got 403, clearing auth data anyway');
-      clearAuthData();
-      // Return success response anyway to prevent lockout
-      return Promise.resolve({
-        data: {
-          success: true,
-          message: 'Logged out (security session cleared)',
-          csrfCleared: true
-        }
+  (response) => response,
+  (error) => {
+    // Handle session expiration from backend
+    if (error.response?.status === 401 && 
+        error.response?.data?.code === 'SESSION_EXPIRED') {
+      
+      // Clear local storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Clear cookies
+      document.cookie.split(';').forEach(cookie => {
+        const [name] = cookie.trim().split('=');
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       });
-    }
-    
-    // Handle CSRF errors for non-logout requests
-    if (!isLogoutRequest && error.response?.status === 403 && 
-        error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
       
-      console.log('CSRF token invalid, refreshing...');
-      
-      try {
-        // Try to refresh CSRF token
-        await refreshCSRFToken();
-        
-        // Retry original request
-        if (error.config) {
-          error.config.headers['X-CSRF-Token'] = csrfToken;
-          if (error.config.data && typeof error.config.data === 'object') {
-            error.config.data.csrfToken = csrfToken;
-          }
-          return axiosInstance(error.config);
-        }
-      } catch (refreshError) {
-        console.error('CSRF refresh failed:', refreshError);
-        // Clear auth and redirect to login
-        clearAuthData();
-        window.location.href = '/signin?csrf_error=true';
-      }
+      // Redirect to login
+      window.location.href = '/signin?session=expired';
+      return Promise.reject(new Error('Session expired'));
     }
     
     return Promise.reject(error);
@@ -311,32 +251,17 @@ export const authAPI = {
   },
   logout: async () => {
   try {
-    // Don't send CSRF token for logout - the server will ignore it anyway
-    const response = await axiosInstance.post('/api/auth/logout', {}, {
-      headers: {
-        'X-CSRF-Token': null, // Explicitly remove CSRF header
-        'X-Request-ID': `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
-      },
-      timeout: 10000
-    });
+    // Simple logout - just call backend and clear cookies
+    const response = await axiosInstance.post('/api/auth/logout');
     
-    // Clear ALL local storage
+    // Clear all local storage
     localStorage.clear();
     sessionStorage.clear();
-    
-    // Clear cookies
-    document.cookie.split(';').forEach(cookie => {
-      const [name] = cookie.trim().split('=');
-      if (name) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      }
-    });
     
     return response.data;
   } catch (error) {
     console.error('Logout error:', error);
-    
-    // Even if API fails, clear everything
+    // Even if API fails, clear local storage
     localStorage.clear();
     sessionStorage.clear();
     
@@ -347,34 +272,6 @@ export const authAPI = {
   }
 },
   
-  // Session management - FIXED: Add checkSessionStatus
-  refreshSession: async () => {
-    try {
-      const response = await axiosInstance.post('/api/auth/refresh');
-      if (response.data.csrfToken) {
-        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
-      }
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { success: false, message: 'Session refresh failed' };
-    }
-  },
-  
-  // ADD THIS FUNCTION: checkSessionStatus
-  checkSessionStatus: async () => {
-    try {
-      const response = await axiosInstance.get('/api/auth/session/status');
-      return response.data;
-    } catch (error) {
-      // If server returns an error, assume session is not valid
-      return { 
-        success: false, 
-        authenticated: false,
-        message: 'Session check failed',
-        error: error.response?.data?.message || error.message
-      };
-    }
-  },
   
   getProfile: async () => {
     try {
@@ -521,35 +418,7 @@ export const authAPI = {
       throw error.response?.data || { success: false, message: 'Failed to refresh CSRF token' };
     }
   },
-  
-  // Sessions management
-  getActiveSessions: async () => {
-    try {
-      const response = await axiosInstance.get('/api/auth/sessions');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { success: false, message: 'Failed to fetch sessions' };
-    }
-  },
-  
-  terminateSession: async (sessionId) => {
-    try {
-      const response = await axiosInstance.delete(`/api/auth/sessions/${sessionId}`);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { success: false, message: 'Failed to terminate session' };
-    }
-  },
-  
-  terminateAllOtherSessions: async () => {
-    try {
-      const response = await axiosInstance.delete('/api/auth/sessions/others');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { success: false, message: 'Failed to terminate sessions' };
-    }
-  },
-  
+
   // Public profiles
   getPublicProfile: async (userId) => {
     try {
@@ -564,7 +433,6 @@ export const authAPI = {
   try {
     const response = await axiosInstance.get('/api/auth/check-auth');
     
-    // ENSURE USER DATA HAS ALL REQUIRED FIELDS
     if (response.data.success && response.data.isAuthenticated && response.data.user) {
       const user = response.data.user;
       
@@ -584,11 +452,26 @@ export const authAPI = {
         bio: user.bio || null
       };
       
-      response.data.user = completeUser;
+      // Store in localStorage for persistence
+      localStorage.setItem('vorkanna_user_v1', JSON.stringify(completeUser));
+      
+      return {
+        success: true,
+        isAuthenticated: true,
+        user: completeUser
+      };
     }
     
-    return response.data;
+    // Not authenticated - clear storage
+    localStorage.removeItem('vorkanna_user_v1');
+    
+    return { 
+      success: true, 
+      isAuthenticated: false,
+      message: 'Not authenticated'
+    };
   } catch (error) {
+    console.error('Check auth error:', error);
     return { 
       success: false, 
       isAuthenticated: false,
@@ -664,16 +547,6 @@ export const authAPI = {
     return { strength: 'weak', message: 'Weak password' };
   },
   
-  // Session helpers
-  getSessionInfo: () => {
-    const user = authAPI.getCurrentUser();
-    return {
-      userId: user?._id,
-      email: user?.email,
-      lastActivity: Date.now(),
-      userAgent: navigator.userAgent
-    };
-  }
 };
 
 // User management API (keep as is)

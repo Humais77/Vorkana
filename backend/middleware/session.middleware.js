@@ -37,104 +37,49 @@ class SessionMiddleware {
   return baseConfig;
 };
  authenticate = async (req, res, next) => {
-  try {
-    // Clean legacy cookies first
-    this.cleanupLegacyCookies(req, res);
-    
-    let token = req.cookies?.token;
-    const refreshToken = req.cookies?.refreshToken;
-    
-    // If no tokens, check headers
-    if (!token && req.headers.authorization?.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-    
-    // Special handling for OPTIONS requests
-    if (req.method === 'OPTIONS') {
-      return next();
-    }
-    
-    if (!token && !refreshToken) {
-      console.log('🔐 No tokens found');
-      return this.handleUnauthorized(res, 'Please login to continue');
-    }
-    
-    let sessionResult;
-    let newTokenIssued = false;
-    
-    // Validate current session
-    if (token) {
-      sessionResult = await SessionService.validateSession(token, refreshToken);
-    }
-    
-    // Handle token refresh if needed
-    if ((!sessionResult || !sessionResult.valid) && refreshToken) {
-      console.log('🔄 Attempting session refresh...');
-      try {
-        const refreshed = await SessionService.refreshSession(refreshToken);
-        if (refreshed) {
-          token = refreshed.token;
-          newTokenIssued = true;
-          this.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
-          sessionResult = {
-            valid: true,
-            userId: refreshed.userId,
-            sessionId: refreshed.sessionId,
-            token: refreshed.token,
-            refreshToken: refreshed.refreshToken,
-            lastActivity: new Date()
-          };
-        }
-      } catch (refreshError) {
-        console.error('Session refresh failed:', refreshError.message);
+    try {
+      // 1. Get tokens from cookies
+      const token = req.cookies?.token;
+      const refreshToken = req.cookies?.refreshToken;
+      
+      // 2. Validate with session service
+      const sessionResult = await SessionService.validateSession(token, refreshToken);
+      
+      if (!sessionResult.valid) {
+        // 3. Clear ALL cookies on invalid session
         this.clearAuthCookies(res);
-        return this.handleUnauthorized(res, 'Session expired. Please login again.');
+        
+        // 4. Return 401 with specific code
+        return res.status(401).json({
+          success: false,
+          message: 'Session expired or invalid',
+          code: 'SESSION_EXPIRED',
+          requiresLogin: true,
+          redirectUrl: '/signin'
+        });
       }
-    }
-    
-    // If still invalid, clear and return
-    if (!sessionResult || !sessionResult.valid) {
+      
+      // 5. Set user in request if valid
+      const user = await User.findById(sessionResult.userId);
+      req.user = user;
+      req.sessionId = sessionResult.sessionId;
+      
+      // 6. Update last activity
+      await SessionService.updateActivity(sessionResult.sessionId);
+      
+      next();
+    } catch (error) {
+      // 7. Clear cookies on any error
       this.clearAuthCookies(res);
-      return this.handleUnauthorized(res, 'Session expired or invalid');
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication failed',
+        code: 'AUTH_FAILED',
+        requiresLogin: true
+      });
     }
-    
-    // Get user
-    const user = await User.findById(sessionResult.userId);
-    if (!user || !user.isActive) {
-      await SessionService.logoutSession(sessionResult.sessionId, sessionResult.userId, 'inactive');
-      this.clearAuthCookies(res);
-      return this.handleUnauthorized(res, 'Account not found or deactivated');
-    }
-    
-    // Set request properties
-    req.sessionID = sessionResult.sessionId;
-    req.user = user;
-    req.token = sessionResult.token;
-    req.isAdmin = user.role === 'admin';
-    req.sessionValidatedAt = new Date();
-    
-    // Update user last seen
-    user.lastSeenAt = new Date();
-    await user.save({ validateBeforeSave: false });
-    
-    // Generate CSRF if not present or if new token was issued
-    if (!req.cookies?.csrfToken || newTokenIssued) {
-      CSRFMiddleware.generateToken(req, res);
-    }
-    
-    // Add session validation header
-    res.setHeader('X-Session-Validated', 'true');
-    if (newTokenIssued) {
-      res.setHeader('X-Session-Refreshed', 'true');
-    }
-    
-    next();
-  } catch (error) {
-    console.error('🔥 Authentication error:', error);
-    this.clearAuthCookies(res);
-    return this.handleUnauthorized(res, 'Authentication failed');
-  }
-};
+  };
 
   handleUnauthorized = (res, message = 'Unauthorized') => {
     return res.status(401).json({
@@ -168,11 +113,15 @@ optionalAuth = async (req, res, next) => {
         refreshToken
       );
 
-      if (sessionResult.valid) {
-        // Check for idle timeout here too
-        const isAdmin = sessionResult.isAdmin;
+      // FIX: Add null check and default values
+      if (sessionResult.valid && sessionResult.userId) {
+        // Check if we have lastActivity, if not use current time
+        const lastActivity = sessionResult.lastActivity || new Date();
+        
+        // Check if sessionResult has isAdmin property
+        const isAdmin = sessionResult.isAdmin || sessionResult.role === 'admin';
         const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
-        const idleTime = Date.now() - sessionResult.lastActivity.getTime();
+        const idleTime = Date.now() - lastActivity.getTime();
         
         if (idleTime > idleTimeout) {
           console.log(`Session idle timeout in optionalAuth (${isAdmin ? 'admin' : 'user'})`);
@@ -196,11 +145,15 @@ optionalAuth = async (req, res, next) => {
     } catch (error) {
       console.log('Optional auth session validation failed:', error.message);
       // Silent fail - don't logout, just set as not authenticated
+      req.user = null;
+      req.isAuthenticated = false;
     }
 
     next();
   } catch (error) {
     console.error('Optional auth error:', error);
+    req.user = null;
+    req.isAuthenticated = false;
     next();
   }
 };

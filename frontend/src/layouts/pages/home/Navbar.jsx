@@ -7,8 +7,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
-import { useSessionWatcher ,clearAllCookies} from '../../../hooks/useAuth';
-
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -19,7 +17,7 @@ const Default_pp_URL = buildImageUrl({
 });
 
 const Navbar = ({ onSigninClick, onSignupClick }) => {
-  useSessionWatcher();
+
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
@@ -142,40 +140,32 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   const handleLogout = useCallback(async () => {
   try {
-    // Close all dropdowns
+    // Close UI state first
     setActiveDropdown(null);
-    setMobileMenuOpen(false);
     setMobileProfileOpen(false);
-    
-    // Manual cookie clearing BEFORE API call
-    clearAllCookies(); // Import this function
-    
-    // Clear local storage
-    localStorage.clear();
-    sessionStorage.clear();
+    setMobileMenuOpen(false);
     
     // Call logout API
     await logoutMutation.mutateAsync();
     
-    // Force redirect after a small delay
-    setTimeout(() => {
-      window.location.href = '/signin?logout=true';
-      window.location.reload(); // Force reload to clear React state
-    }, 300);
+    // IMPORTANT: Force logout from auth store immediately
+    useAuthStore.getState().logout();
+    
+    // Navigate to signin
+    navigate('/signin', { replace: true });
+    
+    // Force a re-render by updating state
+    setActiveDropdown(null);
     
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('Logout failed:', error);
     
-    // Fallback: redirect anyway
-    clearAllCookies();
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    setTimeout(() => {
-      window.location.href = '/signin?logout=fallback';
-    }, 300);
+    // Even if API fails, clear local state
+    useAuthStore.getState().logout();
+    navigate('/signin', { replace: true });
   }
-}, [logoutMutation]);
+}, [logoutMutation, navigate]);
+
 
   const handleMobileMenuClick = useCallback(() => {
     setMobileMenuOpen(prev => !prev);

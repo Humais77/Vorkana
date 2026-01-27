@@ -5,7 +5,15 @@ const sessionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
-    index: true
+    index: true,
+    default: null, // Allow null
+    set: function(v) {
+      // Convert empty string to null
+      if (v === "" || v === undefined) {
+        return null;
+      }
+      return v;
+    }
   },
   token: {
     type: String,
@@ -47,7 +55,6 @@ const sessionSchema = new mongoose.Schema({
     type: Date,
     required: true,
     index: true,
-    expires: 0 // Auto-delete after expiration
   },
   loginAt: {
     type: Date,
@@ -72,11 +79,15 @@ const sessionSchema = new mongoose.Schema({
 
 // Indexes for performance
 sessionSchema.index({ userId: 1, isActive: 1 });
-sessionSchema.index({ expiresAt: 1, isActive: 1 });
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 sessionSchema.index({ 'deviceInfo.ip': 1, userId: 1 });
 sessionSchema.index({ userId: 1, isActive: 1, expiresAt: 1 });
 sessionSchema.index({ token: 1, refreshToken: 1 });
-
+sessionSchema.pre('save',async function() {
+  if (this.userId === "" || this.userId === undefined) {
+    this.userId = null;
+  }
+});
 // Virtuals
 sessionSchema.virtual('duration').get(function() {
   const logoutTime = this.logoutAt || new Date();
