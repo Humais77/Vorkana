@@ -979,37 +979,39 @@ const SubcategoriesManagement = () => {
 
       {/* Modals */}
       {showCreateModal && (
-        <SubcategoryCreateModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={async (data) => {
-            try {
-              await createSubcategoryMutation.mutateAsync(data);
-              showSubcategorySuccess('Subcategory created successfully');
-              setShowCreateModal(false);
-              refetch();
-            } catch (error) {
-              showSubcategoryError(error.response?.data?.message || 'Failed to create subcategory');
-            }
-          }}
-          loading={createSubcategoryMutation.isLoading}
-          categories={categories}
-        />
-      )}
+  <SubcategoryCreateModal
+    isOpen={showCreateModal}
+    onClose={() => setShowCreateModal(false)}
+    onSubmit={async (data) => {
+      try {
+        const result = await createSubcategoryMutation.mutateAsync(data);
+        showSubcategorySuccess('Subcategory created successfully');
+        setShowCreateModal(false);
+        refetch();
+        return result;
+      } catch (error) {
+        // Error will be displayed in the modal via backendError prop
+        throw error;
+      }
+    }}
+    loading={createSubcategoryMutation.isLoading}
+    error={createSubcategoryMutation.error}
+  />
+)}
       
       {showEditModal && selectedSubcategory && (
-        <SubcategoryEditModal
-          subcategory={selectedSubcategory}
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false);
-            setSelectedSubcategory(null);
-          }}
-          onSubmit={handleUpdateSubcategory}
-          loading={updateSubcategoryMutation.isLoading}
-          categories={categories}
-        />
-      )}
+  <SubcategoryEditModal
+    subcategory={selectedSubcategory}
+    isOpen={showEditModal}
+    onClose={() => {
+      setShowEditModal(false);
+      setSelectedSubcategory(null);
+    }}
+    onSubmit={handleUpdateSubcategory}
+    loading={updateSubcategoryMutation.isLoading}
+    error={updateSubcategoryMutation.error}
+  />
+)}
       
       {showSubcategoryDetails && selectedSubcategory && (
         <SubcategoryDetailsModal

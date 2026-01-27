@@ -90,7 +90,7 @@ const categorySchema = new mongoose.Schema({
   },
   allowSubcategories: {
     type: Boolean,
-    default: false,
+    default: true,
   },
   featured: {
     type: Boolean,

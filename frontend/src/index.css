@@ -15,7 +15,7 @@ section {
 }
 
 /* Prevent horizontal scrolling on all containers */
-.container, .max-w-7xl, .max-w-6xl, .max-w-4xl, .max-w-5xl {
+.container {
   overflow-x: hidden;
   max-width: 100%;
 }

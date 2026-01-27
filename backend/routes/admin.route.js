@@ -191,8 +191,6 @@ router.post('/subcategories/repair-counts',
   subcategoryController.repairSubcategoryCounts
 );
 
-// ==================== DROPDOWN ROUTES (Cached) ====================
-
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -205,7 +203,8 @@ router.get('/categories/dropdown',
       const { 
         includeSubcategories = false, 
         showAll = false,
-        onlyWithSubcategories = false 
+        onlyWithSubcategories = false,
+        allowSubcategories = true  // Add this parameter
       } = req.query;
       
       const filter = { 
@@ -213,16 +212,33 @@ router.get('/categories/dropdown',
         deletedAt: null
       };
       
+      // Handle allowSubcategories filter
+      if (allowSubcategories === 'true') {
+        // Show categories that allow subcategories (true or undefined)
+        filter.$or = [
+          { allowSubcategories: true },
+          { allowSubcategories: { $exists: false } }
+        ];
+      } else if (allowSubcategories === 'false') {
+        // Show only categories that explicitly don't allow subcategories
+        filter.allowSubcategories = false;
+      }
+      // If allowSubcategories is not specified, show all active categories
+      
       if (onlyWithSubcategories === 'true') {
         filter.allowSubcategories = true;
       } else if (showAll === 'true') {
         // Don't filter by allowSubcategories
+        delete filter.$or;
+        delete filter.allowSubcategories;
       }
       
       const categories = await Category.find(filter)
         .select('name slug icon parentCategory order isActive featured popular servicesCount gigsCount allowSubcategories')
         .sort({ order: 1, name: 1 })
         .lean();
+      
+      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
       
       if (includeSubcategories === 'true') {
         const categoryIds = categories.map(cat => cat._id);

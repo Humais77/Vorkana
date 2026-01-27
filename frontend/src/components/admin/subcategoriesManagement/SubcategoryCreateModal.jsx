@@ -1,14 +1,15 @@
-// SubcategoryCreateModal.jsx - Fix the categories handling
+// SubcategoryCreateModal.jsx - FIXED with correct allowSubcategories logic
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { FiX, FiFolder, FiInfo, FiAlertCircle, FiPlus, FiChevronDown } from 'react-icons/fi';
+import { FiX, FiFolder, FiInfo, FiAlertCircle, FiPlus, FiChevronDown, FiRefreshCw } from 'react-icons/fi';
+import { useCategoriesForDropdown } from '../../../hooks/useAdminDashboard';
+import { useSubcategoryToast } from '../../../hooks/useSubcategoryToast';
 
 const SubcategoryCreateModal = ({ 
   isOpen, 
   onClose, 
   onSubmit, 
   loading = false, 
-  categories = [],  // Make sure categories is an array
-  error: backendError
+  error: backendError 
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -25,14 +26,40 @@ const SubcategoryCreateModal = ({
   const [errors, setErrors] = useState({});
   const [backendErrors, setBackendErrors] = useState({});
   const [generateSlug, setGenerateSlug] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef(null);
   const nameInputRef = useRef(null);
 
-  // Debug: Log categories when they change
-  useEffect(() => {
-    console.log('[DEBUG] Categories passed to modal:', categories);
-    console.log('[DEBUG] Categories length:', categories?.length);
-    console.log('[DEBUG] First category:', categories?.[0]);
+  // Use hooks directly in the modal
+  const { 
+    data: categoriesData, 
+    isLoading: categoriesLoading,
+    refetch: refetchCategories 
+  } = useCategoriesForDropdown(true);
+
+  const {
+    showSubcategoryLoading,
+    showSubcategorySuccess,
+    showSubcategoryError,
+    showSubcategoryInfo,
+    dismissSubcategoryToast
+  } = useSubcategoryToast();
+
+  // Get categories from hook response
+  const categories = categoriesData?.data || [];
+  console.log('[MODAL DEBUG] Categories loaded:', {
+    count: categories.length,
+    data: categories,
+    firstCategory: categories[0]
+  });
+
+  // Filter categories to only show those that allow subcategories
+  const filteredCategories = React.useMemo(() => {
+    return categories.filter(category => {
+      // Show categories that explicitly allow subcategories (true)
+      // Also show categories where allowSubcategories is undefined/null (default behavior)
+      return category.allowSubcategories !== false;
+    });
   }, [categories]);
 
   // Handle backend errors
@@ -71,9 +98,9 @@ const SubcategoryCreateModal = ({
     }
   }, [isOpen]);
 
-  // Reset form when modal closes
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
       setFormData({
         name: '',
         description: '',
@@ -87,8 +114,12 @@ const SubcategoryCreateModal = ({
       });
       setErrors({});
       setBackendErrors({});
+      setIsSubmitting(false);
+      
+      // Refresh categories when modal opens
+      refetchCategories();
     }
-  }, [isOpen]);
+  }, [isOpen, refetchCategories]);
 
   // Debounced slug generation
   useEffect(() => {
@@ -163,15 +194,14 @@ const SubcategoryCreateModal = ({
       });
     }
     
-    // Validate field if it has validation rules
-    if (validationRules[name]) {
-      const error = validateField(name, newValue);
+    // Clear frontend errors for this field
+    if (errors[name]) {
       setErrors(prev => ({
         ...prev,
-        [name]: error
+        [name]: null
       }));
     }
-  }, [validateField, backendErrors]);
+  }, [errors, backendErrors]);
 
   const validateForm = useCallback(() => {
     const newErrors = {};
@@ -188,6 +218,8 @@ const SubcategoryCreateModal = ({
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
+    if (isSubmitting) return;
+    
     const validationErrors = validateForm();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -203,34 +235,53 @@ const SubcategoryCreateModal = ({
       return;
     }
     
+    setIsSubmitting(true);
+    const loadingToastId = showSubcategoryLoading('Creating subcategory...');
+    
     try {
       // Ensure category is a valid ObjectId
       const submitData = {
         ...formData,
         category: formData.category.trim()
       };
+      
       await onSubmit(submitData);
+      
+      dismissSubcategoryToast(loadingToastId);
+      showSubcategorySuccess('Subcategory created successfully');
+      
+      // Don't close modal here - let parent handle it
     } catch (error) {
       console.error('Form submission error:', error);
-      // Error handling is done in the useEffect above
+      dismissSubcategoryToast(loadingToastId);
+      
+      // Error is already handled in useEffect via backendError prop
+      setIsSubmitting(false);
     }
-  }, [formData, validateForm, onSubmit]);
+  }, [formData, validateForm, onSubmit, isSubmitting, showSubcategoryLoading, showSubcategorySuccess, dismissSubcategoryToast]);
 
   const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
+    if (!isSubmitting) {
+      onClose();
+    }
+  }, [onClose, isSubmitting]);
+
+  const handleRefreshCategories = useCallback(() => {
+    refetchCategories();
+    showSubcategoryInfo('Refreshing categories...');
+  }, [refetchCategories, showSubcategoryInfo]);
 
   // Handle escape key
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isSubmitting) {
         handleClose();
       }
     };
     
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, handleClose]);
+  }, [isOpen, handleClose, isSubmitting]);
 
   if (!isOpen) return null;
 
@@ -254,7 +305,8 @@ const SubcategoryCreateModal = ({
             </div>
             <button
               onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              disabled={isSubmitting}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
               aria-label="Close modal"
             >
               <FiX className="h-5 w-5 text-gray-500" />
@@ -299,6 +351,7 @@ const SubcategoryCreateModal = ({
                   type="text"
                   value={formData.name}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     errors.name || backendErrors.name ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -319,41 +372,53 @@ const SubcategoryCreateModal = ({
                 )}
               </div>
 
-              {/* Category Selection - FIXED VERSION */}
+              {/* Category Selection - FIXED LOGIC */}
               <div>
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
-                  Parent Category *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700">
+                    Parent Category *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRefreshCategories}
+                    disabled={categoriesLoading || isSubmitting}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    title="Refresh categories list"
+                  >
+                    <FiRefreshCw className={`h-3 w-3 ${categoriesLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                </div>
                 <div className="relative">
                   <select
                     id="category"
                     name="category"
                     value={formData.category}
                     onChange={handleChange}
+                    disabled={categoriesLoading || isSubmitting || filteredCategories.length === 0}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-colors ${
                       errors.category || backendErrors.category ? 'border-red-300' : 'border-gray-300'
-                    }`}
+                    } ${categoriesLoading ? 'opacity-50' : ''}`}
                   >
                     <option value="">Select a category</option>
-                    {Array.isArray(categories) && categories.length > 0 ? (
-                      categories.map(category => (
-                        <option key={category._id || category.id} value={category._id || category.id}>
-                          {category.name} {category.subcategoriesCount ? `(${category.subcategoriesCount} subcategories)` : ''}
+                    {categoriesLoading ? (
+                      <option value="" disabled>Loading categories...</option>
+                    ) : filteredCategories.length === 0 ? (
+                      <option value="" disabled>No categories available for subcategories</option>
+                    ) : (
+                      filteredCategories.map(category => (
+                        <option 
+                          key={category._id} 
+                          value={category._id}
+                        >
+                          {category.name} 
+                          {category.subcategoriesCount ? ` (${category.subcategoriesCount} subcategories)` : ''}
                         </option>
                       ))
-                    ) : (
-                      <option value="" disabled>No categories available. Create a category first.</option>
                     )}
                   </select>
                   <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 pointer-events-none" />
                 </div>
-                
-                {/* Debug info */}
-                {process.env.NODE_ENV === 'development' && (
-                  <div className="mt-1 text-xs text-gray-400">
-                    Available categories: {Array.isArray(categories) ? categories.length : 0}
-                  </div>
-                )}
                 
                 {errors.category && (
                   <p className="mt-1.5 text-sm text-red-600 flex items-center">
@@ -368,11 +433,17 @@ const SubcategoryCreateModal = ({
                   </p>
                 )}
                 
-                {/* Info message if category has subcategories */}
-                {formData.category && categories.find(c => c._id === formData.category)?.subcategories?.length > 0 && (
-                  <p className="mt-1.5 text-xs text-blue-600 flex items-center">
-                    <FiInfo className="h-3 w-3 mr-1" />
-                    This category already has {categories.find(c => c._id === formData.category)?.subcategories?.length} subcategories
+                {/* Categories status info */}
+                {!categoriesLoading && filteredCategories.length === 0 && categories.length > 0 && (
+                  <p className="mt-1.5 text-sm text-amber-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    All categories are set to not allow subcategories. Please edit a category to enable subcategories.
+                  </p>
+                )}
+                {!categoriesLoading && categories.length === 0 && (
+                  <p className="mt-1.5 text-sm text-amber-600 flex items-center">
+                    <FiAlertCircle className="h-4 w-4 mr-1" />
+                    No categories available. Please create a category first.
                   </p>
                 )}
               </div>
@@ -387,6 +458,7 @@ const SubcategoryCreateModal = ({
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   rows={3}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     errors.description || backendErrors.description ? 'border-red-300' : 'border-gray-300'
@@ -426,6 +498,7 @@ const SubcategoryCreateModal = ({
                       type="text"
                       value={formData.icon}
                       onChange={handleChange}
+                      disabled={isSubmitting}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                         errors.icon || backendErrors.icon ? 'border-red-300' : 'border-gray-300'
                       }`}
@@ -460,6 +533,7 @@ const SubcategoryCreateModal = ({
                     type="number"
                     value={formData.order}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                     min="0"
                     max="1000"
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
@@ -508,6 +582,7 @@ const SubcategoryCreateModal = ({
                           setFormData(prev => ({ ...prev, slug }));
                         }
                       }}
+                      disabled={isSubmitting}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                         errors.slug || backendErrors.slug ? 'border-red-300' : 'border-gray-300'
                       }`}
@@ -521,6 +596,7 @@ const SubcategoryCreateModal = ({
                         type="checkbox"
                         checked={generateSlug}
                         onChange={(e) => setGenerateSlug(e.target.checked)}
+                        disabled={isSubmitting}
                         className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                       />
                       <span className="text-sm text-gray-600">Auto</span>
@@ -553,12 +629,15 @@ const SubcategoryCreateModal = ({
             </h4>
             
             <div className="space-y-4">
-              <label className="flex items-start space-x-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+              <label className={`flex items-start space-x-3 p-4 border border-gray-200 rounded-lg transition-colors cursor-pointer ${
+                isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
+              }`}>
                 <input
                   type="checkbox"
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   className="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-0.5"
                 />
                 <div>
@@ -588,6 +667,7 @@ const SubcategoryCreateModal = ({
                   type="text"
                   value={formData.metaTitle}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   maxLength="60"
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
                     backendErrors.metaTitle ? 'border-red-300' : 'border-gray-300'
@@ -615,6 +695,7 @@ const SubcategoryCreateModal = ({
                   name="metaDescription"
                   value={formData.metaDescription}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                   rows={2}
                   maxLength="160"
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors ${
@@ -647,17 +728,17 @@ const SubcategoryCreateModal = ({
               <button
                 type="button"
                 onClick={handleClose}
-                disabled={loading}
+                disabled={isSubmitting}
                 className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={loading || !formData.category}
+                disabled={isSubmitting || !formData.category || filteredCategories.length === 0}
                 className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? (
+                {isSubmitting ? (
                   <>
                     <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     <span>Creating...</span>
