@@ -135,16 +135,14 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
         originalname: file.originalname,
         mimetype: file.mimetype,
         size: file.size,
-        hasBuffer: !!file.buffer,
-        hasPath: !!file.path
+        hasBuffer: !!file.buffer
       });
 
       let result;
       
-      // FIXED: Handle buffer uploads (from memory storage)
+      // Upload from buffer (memory storage)
       if (file.buffer) {
         console.log('Uploading from buffer');
-        // Convert buffer to base64 for Cloudinary
         const base64Data = file.buffer.toString('base64');
         const dataUri = `data:${file.mimetype};base64,${base64Data}`;
         
@@ -158,27 +156,8 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
             { quality: 'auto', fetch_format: 'auto' }
           ]
         });
-      } 
-      // Handle file path uploads (from disk storage)
-      else if (file.path) {
-        console.log('Uploading from file path:', file.path);
-        result = await uploadToCloudinary(file.path, {
-          folder: `${process.env.CLOUDINARY_UPLOAD_FOLDER || 'vorkana'}/${folder}`,
-          public_id: `${folder}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-          overwrite: true,
-          invalidate: true,
-          resource_type: 'image',
-          transformation: [
-            { quality: 'auto', fetch_format: 'auto' }
-          ]
-        });
-        
-        // Clean up local file if it exists
-        if (file.path) {
-          await cleanupLocalFiles(file.path).catch(console.error);
-        }
       } else {
-        console.error('File has neither buffer nor path:', file);
+        console.error('File has no buffer:', file);
         return null;
       }
       
@@ -198,10 +177,6 @@ const processUploadToCloudinary = async (files, folder = 'services') => {
       }
     } catch (error) {
       console.error('Upload processing error:', error);
-      // Clean up local file if it exists
-      if (file.path) {
-        await cleanupLocalFiles(file.path).catch(console.error);
-      }
       return null;
     }
   });

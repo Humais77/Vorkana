@@ -93,25 +93,7 @@ const clearGigCache = createClearCacheMiddleware({
 });
 
 // Configure multer
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../public/uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname).toLowerCase();
-    const sanitizedName = file.originalname
-      .replace(path.extname(file.originalname), '')
-      .replace(/[^a-zA-Z0-9-_]/g, '_')
-      .substring(0, 50);
-    const filename = `${sanitizedName}-${uniqueSuffix}${ext}`;
-    cb(null, filename);
-  }
-});
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|pdf|doc|docx|zip|rar|webp|gif/i;
@@ -138,7 +120,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
-  storage: storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
     files: 11
@@ -166,7 +148,7 @@ const imageFilter = (req, file, cb) => {
 };
 
 const imageUpload = multer({
-  storage: multer.memoryStorage(),
+   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024,
     files: 10
@@ -175,7 +157,7 @@ const imageUpload = multer({
 });
 
 const thumbnailUpload = multer({
-  storage: multer.memoryStorage(),
+ storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024,
     files: 1

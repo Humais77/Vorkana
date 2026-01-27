@@ -2528,7 +2528,28 @@ const deleteGig = async (req, res, next) => {
     // Permanent deletion (admin only)
     if (permanent === 'true' && isAdmin) {
       console.log(`[${requestId}] Permanent delete requested by admin`);
+      try {
+      const imagesToDelete = [];
       
+      if (gig.thumbnail && gig.thumbnail.public_id) {
+        imagesToDelete.push({ public_id: gig.thumbnail.public_id });
+      }
+      
+      if (gig.images && gig.images.length > 0) {
+        gig.images.forEach(img => {
+          if (img.public_id) {
+            imagesToDelete.push({ public_id: img.public_id });
+          }
+        });
+      }
+      
+      if (imagesToDelete.length > 0) {
+        await deleteCloudinaryImages(imagesToDelete);
+        console.log(`[${requestId}] Deleted ${imagesToDelete.length} images from Cloudinary`);
+      }
+    } catch (error) {
+      console.error(`[${requestId}] Error deleting images from Cloudinary:`, error);
+    }
       if (gig.isActive && gig.status === 'open') {
       try {
         // Use atomic operations to prevent negative counts

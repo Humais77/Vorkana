@@ -1362,14 +1362,6 @@ const GigCreate = () => {
                   )}
                 </div>
                 {renderFieldError('phone')}
-                <div className="mt-2 text-xs text-gray-600">
-                  <p className="font-medium mb-1">Accepted formats:</p>
-                  <ul className="list-disc pl-4 space-y-1">
-                    <li>International: +1 234 567 8901</li>
-                    <li>US/Canada: 123-456-7890</li>
-                    <li>UK: 07123 456789</li>
-                  </ul>
-                </div>
               </div>
             </div>
           </div>
@@ -1720,7 +1712,7 @@ const GigCreate = () => {
 
               {/* Project Description */}
               <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                <label htmlFor="description" className=" text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <FileText className="mr-2" size={14} />
                   Project Description <span className="text-red-500 ml-1">*</span>
                 </label>
