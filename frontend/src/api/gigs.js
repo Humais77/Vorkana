@@ -831,7 +831,7 @@ export const gigsAPI = {
   exportGigs: async (params = {}) => {
     try {
       const cleanedParams = cleanParams(params);
-      const response = await axiosInstance.get('/api/gigs/export', {
+      const response = await axiosInstance.get('/api/admin/gigs/export', {
         params: cleanedParams,
         responseType: 'blob'
       });

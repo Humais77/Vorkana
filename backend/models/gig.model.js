@@ -92,7 +92,7 @@ const gigSchema = new mongoose.Schema({
     required: [true, 'Description is required'],
     trim: true,
     minlength: [20, 'Description must be at least 20 characters'],
-    maxlength: [5000, 'Description cannot exceed 5000 characters'],
+    maxlength: [10000, 'Description cannot exceed 5000 characters'],
   },
   budget: {
     type: Number,
@@ -477,19 +477,49 @@ gigSchema.pre('save', async function() {
     this._originalStatus = this._originalStatus || this.status;
   }
 });
-gigSchema.pre('save',async function() {
+gigSchema.pre('save', async function() {
   // Additional security checks
   if (this.title && this.title.length > 200) {
-    return next(new Error('Title exceeds maximum length'));
+    throw new Error('Title exceeds maximum length');
   }
   
-  // Prevent NoSQL injection
-  const dangerousChars = /[$]|\.\./;
-  Object.keys(this.toObject()).forEach(key => {
-    if (typeof this[key] === 'string' && dangerousChars.test(this[key])) {
-       throw new Error(`Potentially dangerous characters in ${key}`);
+  // REMOVE THIS AGGRESSIVE BLOCK:
+  // Prevent NoSQL injection - This is too aggressive
+  // const dangerousChars = /[$]|\.\./;
+  // Object.keys(this.toObject()).forEach(key => {
+  //   if (typeof this[key] === 'string' && dangerousChars.test(this[key])) {
+  //      throw new Error(`Potentially dangerous characters in ${key}`);
+  //   }
+  // });
+  
+  // REPLACE WITH MORE REASONABLE VALIDATION:
+  // Only check for actual dangerous patterns
+  const fieldsToCheck = ['title', 'description', 'fullName', 'country', 'timeline'];
+  
+  for (const field of fieldsToCheck) {
+    if (this[field] && typeof this[field] === 'string') {
+      const value = this[field];
+      
+      // Check for actual malicious patterns, not normal characters
+      const dangerousPatterns = [
+        /<script[^>]*>/i,  // Script tags
+        /javascript:/i,     // JavaScript protocol
+        /on\w+\s*=/,        // Event handlers
+        /eval\(/,           // eval function
+        /alert\(/,          // alert function
+        /document\./,       // Document access
+        /window\./,         // Window access
+        /\.\.\/\.\.\//,     // Directory traversal
+        /null.*null/i,      // Null byte injection attempts
+      ];
+      
+      for (const pattern of dangerousPatterns) {
+        if (pattern.test(value)) {
+          throw new Error(`Unsafe content detected in ${field}. Please remove any scripts or malicious code.`);
+        }
+      }
     }
-  });
+  }
 });
 
 // Update post-save middleware

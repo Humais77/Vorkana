@@ -78,11 +78,11 @@ const createSchema = Joi.object({
       'any.invalid': 'Invalid subcategory ID',
     }),
     
-  description: Joi.string().trim().min(20).max(5000).required()
+  description: Joi.string().trim().min(20).max(10000).required()
     .messages({
       'string.empty': 'Description is required',
       'string.min': 'Description must be at least 20 characters',
-      'string.max': 'Description cannot exceed 5000 characters',
+      'string.max': 'Description cannot exceed 10000 characters',
     }),
     
   budget: Joi.number().min(5).max(100000).required()
@@ -189,10 +189,10 @@ const updateSchema = Joi.object({
       'any.invalid': 'Invalid subcategory ID',
     }),
     
-  description: Joi.string().trim().min(20).max(5000)
+  description: Joi.string().trim().min(20).max(10000)
     .messages({
       'string.min': 'Description must be at least 20 characters',
-      'string.max': 'Description cannot exceed 5000 characters',
+      'string.max': 'Description cannot exceed 10000 characters',
     }),
     
   budget: Joi.number().min(5).max(100000)

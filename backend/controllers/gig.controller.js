@@ -8,7 +8,8 @@ const {
   deleteCloudinaryImages
 } = require('../middleware/upload.middleware.js');
 const { sanitizeHtml, sanitizeText } = require('../utils/sanitize.js');
-const cache = require('../utils/cache.js'); // Import the cache utility
+const cache = require('../utils/cache.js');
+const { v4: uuidv4 } = require('uuid');
 
 const generateRequestId = () => {
   return crypto.randomBytes(8).toString('hex');
@@ -3081,47 +3082,79 @@ const getGigStats = async (req, res, next) => {
   }
 };
 
-// Export Gigs
-const exportGigs = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const exportGigs = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required for export',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
-    const { format = 'json', ...queryParams } = req.query;
+    const { format = 'json', cache: useCacheParam = 'false' } = req.query;
     
-    const filter = buildSecureGigQuery(queryParams, 'admin', req.user._id);
+    console.log('[EXPORT GIGS] Request received:', {
+      format,
+      query: req.query,
+      params: req.params,
+      admin: req.admin?.email
+    });
 
-    const count = await Gig.countDocuments(filter);
-    if (count > 10000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Export limit exceeded (max 10,000 records)',
-        code: 'EXPORT_LIMIT_EXCEEDED',
-        requestId
-      });
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:gigs', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:gigs:', cacheKey);
+        
+        if (format.toLowerCase() === 'csv') {
+          res.set({
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="gigs_export_${Date.now()}.csv"`,
+            'X-Request-ID': requestId,
+            'X-Export-Records': cachedExport.count,
+            'X-Export-Timestamp': new Date().toISOString(),
+            'X-Cache': 'HIT',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          
+          console.log(`[EXPORT GIGS] Sending cached CSV with ${cachedExport.count} records`);
+          return res.send(cachedExport.csvContent);
+        }
+        
+        console.log(`[EXPORT GIGS] Sending cached JSON with ${cachedExport.count} records`);
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
     }
 
-    const gigs = await Gig.find(filter)
-      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -communicationHistory')
+    // Get gigs with populated data
+    const gigs = await Gig.find({ deletedAt: null })
       .populate('projectCategory', 'name slug')
       .populate('createdBy', 'name email')
+      .populate('assignedTo', 'name email')
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -communicationHistory')
       .lean();
 
-    if (format === 'csv') {
+    console.log(`[EXPORT GIGS] Found ${gigs.length} gigs, format requested: ${format}`);
+
+    // FIX: Check format properly (case-insensitive)
+    const requestedFormat = (format || '').toString().toLowerCase().trim();
+    
+    if (requestedFormat === 'csv') {
       const headers = [
         'ID', 'Title', 'Slug', 'Description', 'Budget', 'Currency', 
-        'Category', 'Status', 'Urgency', 'Visibility', 'Created By',
-        'Assigned To', 'Created At', 'Updated At',
-        'Skills Required', 'Deliverables'
+        'Category', 'Subcategory', 'Status', 'Urgency', 'Visibility',
+        'Client Name', 'Client Email', 'Assigned To', 'Created At', 
+        'Updated At', 'Deadline', 'Bids Count', 'Skills Required', 
+        'Deliverables', 'Timeline', 'Timeline Unit'
       ];
 
       const csvRows = gigs.map(gig => [
@@ -3132,15 +3165,21 @@ const exportGigs = async (req, res, next) => {
         gig.budget || 0,
         gig.currency || 'USD',
         gig.projectCategory?.name || '',
+        gig.subcategory?.name || '',
         gig.status || 'open',
         gig.urgency || 'medium',
         gig.visibility || 'public',
         gig.createdBy?.name || '',
+        gig.createdBy?.email || '',
         gig.assignedTo?.name || '',
         new Date(gig.createdAt).toISOString(),
         new Date(gig.updatedAt).toISOString(),
+        gig.deadline ? new Date(gig.deadline).toISOString() : '',
+        gig.bids?.length || 0,
         `"${(gig.skillsRequired || []).join(', ').replace(/"/g, '""')}"`,
-        `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`
+        `"${(gig.deliverables || []).join(', ').replace(/"/g, '""')}"`,
+        gig.timeline || '',
+        gig.timelineUnit || 'days'
       ]);
 
       const csvContent = [
@@ -3148,33 +3187,66 @@ const exportGigs = async (req, res, next) => {
         ...csvRows.map(row => row.join(','))
       ].join('\n');
 
-      res.header('Content-Type', 'text/csv');
-      res.header('X-Request-ID', requestId);
-      res.header('X-Export-Records', count);
-      res.header('X-Export-Timestamp', new Date().toISOString());
-      res.header('X-Response-Time', `${Date.now() - startTime}ms`);
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: gigs.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
+      // Set proper headers
+      res.set({
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="gigs_export_${Date.now()}.csv"`,
+        'X-Request-ID': requestId,
+        'X-Export-Records': gigs.length.toString(),
+        'X-Export-Timestamp': new Date().toISOString(),
+        'X-Cache': useCache ? 'MISS' : 'BYPASSED',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
       
+      console.log(`[EXPORT GIGS] Sending CSV response with ${gigs.length} records`);
       return res.send(csvContent);
     }
 
-    const responseTime = Date.now() - startTime;
+    // Default to JSON
+    console.log(`[EXPORT GIGS] Sending JSON response with ${gigs.length} records`);
     
-    res.json({
+    const exportData = {
       success: true,
       format: 'json',
-      count,
+      count: gigs.length,
       data: gigs,
       exportedAt: new Date().toISOString(),
-      requestId,
-      responseTime: `${responseTime}ms`
+      requestId
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.set({
+      'Content-Type': 'application/json',
+      'X-Request-ID': requestId,
+      'X-Export-Records': gigs.length.toString(),
+      'X-Cache': useCache ? 'MISS' : 'BYPASSED'
     });
+    
+    res.json(exportData);
 
   } catch (error) {
-    logAudit('ERROR', 'GIG', 'EXPORT', req.user?._id, { 
-      format: req.query.format,
-      error: error.message 
+    console.error('[EXPORT GIGS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export gigs',
+      code: 'EXPORT_ERROR',
+      requestId
     });
-    next(error);
   }
 };
 const errorHandler = (err, req, res, next) => {

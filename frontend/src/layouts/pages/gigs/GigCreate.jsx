@@ -26,7 +26,8 @@ import {
   Package,
   Layers,
   ArrowLeft,
-  Zap
+  Zap,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -42,7 +43,7 @@ import { SeoWrapper } from "../../../components/SeoWrapper";
 const GIG_CREATION_STRUCTURED_DATA = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Create a Gig on Vorkana",
+  "name": "Create a Gig on Vorkana | Find Freelancers for Your Project",
   "description": "Post your project and find qualified freelancers on Vorkana. Create a detailed gig with our step-by-step form to get matched with top talent.",
   "url": typeof window !== 'undefined' ? `${window.location.origin}/create-gig` : '/create-gig',
   "breadcrumb": {
@@ -118,6 +119,14 @@ const VISIBILITY_OPTIONS = [
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
+// Phone validation regex patterns
+const PHONE_PATTERNS = {
+  INTERNATIONAL: /^\+[1-9]\d{1,14}$/, // E.164 format
+  US_CANADA: /^(\+?1)?[2-9]\d{2}[2-9]\d{6}$/, // US/Canada
+  UK: /^(\+?44|0)7\d{9}$/, // UK mobile
+  GENERIC: /^[\+]?[1-9][\d\s\-\(\)\.]{7,}$/ // Generic international
+};
+
 const GigCreate = () => {
   const navigate = useNavigate();
 
@@ -147,6 +156,23 @@ const GigCreate = () => {
     deliverables: []
   }), [currentUser]);
 
+  // Track touched/visited fields (fields user has interacted with)
+  const initialTouchedFields = useMemo(() => ({
+    fullName: !!(currentUser?.name || currentUser?.fullName),
+    oauthEmail: !!currentUser?.email,
+    country: false,
+    phone: false,
+    title: false,
+    projectCategory: false,
+    subcategory: false,
+    budget: false,
+    description: false,
+    timeline: false,
+    skillsRequired: false,
+    deliverables: false,
+    thumbnail: false
+  }), [currentUser]);
+
   const initialCompletedFields = useMemo(() => ({
     fullName: !!(currentUser?.name || currentUser?.fullName),
     oauthEmail: !!currentUser?.email,
@@ -162,6 +188,7 @@ const GigCreate = () => {
 
   // Local state
   const [formData, setFormData] = useState(initialFormData);
+  const [touchedFields, setTouchedFields] = useState(initialTouchedFields);
   const [completedFields, setCompletedFields] = useState(initialCompletedFields);
   const [uploadedImages, setUploadedImages] = useState([]);
   const [thumbnailFile, setThumbnailFile] = useState(null);
@@ -174,11 +201,13 @@ const GigCreate = () => {
   const [deliverableInput, setDeliverableInput] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
   // Refs
   const imageUploadRef = useRef(null);
   const thumbnailUploadRef = useRef(null);
   const topContainerRef = useRef(null);
+  const phoneInputRef = useRef(null);
 
   // TanStack Query hooks
   const {
@@ -212,10 +241,67 @@ const GigCreate = () => {
     return subcategoriesData?.subcategories || subcategoriesData || [];
   }, [subcategoriesData]);
 
+  // Helper function for user-friendly error messages
+  const getUserFriendlyError = useCallback((error) => {
+    if (!error) return 'An error occurred. Please try again.';
+    
+    // Handle backend validation errors
+    if (error.includes('Potentially dangerous characters') || 
+        error.includes('Unsafe content detected')) {
+      return 'Your description contains characters that are not allowed. Please remove any special formatting or scripts and try again.';
+    }
+    
+    if (error.includes('Description cannot exceed')) {
+      return 'Description is too long. Maximum 10000 characters allowed.';
+    }
+    
+    if (error.includes('Title exceeds')) {
+      return 'Title is too long. Maximum 200 characters allowed.';
+    }
+    
+    if (error.includes('Subcategory is required')) {
+      return 'Please select a subcategory for your project.';
+    }
+    
+    if (error.includes('Category not found')) {
+      return 'Please select a valid category.';
+    }
+    
+    if (error.includes('Maximum 10 images')) {
+      return 'You can upload maximum 10 images.';
+    }
+    
+    if (error.includes('exceeds 5MB')) {
+      return 'File size exceeds 5MB limit. Please use smaller files.';
+    }
+    
+    if (error.includes('Validation failed')) {
+      return 'Please check all fields and try again.';
+    }
+    
+    if (error.includes('Phone') && error.includes('required')) {
+      return 'Phone number is required.';
+    }
+    
+    if (error.includes('Phone') && error.includes('invalid')) {
+      return 'Please enter a valid phone number.';
+    }
+    
+    // Generic error message for internal server errors
+    if (error.includes('Internal server error') || 
+        error.includes('500') ||
+        error.includes('Failed to create gig')) {
+      return 'Unable to create gig at the moment. Please try again in a few minutes.';
+    }
+    
+    // Return the original error for other cases
+    return error;
+  }, []);
+
   const allErrors = useMemo(() => ({
     ...errors,
-    form: errors.form || gigError?.message || categoryError?.message
-  }), [errors, gigError, categoryError]);
+    form: errors.form || (gigError?.message ? getUserFriendlyError(gigError.message) : null) || categoryError?.message
+  }), [errors, gigError, categoryError, getUserFriendlyError]);
 
   // Get category name for display
   const getCategoryName = useCallback(() => {
@@ -233,6 +319,77 @@ const GigCreate = () => {
     const subcategory = subcategories.find(s => s._id === formData.subcategory);
     return subcategory?.name || "";
   }, [formData.subcategory, subcategories]);
+
+  // Phone validation function
+  const validatePhoneNumber = useCallback((phone) => {
+    if (!phone || phone.trim().length === 0) {
+      return { valid: false, message: "Phone number is required" };
+    }
+    
+    const cleanedPhone = phone.trim().replace(/\s+/g, '').replace(/-/g, '');
+    
+    // Check if it matches any valid pattern
+    const isValid = Object.values(PHONE_PATTERNS).some(pattern => 
+      pattern.test(cleanedPhone)
+    );
+    
+    if (!isValid) {
+      return { 
+        valid: false, 
+        message: "Please enter a valid phone number. Examples: +12345678901, 123-456-7890" 
+      };
+    }
+    
+    return { valid: true, message: "" };
+  }, []);
+
+  // Format phone number as user types
+  const formatPhoneNumber = useCallback((value) => {
+    if (!value) return "";
+    
+    // Remove all non-digit characters except plus sign
+    const cleaned = value.replace(/[^\d+]/g, '');
+    
+    // If starts with plus, keep it
+    if (cleaned.startsWith('+')) {
+      const digits = cleaned.slice(1);
+      // Format as +X XXX XXX XXXX (up to 15 digits)
+      const match = digits.match(/^(\d{0,3})(\d{0,3})(\d{0,4})(\d{0,5})$/);
+      if (match) {
+        const parts = match.slice(1).filter(p => p);
+        if (parts.length === 0) return '+';
+        return '+' + parts.join(' ');
+      }
+    } else {
+      // Format as XXX-XXX-XXXX for US/Canada numbers
+      const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+      if (match) {
+        const parts = match.slice(1).filter(p => p);
+        if (parts.length === 0) return '';
+        if (parts.length === 1) return parts[0];
+        if (parts.length === 2) return `${parts[0]}-${parts[1]}`;
+        return `${parts[0]}-${parts[1]}-${parts[2]}`;
+      }
+    }
+    
+    return cleaned;
+  }, []);
+
+  // Helper to check if we should show error for a field
+  const shouldShowError = useCallback((fieldName) => {
+    // Don't show errors unless field has been touched OR user has attempted to submit
+    return touchedFields[fieldName] || hasAttemptedSubmit;
+  }, [touchedFields, hasAttemptedSubmit]);
+
+  // Mark field as touched
+  const markFieldAsTouched = useCallback((fieldName) => {
+    if (!touchedFields[fieldName]) {
+      setTouchedFields(prev => ({
+        ...prev,
+        [fieldName]: true
+      }));
+    }
+  }, [touchedFields]);
 
   // Sync categories from query to store
   useEffect(() => {
@@ -335,10 +492,18 @@ const GigCreate = () => {
       newValue = value || '';
     }
     
+    // Special handling for phone number formatting
+    if (name === 'phone') {
+      newValue = formatPhoneNumber(value);
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]: newValue
     }));
+    
+    // Mark field as touched
+    markFieldAsTouched(name);
     
     const isValid = validateField(name, newValue);
     setCompletedFields(prev => ({
@@ -353,7 +518,13 @@ const GigCreate = () => {
     if (name === 'projectCategory' && value) {
       refetchSubcategories();
     }
-  }, [errors, refetchSubcategories]);
+  }, [errors, refetchSubcategories, formatPhoneNumber, markFieldAsTouched]);
+
+  // Handle blur event (when user leaves a field)
+  const handleBlur = useCallback((e) => {
+    const { name } = e.target;
+    markFieldAsTouched(name);
+  }, [markFieldAsTouched]);
 
   // Validate field
   const validateField = useCallback((fieldName, value) => {
@@ -369,7 +540,8 @@ const GigCreate = () => {
       case 'country':
         return trimmedValue.length >= 2;
       case 'phone':
-        return trimmedValue.length >= 5;
+        const phoneValidation = validatePhoneNumber(trimmedValue);
+        return phoneValidation.valid;
       case 'title':
         return trimmedValue.length >= 5;
       case 'projectCategory':
@@ -389,7 +561,7 @@ const GigCreate = () => {
       default:
         return !!trimmedValue;
     }
-  }, [subcategories]);
+  }, [subcategories, validatePhoneNumber]);
 
   // Image Upload
   const handleImageUpload = useCallback(async (files) => {
@@ -474,9 +646,10 @@ const GigCreate = () => {
     };
     
     setThumbnailFile(newThumbnail);
+    markFieldAsTouched('thumbnail');
     
     toast.success('Thumbnail selected');
-  }, [uploadingThumbnail]);
+  }, [uploadingThumbnail, markFieldAsTouched]);
 
   // Remove image
   const removeImage = useCallback((index) => {
@@ -506,8 +679,9 @@ const GigCreate = () => {
         skillsRequired: [...prev.skillsRequired, skill]
       }));
       setSkillsInput("");
+      markFieldAsTouched('skillsRequired');
     }
-  }, [skillsInput]);
+  }, [skillsInput, markFieldAsTouched]);
 
   // Remove skill
   const removeSkill = useCallback((index) => {
@@ -515,7 +689,8 @@ const GigCreate = () => {
       ...prev,
       skillsRequired: prev.skillsRequired.filter((_, i) => i !== index)
     }));
-  }, []);
+    markFieldAsTouched('skillsRequired');
+  }, [markFieldAsTouched]);
 
   // Add deliverable
   const addDeliverable = useCallback(() => {
@@ -526,8 +701,9 @@ const GigCreate = () => {
         deliverables: [...prev.deliverables, deliverable]
       }));
       setDeliverableInput("");
+      markFieldAsTouched('deliverables');
     }
-  }, [deliverableInput]);
+  }, [deliverableInput, markFieldAsTouched]);
 
   // Remove deliverable
   const removeDeliverable = useCallback((index) => {
@@ -535,9 +711,10 @@ const GigCreate = () => {
       ...prev,
       deliverables: prev.deliverables.filter((_, i) => i !== index)
     }));
-  }, []);
+    markFieldAsTouched('deliverables');
+  }, [markFieldAsTouched]);
 
-  // Validate step
+  // Validate step (only validate when user tries to proceed)
   const validateStep = useCallback((step) => {
     const newErrors = {};
 
@@ -555,8 +732,9 @@ const GigCreate = () => {
         newErrors.country = "Country is required.";
       }
 
-      if (!formData.phone || formData.phone.trim().length < 5) {
-        newErrors.phone = "Phone number is required.";
+      const phoneValidation = validatePhoneNumber(formData.phone);
+      if (!phoneValidation.valid) {
+        newErrors.phone = phoneValidation.message;
       }
     }
 
@@ -582,12 +760,20 @@ const GigCreate = () => {
     if (step === 3) {
       if (!formData.description || formData.description.trim().length < 20) {
         newErrors.description = "Description must be at least 20 characters.";
-      } else if (formData.description.trim().length > 5000) {
-        newErrors.description = "Description cannot exceed 5000 characters.";
+      } else if (formData.description.trim().length > 10000) {
+        newErrors.description = "Description cannot exceed 10000 characters.";
       }
 
       if (!formData.timeline || formData.timeline.trim().length < 3) {
         newErrors.timeline = "Timeline is required.";
+      }
+      
+      if (formData.skillsRequired.length === 0) {
+        newErrors.skillsRequired = "At least one skill is required.";
+      }
+      
+      if (formData.deliverables.length === 0) {
+        newErrors.deliverables = "At least one deliverable is required.";
       }
     }
 
@@ -599,14 +785,28 @@ const GigCreate = () => {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData, subcategories, thumbnailFile]);
+  }, [formData, subcategories, thumbnailFile, validatePhoneNumber]);
 
   // Next step
   const nextStep = useCallback(() => {
+    setHasAttemptedSubmit(true);
+    
     if (validateStep(activeStep)) {
       setActiveStep(prev => Math.min(prev + 1, 5));
+    } else {
+      // Scroll to first error
+      setTimeout(() => {
+        const firstErrorField = Object.keys(errors)[0];
+        if (firstErrorField) {
+          const element = document.getElementById(firstErrorField);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.focus();
+          }
+        }
+      }, 100);
     }
-  }, [activeStep, validateStep]);
+  }, [activeStep, validateStep, errors]);
 
   // Previous step
   const prevStep = useCallback(() => {
@@ -616,20 +816,36 @@ const GigCreate = () => {
   // Handle form submission
   const handleSubmit = useCallback(async (e, status = 'draft') => {
     e.preventDefault();
+    setHasAttemptedSubmit(true);
     setIsSubmitting(true);
 
     // Validate all steps
     let hasError = false;
+    let firstErrorStep = 1;
+    
     for (let step = 1; step <= 4; step++) {
       if (!validateStep(step)) {
-        setActiveStep(step);
+        firstErrorStep = step;
         hasError = true;
         break;
       }
     }
 
     if (hasError) {
+      setActiveStep(firstErrorStep);
       setIsSubmitting(false);
+      
+      // Scroll to first error after step change
+      setTimeout(() => {
+        const firstErrorField = Object.keys(errors)[0];
+        if (firstErrorField) {
+          const element = document.getElementById(firstErrorField);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.focus();
+          }
+        }
+      }, 300);
       return;
     }
 
@@ -641,7 +857,7 @@ const GigCreate = () => {
         fullName: (formData.fullName || '').trim(),
         oauthEmail: (formData.oauthEmail || '').trim().toLowerCase(),
         country: (formData.country || '').trim(),
-        phone: (formData.phone || '').trim(),
+        phone: (formData.phone || '').trim().replace(/\s+/g, '').replace(/-/g, ''),
         projectCategory: formData.projectCategory || '',
         subcategory: formData.subcategory || undefined,
         description: (formData.description || '').trim(),
@@ -701,15 +917,19 @@ const GigCreate = () => {
         setActiveStep(2);
       }
       console.error("Error in handleSubmit:", error);
-      toast.error("Failed to prepare gig data. Please try again.");
+      
+      // Use the user-friendly error helper
+      const userFriendlyError = getUserFriendlyError(error.message);
+      
+      toast.error(userFriendlyError);
       setErrors(prev => ({
         ...prev,
-        form: error.message || "Something went wrong. Please try again."
+        form: userFriendlyError
       }));
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData, thumbnailFile, uploadedImages, validateStep, createGig, subcategories]);
+  }, [formData, thumbnailFile, uploadedImages, validateStep, createGig, subcategories, getUserFriendlyError, errors]);
 
   // Handle refresh categories
   const handleRefreshCategories = useCallback(() => {
@@ -863,101 +1083,103 @@ const GigCreate = () => {
                   Information entered:
                 </h3>
                 <ul className="space-y-2 text-sm">
-                  {activeStep >= 1 && completedFields.fullName && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Name:</span>
-                      <span className="font-medium truncate max-w-[150px]">
-                        {formData.fullName}
-                      </span>
-                    </li>
+                  {activeStep >= 1 && (
+                    <>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Name:</span>
+                        <span className={`font-medium truncate max-w-[150px] ${completedFields.fullName ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.fullName || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Email:</span>
+                        <span className={`font-medium truncate max-w-[150px] ${completedFields.oauthEmail ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.oauthEmail || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Country:</span>
+                        <span className={`font-medium truncate max-w-[120px] ${completedFields.country ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.country || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Phone:</span>
+                        <span className={`font-medium truncate max-w-[120px] ${completedFields.phone ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.phone || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                    </>
                   )}
-                  {activeStep >= 1 && completedFields.oauthEmail && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Email:</span>
-                      <span className="font-medium truncate max-w-[150px]">
-                        {formData.oauthEmail}
-                      </span>
-                    </li>
+                  {activeStep >= 2 && (
+                    <>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Project Title:</span>
+                        <span className={`font-medium truncate max-w-[120px] ${completedFields.title ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.title || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Category:</span>
+                        <span className={`font-medium truncate max-w-[120px] ${completedFields.projectCategory ? 'text-white' : 'text-emerald-200'}`}>
+                          {getCategoryName() || <span className="italic">Not selected</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Subcategory:</span>
+                        <span className={`font-medium truncate max-w-[120px] ${completedFields.subcategory ? 'text-white' : 'text-emerald-200'}`}>
+                          {getSubcategoryName() || <span className="italic">Not selected</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Budget:</span>
+                        <span className={`font-medium ${completedFields.budget ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.budget ? `$${formatBudget(formData.budget)}` : <span className="italic">Not set</span>}
+                        </span>
+                      </li>
+                    </>
                   )}
-                  {activeStep >= 1 && completedFields.country && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Country:</span>
-                      <span className="font-medium truncate max-w-[120px]">{formData.country}</span>
-                    </li>
-                  )}
-                  {activeStep >= 1 && completedFields.phone && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Phone:</span>
-                      <span className="font-medium truncate max-w-[120px]">{formData.phone}</span>
-                    </li>
-                  )}
-                  {activeStep >= 2 && completedFields.title && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Project Title:</span>
-                      <span className="font-medium truncate max-w-[120px]">
-                        {formData.title}
-                      </span>
-                    </li>
-                  )}
-                  {activeStep >= 2 && completedFields.projectCategory && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Category:</span>
-                      <span className="font-medium truncate max-w-[120px]">
-                        {getCategoryName()}
-                      </span>
-                    </li>
-                  )}
-                  {activeStep >= 2 && completedFields.subcategory && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Subcategory:</span>
-                      <span className="font-medium truncate max-w-[120px]">
-                        {getSubcategoryName()}
-                      </span>
-                    </li>
-                  )}
-                  {activeStep >= 2 && completedFields.budget && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Budget:</span>
-                      <span className="font-medium">${formatBudget(formData.budget)}</span>
-                    </li>
-                  )}
-                  {activeStep >= 3 && completedFields.description && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Description:</span>
-                      <span className="font-medium">{formData.description.length} chars</span>
-                    </li>
-                  )}
-                  {activeStep >= 3 && completedFields.timeline && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Timeline:</span>
-                      <span className="font-medium">{formData.timeline}</span>
-                    </li>
-                  )}
-                  {activeStep >= 3 && formData.skillsRequired.length > 0 && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Skills:</span>
-                      <span className="font-medium">{formData.skillsRequired.length} added</span>
-                    </li>
-                  )}
-                  {activeStep >= 3 && formData.deliverables.length > 0 && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Deliverables:</span>
-                      <span className="font-medium">{formData.deliverables.length} added</span>
-                    </li>
-                  )}
-                  {activeStep >= 4 && uploadedImages.length > 0 && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Images:</span>
-                      <span className="font-medium">{uploadedImages.length} uploaded</span>
-                    </li>
+                  {activeStep >= 3 && (
+                    <>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Description:</span>
+                        <span className={`font-medium ${completedFields.description ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.description ? `${formData.description.length} chars` : <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Timeline:</span>
+                        <span className={`font-medium ${completedFields.timeline ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.timeline || <span className="italic">Not entered</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Skills:</span>
+                        <span className={`font-medium ${formData.skillsRequired.length > 0 ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.skillsRequired.length > 0 ? `${formData.skillsRequired.length} added` : <span className="italic">Not added</span>}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Deliverables:</span>
+                        <span className={`font-medium ${formData.deliverables.length > 0 ? 'text-white' : 'text-emerald-200'}`}>
+                          {formData.deliverables.length > 0 ? `${formData.deliverables.length} added` : <span className="italic">Not added</span>}
+                        </span>
+                      </li>
+                    </>
                   )}
                   {activeStep >= 4 && (
-                    <li className="flex justify-between">
-                      <span className="text-emerald-100">Thumbnail:</span>
-                      <span className="font-medium">
-                        {thumbnailFile ? 'Uploaded' : 'Required'}
-                      </span>
-                    </li>
+                    <>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Images:</span>
+                        <span className="font-medium">{uploadedImages.length} uploaded</span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span className="text-emerald-100">Thumbnail:</span>
+                        <span className={`font-medium ${thumbnailFile ? 'text-white' : 'text-emerald-200'}`}>
+                          {thumbnailFile ? 'Uploaded' : <span className="italic">Not uploaded</span>}
+                        </span>
+                      </li>
+                    </>
                   )}
                 </ul>
               </div>
@@ -1002,8 +1224,21 @@ const GigCreate = () => {
     createdGigId
   ]);
 
-  // Render step content
+  // Render step content - REMOVED INITIAL ERROR SHOWING
   const renderStepContent = useMemo(() => {
+    // Helper to render field error conditionally
+    const renderFieldError = (fieldName) => {
+      if (errors[fieldName] && shouldShowError(fieldName)) {
+        return (
+          <p className="mt-2 text-sm text-red-600 flex items-center">
+            <AlertCircle className="mr-1" size={14} />
+            {errors[fieldName]}
+          </p>
+        );
+      }
+      return null;
+    };
+
     switch (activeStep) {
       case 1:
         return (
@@ -1018,7 +1253,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="fullName" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <User className="mr-2" size={14} />
-                  Full Name
+                  Full Name <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="text"
@@ -1026,23 +1261,30 @@ const GigCreate = () => {
                   name="fullName"
                   value={formData.fullName || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="John Doe"
                   disabled={gigLoading}
+                  required
                 />
-                <p className="mt-2 text-xs text-gray-500">
-                  Minimum 3 characters
-                </p>
-                {errors.fullName && (
-                  <p className="mt-2 text-sm text-red-600">{errors.fullName}</p>
-                )}
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Minimum 3 characters
+                  </p>
+                  {formData.fullName && formData.fullName.trim().length < 3 && (
+                    <span className="text-xs text-red-500">
+                      {3 - formData.fullName.trim().length} more characters needed
+                    </span>
+                  )}
+                </div>
+                {renderFieldError('fullName')}
               </div>
 
               {/* Email */}
               <div>
                 <label htmlFor="oauthEmail" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Mail className="mr-2" size={14} />
-                  Email Address
+                  Email Address <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="email"
@@ -1050,20 +1292,20 @@ const GigCreate = () => {
                   name="oauthEmail"
                   value={formData.oauthEmail || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="your@email.com"
                   disabled={gigLoading}
+                  required
                 />
-                {errors.oauthEmail && (
-                  <p className="mt-2 text-sm text-red-600">{errors.oauthEmail}</p>
-                )}
+                {renderFieldError('oauthEmail')}
               </div>
 
               {/* Country */}
               <div>
                 <label htmlFor="country" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Globe className="mr-2" size={14} />
-                  Country
+                  Country <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="text"
@@ -1071,23 +1313,30 @@ const GigCreate = () => {
                   name="country"
                   value={formData.country || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="United States"
                   disabled={gigLoading}
+                  required
                 />
-                <p className="mt-2 text-xs text-gray-500">
-                  Helps freelancers understand your time zone
-                </p>
-                {errors.country && (
-                  <p className="mt-2 text-sm text-red-600">{errors.country}</p>
-                )}
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Helps freelancers understand your time zone
+                  </p>
+                  {formData.country && formData.country.trim().length < 2 && shouldShowError('country') && (
+                    <span className="text-xs text-red-500">
+                      Country name too short
+                    </span>
+                  )}
+                </div>
+                {renderFieldError('country')}
               </div>
 
               {/* Phone */}
               <div>
                 <label htmlFor="phone" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Phone className="mr-2" size={14} />
-                  Phone Number
+                  Phone Number <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="tel"
@@ -1095,16 +1344,32 @@ const GigCreate = () => {
                   name="phone"
                   value={formData.phone || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
+                  ref={phoneInputRef}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
-                  placeholder="+1 234 567 8900"
+                  placeholder="+1 234 567 8900 or 123-456-7890"
                   disabled={gigLoading}
+                  required
                 />
-                <p className="mt-2 text-xs text-gray-500">
-                  Only shared with freelancers you hire
-                </p>
-                {errors.phone && (
-                  <p className="mt-2 text-sm text-red-600">{errors.phone}</p>
-                )}
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Only shared with freelancers you hire
+                  </p>
+                  {formData.phone && !validatePhoneNumber(formData.phone).valid && shouldShowError('phone') && (
+                    <span className="text-xs text-red-500">
+                      Invalid format
+                    </span>
+                  )}
+                </div>
+                {renderFieldError('phone')}
+                <div className="mt-2 text-xs text-gray-600">
+                  <p className="font-medium mb-1">Accepted formats:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>International: +1 234 567 8901</li>
+                    <li>US/Canada: 123-456-7890</li>
+                    <li>UK: 07123 456789</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -1123,7 +1388,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="title" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Type className="mr-2" size={14} />
-                  Project Title
+                  Project Title <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="text"
@@ -1131,23 +1396,30 @@ const GigCreate = () => {
                   name="title"
                   value={formData.title || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all text-sm md:text-base"
                   placeholder="e.g., Build a responsive e-commerce website"
                   disabled={gigLoading}
+                  required
                 />
-                <p className="mt-2 text-xs text-gray-500">
-                  Be specific and descriptive (5-200 characters)
-                </p>
-                {errors.title && (
-                  <p className="mt-2 text-sm text-red-600">{errors.title}</p>
-                )}
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Be specific and descriptive (5-200 characters)
+                  </p>
+                  {formData.title && formData.title.trim().length < 5 && shouldShowError('title') && (
+                    <span className="text-xs text-red-500">
+                      {5 - formData.title.trim().length} more characters needed
+                    </span>
+                  )}
+                </div>
+                {renderFieldError('title')}
               </div>
 
               {/* Category */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label htmlFor="projectCategory" className="text-sm font-medium text-gray-700">
-                    Project Category
+                  <label htmlFor="projectCategory" className="text-sm font-medium text-gray-700 flex items-center">
+                    Project Category <span className="text-red-500 ml-1">*</span>
                   </label>
                   {categoryError && (
                     <button
@@ -1165,8 +1437,10 @@ const GigCreate = () => {
                     name="projectCategory"
                     value={formData.projectCategory || ''}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                     disabled={categoryLoading || gigLoading}
+                    required
                   >
                     <option value="">Select a category</option>
                     {categoryLoading ? (
@@ -1183,16 +1457,14 @@ const GigCreate = () => {
                     <ChevronDown className="h-4 w-4" />
                   </div>
                 </div>
-                {errors.projectCategory && (
-                  <p className="mt-2 text-sm text-red-600">{errors.projectCategory}</p>
-                )}
+                {renderFieldError('projectCategory')}
               </div>
 
               {/* Subcategory */}
               <div>
                 <label htmlFor="subcategory" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Layers className="mr-2" size={14} />
-                  Subcategory {subcategories.length > 0 && <span className="text-gray-500"></span>}
+                  Subcategory {subcategories.length > 0 && <span className="text-red-500 ml-1">*</span>}
                 </label>
                 <div className="relative">
                   <select
@@ -1200,8 +1472,10 @@ const GigCreate = () => {
                     name="subcategory"
                     value={formData.subcategory || ''}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white appearance-none transition-all disabled:bg-gray-50 disabled:cursor-not-allowed pr-10 text-sm md:text-base"
                     disabled={!formData.projectCategory || subcategoryLoading || gigLoading}
+                    required={subcategories.length > 0}
                   >
                     <option value="">
                       {subcategoryLoading ? 'Loading subcategories...' : 
@@ -1217,32 +1491,34 @@ const GigCreate = () => {
                     <ChevronDown className="h-4 w-4" />
                   </div>
                 </div>
-                {errors.subcategory && (
-                  <p className="mt-2 text-sm text-red-600">{errors.subcategory}</p>
-                )}
+                {renderFieldError('subcategory')}
               </div>
 
-              {/* Budget */}
+              {/* Budget - FIXED PADDING */}
               <div>
                 <label htmlFor="budget" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <DollarSign className="mr-2" size={14} />
-                  Budget (USD)
+                  Budget (USD) <span className="text-red-500 ml-1">*</span>
                 </label>
                 <div className="relative">
+                  <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold text-sm md:text-base">
+                    $
+                  </div>
                   <input
                     type="number"
                     id="budget"
                     name="budget"
                     value={formData.budget || ''}
                     onChange={handleInputChange}
-                    className="w-full p-3 md:p-4 pl-12 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
+                    onBlur={handleBlur}
+                    className="w-full p-3 md:p-4 pl-8 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                     placeholder="Enter your budget"
                     min="5"
                     max="100000"
                     step="0.01"
                     disabled={gigLoading}
+                    required
                   />
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-semibold">$</span>
                 </div>
                 <div className="flex justify-between mt-2">
                   <p className="text-xs text-gray-500">
@@ -1254,9 +1530,7 @@ const GigCreate = () => {
                     </span>
                   )}
                 </div>
-                {errors.budget && (
-                  <p className="mt-2 text-sm text-red-600">{errors.budget}</p>
-                )}
+                {renderFieldError('budget')}
               </div>
 
               {/* Currency */}
@@ -1269,6 +1543,7 @@ const GigCreate = () => {
                   name="currency"
                   value={formData.currency || 'USD'}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white transition-all text-sm md:text-base"
                   disabled={gigLoading}
                 >
@@ -1296,7 +1571,7 @@ const GigCreate = () => {
               <div>
                 <label htmlFor="timeline" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <Calendar className="mr-2" size={14} />
-                  Project Timeline
+                  Project Timeline <span className="text-red-500 ml-1">*</span>
                 </label>
                 <input
                   type="text"
@@ -1304,9 +1579,11 @@ const GigCreate = () => {
                   name="timeline"
                   value={formData.timeline || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                   placeholder="e.g., 2 weeks, 1 month, ASAP"
                   disabled={gigLoading}
+                  required
                 />
                 <div className="mt-2 flex flex-col md:flex-row md:items-center gap-2">
                   <p className="text-xs md:text-sm text-gray-500">
@@ -1318,6 +1595,7 @@ const GigCreate = () => {
                       name="timelineUnit"
                       value={formData.timelineUnit || 'days'}
                       onChange={handleInputChange}
+                      onBlur={handleBlur}
                       className="text-sm border border-gray-300 rounded-lg p-2"
                       disabled={gigLoading}
                     >
@@ -1329,9 +1607,7 @@ const GigCreate = () => {
                     </select>
                   </div>
                 </div>
-                {errors.timeline && (
-                  <p className="mt-2 text-sm text-red-600">{errors.timeline}</p>
-                )}
+                {renderFieldError('timeline')}
               </div>
 
               {/* Communication Preference */}
@@ -1444,14 +1720,16 @@ const GigCreate = () => {
 
               {/* Project Description */}
               <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                  Project Description
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                  <FileText className="mr-2" size={14} />
+                  Project Description <span className="text-red-500 ml-1">*</span>
                 </label>
                 <textarea
                   id="description"
                   name="description"
                   value={formData.description || ''}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   rows="5"
                   className="w-full p-3 md:p-4 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all resize-none disabled:bg-gray-50 disabled:cursor-not-allowed text-sm md:text-base"
                   placeholder="Describe your project in detail. Include:
@@ -1460,34 +1738,42 @@ const GigCreate = () => {
 • Preferred technologies/tools
 • Any examples or references"
                   disabled={gigLoading}
-                  maxLength="5000"
+                  maxLength="10000"
+                  required
                 />
                 <div className="flex flex-col md:flex-row justify-between mt-2 gap-2">
                   <div>
                     <p className="text-xs text-gray-500">
-                      Minimum 20 characters, maximum 5000 characters
+                      Minimum 20 characters, maximum 10000 characters
                     </p>
                     <p className="text-xs text-gray-500">
-                      Characters remaining: {5000 - (formData.description || '').length}
+                      Characters remaining: {10000 - (formData.description || '').length}
                     </p>
                   </div>
                   <span className={`text-sm font-medium ${
-                    (formData.description || '').length < 20 ? 'text-red-500' : 
-                    (formData.description || '').length >= 5000 ? 'text-red-500' : 'text-emerald-500'
+                    (formData.description || '').length < 20 && shouldShowError('description') ? 'text-red-500' : 
+                    (formData.description || '').length >= 10000 ? 'text-red-500' : 'text-emerald-500'
                   }`}>
-                    {(formData.description || '').length}/5000
+                    {(formData.description || '').length}/10000
                   </span>
                 </div>
-                {errors.description && (
-                  <p className="mt-2 text-sm text-red-600">{errors.description}</p>
-                )}
+                {renderFieldError('description')}
               </div>
 
               {/* Required Skills */}
               <div>
-                <label htmlFor="skillsInput" className="text-sm font-medium text-gray-700 mb-2">
-                  Required Skills
-                </label>
+                <div className="flex items-center mb-2">
+                  <label htmlFor="skillsInput" className="text-sm font-medium text-gray-700">
+                    Required Skills
+                  </label>
+                  <span className="text-red-500 ml-1">*</span>
+                  {errors.skillsRequired && shouldShowError('skillsRequired') && (
+                    <span className="ml-2 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="mr-1" size={12} />
+                      {errors.skillsRequired}
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-col md:flex-row gap-2 mb-3">
                   <input
                     type="text"
@@ -1502,7 +1788,7 @@ const GigCreate = () => {
                   <button
                     type="button"
                     onClick={addSkill}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm whitespace-nowrap"
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={gigLoading || !skillsInput.trim()}
                   >
                     Add Skill
@@ -1525,17 +1811,33 @@ const GigCreate = () => {
                     ))}
                   </div>
                 )}
-                <p className="mt-2 text-xs text-gray-500">
-                  Add relevant skills to attract the right freelancers (at least 1 skill required)
-                </p>
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Add relevant skills to attract the right freelancers (at least 1 skill required)
+                  </p>
+                  {formData.skillsRequired.length === 0 && shouldShowError('skillsRequired') && (
+                    <span className="text-xs text-red-500">
+                      At least one skill is required
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Expected Deliverables */}
               <div>
-                <label htmlFor="deliverableInput" className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-                  <Package className="mr-2" size={14} />
-                  Expected Deliverables
-                </label>
+                <div className="flex items-center mb-2">
+                  <label htmlFor="deliverableInput" className="text-sm font-medium text-gray-700 flex items-center">
+                    <Package className="mr-2" size={14} />
+                    Expected Deliverables
+                  </label>
+                  <span className="text-red-500 ml-1">*</span>
+                  {errors.deliverables && shouldShowError('deliverables') && (
+                    <span className="ml-2 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="mr-1" size={12} />
+                      {errors.deliverables}
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-col md:flex-row gap-2 mb-3">
                   <input
                     type="text"
@@ -1550,7 +1852,7 @@ const GigCreate = () => {
                   <button
                     type="button"
                     onClick={addDeliverable}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm whitespace-nowrap"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={gigLoading || !deliverableInput.trim()}
                   >
                     Add Deliverable
@@ -1573,9 +1875,16 @@ const GigCreate = () => {
                     ))}
                   </div>
                 )}
-                <p className="mt-2 text-xs text-gray-500">
-                  List specific items you expect to receive from the freelancer (at least 1 deliverable required)
-                </p>
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    List specific items you expect to receive from the freelancer (at least 1 deliverable required)
+                  </p>
+                  {formData.deliverables.length === 0 && shouldShowError('deliverables') && (
+                    <span className="text-xs text-red-500">
+                      At least one deliverable is required
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1665,7 +1974,15 @@ const GigCreate = () => {
 
               {/* Thumbnail */}
               <div>
-                <h3 className="text-lg font-medium text-gray-800 mb-4">Thumbnail</h3>
+                <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                  Thumbnail <span className="text-red-500 ml-1">*</span>
+                  {errors.thumbnail && shouldShowError('thumbnail') && (
+                    <span className="ml-2 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="mr-1" size={12} />
+                      {errors.thumbnail}
+                    </span>
+                  )}
+                </h3>
                 <div className="space-y-4">
                   <p className="text-gray-600 text-sm">
                     The thumbnail is required and will be displayed as the main image in gig listings.
@@ -1716,9 +2033,6 @@ const GigCreate = () => {
                       </label>
                     </div>
                   )}
-                  {errors.thumbnail && (
-                    <p className="mt-2 text-sm text-red-600">{errors.thumbnail}</p>
-                  )}
                 </div>
               </div>
             </div>
@@ -1745,6 +2059,7 @@ const GigCreate = () => {
     uploadingImages,
     uploadingThumbnail,
     handleInputChange,
+    handleBlur,
     handleRefreshCategories,
     handleImageUpload,
     handleThumbnailUpload,
@@ -1755,7 +2070,9 @@ const GigCreate = () => {
     removeDeliverable,
     removeImage,
     removeThumbnail,
-    formatBudget
+    formatBudget,
+    validatePhoneNumber,
+    shouldShowError
   ]);
 
   // Render navigation buttons
@@ -1886,9 +2203,13 @@ const GigCreate = () => {
                   </div>
                 ) : (
                   <form onSubmit={(e) => e.preventDefault()} className="p-6 md:p-8">
-                    {allErrors.form && (
+                    {/* Show form-level errors only after attempted submit */}
+                    {hasAttemptedSubmit && (allErrors.form || gigError?.message) && (
                       <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-                        <p className="text-red-600 font-medium">{allErrors.form}</p>
+                        <p className="text-red-600 font-medium flex items-center">
+                          <AlertCircle className="mr-2" size={16} />
+                          {getUserFriendlyError(allErrors.form || gigError?.message)}
+                        </p>
                       </div>
                     )}
 
