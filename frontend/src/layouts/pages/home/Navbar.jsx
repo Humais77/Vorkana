@@ -139,32 +139,14 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   }, []);
 
   const handleLogout = useCallback(async () => {
-  try {
-    // Close UI state first
-    setActiveDropdown(null);
-    setMobileProfileOpen(false);
-    setMobileMenuOpen(false);
-    
-    // Call logout API
-    await logoutMutation.mutateAsync();
-    
-    // IMPORTANT: Force logout from auth store immediately
-    useAuthStore.getState().logout();
-    
-    // Navigate to signin
-    navigate('/signin', { replace: true });
-    
-    // Force a re-render by updating state
-    setActiveDropdown(null);
-    
-  } catch (error) {
-    console.error('Logout failed:', error);
-    
-    // Even if API fails, clear local state
-    useAuthStore.getState().logout();
-    navigate('/signin', { replace: true });
-  }
-}, [logoutMutation, navigate]);
+  // Close menus
+  setActiveDropdown(null);
+  setMobileProfileOpen(false);
+  setMobileMenuOpen(false);
+  
+  // Call logout mutation
+  await logoutMutation.mutateAsync();
+}, [logoutMutation]);
 
 
   const handleMobileMenuClick = useCallback(() => {
@@ -199,7 +181,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
 
   return (
     <>
-      <nav className="w-full bg-white border-b sticky top-0 z-50 h-16 lg:h-20">
+      <nav className="w-full bg-white border-b sticky top-0 z-50 h-16 lg:h-20 overflow-visible">
         <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
           <div className="flex items-center justify-between h-full">
             {/* Left: Hamburger Menu (Mobile only) */}
@@ -394,7 +376,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
             </div>
 
             {/* Desktop: Navigation Items */}
-            <div className="hidden lg:flex items-center space-x-1 xl:space-x-2 2xl:space-x-3 min-w-0">
+            <div className="hidden lg:flex items-center space-x-1 xl:space-x-2 2xl:space-x-3 min-w-0 overflow-visible">
               {/* How It Works - Fixed to prevent hiding */}
               <div className="shrink-0">
                 <Link
@@ -426,8 +408,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                       animate="visible"
                       exit="exit"
                       variants={dropdownAnimation}
-                      className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 z-50"
-                    >
+                      className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 z-50">
                       <div className="p-4">
                         <div className="mb-4">
                           <h4 className="text-sm font-semibold text-gray-900 mb-3 px-2">Browse Categories</h4>

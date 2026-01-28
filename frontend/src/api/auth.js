@@ -250,27 +250,15 @@ export const authAPI = {
     }
   },
   logout: async () => {
-  try {
-    // Simple logout - just call backend and clear cookies
-    const response = await axiosInstance.post('/api/auth/logout');
-    
-    // Clear all local storage
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    return response.data;
-  } catch (error) {
-    console.error('Logout error:', error);
-    // Even if API fails, clear local storage
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    return {
-      success: true,
-      message: 'Logged out (local session cleared)'
-    };
-  }
-},
+    try {
+      // Simple POST request - no need for CSRF token
+      const response = await axiosInstance.post('/api/auth/logout');
+      return response.data;
+    } catch (error) {
+      // Don't throw error - just return success
+      return { success: true, message: 'Logged out' };
+    }
+  },
   
   
   getProfile: async () => {

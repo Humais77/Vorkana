@@ -1363,50 +1363,35 @@ const validateCSRF = (req) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
-    console.log('🚪 Logout request for all user types');
-    
-    // Clear ALL cookies (works for all users: Google, admin, regular)
+    // Clear ALL cookies
     const clearCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       path: '/'
     };
     
-    // Clear all auth cookies
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin'].forEach(cookie => {
+    // Clear all possible cookies
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
       res.clearCookie(cookie, clearCookieOptions);
     });
     
-    // Clear CSRF token
-    CSRFMiddleware.clearCSRFCookie(res);
-    
-    // If we have a session, end it
+    // If session exists, end it
     if (req.sessionID) {
       try {
-        await SessionService.logoutSession(
-          req.sessionID,
-          req.user?._id,
-          'manual'
-        );
-      } catch (sessionError) {
-        console.error('Session logout error:', sessionError.message);
+        await SessionService.logoutSession(req.sessionID, req.user?._id);
+      } catch (error) {
+        // Ignore session errors during logout
       }
     }
     
-    console.log('✅ Logout completed for all user types');
-    
     res.json({
       success: true,
-      message: 'Logged out successfully',
-      requiresReload: true
+      message: 'Logged out successfully'
     });
-
   } catch (error) {
-    console.error('Logout error:', error);
-    
     // Still clear cookies on error
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin'].forEach(cookie => {
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
       res.clearCookie(cookie, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -1417,8 +1402,7 @@ const logout = asyncHandler(async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Logged out (cookies cleared)',
-      requiresReload: true
+      message: 'Logged out (cookies cleared)'
     });
   }
 });
