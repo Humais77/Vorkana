@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useLocation } from 'react-router-dom' // Import useLocation
 import Hero from './Hero'
 import CategoryGrid from '../../../components/categories/CategoryGrid'
@@ -9,29 +8,12 @@ import LogoMakerBanner from './LogoMakerBanner'
 import GetQuoteBanner from './GetQuoteBanner'
 import PopularCategoriesSection from '../../../components/home/PopularCategoriesSection'
 import { SeoWrapper } from '../../../components/SeoWrapper' 
-import AuthModal from '../../../components/authModal/AuthModal'
 
-const Home = () => {
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('signin'); 
+const Home = ({ openAuthModal }) => { // Receive prop from parent
   const location = useLocation(); // Get current location
 
   // Check if user is on auth pages
   const isOnAuthPage = location.pathname === '/signin' || location.pathname === '/signup';
-
-  const openAuthModal = (tab = 'signin') => {
-    // Don't open modal if user is already on auth pages
-    if (isOnAuthPage) {
-      return;
-    }
-    
-    setActiveTab(tab);
-    setIsAuthModalOpen(true);
-  };
-
-  const closeAuthModal = () => {
-    setIsAuthModalOpen(false);
-  };
 
   return (
     <SeoWrapper
@@ -62,13 +44,7 @@ const Home = () => {
         {/* Pass null or conditionally render based on auth page */}
         <Hero openAuthModal={isOnAuthPage ? null : openAuthModal} />
 
-        {isAuthModalOpen && (
-          <AuthModal
-            activeTab={activeTab}
-            onSwitchTab={setActiveTab}
-            onClose={closeAuthModal}
-          />
-        )}
+        {/* REMOVED AuthModal from here - it's now managed in PublicLayout */}
 
         <CategoryGrid />
         <PopularCategoriesSection/>

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react'; // Added useState
 import { SecurityProvider } from './context/SecurityContext';
 import { useAuthSync } from './hooks/useAuthSync';
 import PublicLayout from './layouts/PublicLayout';
@@ -57,6 +57,20 @@ const VerificationStatus = lazy(() => import('./layouts/pages/profile/Verificati
 
 const App = () => {
   useAuthSync();
+  
+  // Add modal state here
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('signin');
+
+  const openSigninModal = () => {
+    setActiveTab('signin');
+    setShowAuthModal(true);
+  };
+
+  const openSignupModal = () => {
+    setActiveTab('signup');
+    setShowAuthModal(true);
+  };
 
   return (
     <BrowserRouter>
@@ -68,8 +82,24 @@ const App = () => {
         
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
-            <Route element={<PublicLayout />}>
-              <Route path="/" element={<Home />} />
+            <Route element={
+              <PublicLayout 
+                showAuthModal={showAuthModal}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                setShowAuthModal={setShowAuthModal}
+                openSigninModal={openSigninModal}
+                openSignupModal={openSignupModal}
+              />
+            }>
+              <Route path="/" element={
+                <Home 
+                  openAuthModal={() => {
+                    setActiveTab('signin');
+                    setShowAuthModal(true);
+                  }}
+                />
+              } />
               <Route path="/about-us" element={<AboutUsPage />} />
               
               {/* Auth routes - redirect if already logged in */}
