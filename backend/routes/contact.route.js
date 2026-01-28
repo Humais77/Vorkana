@@ -4,13 +4,14 @@ const {
   submitContactForm, 
   checkSubmissionLimit 
 } = require('../controllers/contact.controller');
+const CSRFMiddleware = require('../middleware/csrf.middleware');
 
 /**
  * @route   POST /api/contact
  * @desc    Submit contact form
  * @access  Public
  */
-router.post('/', checkSubmissionLimit, submitContactForm);
+router.post('/', CSRFMiddleware.requireCSRF, checkSubmissionLimit, submitContactForm);
 
 /**
  * @route   GET /api/contact/validate-phone

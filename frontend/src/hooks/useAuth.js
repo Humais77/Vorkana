@@ -279,25 +279,17 @@ export const useRegister = () => {
   });
 };
 export const useLogout = () => {
-  const logoutMutation = useMutation({
+  return useMutation({
     mutationFn: authAPI.logout,
-    onSuccess: () => {
-      // Clear ALL storage
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // Force redirect to signin
-      window.location.href = '/signin';
+    onSuccess: async () => {
+      // Show success message
+      toast.success('Logged out successfully');
     },
-    onError: () => {
-      // Still clear everything even if API fails
-      localStorage.clear();
-      sessionStorage.clear();
-      window.location.href = '/signin';
+    onError: (error) => {
+      console.error('Logout error:', error);
+      toast.error('Logout failed');
     }
   });
-  
-  return logoutMutation;
 };
 export const clearAllCookies = () => {
   try {

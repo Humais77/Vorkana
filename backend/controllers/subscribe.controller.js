@@ -9,7 +9,19 @@ const crypto = require('crypto');
  */
 const subscribe = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, csrfToken } = req.body;
+
+    // Validate CSRF token if provided (optional for subscription to allow cross-origin)
+    // You can make it required by uncommenting:
+    /*
+    if (!csrfToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'CSRF token is required',
+        code: 'CSRF_TOKEN_REQUIRED'
+      });
+    }
+    */
 
     // Validate email
     if (!email) {
@@ -109,7 +121,18 @@ const subscribe = async (req, res) => {
  */
 const unsubscribe = async (req, res) => {
   try {
-    const { email, unsubscribeToken } = req.body;
+    const { email, unsubscribeToken, csrfToken } = req.body;
+
+    // Validate CSRF token if provided
+    /*
+    if (!csrfToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'CSRF token is required',
+        code: 'CSRF_TOKEN_REQUIRED'
+      });
+    }
+    */
 
     // Validate email
     if (!email) {
@@ -242,7 +265,18 @@ const getSubscriptionStatus = async (req, res) => {
  */
 const toggleSubscription = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, csrfToken } = req.body;
+
+    // Validate CSRF token if provided
+    /*
+    if (!csrfToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'CSRF token is required',
+        code: 'CSRF_TOKEN_REQUIRED'
+      });
+    }
+    */
 
     // Validate email
     if (!email) {

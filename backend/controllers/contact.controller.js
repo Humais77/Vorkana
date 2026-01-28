@@ -57,7 +57,18 @@ const validatePhoneNumber = (phone) => {
  */
 const submitContactForm = async (req, res) => {
   try {
-    const { name, email, phone, message } = req.body;
+    const { name, email, phone, message, csrfToken } = req.body;
+    
+    // Validate CSRF token if provided (you can make it required by uncommenting)
+    /*
+    if (!csrfToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'CSRF token is required',
+        code: 'CSRF_TOKEN_REQUIRED'
+      });
+    }
+    */
     
     // Get client info for logging
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -95,7 +106,9 @@ const submitContactForm = async (req, res) => {
       phone: phone.trim(),
       message: message.trim(),
       ipAddress,
-      userAgent
+      userAgent,
+      // Optionally store CSRF token for audit
+      csrfTokenUsed: csrfToken || null
     });
 
     return res.status(201).json({
@@ -141,7 +154,7 @@ const submitContactForm = async (req, res) => {
  */
 const checkSubmissionLimit = async (req, res, next) => {
   try {
-    const { email, phone } = req.body;
+    const { email, phone, csrfToken } = req.body;
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     
     // Check for multiple submissions in last 1 hour
@@ -152,6 +165,13 @@ const checkSubmissionLimit = async (req, res, next) => {
       { phone, createdAt: { $gte: oneHourAgo } },
       { ipAddress, createdAt: { $gte: oneHourAgo } }
     ];
+    
+    // Optionally include CSRF token check for more strict rate limiting
+    /*
+    if (csrfToken) {
+      conditions.push({ csrfTokenUsed: csrfToken, createdAt: { $gte: oneHourAgo } });
+    }
+    */
     
     const recentSubmissions = await Contact.countDocuments({
       $or: conditions

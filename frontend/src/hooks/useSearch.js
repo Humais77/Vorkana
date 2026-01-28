@@ -1,25 +1,51 @@
-// useSearch.js - Production ready React hook
+// useSearch.js - Fixed version with CSRF protection
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { searchAPI } from '../api/search';
 import { useDebounce } from '../hooks/useDebounce';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+
+// Query keys
+export const searchKeys = {
+  all: ['search'],
+  lists: () => [...searchKeys.all, 'list'],
+  list: (params) => [...searchKeys.lists(), params],
+  suggestions: (query) => [...searchKeys.all, 'suggestions', query],
+  quick: (query) => [...searchKeys.all, 'quick', query],
+  filters: (query, type) => [...searchKeys.all, 'filters', query, type],
+  stats: () => [...searchKeys.all, 'stats'],
+  history: () => [...searchKeys.all, 'history'],
+  advanced: (data) => [...searchKeys.all, 'advanced', data]
+};
+
+// Helper to handle CSRF errors
+const handleCSRFError = (error, retryAction = null) => {
+  if (error.code === 'CSRF_TOKEN_INVALID' || error.requiresCSRFRefresh) {
+    toast.error('Security session expired. Refreshing...');
+    
+    // Try to refresh CSRF token
+    searchAPI.refreshCSRFToken().then(() => {
+      toast.success('Security session refreshed. Please try again.');
+      if (retryAction) retryAction();
+    }).catch(() => {
+      toast.error('Please refresh the page and try again.');
+    });
+    
+    return true;
+  }
+  return false;
+};
 
 export const useSearch = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   
-  // State initialization from URL
-  const [searchQuery, setSearchQuery] = useState(() => {
-    return searchParams.get('query') || '';
-  });
-  
-  const [searchType, setSearchType] = useState(() => {
-    return searchParams.get('type') || 'services';
-  });
-  
-  const [activeFilters, setActiveFilters] = useState(() => {
+  // Initialize state from URL parameters once
+  const initialSearchQuery = useMemo(() => searchParams.get('query') || '', [searchParams]);
+  const initialSearchType = useMemo(() => searchParams.get('type') || 'services', [searchParams]);
+  const initialActiveFilters = useMemo(() => {
     const filters = {};
     searchParams.forEach((value, key) => {
       if (!['query', 'type', 'page', 'source', 'search_in'].includes(key)) {
@@ -27,28 +53,33 @@ export const useSearch = () => {
       }
     });
     return filters;
-  });
+  }, [searchParams]);
+  
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  const [searchType, setSearchType] = useState(initialSearchType);
+  const [activeFilters, setActiveFilters] = useState(initialActiveFilters);
   
   const debouncedQuery = useDebounce(searchQuery, 500);
   
-  // Prevent infinite updates with refs
-  const prevSearchQueryRef = useRef(searchQuery);
-  const prevSearchTypeRef = useRef(searchType);
-  const prevActiveFiltersRef = useRef(activeFilters);
-
-  // Quick search for navbar (instant results)
+  // CSRF token management
+  const ensureValidCSRF = async () => {
+    if (!searchAPI.hasValidCSRFToken()) {
+      await searchAPI.refreshCSRFToken();
+    }
+    return searchAPI.hasValidCSRFToken();
+  };
+  
+  // Quick search for navbar
   const useQuickSearch = (enabled = true) => {
     return useQuery({
-      queryKey: ['search', 'quick', debouncedQuery],
+      queryKey: searchKeys.quick(debouncedQuery),
       queryFn: () => searchAPI.quickSearch(debouncedQuery),
       enabled: enabled && debouncedQuery.length >= 2,
-      staleTime: 1000 * 60, // 1 minute
-      gcTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 1000 * 60,
+      gcTime: 1000 * 60 * 5,
       retry: 1,
       refetchOnWindowFocus: false,
-      meta: {
-        persist: false // Don't persist quick search results
-      },
+      meta: { persist: false },
       onError: (error) => {
         console.error('Quick search query error:', error);
       }
@@ -60,14 +91,14 @@ export const useSearch = () => {
     const {
       type = searchType,
       page = 1,
-      limit = 48,
+      limit = 24,
       enabled = true,
       keepPreviousData = true,
       ...queryOptions
     } = options;
 
     const queryKey = useMemo(() => 
-      ['search', 'full', debouncedQuery, type, page, limit, activeFilters],
+      searchKeys.list({ query: debouncedQuery, type, page, limit, filters: activeFilters }),
       [debouncedQuery, type, page, limit, activeFilters]
     );
 
@@ -81,23 +112,36 @@ export const useSearch = () => {
         sort: activeFilters.sort || 'relevance',
         order: activeFilters.order || 'desc'
       }),
-      enabled: enabled && debouncedQuery.length >= 2,
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 10, // 10 minutes
+      enabled: enabled && (debouncedQuery.length >= 2 || Object.keys(activeFilters).length > 0),
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
       keepPreviousData,
       retry: 2,
       refetchOnWindowFocus: false,
-      meta: {
-        persist: true // Persist full search results
-      },
+      meta: { persist: true },
       ...queryOptions,
       onError: (error) => {
         console.error('Full search query error:', error);
-        toast.error('Failed to load search results');
+        if (!handleCSRFError(error) && !error.message?.includes('QUERY_REQUIRED')) {
+          toast.error('Failed to load search results');
+        }
       },
-      onSuccess: (data) => {
-        // Update recent searches on successful search
+      onSuccess: async (data) => {
         if (data.success && debouncedQuery) {
+          try {
+            // Try to save search history if user is authenticated
+            const token = localStorage.getItem('userToken');
+            if (token) {
+              // Ensure CSRF token is valid before saving history
+              const hasValidCSRF = await ensureValidCSRF();
+              if (hasValidCSRF) {
+                await searchAPI.saveSearchHistory(debouncedQuery, type, activeFilters);
+              }
+            }
+          } catch (error) {
+            console.error('Failed to save search history:', error);
+          }
+          
           searchAPI.saveRecentSearch(debouncedQuery);
         }
       }
@@ -108,7 +152,7 @@ export const useSearch = () => {
   const useInfiniteSearch = (options = {}) => {
     const {
       type = searchType,
-      limit = 48,
+      limit = 24,
       enabled = true,
       ...queryOptions
     } = options;
@@ -139,14 +183,16 @@ export const useSearch = () => {
         return pagination.page - 1;
       },
       enabled: enabled && debouncedQuery.length >= 2,
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
       retry: 1,
       refetchOnWindowFocus: false,
       ...queryOptions,
       onError: (error) => {
         console.error('Infinite search query error:', error);
-        toast.error('Failed to load more results');
+        if (!handleCSRFError(error)) {
+          toast.error('Failed to load more results');
+        }
       }
     });
   };
@@ -156,81 +202,144 @@ export const useSearch = () => {
     const debouncedSuggestionsQuery = useDebounce(query, 300);
     
     return useQuery({
-      queryKey: ['search', 'suggestions', debouncedSuggestionsQuery],
+      queryKey: searchKeys.suggestions(debouncedSuggestionsQuery),
       queryFn: () => searchAPI.getSuggestions(debouncedSuggestionsQuery),
       enabled: debouncedSuggestionsQuery.length >= 2,
-      staleTime: 1000 * 60 * 10, // 10 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes
+      staleTime: 1000 * 60 * 10,
+      gcTime: 1000 * 60 * 30,
       retry: 1,
-      refetchOnWindowFocus: false
+      refetchOnWindowFocus: false,
+      onError: (error) => {
+        console.error('Search suggestions error:', error);
+      }
     });
   };
 
+  // Filter options
   const useFilterOptions = (query = searchQuery, type = searchType) => {
-  const debouncedFilterQuery = useDebounce(query, 300);
-  
-  return useQuery({
-    queryKey: ['search', 'filters', debouncedFilterQuery, type],
-    queryFn: () => searchAPI.getFilterOptions(debouncedFilterQuery, type),
-    enabled: true, // Always enabled, uses cache
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 30, // 30 minutes,
-    refetchOnWindowFocus: false,
-    onError: (error) => {
-      console.error('Filter options query error:', error);
-    }
-  });
-};
+    const debouncedFilterQuery = useDebounce(query, 300);
+    
+    return useQuery({
+      queryKey: searchKeys.filters(debouncedFilterQuery, type),
+      queryFn: () => searchAPI.getFilterOptions(debouncedFilterQuery, type),
+      enabled: true,
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
+      refetchOnWindowFocus: false,
+      onError: (error) => {
+        console.error('Filter options query error:', error);
+      }
+    });
+  };
 
   // Search history
   const useSearchHistory = () => {
     return useQuery({
-      queryKey: ['search', 'history'],
+      queryKey: searchKeys.history(),
       queryFn: () => searchAPI.getSearchHistory(),
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 10, // 10 minutes
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
       retry: 1,
-      refetchOnWindowFocus: false
+      refetchOnWindowFocus: false,
+      onError: (error) => {
+        console.error('Search history query error:', error);
+        if (!handleCSRFError(error)) {
+          toast.error('Failed to load search history');
+        }
+      }
     });
   };
 
   // Search statistics
   const useSearchStats = () => {
     return useQuery({
-      queryKey: ['search', 'stats'],
+      queryKey: searchKeys.stats(),
       queryFn: () => searchAPI.getSearchStats(),
-      staleTime: 1000 * 60 * 10, // 10 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes
+      staleTime: 1000 * 60 * 10,
+      gcTime: 1000 * 60 * 30,
       retry: 2,
       refetchOnWindowFocus: false,
-      refetchOnMount: false // Don't refetch on mount if data exists
+      refetchOnMount: false,
+      onError: (error) => {
+        console.error('Search stats query error:', error);
+      }
     });
   };
 
-  // Save search mutation
+  // Advanced search mutation
+  const useAdvancedSearch = () => {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+      mutationFn: async (searchData) => {
+        // Ensure CSRF token is valid
+        const hasValidCSRF = await ensureValidCSRF();
+        if (!hasValidCSRF) {
+          throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+        }
+        
+        return searchAPI.advancedSearch(searchData);
+      },
+      onSuccess: (data) => {
+        if (data.success) {
+          queryClient.invalidateQueries({ queryKey: searchKeys.lists() });
+        }
+      },
+      onError: (error) => {
+        handleCSRFError(error);
+      }
+    });
+  };
+
+  // Save search mutation with CSRF protection
   const saveSearchMutation = useMutation({
-    mutationFn: ({ query, type = 'search' }) => 
-      searchAPI.saveSearchHistory(query, type),
+    mutationFn: async ({ query, type = 'search', filters = {} }) => {
+      // Ensure CSRF token is valid
+      const hasValidCSRF = await ensureValidCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return searchAPI.saveSearchHistory(query, type, filters);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['search', 'history'] });
+      queryClient.invalidateQueries({ queryKey: searchKeys.history() });
     },
     onError: (error) => {
       console.error('Save search mutation error:', error);
-      // Silent error - don't show toast
+      if (!handleCSRFError(error)) {
+        toast.error('Failed to save search history');
+      }
     }
   });
 
-  // Clear search history mutation
+  // Clear search history mutation with CSRF protection
   const clearSearchHistoryMutation = useMutation({
-    mutationFn: () => searchAPI.clearSearchHistory(),
+    mutationFn: async () => {
+      // Ensure CSRF token is valid
+      const hasValidCSRF = await ensureValidCSRF();
+      if (!hasValidCSRF) {
+        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+      }
+      
+      return searchAPI.clearSearchHistory();
+    },
+    onMutate: () => {
+      toast.loading('Clearing search history...');
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['search', 'history'] });
-      queryClient.setQueryData(['search', 'history'], { success: true, data: [] });
+      queryClient.invalidateQueries({ queryKey: searchKeys.history() });
+      queryClient.setQueryData(searchKeys.history(), { success: true, data: [] });
       toast.success('Search history cleared');
     },
     onError: (error) => {
-      toast.error('Failed to clear search history');
+      if (!handleCSRFError(error)) {
+        toast.error('Failed to clear search history');
+      }
       console.error('Clear search history mutation error:', error);
+    },
+    onSettled: () => {
+      toast.dismiss();
     }
   });
 
@@ -248,11 +357,16 @@ export const useSearch = () => {
   });
 
   // Perform search action
-  const performSearch = useCallback((query, type = 'services', filters = {}, options = {}) => {
-    const searchTerm = query.trim();
-    if (!searchTerm) return null;
+  const performSearch = useCallback(async (query, type = 'services', filters = {}, options = {}) => {
+    const searchTerm = query?.trim() || '';
+    
+    if (!searchTerm && Object.keys(filters).length === 0) {
+      if (options.showError !== false) {
+        toast.error('Please enter a search term');
+      }
+      return null;
+    }
 
-    // Only update state if values have changed
     let hasChanges = false;
     
     if (searchTerm !== searchQuery) {
@@ -265,7 +379,6 @@ export const useSearch = () => {
       hasChanges = true;
     }
     
-    // Compare filters to avoid unnecessary updates
     const filtersStr = JSON.stringify(filters);
     const prevFiltersStr = JSON.stringify(activeFilters);
     if (filtersStr !== prevFiltersStr) {
@@ -273,54 +386,39 @@ export const useSearch = () => {
       hasChanges = true;
     }
 
-    // Save to search history if user is logged in
-    if (localStorage.getItem('userToken') && !options.skipHistory) {
-      saveSearchMutation.mutate({ query: searchTerm, type });
+    try {
+      if (localStorage.getItem('userToken') && !options.skipHistory && searchTerm) {
+        // Save search history with CSRF protection
+        await saveSearchMutation.mutateAsync({ query: searchTerm, type, filters });
+      }
+    } catch (error) {
+      console.error('Failed to save search history:', error);
     }
 
-    // Save to localStorage for recent searches
-    searchAPI.saveRecentSearch(searchTerm, type);
+    if (searchTerm) {
+      searchAPI.saveRecentSearch(searchTerm, type);
+    }
 
-    // Navigate to search results
     if (options.navigate !== false) {
-      const url = searchAPI.formatSearchURL(searchTerm, type, filters);
+      const url = searchAPI.formatSearchURL(searchTerm || '', type, filters);
       
       if (options.navigate && typeof options.navigate === 'function') {
         options.navigate(url);
       } else {
-        // Default navigation
-        window.location.href = url;
+        navigate(url);
       }
       
       return url;
     }
 
     return null;
-  }, [searchQuery, searchType, activeFilters, saveSearchMutation]);
+  }, [searchQuery, searchType, activeFilters, saveSearchMutation, navigate]);
 
-  // Update URL with search params
-  const updateSearchURL = useCallback((navigate, additionalParams = {}) => {
-    const params = { ...activeFilters, ...additionalParams };
-    const url = searchAPI.formatSearchURL(searchQuery, searchType, params);
-    navigate(url);
-  }, [searchQuery, searchType, activeFilters]);
-
-  // Clear search
-  const clearSearch = useCallback(() => {
-    setSearchQuery('');
-    setSearchType('services');
-    setActiveFilters({});
-    queryClient.removeQueries({ queryKey: ['search', 'quick'] });
-    queryClient.removeQueries({ queryKey: ['search', 'full'] });
-    queryClient.removeQueries({ queryKey: ['search', 'suggestions'] });
-  }, [queryClient]);
-
-  // Update filters
+  // Update filters - FIXED: Remove setSearchParams dependency
   const updateFilters = useCallback((newFilters) => {
     setActiveFilters(prev => {
       const merged = { ...prev, ...newFilters };
       
-      // Remove empty values
       Object.keys(merged).forEach(key => {
         if (merged[key] === undefined || merged[key] === null || merged[key] === '') {
           delete merged[key];
@@ -329,7 +427,29 @@ export const useSearch = () => {
       
       return merged;
     });
-  }, []);
+    
+    // Update URL directly without causing infinite loop
+    const newParams = new URLSearchParams(searchParams);
+    
+    Object.keys(newFilters).forEach(key => {
+      const value = newFilters[key];
+      if (value === undefined || value === null || value === '') {
+        newParams.delete(key);
+      } else {
+        newParams.set(key, value.toString());
+      }
+    });
+    
+    newParams.set('page', '1');
+    
+    // Only update if there are actual changes
+    const currentParams = searchParams.toString();
+    const updatedParams = newParams.toString();
+    
+    if (currentParams !== updatedParams) {
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Remove filter
   const removeFilter = useCallback((filterKey) => {
@@ -338,12 +458,24 @@ export const useSearch = () => {
       delete newFilters[filterKey];
       return newFilters;
     });
-  }, []);
+    
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete(filterKey);
+    newParams.set('page', '1');
+    setSearchParams(newParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
     setActiveFilters({});
-  }, []);
+    
+    const newParams = new URLSearchParams();
+    if (searchQuery) newParams.set('query', searchQuery);
+    if (searchType !== 'services') newParams.set('type', searchType);
+    newParams.set('page', '1');
+    
+    setSearchParams(newParams, { replace: true });
+  }, [searchQuery, searchType, setSearchParams]);
 
   // Get filter count
   const getFilterCount = useCallback(() => {
@@ -355,9 +487,32 @@ export const useSearch = () => {
     ).length;
   }, [activeFilters]);
 
+  // Clear search function
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setActiveFilters({});
+    queryClient.removeQueries({ queryKey: searchKeys.all });
+    localStorage.removeItem('recentSearches');
+  }, [queryClient]);
+
   // Get recent searches
   const getRecentSearches = useCallback(() => {
     return searchAPI.getRecentSearches();
+  }, []);
+
+  // CSRF protection utilities
+  const refreshCSRFToken = useCallback(async () => {
+    try {
+      await searchAPI.refreshCSRFToken();
+      return true;
+    } catch (error) {
+      console.error('Failed to refresh CSRF token:', error);
+      return false;
+    }
+  }, []);
+
+  const validateCSRF = useCallback(async () => {
+    return await ensureValidCSRF();
   }, []);
 
   return {
@@ -377,6 +532,7 @@ export const useSearch = () => {
     useFilterOptions,
     useSearchHistory,
     useSearchStats,
+    useAdvancedSearch,
     
     // Mutations
     saveSearchMutation,
@@ -385,7 +541,6 @@ export const useSearch = () => {
     
     // Actions
     performSearch,
-    updateSearchURL,
     clearSearch,
     updateFilters,
     removeFilter,
@@ -395,11 +550,16 @@ export const useSearch = () => {
     getFilterCount,
     getRecentSearches,
     formatSearchURL: searchAPI.formatSearchURL,
-    parseSearchURL: searchAPI.parseSearchURL
+    parseSearchURL: searchAPI.parseSearchURL,
+    
+    // CSRF Protection
+    refreshCSRFToken,
+    validateCSRF,
+    hasValidCSRFToken: searchAPI.hasValidCSRFToken
   };
 };
 
-// Hook for search results page
+// Hook for search results page - FIXED: Remove infinite loop
 export const useSearchResults = (initialParams = {}) => {
   const {
     searchQuery,
@@ -417,34 +577,50 @@ export const useSearchResults = (initialParams = {}) => {
     getFilterCount
   } = useSearch();
 
-  // Parse initial params
-  const { query, type, page, filters } = useMemo(() => {
-    return {
-      query: initialParams.query || '',
-      type: initialParams.type || 'services',
-      page: initialParams.page || 1,
-      filters: initialParams.filters || {}
-    };
-  }, [initialParams]);
+  // Memoize initial params
+  const { query, type, page, filters } = useMemo(() => ({
+    query: initialParams.query || '',
+    type: initialParams.type || 'services',
+    page: initialParams.page || 1,
+    filters: initialParams.filters || {}
+  }), [initialParams]);
 
-  // Initialize state from props
+  // Initialize state from props - FIXED: Only run once on mount
+  const [isInitialized, setIsInitialized] = useState(false);
+  
   useEffect(() => {
-    if (query && query !== searchQuery) {
-      setSearchQuery(query);
+    if (!isInitialized) {
+      if (query && query !== searchQuery) {
+        setSearchQuery(query);
+      }
+      if (type && type !== searchType) {
+        setSearchType(type);
+      }
+      if (Object.keys(filters).length > 0) {
+        // Update filters without triggering re-render loop
+        const newFilters = { ...filters };
+        Object.keys(newFilters).forEach(key => {
+          if (newFilters[key] === undefined || newFilters[key] === null || newFilters[key] === '') {
+            delete newFilters[key];
+          }
+        });
+        
+        if (Object.keys(newFilters).length > 0) {
+          // Use setTimeout to avoid state update during render
+          setTimeout(() => {
+            updateFilters(newFilters);
+          }, 0);
+        }
+      }
+      setIsInitialized(true);
     }
-    if (type && type !== searchType) {
-      setSearchType(type);
-    }
-    if (Object.keys(filters).length > 0) {
-      updateFilters(filters);
-    }
-  }, [query, type, filters, searchQuery, searchType, setSearchQuery, setSearchType, updateFilters]);
+  }, [query, type, filters, searchQuery, searchType, isInitialized, updateFilters]);
 
   const searchResults = useFullSearch({
     type: searchType,
     page,
-    limit: initialParams.limit || 48,
-    enabled: !!searchQuery
+    limit: initialParams.limit || 24,
+    enabled: !!searchQuery || Object.keys(activeFilters).length > 0
   });
 
   const suggestions = useSearchSuggestions(searchQuery);
@@ -529,5 +705,29 @@ export const useNavbarSearch = () => {
     handleQuickSearch,
     clearSearch,
     getRecentSearches
+  };
+};
+
+// CSRF protection hook for search operations
+export const useSearchCSRFProtection = () => {
+  const { 
+    hasValidCSRFToken, 
+    refreshCSRFToken, 
+    validateCSRF 
+  } = useSearch();
+  
+  const ensureCSRF = useCallback(async (operation) => {
+    const hasValidCSRF = await validateCSRF();
+    if (!hasValidCSRF) {
+      throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
+    }
+    return operation();
+  }, [validateCSRF]);
+  
+  return {
+    hasValidCSRFToken,
+    refreshCSRFToken,
+    validateCSRF,
+    ensureCSRF
   };
 };
