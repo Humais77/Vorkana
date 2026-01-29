@@ -1,5 +1,5 @@
-// CategoriesManagement.jsx - Updated with debounced search
-import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react';
+// CategoriesManagement.jsx - Updated with fixed search button
+import React, { useState, useMemo, useCallback, memo, useRef } from 'react';
 import { 
   useAdminCategories, 
   useUpdateCategory, 
@@ -40,7 +40,7 @@ import {
   FiPercent,
   FiClock
 } from 'react-icons/fi';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import CategoryCreateModal from './CategoryCreateModal';
 import CategoryEditModal from './CategoryEditModal';
 import DeleteConfirmationModal from '../DeleteConfirmationModal';
@@ -242,28 +242,11 @@ const CategoryTableRow = memo(({
 
 CategoryTableRow.displayName = 'CategoryTableRow';
 
-// Debounce hook
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  const timerRef = useRef();
-
-  useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(timerRef.current);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
-
 // Main Component
 const CategoriesManagement = () => {
+  // FIXED: Separate search input and applied search term
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms delay
   const [filters, setFilters] = useState({
     status: '',
     featured: '',
@@ -295,7 +278,7 @@ const CategoriesManagement = () => {
   } = useAdminCategories({
     page,
     limit,
-    search: debouncedSearchTerm, // Use debounced search term
+    search: searchTerm, // Use the applied search term
     ...filters
   });
   
@@ -318,8 +301,19 @@ const CategoriesManagement = () => {
   const categories = data?.data || [];
   const pagination = data?.pagination || { total: 0, totalPages: 1 };
 
+  // FIXED: Handle search with button
   const handleSearch = useCallback((e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    setPage(1);
+    setSearchTerm(searchInput); // Apply search term from input
+    setSelectedCategories([]);
+    setExpandedCategories([]);
+  }, [searchInput]);
+
+  // FIXED: Clear search function
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setSearchTerm('');
     setPage(1);
     setSelectedCategories([]);
     setExpandedCategories([]);
@@ -726,7 +720,7 @@ const CategoriesManagement = () => {
         </div>
       )}
 
-      {/* Search and Filters */}
+      {/* Search and Filters - FIXED with search button */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <form onSubmit={handleSearch} className="flex-1">
@@ -735,19 +729,29 @@ const CategoriesManagement = () => {
               <input
                 type="text"
                 placeholder="Search categories by name or slug..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full pl-12 pr-24 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
-              {searchTerm && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                    title="Clear search"
+                  >
+                    <FiX className="h-4 w-4" />
+                  </button>
+                )}
                 <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  type="submit"
+                  disabled={isRefetching}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                  <FiX className="h-4 w-4" />
+                  Search
                 </button>
-              )}
+              </div>
             </div>
           </form>
           
@@ -995,7 +999,7 @@ const CategoriesManagement = () => {
       {showCategoryDetails && selectedCategory && (
         <CategoryDetailsModal
           category={selectedCategory}
-          stats={stats} // Pass stats to modal
+          stats={stats}
           isOpen={showCategoryDetails}
           onClose={() => {
             setShowCategoryDetails(false);

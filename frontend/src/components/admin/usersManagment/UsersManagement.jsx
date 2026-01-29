@@ -1,5 +1,5 @@
-// UsersManagement.jsx - Professional UI Update
-import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
+// UsersManagement.jsx - Professional UI Update with Fixed Search
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAdminUsers, useUpdateUser, useDeleteUser, useBulkUserOperations, useExportUsers } from '../../../hooks/useAdminDashboard';
 import { useUserToast } from '../../../hooks/useUserToast';
@@ -30,7 +30,7 @@ import {
   FiCalendar,
   FiCreditCard
 } from 'react-icons/fi';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import CreateUserModal from './CreateUserModal';
 import EditUserModal from './EditUserModal';
 import UserDetailsModal from './UserDetailsModal';
@@ -294,6 +294,8 @@ const UsersManagement = () => {
     dismissUserToast 
   } = useUserToast();
   
+  // FIXED: Separate search input and applied search term
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     role: '',
@@ -324,7 +326,7 @@ const UsersManagement = () => {
   } = useAdminUsers({
     page,
     limit,
-    search: searchTerm,
+    search: searchTerm, // Use the applied search term, not the input
     ...filters
   });
   
@@ -368,8 +370,18 @@ const UsersManagement = () => {
     };
   }, [users, pagination.total]);
 
+  // FIXED: Handle search with button
   const handleSearch = useCallback((e) => {
     e.preventDefault();
+    setPage(1);
+    setSearchTerm(searchInput); // Apply the search term from input
+    refetch();
+  }, [searchInput, refetch]);
+
+  // FIXED: Clear search function
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setSearchTerm('');
     setPage(1);
     refetch();
   }, [refetch]);
@@ -678,7 +690,7 @@ const UsersManagement = () => {
         </div>
       )}
 
-      {/* Search and Filters */}
+      {/* Search and Filters - FIXED with search button */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <form onSubmit={handleSearch} className="flex-1">
@@ -687,19 +699,29 @@ const UsersManagement = () => {
               <input
                 type="text"
                 placeholder="Search users by name, email, or ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full pl-12 pr-24 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
-              {searchTerm && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                    title="Clear search"
+                  >
+                    <FiX className="h-4 w-4" />
+                  </button>
+                )}
                 <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  type="submit"
+                  disabled={isRefetching}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                  <FiX className="h-4 w-4" />
+                  Search
                 </button>
-              )}
+              </div>
             </div>
           </form>
           
@@ -979,7 +1001,7 @@ const UsersManagement = () => {
     type="user"
     loading={userToDelete?.type === 'single' ? deleteUserMutation.isLoading : bulkUserMutation.isLoading}
     dependencies={userToDelete?.type === 'single' ? {
-      services: 0, // You would need to fetch actual counts
+      services: 0,
       gigs: 0,
       orders: 0
     } : {}}

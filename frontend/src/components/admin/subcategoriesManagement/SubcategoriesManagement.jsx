@@ -1,5 +1,5 @@
-// SubcategoriesManagement.jsx - UPDATED with same design as Categories
-import React, { useState, useMemo, useCallback, memo, useEffect } from 'react';
+// SubcategoriesManagement.jsx - UPDATED with fixed search button
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { 
   useAdminSubcategories, 
   useUpdateSubcategory, 
@@ -43,24 +43,6 @@ import {
   FiLayers
 } from 'react-icons/fi';
 import { format } from 'date-fns';
-
-// Debounce hook for search
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  const timerRef = React.useRef();
-
-  useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(timerRef.current);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
 
 // Subcategory Table Row Component
 const SubcategoryTableRow = memo(({ 
@@ -260,7 +242,7 @@ const SubcategoryTableRow = memo(({
 
 SubcategoryTableRow.displayName = 'SubcategoryTableRow';
 
-// Import modal components (they should exist in your project)
+// Import modal components
 import SubcategoryCreateModal from './SubcategoryCreateModal';
 import SubcategoryEditModal from './SubcategoryEditModal';
 import DeleteConfirmationModal from '../DeleteConfirmationModal';
@@ -268,8 +250,9 @@ import SubcategoryDetailsModal from './SubcategoryDetailsModal';
 
 // Main Component
 const SubcategoriesManagement = () => {
+  // FIXED: Separate search input and applied search term
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms debounce
   const [filters, setFilters] = useState({
     category: '',
     status: '',
@@ -301,7 +284,7 @@ const SubcategoriesManagement = () => {
   } = useAdminSubcategories({
     page,
     limit,
-    search: debouncedSearchTerm, // Use debounced search term
+    search: searchTerm, // Use the applied search term
     ...filters
   });
   
@@ -334,8 +317,19 @@ const SubcategoriesManagement = () => {
     }, {});
   }, [categories]);
 
+  // FIXED: Handle search with button
   const handleSearch = useCallback((e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    setPage(1);
+    setSearchTerm(searchInput); // Apply search term from input
+    setSelectedSubcategories([]);
+    setExpandedSubcategories([]);
+  }, [searchInput]);
+
+  // FIXED: Clear search function
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setSearchTerm('');
     setPage(1);
     setSelectedSubcategories([]);
     setExpandedSubcategories([]);
@@ -739,7 +733,7 @@ const SubcategoriesManagement = () => {
         </div>
       )}
 
-      {/* Search and Filters */}
+      {/* Search and Filters - FIXED with search button */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <form onSubmit={handleSearch} className="flex-1">
@@ -748,19 +742,29 @@ const SubcategoriesManagement = () => {
               <input
                 type="text"
                 placeholder="Search subcategories by name or slug..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full pl-12 pr-24 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
               />
-              {searchTerm && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                    title="Clear search"
+                  >
+                    <FiX className="h-4 w-4" />
+                  </button>
+                )}
                 <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  type="submit"
+                  disabled={isRefetching}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                  <FiX className="h-4 w-4" />
+                  Search
                 </button>
-              )}
+              </div>
             </div>
           </form>
           
@@ -1016,7 +1020,7 @@ const SubcategoriesManagement = () => {
       {showSubcategoryDetails && selectedSubcategory && (
         <SubcategoryDetailsModal
           subcategory={selectedSubcategory}
-          stats={stats} // Pass stats to modal
+          stats={stats}
           isOpen={showSubcategoryDetails}
           onClose={() => {
             setShowSubcategoryDetails(false);
