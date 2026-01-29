@@ -457,26 +457,46 @@ export const useUpdateService = () => {
       }
       
       try {
-        // If version is provided, add it to the data
-        if (version !== undefined) {
-          if (data instanceof FormData) {
-            data.append('version', version.toString());
-            // Add CSRF token to FormData
-            const csrfToken = localStorage.getItem('csrfToken');
-            if (csrfToken) {
-              data.append('csrfToken', csrfToken);
+        // Prepare FormData with proper version handling
+        let formDataToSend;
+        
+        if (data instanceof FormData) {
+          formDataToSend = data;
+          // Ensure version is included in FormData
+          const existingVersion = formDataToSend.get('version');
+          if (!existingVersion && version !== undefined) {
+            formDataToSend.append('version', version.toString());
+          }
+        } else {
+          // Convert regular data to FormData
+          formDataToSend = new FormData();
+          Object.keys(data).forEach(key => {
+            if (data[key] !== undefined && data[key] !== null) {
+              if (Array.isArray(data[key])) {
+                data[key].forEach(item => {
+                  formDataToSend.append(`${key}[]`, item);
+                });
+              } else if (typeof data[key] === 'object' && !(data[key] instanceof File)) {
+                formDataToSend.append(key, JSON.stringify(data[key]));
+              } else {
+                formDataToSend.append(key, data[key]);
+              }
             }
-          } else if (typeof data === 'object') {
-            data.version = version;
-            // Add CSRF token to JSON data
-            const csrfToken = localStorage.getItem('csrfToken');
-            if (csrfToken) {
-              data.csrfToken = csrfToken;
-            }
+          });
+          
+          // Add version
+          if (version !== undefined) {
+            formDataToSend.append('version', version.toString());
           }
         }
         
-        const response = await axiosInstance.put(`/api/services/${id}`, data, {
+        // Add CSRF token
+        const csrfToken = localStorage.getItem('csrfToken');
+        if (csrfToken) {
+          formDataToSend.append('csrfToken', csrfToken);
+        }
+        
+        const response = await axiosInstance.put(`/api/services/${id}`, formDataToSend, {
           headers: headers || {
             'Content-Type': 'multipart/form-data'
           },
@@ -484,7 +504,7 @@ export const useUpdateService = () => {
         });
         
         if (!response.data.success) {
-          // Handle version conflict specifically
+          // Handle version conflict
           if (response.data.code === 'VERSION_CONFLICT') {
             throw {
               message: response.data.message,
@@ -552,46 +572,83 @@ export const useUpdateService = () => {
       // Snapshot the previous value
       const previousService = queryClient.getQueryData(serviceKeys.detail(id));
       
-      // Optimistically update the service with the new version
-      if (previousService) {
-        const newVersion = version ? version + 1 : (previousService.version || 1) + 1;
+      // Create optimistic update
+      const optimisticData = {
+        ...previousService?.service || previousService?.data || {},
+        ...(data instanceof FormData ? {} : data),
+        version: version ? version + 1 : ((previousService?.service?.version || previousService?.data?.version || 1) + 1),
+        updatedAt: new Date().toISOString(),
+        __optimistic: true
+      };
+      
+      // Optimistically update the service
+      queryClient.setQueryData(serviceKeys.detail(id), (old) => {
+        if (!old) return old;
         
-        queryClient.setQueryData(serviceKeys.detail(id), (old) => {
+        // If it's a service object from getServiceById response
+        if (old.service) {
+          return {
+            ...old,
+            service: optimisticData,
+            data: optimisticData
+          };
+        }
+        
+        // If it's just the service object
+        return optimisticData;
+      });
+      
+      // Also update the service in the services list
+      queryClient.setQueriesData(
+        { queryKey: serviceKeys.lists() },
+        (old) => {
           if (!old) return old;
           
-          // Create optimistic update
-          const updatedService = {
-            ...old,
-            ...old.service,
-            ...old.data,
-            version: newVersion,
-            updatedAt: new Date().toISOString(),
-            __optimistic: true
-          };
-          
-          // If it's a service object from getServiceById response
-          if (old.service) {
+          // Update in array data
+          if (old.data && Array.isArray(old.data)) {
             return {
               ...old,
-              service: updatedService,
-              data: updatedService
+              data: old.data.map(item => 
+                item._id === id ? { ...item, ...optimisticData } : item
+              )
             };
           }
           
-          return updatedService;
-        });
-      }
+          return old;
+        }
+      );
+      
+      // Update my services
+      queryClient.setQueriesData(
+        { queryKey: serviceKeys.myServices() },
+        (old) => {
+          if (!old) return old;
+          
+          // Update in array data
+          if (old.data && Array.isArray(old.data)) {
+            return {
+              ...old,
+              data: old.data.map(item => 
+                item._id === id ? { ...item, ...optimisticData } : item
+              )
+            };
+          }
+          
+          return old;
+        }
+      );
       
       return { previousService };
     },
     onSuccess: (data, variables) => {
       // Update the service cache with real data from server
       if (data.service || data.data) {
-        const updatedService = data.service || data.data;
+        const updatedService = {
+          ...(data.service || data.data),
+          __optimistic: false // Clear optimistic flag
+        };
         
-        // Remove optimistic flag
-        delete updatedService.__optimistic;
-        
+        // Update cache with server data
         queryClient.setQueryData(serviceKeys.detail(variables.id), (old) => {
           if (!old) return old;
           
@@ -610,28 +667,7 @@ export const useUpdateService = () => {
         });
       }
       
-      // Invalidate all relevant queries
-      queryClient.invalidateQueries({
-        queryKey: serviceKeys.detail(variables.id),
-        refetchType: 'none'
-      });
-      
-      queryClient.invalidateQueries({
-        queryKey: serviceKeys.myServices()
-      });
-      
-      queryClient.invalidateQueries({
-        queryKey: serviceKeys.lists()
-      });
-      
-      queryClient.invalidateQueries({
-        queryKey: serviceKeys.popular()
-      });
-      
-      queryClient.invalidateQueries({
-        queryKey: ['popularServicesByCategory']
-      });
-      
+      // Show success message
       toast.success(data.message || 'Service updated successfully!');
     },
     onError: (error, variables, context) => {
@@ -642,6 +678,30 @@ export const useUpdateService = () => {
       // Rollback on error
       if (context?.previousService) {
         queryClient.setQueryData(serviceKeys.detail(variables.id), context.previousService);
+        
+        // Also rollback in lists
+        queryClient.setQueriesData(
+          { queryKey: serviceKeys.lists() },
+          (old) => {
+            if (!old) return old;
+            
+            if (old.data && Array.isArray(old.data)) {
+              return {
+                ...old,
+                data: old.data.map(item => 
+                  item._id === variables.id 
+                    ? { 
+                        ...context.previousService?.service || context.previousService?.data || item,
+                        __optimistic: false
+                      } 
+                    : item
+                )
+              };
+            }
+            
+            return old;
+          }
+        );
       }
       
       // If version conflict, invalidate the query to get fresh data
@@ -662,6 +722,19 @@ export const useUpdateService = () => {
           queryKey: serviceKeys.detail(variables.id) 
         });
       }
+      
+      // Invalidate all relevant queries in the background
+      setTimeout(() => {
+        queryClient.invalidateQueries({ 
+          queryKey: serviceKeys.detail(variables.id) 
+        });
+        queryClient.invalidateQueries({ 
+          queryKey: serviceKeys.myServices() 
+        });
+        queryClient.invalidateQueries({ 
+          queryKey: serviceKeys.lists() 
+        });
+      }, 100);
     }
   });
 };

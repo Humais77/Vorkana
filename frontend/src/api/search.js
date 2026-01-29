@@ -1,72 +1,107 @@
-// search.js - Production ready API client
+// search.js - Production ready API client with CSRF protection
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const DEBUG = import.meta.env.VITE_DEBUG === 'true';
 
-// Create axios instance with proper configuration
+// CSRF token management
+let csrfToken = localStorage.getItem('csrfToken') || null;
+let csrfTokenExpiry = localStorage.getItem('csrfTokenExpiry') || 0;
+
 const axiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 30000, // Increased timeout for better UX
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   },
-  withCredentials:true,
+  withCredentials: true,
   validateStatus: function (status) {
-    return status >= 200 && status < 500; // Don't throw for 4xx errors
+    return status >= 200 && status < 500;
   }
 });
 
-// Request interceptor with enhanced error handling
+// Request interceptor with CSRF handling
 axiosInstance.interceptors.request.use(
-  (config) => {
-    // Add auth token
+  async (config) => {
     const token = localStorage.getItem('userToken') || localStorage.getItem('token');
+    const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    config.headers['X-Request-ID'] = requestId;
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Add cache headers for search requests
     if (config.url.includes('/api/search')) {
       config.headers['X-Request-Source'] = 'web-client';
       config.headers['X-Client-Version'] = import.meta.env.VITE_APP_VERSION || '1.0.0';
     }
     
-    // Add request ID for tracking
-    config.headers['X-Request-ID'] = generateRequestId();
+    // Add CSRF token for non-GET requests to search endpoints
+    if (config.method !== 'get' && config.method !== 'GET' && config.url.includes('/api/search')) {
+      // Check if token is expired
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        try {
+          await refreshSearchCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token for search:', error.message);
+        }
+      }
+      
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+        // Also add to body for POST requests
+        if (config.data && typeof config.data === 'object' && !config.data.csrfToken) {
+          config.data.csrfToken = csrfToken;
+        }
+      }
+    }
+    
+    if (DEBUG) {
+      console.log(`📤 Search Request: ${config.method?.toUpperCase()} ${config.url}`, {
+        headers: config.headers,
+        params: config.params
+      });
+    }
     
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
+    console.error('Search request interceptor error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor with comprehensive error handling
+// Response interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
-    // Handle successful responses
-    const { data } = response;
+    // Update CSRF token from response
+    if (response.data?.csrfToken) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+    }
     
-    // Check if response structure is valid
-    if (data && typeof data === 'object') {
-      // Ensure success property exists
-      if (data.success === undefined) {
-        data.success = true;
+    if (DEBUG) {
+      console.log(`📥 Search Response: ${response.status} ${response.config.url}`, {
+        data: response.data,
+        headers: response.headers
+      });
+    }
+    
+    if (response.data && typeof response.data === 'object') {
+      if (response.data.success === undefined) {
+        response.data.success = true;
       }
       
-      // Add response time if available in headers
       const responseTime = response.headers['x-response-time'];
       if (responseTime) {
-        data.responseTime = responseTime;
+        response.data.responseTime = responseTime;
       }
     }
     
     return response;
   },
-  (error) => {
-    // Handle network errors
+  async (error) => {
     if (!error.response) {
       error.response = {
         data: {
@@ -78,8 +113,44 @@ axiosInstance.interceptors.response.use(
       };
     }
     
-    // Handle specific error cases
     const { response } = error;
+    
+    // Handle CSRF errors
+    if (response?.status === 403 && 
+        response?.data?.code === 'CSRF_TOKEN_INVALID') {
+      
+      console.log('Search CSRF token invalid, refreshing...');
+      
+      try {
+        // Try to refresh CSRF token
+        await refreshSearchCSRFToken();
+        
+        // Retry original request
+        if (error.config) {
+          error.config.headers['X-CSRF-Token'] = csrfToken;
+          if (error.config.data && typeof error.config.data === 'object') {
+            error.config.data.csrfToken = csrfToken;
+          }
+          return axiosInstance(error.config);
+        }
+      } catch (refreshError) {
+        console.error('Search CSRF refresh failed:', refreshError);
+        // Redirect to login with CSRF error
+        if (window.location.pathname !== '/signin' && 
+            window.location.pathname !== '/signup') {
+          window.location.href = '/signin?csrf_error=true';
+        }
+      }
+    }
+    
+    // Handle authentication errors
+    if (response?.status === 401) {
+      localStorage.removeItem('userInfo');
+      if (window.location.pathname !== '/signin' && 
+          window.location.pathname !== '/signup') {
+        window.location.href = '/signin?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+    }
     
     if (response) {
       switch (response.status) {
@@ -124,12 +195,39 @@ axiosInstance.interceptors.response.use(
   }
 );
 
-// Helper function to generate request ID
-function generateRequestId() {
-  return 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
+// CSRF token management functions
+const setCSRFToken = (token, expiresAt) => {
+  csrfToken = token;
+  csrfTokenExpiry = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+  
+  localStorage.setItem('csrfToken', token);
+  localStorage.setItem('csrfTokenExpiry', csrfTokenExpiry.toString());
+};
 
-// Helper function to clean and validate params
+const refreshSearchCSRFToken = async () => {
+  try {
+    console.log('Refreshing CSRF token for search API...');
+    const response = await axiosInstance.get('/api/search/csrf-token');
+    if (response.data.success) {
+      setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      console.log('Search CSRF token refreshed successfully');
+      return csrfToken;
+    }
+    throw new Error('Failed to refresh CSRF token');
+  } catch (error) {
+    console.error('Failed to refresh search CSRF token:', error.message);
+    throw error;
+  }
+};
+
+// Clear auth data
+const clearAuthData = () => {
+  localStorage.removeItem('userInfo');
+  localStorage.removeItem('csrfToken');
+  localStorage.removeItem('csrfTokenExpiry');
+};
+
+// Helper function to clean params
 const cleanParams = (params) => {
   if (!params || typeof params !== 'object') return {};
   
@@ -138,25 +236,19 @@ const cleanParams = (params) => {
   Object.keys(params).forEach(key => {
     const value = params[key];
     
-    // Remove undefined, null, empty string
     if (value === undefined || value === null || value === '') {
       return;
     }
     
-    // Handle different types
     if (Array.isArray(value)) {
       if (value.length > 0) {
-        // Join arrays with comma for query params
         cleaned[key] = value.join(',');
       }
     } else if (typeof value === 'boolean') {
-      // Convert booleans to string
       cleaned[key] = value.toString();
     } else if (typeof value === 'number') {
-      // Validate numbers
       if (isNaN(value) || !isFinite(value)) return;
       
-      // Add range limits for certain parameters
       if (key.includes('price') || key.includes('budget')) {
         if (value < 0 || value > 1000000) return;
       }
@@ -169,11 +261,9 @@ const cleanParams = (params) => {
       
       cleaned[key] = value;
     } else if (typeof value === 'string') {
-      // Validate and sanitize strings
       const trimmed = value.trim();
       if (trimmed.length === 0) return;
       
-      // Limit query length
       if (key === 'query' || key === 'q' || key === 'search') {
         if (trimmed.length > 200) {
           cleaned[key] = trimmed.substring(0, 200);
@@ -184,7 +274,6 @@ const cleanParams = (params) => {
         cleaned[key] = trimmed;
       }
     } else {
-      // Keep other types as is
       cleaned[key] = value;
     }
   });
@@ -192,32 +281,29 @@ const cleanParams = (params) => {
   return cleaned;
 };
 
-// Rate limiting and retry logic
+// Retry logic
 const withRetry = async (fn, maxRetries = 2, retryDelay = 1000) => {
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      // Don't retry for certain error types
       if (error.response?.status && [400, 401, 403, 404, 429].includes(error.response.status)) {
         throw error;
       }
       
-      // Don't retry on last attempt
       if (attempt > maxRetries) {
         throw error;
       }
       
-      // Exponential backoff
       const delay = retryDelay * Math.pow(2, attempt - 1);
-      console.warn(`Request failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries + 1})`);
+      console.warn(`Search request failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries + 1})`);
       
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 };
 
-// Cache implementation for search results
+// Cache implementation
 const searchCache = {
   get: (key) => {
     try {
@@ -226,7 +312,6 @@ const searchCache = {
       
       const { data, timestamp } = JSON.parse(item);
       
-      // Check if cache is expired (5 minutes)
       if (Date.now() - timestamp > 300000) {
         localStorage.removeItem(`search_cache_${key}`);
         return null;
@@ -257,35 +342,76 @@ const searchCache = {
         localStorage.removeItem(key);
       }
     });
+  },
+  
+  clearOld: () => {
+    const now = Date.now();
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('search_cache_')) {
+        try {
+          const item = JSON.parse(localStorage.getItem(key));
+          if (now - item.timestamp > 3600000) { // 1 hour
+            localStorage.removeItem(key);
+          }
+        } catch (error) {
+          localStorage.removeItem(key);
+        }
+      }
+    });
   }
 };
 
+// Clear old cache on load
+if (typeof window !== 'undefined') {
+  searchCache.clearOld();
+}
+
 export const searchAPI = {
-  // Unified search with cache and retry
+  // CSRF Token management
+  getCSRFToken: async () => {
+    try {
+      const response = await axiosInstance.get('/api/search/csrf-token');
+      if (response.data.success) {
+        setCSRFToken(response.data.csrfToken, response.data.expiresAt);
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get search CSRF token:', error);
+      throw error;
+    }
+  },
+  
+  refreshCSRFToken: async () => {
+    return refreshSearchCSRFToken();
+  },
+  
+  hasValidCSRFToken: () => {
+    return csrfToken && Date.now() < parseInt(csrfTokenExpiry);
+  },
+  
+  clearAuthData: clearAuthData,
+  
+  // Unified search
   unifiedSearch: async (query, options = {}) => {
     const defaultOptions = {
       type: 'services',
       page: 1,
-      limit: 48,
+      limit: 24,
       filters: {},
       sort: 'relevance',
       order: 'desc',
-      source: 'top-bar',
-      search_in: 'everywhere',
       cache: true,
       retry: true
     };
     
     const mergedOptions = { ...defaultOptions, ...options };
     
-    // Generate cache key
     const cacheKey = `search_${mergedOptions.type}_${query}_${JSON.stringify(mergedOptions.filters)}_${mergedOptions.page}`;
     
-    // Try cache first
     if (mergedOptions.cache && mergedOptions.page === 1) {
       const cached = searchCache.get(cacheKey);
       if (cached) {
-        console.log('Cache hit for:', cacheKey);
+        console.log('Search cache hit for:', cacheKey);
         return {
           ...cached,
           cached: true
@@ -293,7 +419,6 @@ export const searchAPI = {
       }
     }
     
-    // Build params
     let params = {
       query: query,
       type: mergedOptions.type,
@@ -301,14 +426,11 @@ export const searchAPI = {
       limit: mergedOptions.limit,
       sort: mergedOptions.sort,
       order: mergedOptions.order,
-      source: mergedOptions.source,
-      search_in: mergedOptions.search_in,
       ...mergedOptions.filters
     };
     
     params = cleanParams(params);
     
-    // Validate required parameters
     if (!params.query || typeof params.query !== 'string' || params.query.trim().length < 1) {
       return {
         success: false,
@@ -341,14 +463,12 @@ export const searchAPI = {
       
       const { data } = response;
       
-      // Ensure response structure
       const result = {
         success: data.success !== false,
         ...data,
         requestId: response.headers['x-request-id']
       };
       
-      // Cache successful results
       if (mergedOptions.cache && mergedOptions.page === 1 && result.success && result.data?.results?.length > 0) {
         searchCache.set(cacheKey, result);
       }
@@ -364,7 +484,6 @@ export const searchAPI = {
         code: 'SERVICE_UNAVAILABLE'
       };
       
-      // Return structured error response
       return {
         ...errorData,
         data: {
@@ -388,7 +507,7 @@ export const searchAPI = {
     }
   },
 
-  // Quick search with aggressive caching
+  // Quick search
   quickSearch: async (query, limit = 5) => {
     if (!query || query.trim().length < 2) {
       return {
@@ -419,7 +538,6 @@ export const searchAPI = {
         query
       };
       
-      // Cache for 1 minute
       searchCache.set(cacheKey, result);
       
       return result;
@@ -434,7 +552,7 @@ export const searchAPI = {
     }
   },
 
-  // Get search suggestions
+  // Get suggestions
   getSuggestions: async (query, type = 'all', limit = 10) => {
     if (!query || query.trim().length < 2) {
       return {
@@ -464,7 +582,6 @@ export const searchAPI = {
         data: response.data?.data || []
       };
       
-      // Cache for 2 minutes
       searchCache.set(cacheKey, result);
       
       return result;
@@ -537,7 +654,6 @@ export const searchAPI = {
         }
       };
       
-      // Cache for 5 minutes
       searchCache.set(cacheKey, result);
       
       return result;
@@ -555,30 +671,8 @@ export const searchAPI = {
     }
   },
 
-  // Save search history
-  saveSearchHistory: async (query, type = 'search') => {
-    try {
-      const token = localStorage.getItem('userToken');
-      if (!token) return { success: true };
-      
-      await axiosInstance.post('/api/search/history', {
-        query,
-        type,
-        timestamp: new Date().toISOString()
-      }, {
-        timeout: 3000
-      });
-      
-      return { success: true };
-    } catch (error) {
-      // Don't show error for history saves
-      console.error('Save search history error:', error);
-      return { success: false };
-    }
-  },
-
-  // Get search history
-  getSearchHistory: async (limit = 10) => {
+  // Search history - with CSRF protection
+  getSearchHistory: async (limit = 20) => {
     try {
       const token = localStorage.getItem('userToken');
       if (!token) return { success: true, data: [] };
@@ -598,27 +692,141 @@ export const searchAPI = {
     }
   },
 
-  // Clear search history
+  saveSearchHistory: async (query, type = 'search', filters = {}) => {
+    try {
+      const token = localStorage.getItem('userToken');
+      if (!token) return { success: true };
+      
+      // Ensure CSRF token is valid before making POST request
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        await refreshSearchCSRFToken();
+      }
+      
+      const response = await axiosInstance.post('/api/search/history', {
+        query,
+        type,
+        filters,
+        csrfToken
+      }, {
+        timeout: 3000
+      });
+      
+      return {
+        success: true,
+        data: response.data
+      };
+      
+    } catch (error) {
+      console.error('Save search history error:', error);
+      
+      // Handle CSRF errors
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        return {
+          success: false,
+          message: 'Security validation failed',
+          code: 'CSRF_TOKEN_INVALID',
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      return { success: false };
+    }
+  },
+
   clearSearchHistory: async () => {
     try {
       const token = localStorage.getItem('userToken');
       if (!token) return { success: true };
       
-      await axiosInstance.delete('/api/search/history');
-      return { success: true };
+      // Ensure CSRF token is valid before making DELETE request
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        await refreshSearchCSRFToken();
+      }
+      
+      const response = await axiosInstance.delete('/api/search/history', {
+        data: { csrfToken },
+        timeout: 3000
+      });
+      
+      return response.data;
     } catch (error) {
       console.error('Clear search history error:', error);
+      
+      // Handle CSRF errors
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        return {
+          success: false,
+          message: 'Security validation failed',
+          code: 'CSRF_TOKEN_INVALID',
+          requiresCSRFRefresh: true
+        };
+      }
+      
       return { success: false };
     }
   },
 
-  // Clear all cache
+  // Advanced search (POST request with CSRF protection)
+  advancedSearch: async (searchData) => {
+    try {
+      // Ensure CSRF token is valid before making POST request
+      if (!csrfToken || Date.now() > parseInt(csrfTokenExpiry)) {
+        await refreshSearchCSRFToken();
+      }
+      
+      const response = await axiosInstance.post('/api/search/advanced', {
+        ...searchData,
+        csrfToken
+      }, {
+        timeout: 15000
+      });
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Advanced search error:', error);
+      
+      // Handle CSRF errors
+      if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        return {
+          success: false,
+          message: 'Security validation failed',
+          code: 'CSRF_TOKEN_INVALID',
+          requiresCSRFRefresh: true
+        };
+      }
+      
+      throw error;
+    }
+  },
+
+  // Health check
+  healthCheck: async () => {
+    try {
+      const response = await axiosInstance.get('/api/search/health', {
+        timeout: 5000
+      });
+      
+      return {
+        success: true,
+        data: response.data?.data
+      };
+    } catch (error) {
+      console.error('Health check error:', error);
+      return {
+        success: false,
+        message: 'Search service unavailable'
+      };
+    }
+  },
+
+  // Clear cache
   clearCache: () => {
     searchCache.clear();
     return { success: true };
   },
 
-  // Helper: Format search URL
+  // URL helpers
   formatSearchURL: (query, type = 'services', filters = {}) => {
     const params = new URLSearchParams();
     params.set('query', query);
@@ -637,7 +845,6 @@ export const searchAPI = {
     return `/search?${params.toString()}`;
   },
 
-  // Helper: Parse search URL
   parseSearchURL: (searchString) => {
     try {
       const params = new URLSearchParams(searchString);
@@ -648,7 +855,6 @@ export const searchAPI = {
       const filters = {};
       params.forEach((value, key) => {
         if (!['query', 'type', 'page'].includes(key)) {
-          // Handle comma-separated arrays
           if (value.includes(',')) {
             filters[key] = value.split(',').filter(v => v.trim());
           } else {
@@ -664,7 +870,7 @@ export const searchAPI = {
     }
   },
 
-  // Helper: Get recent searches from localStorage
+  // Local storage helpers
   getRecentSearches: () => {
     try {
       const saved = localStorage.getItem('recentSearches');
@@ -678,7 +884,6 @@ export const searchAPI = {
     }
   },
 
-  // Helper: Save recent search
   saveRecentSearch: (query, type = 'search') => {
     try {
       const recent = searchAPI.getRecentSearches();
@@ -693,5 +898,18 @@ export const searchAPI = {
       console.error('Save recent search error:', error);
       return [];
     }
+  },
+
+  clearRecentSearches: () => {
+    try {
+      localStorage.removeItem('recentSearches');
+      return { success: true };
+    } catch (error) {
+      console.error('Clear recent searches error:', error);
+      return { success: false };
+    }
   }
 };
+
+// Export axios instance for other services
+export { axiosInstance };
