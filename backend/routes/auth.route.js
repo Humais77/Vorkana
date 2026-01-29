@@ -611,13 +611,13 @@ router.get("/google",
   (req, res, next) => {
     const state = crypto.randomBytes(32).toString('hex');
     
-    res.cookie('oauth_state', state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 10 * 60 * 1000,
-      signed: true
-    });
+    res.cookie('oauth_just_logged_in', 'true', {
+  maxAge: 10000, // 10 seconds
+  httpOnly: false, // Client needs to read this
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  path: '/'
+});
     
     passport.authenticate("google", { 
       scope: ["profile", "email"],
@@ -627,75 +627,75 @@ router.get("/google",
   }
 );
 
-// Google callback
-router.get("/google/callback",
-  cacheControlMiddleware({ noStore: true }),
-  clearAuthCache,
-  (req, res, next) => {
-    const state = req.query.state;
-    const storedState = req.signedCookies?.oauth_state;
-    
-    if (!state || !storedState || state !== storedState) {
-      console.error('Invalid state parameter:', { state, storedState });
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_state`);
-    }
-    
-    res.clearCookie('oauth_state');
-    
-    passport.authenticate("google", {
-      failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
-      session: false 
-    }, async (err, user, info) => {
-      if (err || !user) {
-        console.error('Google OAuth error:', err || info);
-        
-        let errorParam = 'auth_failed';
-        if (err?.message?.includes('already exists') || err?.message?.includes('already registered')) {
-          errorParam = 'user_exists';
-        } else if (err?.message?.includes('Email already exists')) {
-          errorParam = 'email_exists';
-        }
-        
-        return res.redirect(`${process.env.FRONTEND_URL}/signin?error=${errorParam}`);
-      }
+// In your Google OAuth callback route handler (backend)
+router.get('/google/callback', 
+  passport.authenticate('google', { 
+    failureRedirect: '/signin',
+    session: false
+  }),
+  async (req, res) => {
+    try {
+      console.log('✅ Google OAuth successful for:', req.user.email);
       
-      try {
-        const session = await SessionService.createSession(user._id, req, {
-          loginType: 'google',
-          source: 'web'
-        });
-        
-        SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken);
-        
-        const userData = encodeURIComponent(JSON.stringify({
-          sessionId: session.sessionId,
+      // CRITICAL: Create a proper session for the user
+      const session = await SessionService.createSession(
+        req.user._id, 
+        req, 
+        {
+          loginType: 'google_oauth',
+          source: 'web',
+          userRole: req.user.role
+        }
+      );
+      
+      // Set cookies with session tokens
+      SessionMiddleware.setAuthCookies(
+        res, 
+        session.token, 
+        session.refreshToken
+      );
+      
+      // Generate CSRF token
+      const csrfToken = CSRFMiddleware.generateToken(req, res);
+      
+      // Prepare user data for frontend
+      const userResponse = {
+        _id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        picture: req.user.picture,
+        emailVerified: req.user.emailVerified,
+        isOnline: true,
+        accountType: req.user.accountType || 'basic',
+        lastSeenAt: new Date().toISOString()
+      };
+      
+      // Store in localStorage format
+      const redirectData = {
+        success: true,
+        isAuthenticated: true,
+        user: userResponse,
+        session: {
           expiresAt: session.expiresAt,
-          user: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            picture: user.picture,
-            role: user.role,
-            emailVerified: user.emailVerified,
-            registrationStatus: user.registrationStatus,
-            isOnline: user.isOnline
-          }
-        }));
-        
-        const returnTo = req.cookies?.return_to || `${process.env.FRONTEND_URL}/dashboard`;
-        res.clearCookie('return_to');
-        
-        res.redirect(`${returnTo}?oauth_success=true&data=${userData}`);
-        
-      } catch (error) {
-        console.error('Google session creation error:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/signin?error=session_failed`);
-      }
-    })(req, res, next);
+          idleTimeout: 3 * 60 * 60 * 1000
+        },
+        csrfToken,
+        timestamp: Date.now()
+      };
+      
+      // Redirect with data
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const encodedData = encodeURIComponent(JSON.stringify(redirectData));
+      res.redirect(`${frontendUrl}/oauth-success#data=${encodedData}`);
+      
+    } catch (error) {
+      console.error('❌ Google callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      res.redirect(`${frontendUrl}/signin?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
   }
 );
-
-// ==================== HEALTH CHECK ====================
 
 router.get("/health", 
   cacheControlMiddleware({ maxAge: 30 }),

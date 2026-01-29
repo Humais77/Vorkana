@@ -276,56 +276,48 @@ handleRefresh = async (req, res) => {
 setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
   const isProduction = process.env.NODE_ENV === 'production';
   
-  // DECODE tokens to get expiration timestamps
+  // Decode tokens to get expiration
   const tokenDecoded = jwt.decode(token);
   const refreshDecoded = jwt.decode(refreshToken);
   
-  // Calculate MAXAGE ONLY (in milliseconds) - NO DATE OBJECTS
+  // Calculate maxAge in milliseconds
   const tokenMaxAge = tokenDecoded?.exp ? 
     Math.max(60000, (tokenDecoded.exp * 1000) - Date.now()) : 
-    3 * 60 * 60 * 1000; // Fallback: 3 hours
+    3 * 60 * 60 * 1000;
   
   const refreshMaxAge = refreshDecoded?.exp ?
     Math.max(60000, (refreshDecoded.exp * 1000) - Date.now()) :
-    30 * 24 * 60 * 60 * 1000; // Fallback: 30 days
+    30 * 24 * 60 * 60 * 1000;
   
-  console.log('🍪 PRODUCTION COOKIES SET:', {
-    token: {
-      maxAgeMs: tokenMaxAge,
-      maxAgeHours: (tokenMaxAge / 1000 / 60 / 60).toFixed(2),
-      expiresAtUnix: tokenDecoded?.exp,
-      expiresAtUTC: tokenDecoded?.exp ? new Date(tokenDecoded.exp * 1000).toISOString() : null
-    },
-    refresh: {
-      maxAgeMs: refreshMaxAge,
-      maxAgeDays: (refreshMaxAge / 1000 / 60 / 60 / 24).toFixed(2),
-      expiresAtUnix: refreshDecoded?.exp,
-      expiresAtUTC: refreshDecoded?.exp ? new Date(refreshDecoded.exp * 1000).toISOString() : null
-    }
+  console.log('🍪 Setting cookies:', {
+    tokenExpiresAt: tokenDecoded?.exp ? new Date(tokenDecoded.exp * 1000).toISOString() : 'unknown',
+    refreshExpiresAt: refreshDecoded?.exp ? new Date(refreshDecoded.exp * 1000).toISOString() : 'unknown',
+    tokenMaxAgeHours: (tokenMaxAge / 1000 / 60 / 60).toFixed(2),
+    refreshMaxAgeDays: (refreshMaxAge / 1000 / 60 / 60 / 24).toFixed(2)
   });
 
-  // BASE COOKIE CONFIG - Use exact same config for all cookies
+  // Base cookie config - CRITICAL: sameSite and secure settings
   const baseCookieConfig = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site in production
     path: '/',
     ...(isProduction && process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {})
   };
 
-  // 1. ACCESS TOKEN COOKIE - MAXAGE ONLY
+  // 1. Access token cookie
   res.cookie('token', token, {
     ...baseCookieConfig,
     maxAge: tokenMaxAge
   });
 
-  // 2. REFRESH TOKEN COOKIE - MAXAGE ONLY
+  // 2. Refresh token cookie
   res.cookie('refreshToken', refreshToken, {
     ...baseCookieConfig,
     maxAge: refreshMaxAge
   });
 
-  // 3. CSRF TOKEN COOKIE - MAXAGE ONLY (24 hours)
+  // 3. CSRF token cookie
   if (csrfToken) {
     res.cookie('csrfToken', csrfToken, {
       ...baseCookieConfig,
@@ -333,18 +325,17 @@ setAuthCookies = (res, token, refreshToken, csrfToken = null) => {
     });
   }
 
-  // 4. CLIENT-SIDE FLAG - NO HTTPONLY, SAME MAXAGE
+  // 4. Client-side flag
   res.cookie('isAuthenticated', 'true', {
     ...baseCookieConfig,
     httpOnly: false, // Client can read this
     maxAge: tokenMaxAge
   });
 
-  // Add helpful response headers for debugging
+  // Debug headers
   res.set({
-    'X-Auth-Token-Expiry-Seconds': Math.floor(tokenMaxAge / 1000),
-    'X-Refresh-Token-Expiry-Days': (refreshMaxAge / 1000 / 60 / 60 / 24).toFixed(1),
-    'X-Server-Timestamp': Date.now().toString()
+    'X-Auth-Token-Expiry': new Date(Date.now() + tokenMaxAge).toISOString(),
+    'X-Refresh-Token-Expiry': new Date(Date.now() + refreshMaxAge).toISOString()
   });
 };
 clearAuthCookies = (res) => {

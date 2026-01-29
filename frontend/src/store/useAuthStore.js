@@ -274,7 +274,6 @@ export const useAuthStore = create(
       }),
       
      logout: () => {
-        console.log('🧹 AuthStore: Logging out user');
         
         // 1. Clear state first
         set({
@@ -291,7 +290,6 @@ export const useAuthStore = create(
         localStorage.removeItem('csrfToken');
         localStorage.removeItem('csrfTokenExpiry');
         
-        console.log('✅ AuthStore: User logged out and state cleared');
       },
       
       adminLogout: productionErrorBoundary(async () => {
@@ -315,12 +313,43 @@ export const useAuthStore = create(
       }),
       
       syncFromStorage: productionErrorBoundary(() => {
-        const user = getValidUserFromStorage();
-        set({ 
-          user,
-          isAuthenticated: !!user
-        });
-      }),
+  
+  const possibleKeys = [
+    'vorkanna_user_v1',       // Primary key
+    'userInfo',               // Old key
+    'vorkanna_auth_state_v1'  // Zustand persisted key
+  ];
+  
+  let foundUser = null;
+  
+  for (const key of possibleKeys) {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Check if it's user data or state object
+        const userData = parsed.user || parsed.state?.user || parsed;
+        
+        if (userData && userData.email) {
+          const validated = validateAndSanitizeUser(userData);
+          if (validated) {
+          
+            foundUser = validated;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      // Skip invalid JSON
+    }
+  }
+  
+  set({ 
+    user: foundUser,
+    isAuthenticated: !!foundUser
+  });
+  
+}),
     
       
       // Computed getters

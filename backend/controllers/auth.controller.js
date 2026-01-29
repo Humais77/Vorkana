@@ -345,17 +345,22 @@ const register = asyncHandler(async (req, res) => {
 
 const login = asyncHandler(async (req, res) => {
   const startTime = Date.now();
-  
+   const loginId = `login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   try {
     const { email, password, deviceToken, deviceType } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
-    console.log('🔐 Login attempt:', { 
-      email, 
-      ip,
+    console.log(`🔐 Login attempt ${loginId}:`, { 
+      email: req.body.email ? req.body.email.substring(0, 3) + '...' : 'no-email',
+      ip: req.ip,
       timestamp: new Date().toISOString() 
     });
+if (req.cookies?.logout_complete) {
+      console.log('🧹 Detected previous logout, cleaning cookies...');
+      // Clear all auth cookies before login
+      SessionMiddleware.clearAuthCookies(res);
+    }
 
     // 1. Basic validations
     if (!email || !password) {
@@ -491,6 +496,7 @@ const login = asyncHandler(async (req, res) => {
         timeoutMinutes: user.role === 'admin' ? 60 : 180
       },
       csrfToken,
+      loginId, // Send login ID to frontend
       performance: {
         responseTime: `${responseTime}ms`,
         serverTime: new Date().toISOString()
@@ -513,9 +519,26 @@ const login = asyncHandler(async (req, res) => {
     });
   }
 });
-// Get user profile with caching
-const getProfile = async (req, res) => {
+const getProfile = asyncHandler(async (req, res) => {
   try {
+    // For fresh OAuth logins, accept slightly expired tokens
+    const token = req.cookies?.token;
+    const refreshToken = req.cookies?.refreshToken;
+    
+    // If we have a refresh token but no valid access token, try to refresh
+    if (refreshToken && (!token || await verifyToken(token).catch(() => false))) {
+      try {
+        const refreshed = await SessionService.refreshSession(refreshToken);
+        if (refreshed) {
+          // Set new cookies
+          SessionMiddleware.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
+          // Continue with refreshed token
+        }
+      } catch (refreshError) {
+        // Silent fail - let normal auth flow handle it
+      }
+    }
+
     const cacheKey = `user:${req.user._id}:profile`;
     
     // Try to get from cache first
@@ -582,13 +605,16 @@ const getProfile = async (req, res) => {
       cached: false
     });
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({
+    console.error('Get profile error:', error.message);
+    
+    // Don't logout on profile fetch error - just return empty
+    res.json({
       success: false,
-      message: 'Server error retrieving profile'
+      message: 'Could not fetch profile at this time',
+      user: null
     });
   }
-};
+});
 
 const updateProfile = async (req, res) => {
   try {
@@ -1363,46 +1389,126 @@ const validateCSRF = (req) => {
 
 const logout = asyncHandler(async (req, res) => {
   try {
-    // Clear ALL cookies
-    const clearCookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      path: '/'
-    };
-    
-    // Clear all possible cookies
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
-      res.clearCookie(cookie, clearCookieOptions);
+    console.log('🚪 Logout request received:', {
+      userId: req.user?._id,
+      sessionId: req.sessionID,
+      hasCookies: !!req.cookies?.token
     });
-    
-    // If session exists, end it
-    if (req.sessionID) {
+
+    // 1. GET USER ID BEFORE ANY OPERATIONS
+    const userId = req.user?._id;
+    const sessionId = req.sessionID;
+
+    // 2. TERMINATE ALL SESSIONS FIRST (with aggressive cleanup)
+    if (userId) {
       try {
-        await SessionService.logoutSession(req.sessionID, req.user?._id);
-      } catch (error) {
-        // Ignore session errors during logout
+        await SessionService.logoutAllUserSessions(userId);
+        console.log(`✅ All sessions terminated for user: ${userId}`);
+      } catch (sessionError) {
+        console.error('Session termination error:', sessionError);
       }
     }
-    
+
+    // 3. CREATE A UNIQUE LOGOUT IDENTIFIER
+    const logoutId = `logout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // 4. CLEAR ALL COOKIES WITH MULTIPLE PATHS AND DOMAINS
+    const clearCookieAggressively = (name) => {
+      const baseOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        expires: new Date(0) // Expire immediately
+      };
+
+      // Clear with multiple paths
+      ['/', '/admin', '/api', '/auth', '/dashboard', '/profile'].forEach(path => {
+        res.clearCookie(name, { ...baseOptions, path });
+      });
+
+      // Clear with domain if in production
+      if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+        res.clearCookie(name, { ...baseOptions, domain: process.env.COOKIE_DOMAIN, path: '/' });
+      }
+    };
+
+    // List of ALL possible auth cookies
+    const authCookies = [
+      'token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin',
+      'sessionId', 'session', 'access_token', 'refresh_token',
+      'user_session', 'auth_token', 'vorkanna_auth'
+    ];
+
+    // Clear each cookie aggressively
+    authCookies.forEach(cookieName => {
+      clearCookieAggressively(cookieName);
+    });
+
+    // 5. SET A "LOGOUT_COMPLETE" COOKIE TO PREVENT REUSE
+    res.cookie('logout_complete', logoutId, {
+      httpOnly: false, // Client needs to read this
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 30000, // 30 seconds
+      domain: process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN 
+        ? process.env.COOKIE_DOMAIN 
+        : undefined
+    });
+
+    // 6. CLEAR CSRF COOKIES
+    CSRFMiddleware.clearCSRFCookie(res);
+
+    // 7. INVALIDATE CACHE
+    if (userId) {
+      try {
+        await invalidateUserCache(userId);
+        // Also clear session-related cache
+        await cache.del(`session:${sessionId}`);
+        await cache.del(`user_sessions:${userId}`);
+      } catch (cacheError) {
+        console.warn('Cache invalidation error:', cacheError.message);
+      }
+    }
+
+    // 8. LOG THE LOGOUT
+    logSecurityEvent('USER_LOGOUT', userId, req.ip, {
+      logoutId,
+      sessionId,
+      userAgent: req.headers['user-agent'],
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`✅ Logout completed for user: ${userId || 'unknown'}`);
+
+    // 9. RETURN SUCCESS WITH FORCE RELOAD INSTRUCTIONS
     res.json({
       success: true,
-      message: 'Logged out successfully'
+      message: 'Logged out successfully',
+      logoutId,
+      requiresReload: true,
+      forceClientCleanup: true,
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    // Still clear cookies on error
-    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated'].forEach(cookie => {
+    console.error('❌ Logout error:', error);
+    
+    // Even on error, try to clear cookies
+    ['token', 'refreshToken', 'csrfToken', 'isAuthenticated', 'isAdmin'].forEach(cookie => {
       res.clearCookie(cookie, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        path: '/'
+        path: '/',
+        expires: new Date(0)
       });
     });
-    
+
     res.json({
-      success: true,
-      message: 'Logged out (cookies cleared)'
+      success: false,
+      message: 'Logout completed with errors',
+      requiresReload: true
     });
   }
 });

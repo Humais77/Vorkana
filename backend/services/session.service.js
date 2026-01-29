@@ -24,80 +24,66 @@ class SessionService {
 
  generateTokens(userId, role = 'user') {
   console.log('🔐 Generating production tokens for:', { userId, role });
-  console.log('🔐 Token generation debug:', {
-    currentTime: new Date().toISOString(),
-    currentTimestamp: Math.floor(Date.now() / 1000)
-  });
   
-  try {
-    // Define expiration in seconds (NOT milliseconds)
-    const accessTokenExpiresIn = role === 'admin' ? 3600 : 10800; // 1h or 3h
-    const refreshTokenExpiresIn = role === 'admin' ? 
-      7 * 24 * 60 * 60 :  // 7 days
-      30 * 24 * 60 * 60;  // 30 days
-    
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    
-    // Access token payload
-    const accessTokenPayload = {
+  // Use server time consistently
+  const currentTime = Date.now();
+  const currentTimestamp = Math.floor(currentTime / 1000);
+  
+  // Access token: 3 hours for users, 1 hour for admins
+  const accessTokenExpiresIn = role === 'admin' ? 3600 : 10800;
+  const accessTokenExpiresAt = currentTimestamp + accessTokenExpiresIn;
+  
+  // Refresh token: 30 days for users, 7 days for admins
+  const refreshTokenExpiresIn = role === 'admin' ? 
+    7 * 24 * 60 * 60 :  // 7 days
+    30 * 24 * 60 * 60;  // 30 days
+  const refreshTokenExpiresAt = currentTimestamp + refreshTokenExpiresIn;
+  
+  console.log('🕒 Token timing (server time):', {
+    currentTime: new Date(currentTime).toISOString(),
+    accessToken: {
+      expiresIn: accessTokenExpiresIn,
+      expiresAt: new Date(accessTokenExpiresAt * 1000).toISOString()
+    },
+    refreshToken: {
+      expiresIn: refreshTokenExpiresIn,
+      expiresAt: new Date(refreshTokenExpiresAt * 1000).toISOString()
+    }
+  });
+
+  // Generate access token
+  const token = jwt.sign(
+    {
       id: userId,
       type: 'access',
       role: role,
       iat: currentTimestamp,
-      exp: currentTimestamp + accessTokenExpiresIn
-    };
-    
-    // Refresh token payload
-    const refreshTokenPayload = {
+      exp: accessTokenExpiresAt
+    },
+    process.env.JWT_SECRET,
+    { 
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
+    }
+  );
+
+  // Generate refresh token
+  const refreshToken = jwt.sign(
+    {
       id: userId,
       type: 'refresh',
       role: role,
       iat: currentTimestamp,
-      exp: currentTimestamp + refreshTokenExpiresIn
-    };
-    
-    console.log('📊 Token payloads:', {
-      accessToken: {
-        expiresInSeconds: accessTokenExpiresIn,
-        expiresAtTimestamp: accessTokenPayload.exp,
-        expiresAtISO: new Date(accessTokenPayload.exp * 1000).toISOString()
-      },
-      refreshToken: {
-        expiresInSeconds: refreshTokenExpiresIn,
-        expiresAtTimestamp: refreshTokenPayload.exp,
-        expiresAtISO: new Date(refreshTokenPayload.exp * 1000).toISOString()
-      }
-    });
-console.log('📊 Token timing:', {
-    accessTokenExpiresAt: new Date((currentTimestamp + accessTokenExpiresIn) * 1000).toISOString(),
-    refreshTokenExpiresAt: new Date((currentTimestamp + refreshTokenExpiresIn) * 1000).toISOString(),
-    currentTime: new Date().toISOString()
-  });
+      exp: refreshTokenExpiresAt
+    },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    {
+      issuer: 'Vorkanna',
+      audience: 'Vorkanna-web'
+    }
+  );
 
-    // Generate tokens
-    const token = jwt.sign(
-      accessTokenPayload,
-      process.env.JWT_SECRET,
-      { 
-        issuer: 'Vorkanna',
-        audience: 'Vorkanna-web'
-      }
-    );
-
-    const refreshToken = jwt.sign(
-      refreshTokenPayload,
-      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
-      {
-        issuer: 'Vorkanna',
-        audience: 'Vorkanna-web'
-      }
-    );
-
-    return { token, refreshToken };
-  } catch (error) {
-    console.error('❌ Token generation failed:', error);
-    throw new Error(`Failed to generate tokens: ${error.message}`);
-  }
+  return { token, refreshToken };
 }
   async createSession(userId, req, metadata = {}) {
   try {
@@ -106,6 +92,10 @@ console.log('📊 Token timing:', {
       throw new Error('User not found');
     }
     
+    // IMPORTANT: Use current time for everything
+    const currentTime = new Date();
+    
+    // Generate tokens with proper expiration
     const { token, refreshToken } = this.generateTokens(userId, user.role);
     
     // Get device info
@@ -114,28 +104,17 @@ console.log('📊 Token timing:', {
     const ip = this.getClientIp(req);
     const geo = geoip.lookup(ip) || {};
     
-    // Get CURRENT TIME for everything
-    const currentTime = new Date();
-    
-    // CRITICAL: Logout old sessions with same device/ip to prevent conflicts
-    await Session.updateMany(
-      {
-        userId,
-        isActive: true,
-        'deviceInfo.ip': ip,
-        'deviceInfo.userAgent': req.headers['user-agent']
-      },
-      {
-        isActive: false,
-        logoutReason: 'new_login_same_device',
-        logoutAt: currentTime
-      }
-    );
-    
-    // Calculate session expiration (30 days from NOW)
+    // Calculate expiration (30 days from now)
     const expiresAt = new Date(currentTime.getTime() + this.sessionDuration);
     
-    // Create session object
+    console.log('📅 Session timing:', {
+      currentTime: currentTime.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      sessionDuration: this.sessionDuration,
+      sessionDurationDays: this.sessionDuration / (24 * 60 * 60 * 1000)
+    });
+    
+    // Create session document
     const sessionData = {
       userId,
       token,
@@ -155,15 +134,20 @@ console.log('📊 Token timing:', {
       expiresAt: expiresAt,
       lastActivity: currentTime,
       loginAt: currentTime,
-      metadata
+      isActive: true,
+      metadata: {
+        ...metadata,
+        loginMethod: 'google_oauth'
+      }
     };
 
     const session = new Session(sessionData);
     await session.save();
 
-    console.log('✅ New session created, old sessions logged out:', {
+    console.log('✅ Session created:', {
       sessionId: session._id,
-      loginAt: session.loginAt.toISOString(),
+      userId: userId,
+      expiresAt: session.expiresAt.toISOString(),
       tokenPreview: token.substring(0, 20) + '...'
     });
 
@@ -315,74 +299,182 @@ validateSession = async (token, refreshToken) => {
     }
   }
 
-  async logoutSession(sessionId, userId, reason = 'manual') {
+ async logoutSession(sessionId, userId, reason = 'manual') {
   try {
-    // Check if sessionId is valid ObjectId
-    const isValidObjectId = mongoose.Types.ObjectId.isValid(sessionId);
+    console.log(`🔐 Attempting to logout session: ${sessionId} for user: ${userId}, reason: ${reason}`);
     
-    let session;
+    let session = null;
     
-    if (isValidObjectId) {
-      // Find session by ID
+    // TRY MULTIPLE WAYS TO FIND THE SESSION
+    
+    // 1. Try by session ID (MongoDB ObjectId)
+    if (mongoose.Types.ObjectId.isValid(sessionId)) {
       session = await Session.findOne({
         _id: sessionId,
-        userId,
         isActive: true
       });
-    } else if (sessionId && sessionId !== 'unknown') {
-      // Try to find by token or refreshToken
+    }
+    
+    // 2. Try by token
+    if (!session && sessionId && sessionId.length > 100) {
       session = await Session.findOne({
+        token: sessionId,
+        isActive: true
+      });
+    }
+    
+    // 3. Try by refresh token
+    if (!session && sessionId && sessionId.length > 100) {
+      session = await Session.findOne({
+        refreshToken: sessionId,
+        isActive: true
+      });
+    }
+    
+    // 4. Try by user ID and any matching identifier
+    if (!session && userId) {
+      session = await Session.findOne({
+        userId,
+        isActive: true,
         $or: [
           { token: sessionId },
-          { refreshToken: sessionId }
-        ],
-        userId,
-        isActive: true
+          { refreshToken: sessionId },
+          { _id: mongoose.Types.ObjectId.isValid(sessionId) ? sessionId : null }
+        ].filter(Boolean)
       });
     }
     
     if (session) {
+      console.log(`✅ Found session to logout: ${session._id}`);
+      
+      // COMPLETELY INVALIDATE THE SESSION
       session.isActive = false;
       session.logoutReason = reason;
       session.logoutAt = new Date();
+      session.token = `invalidated_${Date.now()}`;
+      session.refreshToken = `invalidated_${Date.now()}`;
+      session.lastActivity = new Date(); // Set to now to prevent reuse
+      
       await session.save({ validateBeforeSave: false });
+      
       console.log(`✅ Session logged out: ${session._id} - ${reason}`);
       return true;
+    } else {
+      console.log(`ℹ️ No active session found for: ${sessionId}`);
+      
+      // Even if not found, try to mark any session with this user as inactive
+      if (userId) {
+        const result = await Session.updateMany(
+          {
+            userId: userId,
+            isActive: true,
+            $or: [
+              { token: sessionId },
+              { refreshToken: sessionId }
+            ]
+          },
+          {
+            $set: {
+              isActive: false,
+              logoutReason: `${reason}_not_found`,
+              logoutAt: new Date()
+            }
+          }
+        );
+        
+        if (result.modifiedCount > 0) {
+          console.log(`✅ Marked ${result.modifiedCount} sessions as inactive`);
+        }
+      }
+      
+      return false;
     }
-
-    console.log(`ℹ️ Session not found or already inactive: ${sessionId}`);
-    return false;
   } catch (error) {
-    console.error('Logout session error:', error.message);
+    console.error('❌ Logout session error:', error.message);
+    
+    // Try a direct database update as fallback
+    try {
+      if (userId) {
+        await Session.updateMany(
+          { userId: userId, isActive: true },
+          {
+            $set: {
+              isActive: false,
+              logoutReason: 'error_fallback',
+              logoutAt: new Date()
+            }
+          }
+        );
+      }
+    } catch (fallbackError) {
+      console.error('Fallback logout also failed:', fallbackError.message);
+    }
+    
     return false;
   }
 }
 
-  // Logout all user sessions
   async logoutAllUserSessions(userId, excludeSessionId = null) {
-    try {
-      const query = {
-        userId,
-        isActive: true
-      };
-      
-      if (excludeSessionId) {
-        query._id = { $ne: excludeSessionId };
-      }
+  try {
+    console.log(`🧹 LOGOUT ALL: Terminating ALL sessions for user: ${userId}`);
+    
+    const query = {
+      userId: userId,
+      isActive: true
+    };
+    
+    // Don't exclude any sessions when logging out ALL
+    // if (excludeSessionId) {
+    //   query._id = { $ne: excludeSessionId };
+    // }
 
-      await Session.updateMany(query, {
+    // COMPREHENSIVE SESSION TERMINATION
+    const updateData = {
+      $set: {
         isActive: false,
-        logoutReason: 'multiple_login',
-        logoutAt: new Date()
-      });
+        logoutReason: 'logout_all',
+        logoutAt: new Date(),
+        token: `terminated_all_${Date.now()}`,
+        refreshToken: `terminated_all_${Date.now()}`,
+        lastActivity: new Date(),
+        expiresAt: new Date(), // Immediate expiration
+        metadata: {
+          ...(await Session.findOne({ userId, isActive: true }).select('metadata') || {}),
+          terminatedBy: 'logoutAllUserSessions',
+          terminatedAt: new Date().toISOString()
+        }
+      }
+    };
 
-      console.log(`✅ All other sessions logged out for user: ${userId}`);
-      return true;
-    } catch (error) {
-      console.error('Logout all sessions error:', error);
-      return false;
+    const result = await Session.updateMany(query, updateData);
+
+    console.log(`✅ LOGOUT ALL: Terminated ${result.modifiedCount} sessions for user: ${userId}`);
+    
+    // Also delete old inactive sessions for cleanup
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    await Session.deleteMany({
+      userId: userId,
+      isActive: false,
+      logoutAt: { $lt: thirtyDaysAgo }
+    });
+    
+    return result.modifiedCount;
+  } catch (error) {
+    console.error('❌ Logout all sessions error:', error);
+    
+    // Emergency fallback - delete sessions
+    try {
+      await Session.deleteMany({ userId: userId });
+      console.log(`⚠️ Emergency: Deleted all sessions for user: ${userId}`);
+      return 1;
+    } catch (deleteError) {
+      console.error('Emergency delete also failed:', deleteError.message);
+      return 0;
     }
   }
+}
 
   // Get user's active sessions
   async getUserSessions(userId) {

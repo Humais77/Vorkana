@@ -250,15 +250,96 @@ export const authAPI = {
     }
   },
   logout: async () => {
-    try {
-      // Simple POST request - no need for CSRF token
-      const response = await axiosInstance.post('/api/auth/logout');
-      return response.data;
-    } catch (error) {
-      // Don't throw error - just return success
-      return { success: true, message: 'Logged out' };
+  try {
+    console.log('🧹 Frontend: Starting comprehensive logout...');
+    
+    // 1. FIRST: Clear all local storage
+    console.log('🧹 Clearing localStorage...');
+    const localStorageKeys = Object.keys(localStorage);
+    let clearedLocal = 0;
+    
+    localStorageKeys.forEach(key => {
+      if (key.includes('auth') || 
+          key.includes('user') || 
+          key.includes('csrf') || 
+          key.includes('token') || 
+          key.includes('session') ||
+          key.includes('vorkanna')) {
+        localStorage.removeItem(key);
+        clearedLocal++;
+      }
+    });
+    
+    // 2. Clear sessionStorage
+    console.log('🧹 Clearing sessionStorage...');
+    sessionStorage.clear();
+    
+    // 3. Clear cookies aggressively
+    console.log('🧹 Clearing cookies...');
+    const cookies = document.cookie.split(';');
+    let clearedCookies = 0;
+    
+    cookies.forEach(cookie => {
+      const eqPos = cookie.indexOf('=');
+      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+      
+      if (name) {
+        // Clear with multiple paths and domains
+        const domains = ['', 'localhost', window.location.hostname];
+        const paths = ['/', '/admin', '/api', '/auth'];
+        
+        domains.forEach(domain => {
+          paths.forEach(path => {
+            let cookieString = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path};`;
+            if (domain) {
+              cookieString += ` domain=${domain};`;
+            }
+            document.cookie = cookieString;
+            clearedCookies++;
+          });
+        });
+      }
+    });
+    
+    // 4. Call backend logout API (but don't wait for it)
+    console.log('🔄 Calling backend logout API...');
+    const backendLogout = axiosInstance.post('/api/auth/logout', {}, {
+      timeout: 3000 // 3 second timeout
+    }).catch(err => {
+      console.warn('Backend logout API call failed (continuing anyway):', err.message);
+      return { data: { success: true, message: 'Local logout completed' } };
+    });
+    
+    // 5. Dispatch logout event for UI components
+    window.dispatchEvent(new CustomEvent('userLoggedOut', {
+      detail: { timestamp: new Date().toISOString() }
+    }));
+    
+    // 6. Force all queries to refetch
+    if (window.queryClient) {
+      window.queryClient.invalidateQueries();
+      window.queryClient.clear();
     }
-  },
+    
+    console.log(`✅ Frontend logout completed: ${clearedLocal} local items, ${clearedCookies} cookies`);
+    
+    const result = await backendLogout;
+    return {
+      ...result.data,
+      localCleanup: { clearedLocal, clearedCookies }
+    };
+    
+  } catch (error) {
+    console.error('Logout error:', error);
+    
+    // Still return success for local cleanup
+    return {
+      success: true,
+      message: 'Local cleanup completed (backend logout may have failed)',
+      requiresReload: true
+    };
+  }
+},
   
   
   getProfile: async () => {
@@ -450,20 +531,21 @@ export const authAPI = {
       };
     }
     
-    // Not authenticated - clear storage
-    localStorage.removeItem('vorkanna_user_v1');
-    
+    // Don't clear storage if not authenticated - might be temporary
     return { 
       success: true, 
       isAuthenticated: false,
       message: 'Not authenticated'
     };
+    
   } catch (error) {
     console.error('Check auth error:', error);
+    
+    // Don't logout on network errors - might be temporary
     return { 
       success: false, 
       isAuthenticated: false,
-      message: 'Not authenticated'
+      message: 'Network error checking auth'
     };
   }
 },

@@ -25,7 +25,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-
+const { syncFromStorage, setAuth } = useAuthStore();
   const { isAuthenticated, user, loading } = useAuthStore();
   const logoutMutation = useLogout();
 
@@ -89,7 +89,41 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isHomePage]);
-
+useEffect(() => {
+  // Check for logout markers on mount
+  const urlParams = new URLSearchParams(window.location.search);
+  const logoutId = urlParams.get('logout');
+  const emergencyLogout = urlParams.get('emergency_logout');
+  
+  if (logoutId || emergencyLogout) {
+    console.log('🔄 Detected logout from URL, forcing re-sync');
+    
+    // Clear local storage
+    localStorage.removeItem('vorkanna_user_v1');
+    localStorage.removeItem('userInfo');
+    
+    // Force sync from storage
+    syncFromStorage();
+    
+    // Remove the query params
+    const newUrl = window.location.pathname;
+    window.history.replaceState({}, document.title, newUrl);
+  }
+  
+  // Listen for storage events from other tabs
+  const handleStorageChange = (e) => {
+    if (e.key === 'vorkanna_user_v1' || e.key === null) {
+      console.log('🔄 Storage changed, syncing auth state');
+      syncFromStorage();
+    }
+  };
+  
+  window.addEventListener('storage', handleStorageChange);
+  
+  return () => {
+    window.removeEventListener('storage', handleStorageChange);
+  };
+}, [syncFromStorage]);
   // Handle mobile menu overflow
   useEffect(() => {
     if (mobileMenuOpen || mobileProfileOpen) {
@@ -228,7 +262,7 @@ const Navbar = ({ onSigninClick, onSignupClick }) => {
                 <img
                   src={Logo_URL}
                   alt="Vorkanna"
-                  className="h-9 lg:h-10 w-auto object-contain"
+                  className="h-9 lg:h-10 mb-2 w-auto object-contain"
                 />
               </Link>
             </div>

@@ -279,15 +279,65 @@ export const useRegister = () => {
   });
 };
 export const useLogout = () => {
+  const logoutStore = useAuthStore((state) => state.logout);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  
   return useMutation({
-    mutationFn: authAPI.logout,
-    onSuccess: async () => {
+    mutationFn: async () => {
+      console.log('🔄 useLogout: Starting logout process');
+      
+      // 1. First, clear React Query cache
+      queryClient.clear();
+      queryClient.removeQueries();
+      
+      // 2. Clear auth store
+      logoutStore();
+      
+      // 3. Call comprehensive logout
+      const result = await authAPI.logout();
+      
+      // 4. Force additional cleanup
+      localStorage.removeItem('vorkanna_user_v1');
+      localStorage.removeItem('csrfToken');
+      localStorage.removeItem('csrfTokenExpiry');
+      
+      // 5. Clear any remaining auth-related items
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('auth') || key.includes('user')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      return result;
+    },
+    onSuccess: (data) => {
+      console.log('✅ useLogout: Logout successful', data);
+      
       // Show success message
-      toast.success('Logged out successfully');
+      toast.success(data.message || 'Logged out successfully');
+      
+      // Navigate to home
+      navigate('/', { replace: true });
+      
+      // Force a reload if needed
+      if (data.requiresReload) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }
     },
     onError: (error) => {
-      console.error('Logout error:', error);
-      toast.error('Logout failed');
+      console.error('❌ useLogout: Logout error', error);
+      
+      // Still try to cleanup locally
+      localStorage.clear();
+      sessionStorage.clear();
+      logoutStore();
+      
+      toast.error('Logged out (local cleanup completed)');
+      navigate('/', { replace: true });
+      window.location.reload();
     }
   });
 };

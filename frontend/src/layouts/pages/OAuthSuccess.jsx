@@ -1,122 +1,271 @@
 // layouts/pages/OAuthSuccess.jsx
-import { useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { authAPI } from '../../api/auth';
-import { toast } from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
 const OAuthSuccess = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const setAuth = useAuthStore((state) => state.setAuth);
-  const syncFromStorage = useAuthStore((state) => state.syncFromStorage);
+  const { setAuth, syncFromStorage } = useAuthStore();
+  const [status, setStatus] = useState('processing');
+  const [error, setError] = useState('');
+  const hasProcessed = useRef(false);
 
   useEffect(() => {
-    const handleOAuthSuccess = async () => {
-      console.log('🔄 Processing OAuth callback...');
-      
+    // Prevent multiple executions
+    if (hasProcessed.current) return;
+    hasProcessed.current = true;
+
+    const processOAuth = async () => {
       try {
-        // Option 1: Check if user is already authenticated via cookies
-        console.log('🔍 Checking auth status...');
-        const authResponse = await authAPI.checkAuth();
-        
-        if (authResponse.success && authResponse.isAuthenticated && authResponse.user) {
-          console.log('✅ OAuth successful, user authenticated:', authResponse.user.email);
-          
-          // Update auth store with user data
-          setAuth(authResponse.user);
-          
-          toast.success('Successfully logged in with Google!');
-          
-          // Redirect after short delay
-          setTimeout(() => {
-            navigate('/dashboard', { replace: true });
-          }, 1000);
-          return;
-        }
-        
-        // Option 2: Try to get user profile directly
-        console.log('🔄 Trying to get user profile...');
-        try {
-          const profileResponse = await authAPI.getProfile();
-          if (profileResponse.success && profileResponse.user) {
-            console.log('✅ Got user profile:', profileResponse.user.email);
-            setAuth(profileResponse.user);
-            toast.success('Successfully logged in with Google!');
-            setTimeout(() => navigate('/dashboard', { replace: true }), 1000);
-            return;
-          }
-        } catch (profileError) {
-          console.warn('Could not get profile:', profileError.message);
-        }
-        
-        // Option 3: Force sync from storage
-        console.log('🔄 Syncing from storage...');
-        syncFromStorage();
-        
-        // Check local storage
-        const userFromStorage = localStorage.getItem('vorkanna_user_v1');
-        if (userFromStorage) {
+        console.log('🔄 Processing OAuth callback...');
+
+        // Step 1: Try to extract data from URL fragment (fastest)
+        const hash = window.location.hash.substring(1);
+        if (hash && hash.includes('data=')) {
           try {
-            const user = JSON.parse(userFromStorage);
-            console.log('✅ Found user in storage:', user.email);
-            setAuth(user);
-            toast.success('Successfully logged in with Google!');
-            setTimeout(() => navigate('/dashboard', { replace: true }), 1000);
-            return;
+            const dataStr = hash.split('data=')[1];
+            const data = JSON.parse(decodeURIComponent(dataStr));
+            
+            if (data.success && data.user) {
+              console.log('🚀 Fast OAuth: Data from URL fragment', data.user.email);
+              
+              // Clear the hash from URL
+              window.history.replaceState(null, '', window.location.pathname);
+              
+              // Update auth store
+              setAuth(data.user);
+              
+              // Force sync after state update
+              setTimeout(() => {
+                syncFromStorage();
+                
+                // Dispatch event for navbar update
+                window.dispatchEvent(new CustomEvent('authStateChanged', {
+                  detail: { user: data.user }
+                }));
+                
+                setStatus('success');
+                
+                // Navigate after short delay
+                setTimeout(() => {
+                  navigate('/dashboard', { replace: true });
+                }, 500);
+              }, 100);
+              
+              return;
+            }
           } catch (e) {
-            console.error('Error parsing user from storage:', e);
+            console.warn('Failed to parse URL fragment:', e);
+            // Continue with other methods
           }
         }
+
+        setStatus('checking');
+
+        // Step 2: Check auth with backend API
+        try {
+          console.log('🔄 Checking authentication status...');
+          const authCheck = await authAPI.checkAuth();
+          
+          if (authCheck.success && authCheck.isAuthenticated && authCheck.user) {
+            console.log('✅ User authenticated via API:', authCheck.user.email);
+            
+            setAuth(authCheck.user);
+            syncFromStorage();
+            
+            window.dispatchEvent(new CustomEvent('authStateChanged', {
+              detail: { user: authCheck.user }
+            }));
+            
+            setStatus('success');
+            
+            setTimeout(() => {
+              navigate('/dashboard', { replace: true });
+            }, 500);
+            
+            return;
+          }
+        } catch (apiError) {
+          console.warn('API check failed:', apiError.message);
+        }
+
+        setStatus('fallback');
+
+        // Step 3: Fallback to localStorage check
+        console.log('🔄 Checking localStorage as fallback...');
+        const localStorageKeys = Object.keys(localStorage);
+        const userKeys = localStorageKeys.filter(key => 
+          key.includes('user') || key.includes('vorkanna') || key.includes('auth')
+        );
+
+        for (const key of userKeys) {
+          try {
+            const rawData = localStorage.getItem(key);
+            if (!rawData) continue;
+
+            const parsed = JSON.parse(rawData);
+            let userData = null;
+
+            // Extract user from various storage formats
+            if (parsed.user) userData = parsed.user;
+            else if (parsed.state?.user) userData = parsed.state.user;
+            else if (parsed._id && parsed.email) userData = parsed;
+
+            if (userData && userData.email) {
+              console.log(`✅ Found user in ${key}:`, userData.email);
+              
+              setAuth(userData);
+              syncFromStorage();
+              
+              window.dispatchEvent(new CustomEvent('authStateChanged'));
+              
+              setStatus('success');
+              
+              setTimeout(() => {
+                navigate('/dashboard', { replace: true });
+              }, 500);
+              
+              return;
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+
+        // Step 4: Last resort - redirect to dashboard
+        console.log('⚠️ No user data found, redirecting to dashboard...');
+        setStatus('redirecting');
+        setError('Redirecting to dashboard...');
         
-        // If all fails, redirect to signin
-        console.error('❌ OAuth failed - no authenticated user found');
-        toast.error('Login failed. Please try again.');
-        setTimeout(() => navigate('/signin', { replace: true }), 1500);
-        
+        // Force hard redirect after delay
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 1000);
+
       } catch (error) {
-        console.error('❌ Error processing OAuth:', error);
-        toast.error('Login failed. Please try again.');
-        setTimeout(() => navigate('/signin', { replace: true }), 1500);
+        console.error('OAuth processing error:', error);
+        setStatus('error');
+        setError('Failed to process OAuth login. Please try again.');
+        
+        setTimeout(() => {
+          navigate('/signin', { replace: true });
+        }, 2000);
       }
     };
 
-    // Add a small delay to ensure cookies are set
-    const timer = setTimeout(() => {
-      handleOAuthSuccess();
-    }, 500);
+    processOAuth();
 
-    return () => clearTimeout(timer);
+    // Cleanup
+    return () => {
+      // Mark as processed on unmount
+      hasProcessed.current = true;
+    };
   }, [navigate, setAuth, syncFromStorage]);
+
+  const renderStatus = () => {
+    switch (status) {
+      case 'processing':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Processing OAuth login...
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Please wait while we set up your session
+            </p>
+          </div>
+        );
+      
+      case 'checking':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Verifying authentication...
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Checking your login credentials
+            </p>
+          </div>
+        );
+      
+      case 'fallback':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-12 h-12 text-yellow-600 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Finalizing login...
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Almost there!
+            </p>
+          </div>
+        );
+      
+      case 'success':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <CheckCircle className="w-12 h-12 text-green-600 animate-pulse" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Login successful!
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Redirecting to dashboard...
+            </p>
+          </div>
+        );
+      
+      case 'redirecting':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Redirecting...
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {error || 'Please wait'}
+            </p>
+          </div>
+        );
+      
+      case 'error':
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <AlertCircle className="w-12 h-12 text-red-600" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Login failed
+            </h2>
+            <p className="text-gray-600 text-sm text-center">
+              {error || 'An error occurred during login'}
+            </p>
+            <button
+              onClick={() => navigate('/signin')}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Go to Sign In
+            </button>
+          </div>
+        );
+      
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-800">
+              Please wait...
+            </h2>
+          </div>
+        );
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="text-center max-w-md mx-auto p-8 bg-white rounded-2xl shadow-xl">
-        <div className="flex flex-col items-center justify-center space-y-6">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-              <Loader2 className="w-10 h-10 text-white animate-spin" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-gray-800">Completing Google Login</h2>
-            <p className="text-gray-600">
-              Setting up your account and preparing your dashboard...
-            </p>
-            <div className="pt-4">
-              <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse" style={{ width: '70%' }}></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {renderStatus()}
       </div>
     </div>
   );
