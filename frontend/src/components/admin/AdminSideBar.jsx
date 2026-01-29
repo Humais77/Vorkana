@@ -13,61 +13,16 @@ import {
   FiFolderMinus
 } from 'react-icons/fi';
 import { useAuthStore } from '../../store/useAuthStore';
-
+import { useLogout } from "../../hooks/useAuth";
+import { useCallback } from 'react';
 const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
-  const navigate = useNavigate();
-  const adminLogout = useAuthStore((state) => state.adminLogout); // Use adminLogout
-  const clearAuthData = useAuthStore((state) => state.clearAuthState); // Optional: for cleanup
+  const logoutMutation = useLogout();
 
-  const handleLogout = async () => {
-    try {
-      // Clear cookies manually first
-      const clearAllCookies = () => {
-        document.cookie.split(';').forEach(cookie => {
-          const [name] = cookie.trim().split('=');
-          if (name) {
-            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/admin;`;
-          }
-        });
-      };
-      
-      // Clear cookies before API call
-      clearAllCookies();
-      
-      // Clear local storage
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // Call admin logout
-      await adminLogout();
-      
-      // Show success message
-      toast.success('Admin logged out successfully');
-      
-      // Force redirect and reload to clear all state
-      setTimeout(() => {
-        window.location.href = '/';
-        window.location.reload(); // Force reload to clear React state
-      }, 500);
-      
-    } catch (error) {
-      console.error('Admin logout error:', error);
-      toast.error('Admin logout failed');
-      
-      // Force cleanup anyway
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 300);
-    } finally {
-      // Close mobile sidebar
-      setIsMobileOpen(false);
-    }
-  };
-
+  const handleLogout = useCallback(async () => {
+    
+    // Call logout mutation
+    await logoutMutation.mutateAsync();
+  }, [logoutMutation]);
   const navItems = [
     { name: 'Dashboard', path: '/admin', icon: <FiHome className="h-5 w-5" /> },
     { name: 'Users', path: '/admin/users', icon: <FiUsers className="h-5 w-5" /> },

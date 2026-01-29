@@ -2216,104 +2216,153 @@ const bulkUpdateCategories = async (req, res, next) => {
     next(error);
   }
 };
-
-// Export Categories with Security
-const exportCategories = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const exportCategories = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    // Security: Only admin can export
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required for export',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
+    const { format = 'csv', cache: useCacheParam = 'false' } = req.query;
 
-    const { format = 'json', ...queryParams } = req.query;
+    console.log('[EXPORT CATEGORIES] Starting export, format:', format);
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:categories', { format });
     
-    // Security: Build secure query
-    const filter = buildSecureCategoryQuery(queryParams, 'admin', req.user._id);
-
-    // Security: Limit export size
-    const count = await Category.countDocuments(filter);
-    if (count > 10000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Export limit exceeded (max 10,000 records)',
-        code: 'EXPORT_LIMIT_EXCEEDED',
-        requestId
-      });
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:categories:', cacheKey);
+        
+        if (format.toLowerCase() === 'csv') {
+          res.set({
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="categories_export_${Date.now()}.csv"`,
+            'X-Request-ID': requestId,
+            'X-Export-Records': cachedExport.count,
+            'X-Export-Timestamp': new Date().toISOString(),
+            'X-Cache': 'HIT',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          });
+          
+          return res.send(cachedExport.csvContent);
+        }
+        
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
     }
 
-    const categories = await Category.find(filter)
-      .select('-__v -createdBy -lastUpdatedBy -deletedAt -deletedBy -version')
+    // Get categories with minimal data
+    const categories = await Category.find({ deletedAt: null })
       .populate('parentCategory', 'name slug')
+      .populate('createdBy', 'name email')
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version -metaDescription -metaTitle')
       .lean();
 
-    // Security: Format response based on requested format
-    if (format === 'csv') {
+    console.log(`[EXPORT CATEGORIES] Found ${categories.length} categories`);
+
+    if (format.toLowerCase() === 'csv') {
+      // Prepare CSV headers
       const headers = [
-        'ID', 'Name', 'Slug', 'Description', 
-        'Parent Category', 'Featured', 'Popular', 'Order', 'Level',
-        'Services Count', 'Gigs Count', 'Active', 'Created At', 'Updated At'
+        'ID', 'Name', 'Slug', 'Description', 'Parent Category', 
+        'Level', 'Order', 'Active', 'Featured', 'Popular',
+        'Icon', 'Color', 'Services Count', 'Gigs Count',
+        'Subcategories Count', 'Created By', 'Created At', 'Updated At'
       ];
 
+      // Prepare CSV rows
       const csvRows = categories.map(cat => [
         cat._id,
         `"${(cat.name || '').replace(/"/g, '""')}"`,
         cat.slug || '',
         `"${(cat.description || '').replace(/"/g, '""')}"`,
         cat.parentCategory?.name || '',
+        cat.level || 0,
+        cat.order || 0,
+        cat.isActive ? 'Yes' : 'No',
         cat.featured ? 'Yes' : 'No',
         cat.popular ? 'Yes' : 'No',
-        cat.order || 0,
-        cat.level || 0,
+        cat.icon || '',
+        cat.color || '',
         cat.servicesCount || 0,
         cat.gigsCount || 0,
-        cat.isActive ? 'Yes' : 'No',
+        cat.subcategories?.length || 0,
+        cat.createdBy?.name || '',
         new Date(cat.createdAt).toISOString(),
         new Date(cat.updatedAt).toISOString()
-    ]);
+      ]);
 
+      // Combine headers and rows
       const csvContent = [
         headers.join(','),
         ...csvRows.map(row => row.join(','))
-    ].join('\n');
+      ].join('\n');
 
+      console.log(`[EXPORT CATEGORIES] CSV content generated, ${categories.length} rows`);
 
-      res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="categories_${Date.now()}.csv"`);
-    res.setHeader('X-Request-ID', requestId);
-    res.setHeader('X-Export-Records', count);
-    res.setHeader('X-Export-Timestamp', new Date().toISOString());
-    res.setHeader('X-Response-Time', `${Date.now() - startTime}ms`);
-    
-    return res.send(csvContent);
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: categories.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
+      // Set proper CSV headers
+      res.set({
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="categories_export_${Date.now()}.csv"`,
+        'X-Request-ID': requestId,
+        'X-Export-Records': categories.length.toString(),
+        'X-Export-Timestamp': new Date().toISOString(),
+        'X-Cache': useCache ? 'MISS' : 'BYPASSED',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      
+      return res.send(csvContent);
     }
 
-    // Default JSON export
-    const responseTime = Date.now() - startTime;
+    // Default to JSON format
+    console.log(`[EXPORT CATEGORIES] Returning JSON format, ${categories.length} categories`);
     
-    res.json({
+    const exportData = {
       success: true,
       format: 'json',
-      count,
+      count: categories.length,
       data: categories,
       exportedAt: new Date().toISOString(),
-      requestId,
-      responseTime: `${responseTime}ms`
-    });
+      requestId
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.json(exportData);
 
   } catch (error) {
-    logAudit('ERROR', 'CATEGORY', 'EXPORT', req.user?._id, { 
-      format: req.query.format,
-      error: error.message 
+    console.error('[EXPORT CATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export categories',
+      code: 'EXPORT_ERROR',
+      requestId,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
-    next(error);
   }
 };
 

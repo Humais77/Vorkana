@@ -1,4 +1,3 @@
-// routes/admin.route.js - Production Ready with Redis Cache
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller.js');
@@ -7,8 +6,6 @@ const {
   requirePermission,
   adminDashboardLimiter,
   auditLog,
-  setAdminCookie,
-  clearAdminCookies
 } = require('../middleware/admin.middleware.js');
 const serviceController = require('../controllers/services.controller.js');
 const categoryController = require('../controllers/category.controller.js');
@@ -17,7 +14,6 @@ const gigController = require('../controllers/gig.controller.js');
 const {logout} = require('../controllers/auth.controller.js');
 const mongoose = require('mongoose');
 
-// Import cache middleware
 const { 
   createCacheMiddleware, 
   createClearCacheMiddleware,
@@ -27,16 +23,14 @@ const {
   NAMESPACES 
 } = require('../middleware/cacheMiddleware');
 
-// Import models
 const Category = require('../models/category.model.js');
 const Subcategory = require('../models/subcategory.model.js');
 const User = require('../models/user.model.js');
 
-// CSRF middleware
 const CSRFMiddleware = require('../middleware/csrf.middleware');
 const SessionMiddleware = require('../middleware/session.middleware');
+const { validateCreate, validateUpdate } = require('../middleware/validators/category.validator.js');
 
-// Cache configurations for admin
 const ADMIN_CACHE_CONFIG = {
   DASHBOARD: {
     ttl: CACHE_TTL.PRIVATE.SHORT,
@@ -72,7 +66,6 @@ const ADMIN_CACHE_CONFIG = {
   }
 };
 
-// Create cache middlewares
 const cacheDashboard = createCacheMiddleware(ADMIN_CACHE_CONFIG.DASHBOARD);
 const cacheStats = createCacheMiddleware(ADMIN_CACHE_CONFIG.STATS);
 const cacheList = createCacheMiddleware(ADMIN_CACHE_CONFIG.LIST);
@@ -80,7 +73,6 @@ const cacheDetail = createCacheMiddleware(ADMIN_CACHE_CONFIG.DETAIL);
 const cacheDropdown = createCacheMiddleware(ADMIN_CACHE_CONFIG.DROPDOWN);
 const cacheSession = createCacheMiddleware(ADMIN_CACHE_CONFIG.SESSION);
 
-// Clear cache middleware for write operations
 const clearAdminCache = createClearCacheMiddleware({
   patterns: [
     'admin:*',
@@ -91,10 +83,14 @@ const clearAdminCache = createClearCacheMiddleware({
   clearAllOnWrite: false
 });
 
-// Admin-only rate limiting
 const adminApiLimiter = adminDashboardLimiter;
 
-// ==================== DASHBOARD ROUTES (Cached) ====================
+router.get('/session',
+  verifyAdmin,
+  cacheControlMiddleware({ public: false, maxAge: 60 }),
+  cacheSession,
+  adminController.checkAdminSession
+);
 
 router.get('/dashboard', 
   verifyAdmin, 
@@ -105,28 +101,6 @@ router.get('/dashboard',
   cacheDashboard,
   adminController.getDashboardStats
 );
-
-router.post('/logout', 
-  verifyAdmin,
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  // Remove the complex logout middleware - use simple approach
-  (req, res, next) => {
-    // Mark as admin logout for the controller
-    req.isAdminLogout = true;
-    next();
-  },
-  // Use the main logout controller
-  logout
-);
-router.get('/session',
-  verifyAdmin,
-  cacheControlMiddleware({ public: false, maxAge: 60 }),
-  cacheSession,
-  adminController.checkAdminSession
-);
-
-// ==================== ANALYTICS ROUTES (Cached) ====================
 
 router.get('/categories/analytics', 
   verifyAdmin, 
@@ -169,28 +143,6 @@ router.get('/gigs/stats',
   gigController.getGigStats
 );
 
-// ==================== REPAIR ROUTES (Clear Cache) ====================
-
-router.post('/categories/repair-counts', 
-  verifyAdmin,
-  CSRFMiddleware.requireCSRF,
-  requirePermission('system_settings'),
-  auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  categoryController.repairCategoryCounts
-);
-
-router.post('/subcategories/repair-counts', 
-  verifyAdmin,
-  CSRFMiddleware.requireCSRF,
-  requirePermission('system_settings'),
-  auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  subcategoryController.repairSubcategoryCounts
-);
-
 router.get('/categories/dropdown', 
   verifyAdmin, 
   adminApiLimiter,
@@ -198,13 +150,11 @@ router.get('/categories/dropdown',
   cacheDropdown,
   async (req, res) => {
     try {
-      console.log('[CATEGORIES DROPDOWN] Fetching categories...');
-      
       const { 
         includeSubcategories = false, 
         showAll = false,
         onlyWithSubcategories = false,
-        allowSubcategories = true  // Add this parameter
+        allowSubcategories = true
       } = req.query;
       
       const filter = { 
@@ -212,23 +162,18 @@ router.get('/categories/dropdown',
         deletedAt: null
       };
       
-      // Handle allowSubcategories filter
       if (allowSubcategories === 'true') {
-        // Show categories that allow subcategories (true or undefined)
         filter.$or = [
           { allowSubcategories: true },
           { allowSubcategories: { $exists: false } }
         ];
       } else if (allowSubcategories === 'false') {
-        // Show only categories that explicitly don't allow subcategories
         filter.allowSubcategories = false;
       }
-      // If allowSubcategories is not specified, show all active categories
       
       if (onlyWithSubcategories === 'true') {
         filter.allowSubcategories = true;
       } else if (showAll === 'true') {
-        // Don't filter by allowSubcategories
         delete filter.$or;
         delete filter.allowSubcategories;
       }
@@ -237,8 +182,6 @@ router.get('/categories/dropdown',
         .select('name slug icon parentCategory order isActive featured popular servicesCount gigsCount allowSubcategories')
         .sort({ order: 1, name: 1 })
         .lean();
-      
-      console.log(`[CATEGORIES DROPDOWN] Found ${categories.length} categories`);
       
       if (includeSubcategories === 'true') {
         const categoryIds = categories.map(cat => cat._id);
@@ -375,9 +318,6 @@ router.get('/users/dropdown',
   }
 );
 
-// ==================== SUBCATEGORY MANAGEMENT ROUTES ====================
-
-// Get all subcategories (cached)
 router.get('/subcategories', 
   verifyAdmin, 
   adminApiLimiter,
@@ -423,16 +363,6 @@ router.get('/subcategories',
   adminController.getSubcategories
 );
 
-// Export subcategories (no cache)
-router.get('/subcategories/export', 
-  verifyAdmin, 
-  requirePermission('manage_categories'),
-  auditLog('EXPORT_SUBCATEGORIES', 'categories'),
-  cacheControlMiddleware({ noStore: true }),
-  adminController.exportSubcategories
-);
-
-// Bulk subcategory operations (clear cache)
 router.post('/subcategories/bulk', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -444,7 +374,14 @@ router.post('/subcategories/bulk',
   adminController.bulkUpdateSubcategories
 );
 
-// Get single subcategory (cached)
+router.get('/subcategories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_SUBCATEGORIES', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  adminController.exportSubcategories
+);
+
 router.get('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter,
@@ -470,7 +407,6 @@ router.get('/subcategories/:id',
   adminController.getSubcategoryById
 );
 
-// Create subcategory (clear cache)
 router.post('/subcategories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -482,7 +418,6 @@ router.post('/subcategories',
   adminController.createSubcategory
 );
 
-// Update subcategory (clear cache)
 router.put('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -495,7 +430,6 @@ router.put('/subcategories/:id',
   adminController.updateSubcategory
 );
 
-// Delete subcategory (clear cache)
 router.delete('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -507,9 +441,6 @@ router.delete('/subcategories/:id',
   adminController.deleteSubcategory
 );
 
-// ==================== USER MANAGEMENT ROUTES ====================
-
-// Get users (cached)
 router.get('/users', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -520,28 +451,6 @@ router.get('/users',
   adminController.getUsers
 );
 
-// Create user (clear cache)
-router.post('/users', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  CSRFMiddleware.requireCSRF,
-  requirePermission('manage_users'),
-  auditLog('CREATE_USER', 'users'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  adminController.createUser
-);
-
-// Export users (no cache)
-router.get('/users/export', 
-  verifyAdmin, 
-  requirePermission('manage_users'),
-  auditLog('EXPORT_USERS', 'users'),
-  cacheControlMiddleware({ noStore: true }),
-  adminController.exportUsers
-);
-
-// User bulk operations (clear cache)
 router.post('/users/bulk-action', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -553,7 +462,25 @@ router.post('/users/bulk-action',
   adminController.bulkUpdateUsers
 );
 
-// Update user (clear cache)
+router.get('/users/export', 
+  verifyAdmin, 
+  requirePermission('manage_users'),
+  auditLog('EXPORT_USERS', 'users'),
+  cacheControlMiddleware({ noStore: true }),
+  adminController.exportUsers
+);
+
+router.post('/users', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  CSRFMiddleware.requireCSRF,
+  requirePermission('manage_users'),
+  auditLog('CREATE_USER', 'users'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  adminController.createUser
+);
+
 router.put('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -565,7 +492,6 @@ router.put('/users/:id',
   adminController.updateUser
 );
 
-// Delete user (clear cache)
 router.delete('/users/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -577,21 +503,6 @@ router.delete('/users/:id',
   adminController.deleteUser
 );
 
-// ==================== CATEGORY MANAGEMENT ROUTES ====================
-
-// Create category (clear cache)
-router.post('/categories', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  CSRFMiddleware.requireCSRF,
-  requirePermission('manage_categories'),
-  auditLog('CREATE_CATEGORY', 'categories'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  categoryController.createCategory
-);
-
-// Get categories (cached)
 router.get('/categories', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -639,7 +550,37 @@ router.get('/categories',
   categoryController.getCategories
 );
 
-// Update category (clear cache)
+router.post('/categories/bulk-action', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  CSRFMiddleware.requireCSRF,
+  requirePermission('manage_categories'),
+  auditLog('BULK_CATEGORY_ACTION', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  categoryController.bulkUpdateCategories
+);
+
+router.get('/categories/export', 
+  verifyAdmin, 
+  requirePermission('manage_categories'),
+  auditLog('EXPORT_CATEGORIES', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  categoryController.exportCategories
+);
+
+router.post('/categories', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  CSRFMiddleware.requireCSRF,
+  requirePermission('manage_categories'),
+  auditLog('CREATE_CATEGORY', 'categories'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  validateCreate,
+  categoryController.createCategory
+);
+
 router.put('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -648,10 +589,10 @@ router.put('/categories/:id',
   auditLog('UPDATE_CATEGORY', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
+  validateUpdate,
   categoryController.updateCategory
 );
 
-// Get single category (cached)
 router.get('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -677,7 +618,6 @@ router.get('/categories/:id',
   categoryController.getCategoryById
 );
 
-// Delete category (clear cache)
 router.delete('/categories/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -689,7 +629,6 @@ router.delete('/categories/:id',
   categoryController.deleteCategory
 );
 
-// Restore category (clear cache)
 router.post('/categories/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -702,30 +641,26 @@ router.post('/categories/:id/restore',
   categoryController.restoreCategory
 );
 
-// Bulk category operations (clear cache)
-router.post('/categories/bulk-action', 
-  verifyAdmin, 
-  adminApiLimiter, 
+router.post('/categories/repair-counts', 
+  verifyAdmin,
   CSRFMiddleware.requireCSRF,
-  requirePermission('manage_categories'),
-  auditLog('BULK_CATEGORY_ACTION', 'categories'),
+  requirePermission('system_settings'),
+  auditLog('REPAIR_CATEGORY_COUNTS', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  categoryController.bulkUpdateCategories
+  categoryController.repairCategoryCounts
 );
 
-// Export categories (no cache)
-router.get('/categories/export', 
-  verifyAdmin, 
-  requirePermission('manage_categories'),
-  auditLog('EXPORT_CATEGORIES', 'categories'),
+router.post('/subcategories/repair-counts', 
+  verifyAdmin,
+  CSRFMiddleware.requireCSRF,
+  requirePermission('system_settings'),
+  auditLog('REPAIR_SUBCATEGORY_COUNTS', 'categories'),
   cacheControlMiddleware({ noStore: true }),
-  adminController.exportCategories
+  clearAdminCache,
+  subcategoryController.repairSubcategoryCounts
 );
 
-// ==================== SERVICE MANAGEMENT ROUTES ====================
-
-// Get services (cached)
 router.get('/services', 
   verifyAdmin,  
   adminApiLimiter,
@@ -749,7 +684,46 @@ router.get('/services',
   serviceController.getAdminServices
 );
 
-// Delete service (clear cache)
+router.get('/services/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  requirePermission('manage_services'),
+  auditLog('VIEW_SERVICE', 'services'),
+  cacheControlMiddleware({ public: false, maxAge: 300 }),
+  cacheDetail,
+  async (req, res, next) => {
+    try {
+      req.isAdmin = true;
+      req.query.includeFullDetails = 'true';
+      req.query.includeSubcategory = 'true';
+      req.query.populate = 'true';
+      next();
+    } catch (error) {
+      next(error);
+    }
+  },
+  serviceController.getServiceById
+);
+
+router.put('/services/:id', 
+  verifyAdmin, 
+  adminApiLimiter, 
+  CSRFMiddleware.requireCSRF,
+  requirePermission('manage_services'),
+  auditLog('UPDATE_SERVICE', 'services'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  async (req, res, next) => {
+    try {
+      req.isAdmin = true;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  },
+  serviceController.updateService
+);
+
 router.delete('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -778,51 +752,6 @@ router.delete('/services/:id',
   serviceController.deleteService
 );
 
-// Get service by ID (cached)
-router.get('/services/:id', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  requirePermission('manage_services'),
-  auditLog('VIEW_SERVICE', 'services'),
-  cacheControlMiddleware({ public: false, maxAge: 300 }),
-  cacheDetail,
-  async (req, res, next) => {
-    try {
-      req.isAdmin = true;
-      req.query.includeFullDetails = 'true';
-      req.query.includeSubcategory = 'true';
-      req.query.populate = 'true';
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
-  serviceController.getServiceById
-);
-
-// Update service (clear cache)
-router.put('/services/:id', 
-  verifyAdmin, 
-  adminApiLimiter, 
-  CSRFMiddleware.requireCSRF,
-  requirePermission('manage_services'),
-  auditLog('UPDATE_SERVICE', 'services'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  async (req, res, next) => {
-    try {
-      req.isAdmin = true;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
-  serviceController.updateService
-);
-
-// ==================== GIG MANAGEMENT ROUTES ====================
-
-// Get gigs (cached)
 router.get('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -854,7 +783,18 @@ router.get('/gigs',
   gigController.getGigs
 );
 
-// Get gig by ID (cached)
+router.get('/gigs/export', 
+  verifyAdmin, 
+  requirePermission('manage_gigs'),
+  auditLog('EXPORT_GIGS', 'gigs'),
+  cacheControlMiddleware({ noStore: true }),
+  async (req, res, next) => {
+    req.user = { role: 'admin', _id: req.admin._id };
+    next();
+  },
+  gigController.exportGigs
+);
+
 router.get('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -876,7 +816,6 @@ router.get('/gigs/:id',
   gigController.getGigById
 );
 
-// Create gig (clear cache)
 router.post('/gigs', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -904,7 +843,6 @@ router.post('/gigs',
   gigController.createGig
 );
 
-// Update gig (clear cache)
 router.put('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -925,7 +863,6 @@ router.put('/gigs/:id',
   gigController.updateGig
 );
 
-// Delete gig (clear cache)
 router.delete('/gigs/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -963,20 +900,6 @@ router.delete('/gigs/:id',
   gigController.deleteGig
 );
 
-// Export gigs (no cache)
-router.get('/gigs/export', 
-  verifyAdmin, 
-  requirePermission('manage_gigs'),
-  auditLog('EXPORT_GIGS', 'gigs'),
-  cacheControlMiddleware({ noStore: true }),
-  async (req, res, next) => {
-    req.user = { role: 'admin', _id: req.admin._id };
-    next();
-  },
-  gigController.exportGigs
-);
-
-// Restore gig (clear cache)
 router.post('/gigs/:id/restore', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -992,9 +915,6 @@ router.post('/gigs/:id/restore',
   gigController.restoreGig
 );
 
-// ==================== SYSTEM MANAGEMENT ROUTES ====================
-
-// System health (cached)
 router.get('/system/health', 
   verifyAdmin, 
   adminApiLimiter,
@@ -1005,7 +925,6 @@ router.get('/system/health',
   adminController.getSystemHealthHandler
 );
 
-// Recent activity (cached)
 router.get('/activity/recent', 
   verifyAdmin, 
   adminApiLimiter,
@@ -1016,46 +935,6 @@ router.get('/activity/recent',
   adminController.getRecentActivity
 );
 
-// Cache management (clear cache)
-router.post('/cache/clear', 
-  verifyAdmin,
-  CSRFMiddleware.requireCSRF,
-  requirePermission('system_settings'),
-  cacheControlMiddleware({ noStore: true }),
-  clearAdminCache,
-  async (req, res) => {
-    try {
-      const { type } = req.body;
-      const cache = require('../utils/cache');
-      
-      if (type === 'all') {
-        await cache.del('admin:*');
-        console.log('Cleared all admin cache');
-      } else if (type) {
-        await cache.del(`admin:${type}:*`);
-        console.log(`Cleared admin cache for type: ${type}`);
-      } else {
-        await cache.del('admin:*');
-        console.log('Cleared all admin cache');
-      }
-      
-      res.json({
-        success: true,
-        message: 'Cache cleared successfully',
-        clearedType: type || 'all'
-      });
-    } catch (error) {
-      console.error('[CACHE CLEAR ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to clear cache',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
-
-// Cache stats
 router.get('/cache/stats', 
   verifyAdmin,
   requirePermission('system_settings'),
@@ -1077,7 +956,51 @@ router.get('/cache/stats',
   }
 );
 
-// ==================== HEALTH CHECK ====================
+router.post('/cache/clear', 
+  verifyAdmin,
+  CSRFMiddleware.requireCSRF,
+  requirePermission('system_settings'),
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  async (req, res) => {
+    try {
+      const { type } = req.body;
+      const cache = require('../utils/cache');
+      
+      if (type === 'all') {
+        await cache.del('admin:*');
+      } else if (type) {
+        await cache.del(`admin:${type}:*`);
+      } else {
+        await cache.del('admin:*');
+      }
+      
+      res.json({
+        success: true,
+        message: 'Cache cleared successfully',
+        clearedType: type || 'all'
+      });
+    } catch (error) {
+      console.error('[CACHE CLEAR ERROR]', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to clear cache',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+router.post('/logout', 
+  verifyAdmin,
+  cacheControlMiddleware({ noStore: true }),
+  clearAdminCache,
+  (req, res, next) => {
+    req.isAdminLogout = true;
+    next();
+  },
+  logout
+);
 
 router.get('/health', 
   verifyAdmin,

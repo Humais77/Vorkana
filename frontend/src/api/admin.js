@@ -1138,18 +1138,6 @@ export const adminAPI = {
     return adminApi.post('/api/categories/repair-counts', requestData);
   },
   
-  // Authentication
-  adminLogout: () => {
-    // Add CSRF token to request data
-    const token = getCsrfToken();
-    const requestData = {};
-    if (token) {
-      requestData.csrfToken = token;
-    }
-    
-    cache.delete('all');
-    return adminApi.post('/api/admin/logout', requestData);
-  },
   
   verifyAdminSession: createCachedApiCall(
     () => adminApi.get('/api/admin/verify-session'),

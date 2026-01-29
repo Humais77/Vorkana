@@ -213,7 +213,7 @@ export const useAdminDashboard = () => {
         // Check if it's an authentication error
         if (error.response?.status === 401 || error.response?.status === 403) {
           toast.error('Session expired. Please login again.');
-          window.location.href = '/admin/login';
+          window.location.href = '/';
           throw error;
         }
 
@@ -2871,36 +2871,7 @@ export const useAdminAuth = () => {
   });
 };
 
-export const useAdminLogout = () => {
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: () => withCSRF(async (csrfToken) => {
-      return await adminAPI.adminLogout(csrfToken);
-    }),
-    onMutate: () => {
-      // Clear all admin-related localStorage items
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('adminRefreshToken');
-      localStorage.removeItem('adminCsrfToken');
-      localStorage.removeItem('csrfToken');
-      localStorage.removeItem('csrfTokenExpiry');
-      
-      // Clear all admin queries from cache
-      queryClient.removeQueries(['admin']);
-      
-      toast.success('Logged out successfully');
-    },
-    onSuccess: () => {
-      window.location.href = '/admin/login';
-    },
-    onError: (error) => {
-      console.error('Logout error:', error);
-      // Still redirect even if logout API fails
-      window.location.href = '/admin/login';
-    }
-  });
-};
 
 export const useAdminPermissions = () => {
   return useQuery({
