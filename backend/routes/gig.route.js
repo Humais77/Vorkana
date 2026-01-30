@@ -1,9 +1,7 @@
-// routes/gig.route.js - Production Ready with Redis Cache
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const {
   createGig,
   getGigs,
@@ -13,7 +11,6 @@ const {
   restoreGig,
   getGigStats,
   searchGigs,
-  exportGigs,
   uploadImages,
   removeImage,
   setThumbnail,
@@ -27,7 +24,7 @@ const {
   validateUpdate, 
   validateQuery 
 } = require('../middleware/validators/gig.validator.js');
-const { optionalAuth, adminOnly } = require('../middleware/auth.middleware.js');
+const { optionalAuth } = require('../middleware/auth.middleware.js');
 const { handleMulterError } = require('../middleware/upload.middleware.js');
 const SessionMiddleware = require("../middleware/session.middleware");
 const CSRFMiddleware = require('../middleware/csrf.middleware');
@@ -49,13 +46,6 @@ const GIG_CACHE_CONFIG = {
     publicOnly: true,
     tags: ['gigs', 'list']
   },
-  ADMIN_LIST: {
-    ttl: CACHE_TTL.PRIVATE.SHORT,
-    namespace: NAMESPACES.ADMIN,
-    checkUserRole: true,
-    rolesToBypass: ['admin'],
-    tags: ['gigs', 'admin', 'list']
-  },
   DETAIL: {
     ttl: CACHE_TTL.PUBLIC.LONG,
     namespace: NAMESPACES.PUBLIC,
@@ -68,16 +58,14 @@ const GIG_CACHE_CONFIG = {
   },
   STATS: {
     ttl: CACHE_TTL.PRIVATE.MEDIUM,
-    namespace: NAMESPACES.ADMIN,
+    namespace: NAMESPACES.USER,
     tags: ['gigs', 'stats']
   }
 };
 
 // Create cache middlewares
 const cachePublicList = createCacheMiddleware(GIG_CACHE_CONFIG.PUBLIC_LIST);
-const cacheAdminList = createCacheMiddleware(GIG_CACHE_CONFIG.ADMIN_LIST);
 const cacheDetail = createCacheMiddleware(GIG_CACHE_CONFIG.DETAIL);
-const cacheUserGigs = createCacheMiddleware(GIG_CACHE_CONFIG.USER_GIGS);
 const cacheStats = createCacheMiddleware(GIG_CACHE_CONFIG.STATS);
 
 // Clear cache middleware for write operations
@@ -210,8 +198,6 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ==================== PUBLIC ROUTES (Cached) ====================
-
 // Get all gigs
 router.get('/', 
   optionalAuth, 
@@ -251,7 +237,6 @@ router.get('/:id',
   getGigById
 );
 
-// ==================== USER ROUTES (Cached for user) ====================
 
 // Get gig stats (user specific)
 router.get('/stats', 
@@ -262,19 +247,6 @@ router.get('/stats',
   getGigStats
 );
 
-// ==================== ADMIN READ ROUTES (Cached) ====================
-
-// Export gigs (admin)
-router.get('/export', 
-  SessionMiddleware.authenticate, 
-  adminOnly, 
-  gigLimiter,
-  cacheControlMiddleware({ noStore: true }),
-  validateQuery, 
-  exportGigs
-);
-
-// ==================== USER WRITE ROUTES (Clear Cache) ====================
 
 // Create gig
 router.post('/', 
@@ -313,7 +285,6 @@ router.delete('/:id',
 // Restore gig
 router.patch('/:id/restore', 
   SessionMiddleware.authenticate, 
-  adminOnly, 
   gigLimiter,
   cacheControlMiddleware({ noStore: true }),
   clearGigCache,
@@ -360,85 +331,6 @@ router.post('/:id/thumbnail/upload',
   clearGigCache,
   handleThumbnailUpload, 
   uploadThumbnail
-);
-
-// ==================== ADMIN WRITE ROUTES (Clear Cache) ====================
-
-// Bulk gig operations (admin)
-router.post('/admin/bulk', 
-  SessionMiddleware.authenticate, 
-  adminOnly, 
-  gigLimiter,
-  cacheControlMiddleware({ noStore: true }),
-  clearGigCache,
-  async (req, res) => {
-    try {
-      const { ids, operation, data = {} } = req.body;
-      
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'No gigs selected',
-          code: 'NO_GIGS_SELECTED'
-        });
-      }
-      
-      let updateData = {};
-      let message = 'Gigs updated successfully';
-      
-      switch (operation) {
-        case 'activate':
-          updateData = { status: 'open', isActive: true };
-          message = 'Gigs activated successfully';
-          break;
-        case 'pause':
-          updateData = { status: 'closed', isActive: false };
-          message = 'Gigs closed successfully';
-          break;
-        case 'delete':
-          // Use Gig model
-          const Gig = require('../models/gig.model');
-          const results = await Promise.all(
-            ids.map(id => 
-              Gig.findByIdAndUpdate(id, {
-                isActive: false,
-                deletedAt: new Date(),
-                deletedBy: req.user._id
-              })
-            )
-          );
-          
-          return res.json({
-            success: true,
-            message: 'Gigs deleted successfully',
-            modifiedCount: results.filter(r => r).length
-          });
-        default:
-          updateData = data;
-      }
-      
-      updateData.lastUpdatedBy = req.user._id;
-      
-      const Gig = require('../models/gig.model');
-      const result = await Gig.updateMany(
-        { _id: { $in: ids } },
-        { $set: updateData }
-      );
-      
-      res.json({
-        success: true,
-        message,
-        modifiedCount: result.modifiedCount
-      });
-      
-    } catch (error) {
-      console.error('[BULK UPDATE GIGS ERROR]', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to perform bulk operation'
-      });
-    }
-  }
 );
 
 // ==================== HEALTH CHECK ====================

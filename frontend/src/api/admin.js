@@ -1013,7 +1013,7 @@ export const adminAPI = {
   },
   
   exportServices: (format = 'csv') => 
-    adminApi.get('/api/services/admin/export', { 
+    adminApi.get('/api/admin/services/export', { 
       params: { format },
       responseType: 'blob'
     }),

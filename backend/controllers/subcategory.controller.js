@@ -2,9 +2,11 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Subcategory = require('../models/subcategory.model.js');
 const Category = require('../models/category.model.js');
+const Service = require('../models/services.model.js');
+const Gig = require('../models/gig.model.js');
 const { sanitizeHtml, sanitizeObject } = require('../utils/sanitize.js');
 const cache = require('../utils/cache.js');
-
+const { v4: uuidv4 } = require('uuid');
 const generateRequestId = () => crypto.randomUUID();
 
 // Cache helper
@@ -12,23 +14,77 @@ const generateCacheKey = (prefix, params) => {
   const key = `${prefix}:${JSON.stringify(params)}`;
   return crypto.createHash('md5').update(key).digest('hex');
 };
-
-const invalidateSubcategoryCache = async (subcategoryId = null) => {
+const invalidateAdminCache = async (type = 'all') => {
   try {
-    // Clear all subcategory-related cache
+    switch(type) {
+      case 'users':
+        await cache.del('admin:users:*');
+        await cache.del('admin:user:*');
+        await cache.del('admin:stats:users:*');
+        break;
+      case 'gigs':
+        await cache.del('admin:gigs:*');
+        await cache.del('admin:gig:*');
+        await cache.del('admin:stats:gigs:*');
+        break;
+      case 'services':
+        await cache.del('admin:services:*');
+        await cache.del('admin:service:*');
+        await cache.del('admin:stats:services:*');
+        break;
+      case 'subcategories':
+        await cache.del('admin:subcategories:*');
+        await cache.del('admin:subcategory:*');
+        await cache.del('admin:stats:subcategories:*');
+        break;
+      case 'dashboard':
+        await cache.del('admin:dashboard:*');
+        await cache.del('admin:stats:*');
+        await cache.del('admin:activity:*');
+        break;
+      case 'all':
+      default:
+        await cache.del('admin:*');
+        break;
+    }
+    console.log(`Admin cache invalidated for: ${type}`);
+  } catch (err) {
+    console.warn('Error invalidating admin cache:', err.message);
+  }
+};
+
+const invalidateSubcategoryCache = async () => {
+  try {
     await cache.del('subcategories:*');
     await cache.del('subcategory:*');
-    if (subcategoryId) {
-      await cache.del(`subcategory:${subcategoryId}:*`);
-    }
-    // Also clear admin subcategory cache
+    await cache.del('category:*'); // Also clear categories cache
     await cache.del('admin:subcategories:*');
+    await cache.del('admin:dashboard:*');
     console.log('Subcategory cache invalidated globally');
   } catch (err) {
     console.warn('Error invalidating subcategory cache:', err.message);
   }
 };
 
+const invalidateSpecificSubcategoryCache = async (subcategoryId) => {
+  try {
+    await cache.del(`subcategory:single:*${subcategoryId}*`);
+    await cache.del(`subcategory:*${subcategoryId}*`);
+    await cache.del(`admin:subcategories:*${subcategoryId}*`);
+    console.log(`Cache invalidated for subcategory: ${subcategoryId}`);
+  } catch (err) {
+    console.warn('Error invalidating specific subcategory cache:', err.message);
+  }
+};
+const invalidateSpecificCache = async (resource, id) => {
+  try {
+    await cache.del(`admin:${resource}:single:*${id}*`);
+    await cache.del(`admin:${resource}:*${id}*`);
+    console.log(`Cache invalidated for ${resource}: ${id}`);
+  } catch (err) {
+    console.warn('Error invalidating specific admin cache:', err.message);
+  }
+};
 // Add cache control headers to all responses
 const setCacheHeaders = (res, cached = false) => {
   if (cached) {
@@ -46,52 +102,51 @@ const setCacheHeaders = (res, cached = false) => {
   }
 };
 // Create Subcategory
-const createSubcategory = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const createSubcategory = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required',
-        code: 'AUTH_REQUIRED',
-        requestId
-      });
-    }
+    const subcategoryData = {
+      ...req.body,
+      createdBy: req.admin._id,
+      lastUpdatedBy: req.admin._id,
+      version: 1
+    };
 
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
-    const { name, category, description, order = 0, metaTitle, metaDescription, metaKeywords } = req.body;
-
-    // Validate parent category exists and is active
-    const parentCategory = await Category.findOne({
-      _id: category,
-      isActive: true,
-      deletedAt: null
-    });
-
-    if (!parentCategory) {
+    // Validate required fields
+    if (!subcategoryData.name || !subcategoryData.category) {
       return res.status(400).json({
         success: false,
-        message: 'Parent category not found or inactive',
-        code: 'PARENT_CATEGORY_NOT_FOUND',
+        message: 'Name and category are required',
+        code: 'MISSING_REQUIRED_FIELDS',
         requestId
       });
     }
 
-    // Check for duplicate name within same category
+    // Validate category exists
+    if (!mongoose.Types.ObjectId.isValid(subcategoryData.category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_CATEGORY_ID',
+        requestId
+      });
+    }
+
+    const category = await Category.findById(subcategoryData.category);
+    if (!category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category not found',
+        code: 'CATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Check for duplicate name in same category
     const existingSubcategory = await Subcategory.findOne({
-      name: name.trim(),
-      category: category,
-      isActive: true,
+      name: subcategoryData.name.trim(),
+      category: subcategoryData.category,
       deletedAt: null
     });
 
@@ -104,39 +159,41 @@ const createSubcategory = async (req, res, next) => {
       });
     }
 
-    const subcategory = await Subcategory.create({
-      name: name.trim(),
-      category,
-      description: description?.trim() || '',
-      order,
-      metaTitle: metaTitle?.trim(),
-      metaDescription: metaDescription?.trim(),
-      metaKeywords: Array.isArray(metaKeywords) ? metaKeywords.map(k => k.trim()) : [],
-      createdBy: req.user._id, // From cookies
-      isActive: true
-    });
+    // Create subcategory
+    const subcategory = await Subcategory.create(subcategoryData);
 
-    await invalidateSubcategoryCache();
+    // Populate for response
+    const populatedSubcategory = await Subcategory.findById(subcategory._id)
+      .populate('category', 'name slug')
+      .lean();
 
-    res.set({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Request-ID': requestId,
-      'X-Cache-Invalidated': 'true'
+    // Remove sensitive fields
+    delete populatedSubcategory.__v;
+    delete populatedSubcategory.deletedAt;
+    delete populatedSubcategory.deletedBy;
+    delete populatedSubcategory.version;
+    delete populatedSubcategory.lastUpdatedBy;
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
+
+    // Update category stats
+    await Category.findByIdAndUpdate(subcategoryData.category, {
+      $inc: { servicesCount: 0, gigsCount: 0 } // Initialize counts
     });
 
     res.status(201).json({
       success: true,
-      data: subcategory,
       message: 'Subcategory created successfully',
+      data: populatedSubcategory,
       requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cacheInvalidated: true
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
+    console.error('[CREATE SUBCATEGORY ERROR]', error);
+    
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -157,117 +214,119 @@ const createSubcategory = async (req, res, next) => {
       });
     }
     
-    next(error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create subcategory',
+      code: 'SUBCATEGORY_CREATE_ERROR',
+      requestId
+    });
   }
 };
 
 // Get Subcategories
-const getSubcategories = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const getSubcategories = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
     const {
-      category,
-      name,
-      slug,
-      search,
-      isActive = true,
       page = 1,
       limit = 20,
-      sort = 'order',
-      order = 'asc',
-      fields,
-      populate = true,
-      cache: useCache = true
+      search = '',
+      category = '',
+      isActive = '',
+      sortBy = 'order',
+      sortOrder = 'asc',
+      cache: useCacheParam = 'false'
     } = req.query;
 
+    // Build filter
     const filter = { deletedAt: null };
     
-    // Filter by category (optional)
+    if (search) {
+  const sanitizedSearch = validator.escape(search.trim());
+  filter.$or = [
+    { name: { $regex: sanitizedSearch, $options: 'i' } },
+    { description: { $regex: sanitizedSearch, $options: 'i' } },
+    { slug: { $regex: sanitizedSearch, $options: 'i' } }
+  ];
+}
+    
     if (category && mongoose.Types.ObjectId.isValid(category)) {
       filter.category = category;
     }
     
-    // Filter by active status
-    if (isActive !== undefined) {
-      filter.isActive = isActive === 'true' || isActive === true;
-    }
-    
-    // Filter by name
-    if (name) {
-      filter.name = { $regex: `^${sanitizeHtml(name, { allowedTags: [] })}`, $options: 'i' };
-    }
-    
-    // Filter by slug
-    if (slug) {
-      filter.slug = slug.toLowerCase();
-    }
-    
-    // Search
-    if (search) {
-      const sanitizedSearch = sanitizeHtml(search, { allowedTags: [], allowedAttributes: {} });
-      filter.$or = [
-        { name: { $regex: sanitizedSearch, $options: 'i' } },
-        { description: { $regex: sanitizedSearch, $options: 'i' } },
-        { slug: { $regex: sanitizedSearch, $options: 'i' } }
-      ];
+    if (isActive !== '') {
+      filter.isActive = isActive === 'true';
     }
 
+    // Pagination
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
-    const sortField = ['name', 'order', 'createdAt', 'servicesCount', 'gigsCount'].includes(sort) ? sort : 'order';
-    const sortOrder = order === 'desc' ? -1 : 1;
-    const sortObj = { [sortField]: sortOrder };
+    // Sort
+    const allowedSortFields = ['name', 'order', 'createdAt', 'updatedAt', 'servicesCount', 'gigsCount'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'order';
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    // Cache key
-    const cacheKey = generateCacheKey('subcategories', {
-      filter,
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategories', {
+      filter: JSON.stringify(filter),
       page: pageNum,
       limit: limitNum,
-      sort: sortObj,
-      populate
+      sortField,
+      sortDirection,
+      skip
     });
 
-    let subcategories, total;
-    
-    if (useCache && pageNum === 1) {
-      const cached = await cache.get(cacheKey);
-      if (cached) {
-        subcategories = cached.subcategories;
-        total = cached.total;
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedResult = await cache.get(cacheKey);
+      if (cachedResult) {
+        console.log('Cache HIT admin:subcategories:', cacheKey);
+        return res.json({
+          ...cachedResult,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
       }
     }
 
-    if (!subcategories || !total) {
-      const query = Subcategory.find(filter)
-        .select('-__v -deletedAt -deletedBy -version')
-        .sort(sortObj)
+    // Execute query
+    const [subcategories, total] = await Promise.all([
+      Subcategory.find(filter)
+        .populate('category', 'name slug')
+        .populate('createdBy', 'name email')
+        .sort({ [sortField]: sortDirection })
         .skip(skip)
-        .limit(limitNum);
+        .limit(limitNum)
+        .lean(),
+      Subcategory.countDocuments(filter)
+    ]);
 
-      if (populate === 'true' || populate === true) {
-        query.populate('category', 'name slug');
-        query.populate('createdBy', 'name email');
+    // Sanitize response
+    const safeSubcategories = subcategories.map(sub => {
+      const safeSub = { ...sub };
+      delete safeSub.__v;
+      delete safeSub.deletedAt;
+      delete safeSub.deletedBy;
+      delete safeSub.version;
+      delete safeSub.lastUpdatedBy;
+      if (safeSub.createdBy) {
+        delete safeSub.createdBy.password;
+        delete safeSub.createdBy.resetPasswordToken;
+        delete safeSub.createdBy.resetPasswordExpires;
       }
-
-      [subcategories, total] = await Promise.all([
-        query.lean(),
-        Subcategory.countDocuments(filter)
-      ]);
-
-      if (useCache && pageNum === 1) {
-        await cache.set(cacheKey, { subcategories, total }, 300); // 5 minutes
-      }
-    }
+      return safeSub;
+    });
 
     const totalPages = Math.ceil(total / limitNum);
 
-    res.json({
+    const response = {
       success: true,
-      data: subcategories,
+      data: safeSubcategories,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -277,75 +336,110 @@ const getSubcategories = async (req, res, next) => {
         hasPrev: pageNum > 1
       },
       requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cached: useCache && pageNum === 1 && subcategories !== undefined
-    });
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
-    next(error);
+    console.error('[GET SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategories',
+      code: 'SUBCATEGORIES_FETCH_ERROR',
+      requestId
+    });
   }
 };
 
 // Get Subcategory by ID
-const getSubcategoryById = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const getSubcategoryById = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
     const { id } = req.params;
-    const { populate = true } = req.query;
+    const { cache: useCacheParam = 'false' } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid subcategory ID',
-        code: 'INVALID_ID',
+        code: 'INVALID_SUBCATEGORY_ID',
         requestId
       });
     }
 
-    const cacheKey = generateCacheKey(`subcategory:${id}`, { populate });
-
-    let subcategory = await cache.get(cacheKey);
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategory:single', { id });
     
-    if (!subcategory) {
-      const query = Subcategory.findOne({
-        _id: id,
-        deletedAt: null
-      }).select('-__v -deletedAt -deletedBy -version');
-
-      if (populate === 'true' || populate === true) {
-        query.populate('category', 'name slug');
-        query.populate('createdBy', 'name email');
-      }
-
-      subcategory = await query.lean();
-
-      if (!subcategory) {
-        return res.status(404).json({
-          success: false,
-          message: 'Subcategory not found',
-          code: 'SUBCATEGORY_NOT_FOUND',
-          requestId
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedSubcategory = await cache.get(cacheKey);
+      if (cachedSubcategory) {
+        console.log('Cache HIT admin:subcategory:single:', cacheKey);
+        return res.json({
+          ...cachedSubcategory,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
         });
       }
-
-      // Cache for 10 minutes
-      await cache.set(cacheKey, subcategory, 600);
     }
 
-    res.json({
+    const subcategory = await Subcategory.findOne({ _id: id, deletedAt: null })
+      .populate('category', 'name slug description')
+      .populate('createdBy', 'name email')
+      .lean();
+
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found',
+        code: 'SUBCATEGORY_NOT_FOUND',
+        requestId
+      });
+    }
+
+    // Remove sensitive fields
+    delete subcategory.__v;
+    delete subcategory.deletedAt;
+    delete subcategory.deletedBy;
+    delete subcategory.version;
+    delete subcategory.lastUpdatedBy;
+    if (subcategory.createdBy) {
+      delete subcategory.createdBy.password;
+      delete subcategory.createdBy.resetPasswordToken;
+      delete subcategory.createdBy.resetPasswordExpires;
+    }
+
+    const response = {
       success: true,
       data: subcategory,
       requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cached: subcategory !== undefined
-    });
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
 
   } catch (error) {
-    next(error);
+    console.error('[GET SUBCATEGORY BY ID ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategory',
+      code: 'SUBCATEGORY_FETCH_ERROR',
+      requestId
+    });
   }
 };
 
@@ -431,7 +525,93 @@ const getSubcategoriesByCategory = async (req, res, next) => {
     next(error);
   }
 };
+const getSubcategoriesDropdown = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { categoryId } = req.params; // Changed from req.query to req.params
+    const { activeOnly = true, cache: useCacheParam = 'false' } = req.query;
 
+    console.log('[GET SUBCATEGORIES DROPDOWN] Request:', {
+      categoryId,
+      activeOnly,
+      admin: req.admin?.email
+    });
+
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category ID',
+        code: 'INVALID_CATEGORY_ID',
+        requestId
+      });
+    }
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:subcategories:dropdown', {
+      categoryId,
+      activeOnly
+    });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedSubcategories = await cache.get(cacheKey);
+      if (cachedSubcategories) {
+        console.log('Cache HIT admin:subcategories:dropdown:', cacheKey);
+        return res.json({
+          ...cachedSubcategories,
+          cached: true,
+          requestId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // Build filter
+    const filter = {
+      category: categoryId,
+      deletedAt: null
+    };
+
+    if (activeOnly === 'true' || activeOnly === true) {
+      filter.isActive = true;
+    }
+
+    // Get subcategories WITH category population
+    const subcategories = await Subcategory.find(filter)
+      .populate('category', 'name slug description') // ADD THIS
+      .select('name slug description icon order servicesCount gigsCount')
+      .sort({ order: 1, name: 1 })
+      .lean();
+
+    console.log(`[GET SUBCATEGORIES DROPDOWN] Found ${subcategories.length} subcategories for category ${categoryId}`);
+
+    const response = {
+      success: true,
+      data: subcategories,
+      count: subcategories.length,
+      requestId,
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result if enabled
+    if (useCache) {
+      await cache.set(cacheKey, response, 600); // Cache for 10 minutes
+    }
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('[GET SUBCATEGORIES DROPDOWN ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategories',
+      code: 'SUBCATEGORIES_FETCH_ERROR',
+      requestId
+    });
+  }
+};
 // Get Subcategory by Slug
 const getSubcategoryBySlug = async (req, res) => {
   const requestId = generateRequestId();
@@ -472,49 +652,28 @@ const getSubcategoryBySlug = async (req, res) => {
   }
 };
 
-// Update Subcategory
-const updateSubcategory = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+// Update Subcategory (Admin)
+const updateSubcategory = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    // Authentication from cookies
-    if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required',
-        code: 'AUTH_REQUIRED',
-        requestId
-      });
-    }
-
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
     const { id } = req.params;
-    const updateData = req.body;
+    const updates = req.body;
+
+    console.log('[UPDATE SUBCATEGORY] Request:', { id, updates });
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid subcategory ID',
-        code: 'INVALID_ID',
+        code: 'INVALID_SUBCATEGORY_ID',
         requestId
       });
     }
 
-    const subcategory = await Subcategory.findOne({
-      _id: id,
-      deletedAt: null
-    });
-
-    if (!subcategory) {
+    // Find existing subcategory
+    const existingSubcategory = await Subcategory.findById(id);
+    if (!existingSubcategory) {
       return res.status(404).json({
         success: false,
         message: 'Subcategory not found',
@@ -522,71 +681,126 @@ const updateSubcategory = async (req, res, next) => {
         requestId
       });
     }
-if (updateData.category && updateData.category !== subcategory.category.toString()) {
-  const newCategory = await Category.findOne({
-    _id: updateData.category,
-    isActive: true,
-    deletedAt: null
-  });
 
-  if (!newCategory) {
-    return res.status(400).json({
-      success: false,
-      message: 'New parent category not found or inactive',
-      code: 'PARENT_CATEGORY_NOT_FOUND',
-      requestId
-    });
-  }
-
-  // Check for duplicate name in the NEW category (if name is also being changed)
-  if (updateData.name) {
-    const duplicateInNewCategory = await Subcategory.findOne({
-      name: updateData.name.trim(),
-      category: updateData.category,
-      _id: { $ne: id },
-      deletedAt: null
-    });
-
-    if (duplicateInNewCategory) {
-      return res.status(400).json({
+    // Check for version conflict
+    if (updates.version && updates.version !== existingSubcategory.version) {
+      return res.status(409).json({
         success: false,
-        message: 'Subcategory with this name already exists in the new category',
-        code: 'DUPLICATE_IN_NEW_CATEGORY',
+        message: 'Subcategory was modified by another user. Please refresh and try again.',
+        code: 'VERSION_CONFLICT',
+        currentVersion: existingSubcategory.version,
         requestId
       });
     }
-  }
-}
 
-    updateData.lastUpdatedBy = req.user._id; // From cookies
+    // Prepare update data
+    const updateData = {
+      ...updates,
+      lastUpdatedBy: req.admin._id,
+      $inc: { version: 1 }
+    };
 
-    const updatedSubcategory = await Subcategory.findByIdAndUpdate(
+    // Remove version from update data
+    delete updateData.version;
+
+    // If changing category, validate new category
+    if (updates.category && updates.category !== existingSubcategory.category.toString()) {
+      if (!mongoose.Types.ObjectId.isValid(updates.category)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid category ID',
+          code: 'INVALID_CATEGORY_ID',
+          requestId
+        });
+      }
+
+      const newCategory = await Category.findById(updates.category);
+      if (!newCategory) {
+        return res.status(400).json({
+          success: false,
+          message: 'Category not found',
+          code: 'CATEGORY_NOT_FOUND',
+          requestId
+        });
+      }
+
+      // Check for duplicate name in new category
+      const duplicate = await Subcategory.findOne({
+        name: updates.name || existingSubcategory.name,
+        category: updates.category,
+        _id: { $ne: id },
+        deletedAt: null
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory with this name already exists in the new category',
+          code: 'DUPLICATE_IN_NEW_CATEGORY',
+          requestId
+        });
+      }
+    }
+
+    // If changing name, check for duplicates in same category
+    if (updates.name && updates.name !== existingSubcategory.name) {
+      const duplicate = await Subcategory.findOne({
+        name: updates.name,
+        category: updates.category || existingSubcategory.category,
+        _id: { $ne: id },
+        deletedAt: null
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Subcategory with this name already exists',
+          code: 'DUPLICATE_NAME',
+          requestId
+        });
+      }
+    }
+
+    // Update subcategory
+    const subcategory = await Subcategory.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('category', 'name slug');
+    )
+    .populate('category', 'name slug')
+    .lean();
 
-    await invalidateSubcategoryCache(id);
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found during update',
+        code: 'UPDATE_FAILED',
+        requestId
+      });
+    }
 
-  res.set({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Request-ID': requestId,
-      'X-Cache-Invalidated': 'true'
-    });
+    // Remove sensitive fields
+    delete subcategory.__v;
+    delete subcategory.deletedAt;
+    delete subcategory.deletedBy;
+    delete subcategory.version;
+    delete subcategory.lastUpdatedBy;
+
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('subcategory', id);
+    await invalidateAdminCache('subcategories');
 
     res.json({
       success: true,
-      data: updatedSubcategory,
       message: 'Subcategory updated successfully',
+      data: subcategory,
       requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cacheInvalidated: true
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
+    console.error('[UPDATE SUBCATEGORY ERROR]', error);
+    
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -596,63 +810,36 @@ if (updateData.category && updateData.category !== subcategory.category.toString
       });
     }
     
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: messages,
-        code: 'VALIDATION_ERROR',
-        requestId
-      });
-    }
-    
-    next(error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update subcategory',
+      code: 'SUBCATEGORY_UPDATE_ERROR',
+      requestId
+    });
   }
 };
 
-// Delete Subcategory
-const deleteSubcategory = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+// Delete Subcategory (Admin)
+const deleteSubcategory = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    // Authentication from cookies
-    if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required',
-        code: 'AUTH_REQUIRED',
-        requestId
-      });
-    }
-
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
     const { id } = req.params;
-    const { force = false } = req.query;
+    const { permanent = 'false', force = 'false' } = req.query;
+
+    console.log('[DELETE SUBCATEGORY] Request:', { id, permanent, force });
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid subcategory ID',
-        code: 'INVALID_ID',
+        code: 'INVALID_SUBCATEGORY_ID',
         requestId
       });
     }
 
-    const subcategory = await Subcategory.findOne({
-      _id: id,
-      deletedAt: null
-    });
-
+    const subcategory = await Subcategory.findById(id);
+    
     if (!subcategory) {
       return res.status(404).json({
         success: false,
@@ -662,67 +849,89 @@ const deleteSubcategory = async (req, res, next) => {
       });
     }
 
-    // Check for dependencies (services and gigs)
-    if (!force) {
-      const Service = mongoose.model('Service');
-      const Gig = mongoose.model('Gig');
-      
-      const [serviceCount, gigCount] = await Promise.all([
-        Service.countDocuments({ 
-          subcategory: id,
-          isActive: true,
-          deletedAt: null 
-        }),
-        Gig.countDocuments({ 
-          subcategory: id,
-          isActive: true,
-          deletedAt: null 
-        })
-      ]);
-
-      if (serviceCount > 0 || gigCount > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete subcategory with active services or gigs',
-          details: {
-            services: serviceCount,
-            gigs: gigCount
-          },
-          code: 'DEPENDENCIES_EXIST',
-          requestId
-        });
-      }
+    if (subcategory.deletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subcategory is already deleted',
+        code: 'ALREADY_DELETED',
+        requestId
+      });
     }
 
-    // Soft delete
-    subcategory.isActive = false;
-    subcategory.deletedAt = new Date();
-    subcategory.deletedBy = req.user._id; // From cookies
-    subcategory.lastUpdatedBy = req.user._id; // From cookies
+    let result;
+    const now = new Date();
     
-    await subcategory.save();
+    if (permanent === 'true') {
+      // Check for dependencies if not forcing
+      if (force !== 'true') {
+        if (subcategory.servicesCount > 0 || subcategory.gigsCount > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot delete subcategory with active services or gigs',
+            code: 'DEPENDENCIES_EXIST',
+            requestId
+          });
+        }
+      }
+      
+      // Permanent delete
+      result = await Subcategory.deleteOne({ _id: id });
+      
+      console.log('[DELETE SUBCATEGORY] Permanent deletion successful:', id);
+      
+    } else {
+      // Soft delete
+      result = await Subcategory.findByIdAndUpdate(
+        id,
+        {
+          isActive: false,
+          deletedAt: now,
+          deletedBy: req.admin._id,
+          lastUpdatedBy: req.admin._id
+        },
+        { new: true }
+      );
+      
+      console.log('[DELETE SUBCATEGORY] Soft deletion successful:', id);
+    }
 
-    await invalidateSubcategoryCache(id);
-
-    res.set({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Request-ID': requestId,
-      'X-Cache-Invalidated': 'true'
-    });
+    // ===== INVALIDATE CACHE =====
+    await invalidateSpecificCache('subcategory', id);
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
 
     res.json({
       success: true,
-      message: 'Subcategory deleted successfully',
+      message: permanent === 'true' ? 'Subcategory permanently deleted' : 'Subcategory deleted successfully',
+      data: {
+        _id: subcategory._id,
+        name: subcategory.name,
+        slug: subcategory.slug,
+        isActive: false,
+        deletedAt: now
+      },
       requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cacheInvalidated: true
+      timestamp: now.toISOString()
     });
 
   } catch (error) {
-    next(error);
+    console.error('[DELETE SUBCATEGORY ERROR]', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID format',
+        code: 'INVALID_ID_FORMAT',
+        requestId
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete subcategory',
+      code: 'DELETE_SUBCATEGORY_ERROR',
+      requestId
+    });
   }
 };
 
@@ -816,141 +1025,79 @@ const restoreSubcategory = async (req, res, next) => {
 };
 
 // Bulk operations
-const bulkUpdateSubcategories = async (req, res, next) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
+const bulkUpdateSubcategories = async (req, res) => {
+  const requestId = uuidv4();
   
   try {
-    // Authentication from cookies
-    if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required',
-        code: 'AUTH_REQUIRED',
-        requestId
-      });
-    }
-
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Admin access required',
-        code: 'ADMIN_ACCESS_REQUIRED',
-        requestId
-      });
-    }
-
-    const { ids, operation, data } = req.body;
+    const { ids, operation, data = {} } = req.body;
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'IDs array is required',
-        code: 'IDS_REQUIRED',
+        message: 'No subcategories selected',
+        code: 'NO_SUBCATEGORIES_SELECTED',
         requestId
       });
     }
 
-    if (ids.length > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot process more than 100 items at once',
-        code: 'BATCH_SIZE_EXCEEDED',
-        requestId
-      });
-    }
-
+    // Validate IDs
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
-    if (validIds.length !== ids.length) {
+    if (validIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid IDs found in request',
+        message: 'No valid subcategory IDs provided',
         code: 'INVALID_IDS',
         requestId
       });
     }
 
-    const allowedOperations = ['activate', 'deactivate', 'update', 'move'];
-    
-    if (!allowedOperations.includes(operation)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid operation. Allowed: ${allowedOperations.join(', ')}`,
-        code: 'INVALID_OPERATION',
-        requestId
-      });
-    }
-
     let updateData = {};
-    const now = new Date();
+    let message = 'Subcategories updated successfully';
 
     switch (operation) {
       case 'activate':
         updateData = { isActive: true };
+        message = 'Subcategories activated successfully';
         break;
+        
       case 'deactivate':
         updateData = { isActive: false };
+        message = 'Subcategories deactivated successfully';
         break;
-      case 'update':
-        updateData = data || {};
-        break;
-      case 'move':
-        if (!data || !data.category) {
-          return res.status(400).json({
-            success: false,
-            message: 'Category ID is required for move operation',
-            code: 'CATEGORY_REQUIRED',
-            requestId
-          });
-        }
-        updateData = { category: data.category };
-        break;
+        
+      default:
+        updateData = data;
     }
 
-    updateData.lastUpdatedBy = req.user._id; // From cookies
-    updateData.updatedAt = now;
+    updateData.lastUpdatedBy = req.admin._id;
+    updateData.$inc = { version: 1 };
 
+    // Perform bulk update
     const result = await Subcategory.updateMany(
-      { _id: { $in: validIds }, deletedAt: null },
-      updateData,
-      { runValidators: operation === 'update' || operation === 'move' }
+      { _id: { $in: validIds } },
+      { $set: updateData }
     );
 
-    await invalidateSubcategoryCache();
-res.set({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Request-ID': requestId,
-      'X-Cache-Invalidated': 'true'
-    });
+    // ===== INVALIDATE CACHE =====
+    await invalidateAdminCache('subcategories');
+    await invalidateAdminCache('categories');
 
     res.json({
       success: true,
-      message: `Bulk ${operation} completed successfully`,
-      data: {
-        total: ids.length,
-        matched: result.matchedCount,
-        modified: result.modifiedCount
-      },
+      message,
+      modifiedCount: result.modifiedCount,
       requestId,
-      timestamp: now.toISOString(),
-      responseTime: `${Date.now() - startTime}ms`,
-      cacheInvalidated: true
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed in bulk update',
-        errors: messages,
-        code: 'BULK_VALIDATION_ERROR',
-        requestId
-      });
-    }
-    
-    next(error);
+    console.error('[BULK UPDATE SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to perform bulk operation',
+      code: 'BULK_OPERATION_ERROR',
+      requestId
+    });
   }
 };
 const repairSubcategoryCounts = async (req, res) => {
@@ -1058,6 +1205,295 @@ const repairSubcategoryCounts = async (req, res) => {
     });
   }
 };
+// Updated getSubcategoryStats function
+const getSubcategoryStats = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:stats:subcategories', {
+      timestamp: Math.floor(Date.now() / 60000)
+    });
+    
+    // Try to get from cache
+    const cachedStats = await cache.get(cacheKey);
+    if (cachedStats) {
+      console.log('Cache HIT admin:stats:subcategories');
+      return res.json({
+        ...cachedStats,
+        cached: true,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // FIXED AGGREGATION: Use direct counts from services and gigs
+    const [subcategories, categoryStats] = await Promise.all([
+      Subcategory.find({ deletedAt: null })
+        .populate('category', 'name slug')
+        .select('name slug category servicesCount gigsCount isActive')
+        .lean(),
+      
+      // Get actual counts from services and gigs grouped by subcategory
+      Promise.all([
+        Service.aggregate([
+          { $match: { status: 'active', isActive: true, deletedAt: null } },
+          { $group: { _id: '$subcategory', count: { $sum: 1 } } }
+        ]),
+        Gig.aggregate([
+          { $match: { status: 'open', isActive: true, deletedAt: null } },
+          { $group: { _id: '$subcategory', count: { $sum: 1 } } }
+        ])
+      ])
+    ]);
+
+    // Create maps for actual counts
+    const serviceCountMap = {};
+    const gigCountMap = {};
+    
+    // Process service counts
+    if (categoryStats[0]) {
+      categoryStats[0].forEach(item => {
+        if (item._id) {
+          serviceCountMap[item._id.toString()] = item.count;
+        }
+      });
+    }
+    
+    // Process gig counts
+    if (categoryStats[1]) {
+      categoryStats[1].forEach(item => {
+        if (item._id) {
+          gigCountMap[item._id.toString()] = item.count;
+        }
+      });
+    }
+
+    // Update subcategories with actual counts
+    const updatedSubcategories = subcategories.map(sub => {
+      const subId = sub._id.toString();
+      const actualServices = serviceCountMap[subId] || 0;
+      const actualGigs = gigCountMap[subId] || 0;
+      
+      // Fix negative counts
+      const fixedServices = Math.max(0, actualServices);
+      const fixedGigs = Math.max(0, actualGigs);
+      
+      return {
+        ...sub,
+        servicesCount: fixedServices,
+        gigsCount: fixedGigs
+      };
+    });
+
+    // Calculate overview
+    const overview = {
+      totalSubcategories: updatedSubcategories.length,
+      activeSubcategories: updatedSubcategories.filter(s => s.isActive).length,
+      totalServices: updatedSubcategories.reduce((sum, sub) => sum + sub.servicesCount, 0),
+      totalGigs: updatedSubcategories.reduce((sum, sub) => sum + sub.gigsCount, 0),
+      avgServices: updatedSubcategories.length > 0 
+        ? updatedSubcategories.reduce((sum, sub) => sum + sub.servicesCount, 0) / updatedSubcategories.length
+        : 0,
+      avgGigs: updatedSubcategories.length > 0 
+        ? updatedSubcategories.reduce((sum, sub) => sum + sub.gigsCount, 0) / updatedSubcategories.length
+        : 0
+    };
+
+    // Group by category
+    const byCategoryMap = {};
+    updatedSubcategories.forEach(sub => {
+      const catId = sub.category?._id?.toString() || 'unknown';
+      
+      if (!byCategoryMap[catId]) {
+        byCategoryMap[catId] = {
+          _id: sub.category?._id || null,
+          count: 0,
+          totalServices: 0,
+          totalGigs: 0,
+          category: sub.category || { name: 'Unknown', slug: '' }
+        };
+      }
+      
+      byCategoryMap[catId].count += 1;
+      byCategoryMap[catId].totalServices += sub.servicesCount;
+      byCategoryMap[catId].totalGigs += sub.gigsCount;
+    });
+
+    const byCategory = Object.values(byCategoryMap).sort((a, b) => b.count - a.count);
+
+    // Get growth data
+    const growth = await Subcategory.aggregate([
+      { $match: { deletedAt: null } },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+      { $limit: 12 }
+    ]);
+
+    // Update database with corrected counts
+    for (const sub of updatedSubcategories) {
+      if (sub.servicesCount !== sub.servicesCount || sub.gigsCount !== sub.gigsCount) {
+        await Subcategory.findByIdAndUpdate(sub._id, {
+          servicesCount: Math.max(0, sub.servicesCount),
+          gigsCount: Math.max(0, sub.gigsCount)
+        });
+      }
+    }
+
+    const response = {
+      success: true,
+      data: {
+        overview: [overview],
+        byCategory,
+        growth
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    };
+
+    // Cache the result
+    await cache.set(cacheKey, response, 300); // Cache for 5 minutes
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('[SUBCATEGORY STATS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subcategory statistics',
+      code: 'SUBCATEGORY_STATS_ERROR',
+      requestId
+    });
+  }
+};
+
+// Export Subcategories
+const exportSubcategories = async (req, res) => {
+  const requestId = uuidv4();
+  
+  try {
+    const { format = 'json', cache: useCacheParam = 'false' } = req.query;
+
+    // Generate cache key
+    const cacheKey = generateCacheKey('admin:export:subcategories', { format });
+    
+    // Try cache if enabled
+    const useCache = useCacheParam === 'true';
+    if (useCache) {
+      const cachedExport = await cache.get(cacheKey);
+      if (cachedExport) {
+        console.log('Cache HIT admin:export:subcategories:', cacheKey);
+        
+        if (format === 'csv') {
+          res.header('Content-Type', 'text/csv');
+          res.header('Content-Disposition', `attachment; filename="subcategories_export_${Date.now()}.csv"`);
+          res.header('X-Request-ID', requestId);
+          res.header('X-Export-Records', cachedExport.count);
+          res.header('X-Export-Timestamp', new Date().toISOString());
+          res.header('X-Cache', 'HIT');
+          
+          return res.send(cachedExport.csvContent);
+        }
+        
+        return res.json({
+          success: true,
+          format: 'json',
+          count: cachedExport.count,
+          data: cachedExport.data,
+          exportedAt: cachedExport.exportedAt,
+          requestId,
+          cached: true
+        });
+      }
+    }
+
+    // Get subcategories with populated data
+    const subcategories = await Subcategory.find({ deletedAt: null })
+      .populate('category', 'name slug')
+      .populate('createdBy', 'name email')
+      .select('-__v -lastUpdatedBy -deletedAt -deletedBy -version')
+      .lean();
+
+    if (format === 'csv') {
+      const headers = [
+        'ID', 'Name', 'Slug', 'Description', 'Category', 
+        'Order', 'Active', 'Services Count', 'Gigs Count',
+        'Created At', 'Updated At'
+      ];
+
+      const csvRows = subcategories.map(sub => [
+        sub._id,
+        `"${(sub.name || '').replace(/"/g, '""')}"`,
+        sub.slug || '',
+        `"${(sub.description || '').replace(/"/g, '""')}"`,
+        sub.category?.name || '',
+        sub.order || 0,
+        sub.isActive ? 'Yes' : 'No',
+        sub.servicesCount || 0,
+        sub.gigsCount || 0,
+        new Date(sub.createdAt).toISOString(),
+        new Date(sub.updatedAt).toISOString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n');
+
+      // Cache the export if enabled
+      if (useCache) {
+        await cache.set(cacheKey, {
+          csvContent,
+          count: subcategories.length,
+          exportedAt: new Date().toISOString()
+        }, 3600); // Cache exports for 1 hour
+      }
+
+      res.header('Content-Type', 'text/csv');
+      res.header('Content-Disposition', `attachment; filename="subcategories_export_${Date.now()}.csv"`);
+      res.header('X-Request-ID', requestId);
+      res.header('X-Export-Records', subcategories.length);
+      res.header('X-Export-Timestamp', new Date().toISOString());
+      res.header('X-Cache', useCache ? 'MISS' : 'BYPASSED');
+      
+      return res.send(csvContent);
+    }
+
+    // Default to JSON
+    const exportData = {
+      success: true,
+      format: 'json',
+      count: subcategories.length,
+      data: subcategories,
+      exportedAt: new Date().toISOString(),
+      requestId
+    };
+    
+    // Cache the JSON export if enabled
+    if (useCache) {
+      await cache.set(cacheKey, exportData, 3600); // Cache exports for 1 hour
+    }
+    
+    res.json(exportData);
+
+  } catch (error) {
+    console.error('[EXPORT SUBCATEGORIES ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export subcategories',
+      code: 'EXPORT_ERROR',
+      requestId
+    });
+  }
+};
 module.exports = {
   createSubcategory,
   getSubcategories,
@@ -1068,5 +1504,8 @@ module.exports = {
   restoreSubcategory,
   bulkUpdateSubcategories,
   getSubcategoryBySlug,
-  repairSubcategoryCounts
+  repairSubcategoryCounts,
+  exportSubcategories,
+  getSubcategoryStats,
+  getSubcategoriesDropdown
 };

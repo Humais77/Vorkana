@@ -296,46 +296,107 @@ const generateCacheKey = (prefix, params) => {
   const key = `${prefix}:${JSON.stringify(params)}`;
   return crypto.createHash('md5').update(key).digest('hex');
 };
-const invalidateGigCache = async (gigId) => {
+const invalidateCache = async (resourceType, resourceId, options = {}) => {
   try {
-    // Get gig details
-    const gig = await Gig.findById(gigId).select('projectCategory subcategory status slug createdBy');
-    
-    if (gig) {
-      // Clear specific gig cache
-      await cache.del(`gig:${gigId}`);
-      await cache.del(`gig:slug:${gig.slug}`);
+    if (resourceId) {
+      let resource;
       
-      // Clear pattern-based cache keys (if cache.keys() exists)
-      // If not, use specific keys:
-      await cache.del('gig_stats:*'); // Use wildcard if supported
-      
-      // Clear list caches by specific patterns
-      const patterns = [
-        'gigs:list:*',           // All gig lists
-        `gigs:category:${gig.projectCategory}:*`, // Category-specific
-        `gigs:user:${gig.createdBy}:*`,           // User-specific
-      ];
-      
-      if (gig.subcategory) {
-        patterns.push(`gigs:subcategory:${gig.subcategory}:*`);
+      if (resourceType === 'gig') {
+        resource = await Gig.findById(resourceId).select('projectCategory subcategory status slug createdBy');
+      } else if (resourceType === 'service') {
+        resource = await Service.findById(resourceId).select('category subcategory status slug createdBy');
       }
       
-      // Delete each pattern
-      for (const pattern of patterns) {
-        try {
-          // If cache.keys() doesn't exist, use direct deletion
-          await cache.del(pattern.replace('*', ''));
-        } catch (err) {
-          // Ignore if key doesn't exist
+      if (resource) {
+        // Clear specific cache
+        await cache.del(`${resourceType}:${resourceId}`);
+        
+        if (resource.slug) {
+          await cache.del(`${resourceType}:slug:${resource.slug}`);
         }
+        
+        // Clear list caches using patterns
+        const patterns = [
+          `${resourceType}s:list:*`,
+          `${resourceType}s:admin:*`,
+          `${resourceType}_stats:*`,
+        ];
+        
+        // Add category-specific patterns
+        if (resourceType === 'gig' && resource.projectCategory) {
+          patterns.push(`${resourceType}s:category:${resource.projectCategory}:*`);
+        } else if (resourceType === 'service' && resource.category) {
+          patterns.push(`${resourceType}s:category:${resource.category}:*`);
+        }
+        
+        // Add subcategory patterns
+        if (resource.subcategory) {
+          patterns.push(`${resourceType}s:subcategory:${resource.subcategory}:*`);
+        }
+        
+        // Add user-specific patterns
+        if (resource.createdBy) {
+          patterns.push(`${resourceType}s:user:${resource.createdBy}:*`);
+        }
+        
+        // Clear all matching patterns
+        for (const pattern of patterns) {
+          try {
+            // Use del directly if wildcards aren't supported
+            await cache.del(pattern.replace('*', ''));
+          } catch (err) {
+            // Ignore if key doesn't exist
+          }
+        }
+        
+        console.log(`Cache invalidated for ${resourceType} ${resourceId}`);
       }
-      
-      console.log(`Cache invalidated for gig ${gigId}`);
     }
+    
+    // Clear all cache if requested
+    if (options.clearAll) {
+      await invalidateAllCache(resourceType);
+    }
+    
   } catch (err) {
-    console.error('Error in cache invalidation:', err.message);
+    console.error(`Error in ${resourceType} cache invalidation:`, err.message);
   }
+};
+
+// Clear all cache for a resource type
+const invalidateAllCache = async (resourceType) => {
+  try {
+    const patterns = [
+      `${resourceType}:*`,
+      `${resourceType}s:*`,
+      `${resourceType}_stats:*`,
+      `${resourceType}s_list:*`,
+      `${resourceType}s_admin:*`,
+      `${resourceType}s_user:*`,
+    ];
+    
+    for (const pattern of patterns) {
+      try {
+        await cache.del(pattern.replace('*', ''));
+      } catch (err) {
+        // Ignore if key doesn't exist
+      }
+    }
+    
+    console.log(`All ${resourceType} cache invalidated`);
+  } catch (err) {
+    console.error(`Error invalidating all ${resourceType} cache:`, err.message);
+  }
+};
+
+// Gig-specific cache invalidation (for backward compatibility)
+const invalidateGigCache = async (gigId) => {
+  return invalidateCache('gig', gigId);
+};
+
+// Invalidate all gig cache
+const invalidateAllGigCache = async () => {
+  return invalidateAllCache('gig');
 };
 
 // Create Gig
@@ -477,7 +538,7 @@ const createGig = async (req, res, next) => {
     const gig = await Gig.create(gigData);
 
     // Invalidate cache after creating a new gig
-    await invalidateGigCache(gig._id);
+    await invalidateCache('gig', gig._id, { clearAll: false });
 
     logAudit('CREATE', 'GIG', gig._id, req.user._id, {
       title: gig.title,
@@ -707,21 +768,18 @@ const getGigs = async (req, res, next) => {
       maxTimeMS: 5000
     };
 
-    // Generate cache key
-    const cacheKey = generateCacheKey('gigs:list', {
-  filter: JSON.stringify(filter), 
+    const cacheKey = generateCacheKey('gigs_list', {
+  filter: JSON.stringify(filter),
   page: pageNum,
   limit: limitNum,
-  sort: JSON.stringify(sortObj),
-  skip,
-  populate: JSON.stringify(populateOptions),
+  sort: sortField,
+  order: sortOrder,
   userRole,
+  includeCategory: includeCategory === 'true',
   includeSubcategory: includeSubcategory === 'true',
   includeCreator: includeCreator === 'true',
-  includeAssignee: includeAssignee === 'true',
-  timestamp: Math.floor(Date.now() / 60000)
+  includeAssignee: includeAssignee === 'true'
 });
-
     let gigs, total;
     const shouldUseCache = useCache === 'true' && pageNum === 1 && !search && !q;
 
@@ -859,11 +917,11 @@ const getGigs = async (req, res, next) => {
 const searchGigs = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  const cacheKey = generateCacheKey('gigs:search', {
+const cacheKey = generateCacheKey('gigs_search', {
   query: sanitizedQuery,
   fuzzy: fuzzy === 'true',
   limit: searchLimit,
-  timestamp: Math.floor(Date.now() / 60000)
+  userRole: req.user?.role || 'guest'
 });
 
 // Try cache first
@@ -1068,14 +1126,12 @@ const getGigById = async (req, res, next) => {
     }
 
     // Generate cache key
-    const cacheKey = generateCacheKey('gig:single', {
+    const cacheKey = generateCacheKey('gig_detail', {
   id,
   fields,
-  populate: populateOptions.length,
+  populate: populateOptions.length > 0,
   userRole,
-  userId,
-  includeSubcategory: includeSubcategory === 'true',
-  timestamp: Math.floor(Date.now() / 60000)
+  includeSubcategory: includeSubcategory === 'true'
 });
 
     let gig;
@@ -1431,16 +1487,34 @@ const updateGig = async (req, res, next) => {
     }
 
     // Version conflict check for non-admins
-    if (!isAdmin && clientVersion !== gig.version) {
-      console.warn(`[${requestId}] Version conflict: client=${clientVersion}, server=${gig.version}`);
+    if (!isAdmin) {
+  if (clientVersion < gig.version) {
+    // Client version is behind - check how far behind
+    const versionDiff = gig.version - clientVersion;
+    
+    if (versionDiff > 5) {
+      // Significant version difference - require refresh
+      console.warn(`[${requestId}] Significant version conflict: diff=${versionDiff}`);
       return res.status(409).json({
         success: false,
-        message: 'Gig was modified by another user. Please refresh and try again.',
-        code: 'VERSION_CONFLICT',
+        message: 'This gig has been modified multiple times. Please refresh and review changes.',
+        code: 'VERSION_CONFLICT_SIGNIFICANT',
         currentVersion: gig.version,
         requestId
       });
+    } else if (versionDiff > 1) {
+      // Minor version mismatch - log but allow
+      console.log(`[${requestId}] Minor version mismatch: diff=${versionDiff}. Allowing update.`);
+      // Update client version to match DB version
+      clientVersion = gig.version;
     }
+  } else if (clientVersion > gig.version) {
+    // Client version is ahead - shouldn't happen but handle gracefully
+    console.warn(`[${requestId}] Client version ahead of server: client=${clientVersion}, server=${gig.version}`);
+    // Update server version to match client
+    // This could happen if client has cached newer version
+  }
+}
 
     // Parse request data based on content type
     let sanitizedData = {};
@@ -1590,19 +1664,56 @@ if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
     }
 
     const updatedGig = await Gig.findOneAndUpdate(
-      queryConditions,
-      updateData,
-      { 
-        new: true,
-        runValidators: true,
-        context: 'query',
-        populate: [
-          { path: 'projectCategory', select: 'name slug icon' },
-          { path: 'subcategory', select: 'name slug icon' },
-          { path: 'createdBy', select: 'name picture' }
-        ]
+  queryConditions,
+  updateData,
+  { 
+    new: true,
+    runValidators: true,
+    context: 'query',
+    populate: [
+      { path: 'projectCategory', select: 'name slug icon' },
+      { path: 'subcategory', select: 'name slug icon' },
+      { path: 'createdBy', select: 'name picture' }
+    ]
+  }
+);
+if (updatedGig) {
+  console.log(`[${requestId}] Starting aggressive cache invalidation`);
+  
+  // Invalidate ALL caches related to this gig
+  await Promise.all([
+    // Delete specific gig cache
+    cache.del(`gig:${id}`),
+    
+    // Delete slug-based cache
+    cache.del(`gig:slug:${updatedGig.slug || ''}`),
+    
+    // Delete all pattern-based caches
+    (async () => {
+      // Invalidate list caches
+      const patterns = [
+        'gigs_list:*',
+        'gigs:list:*',
+        `gigs:category:${updatedGig.projectCategory?._id || updatedGig.projectCategory}:*`,
+        `gigs:user:${updatedGig.createdBy?._id || updatedGig.createdBy}:*`
+      ];
+      
+      if (updatedGig.subcategory) {
+        patterns.push(`gigs:subcategory:${updatedGig.subcategory._id || updatedGig.subcategory}:*`);
       }
-    );
+      
+      for (const pattern of patterns) {
+        try {
+          await cache.del(pattern.replace('*', ''));
+        } catch (err) {
+          // Ignore errors
+        }
+      }
+    })()
+  ]);
+  
+  console.log(`[${requestId}] Cache invalidation completed`);
+}
 
     if (!updatedGig) {
       // Check why update failed
@@ -1648,7 +1759,7 @@ if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
     }
 
     // Invalidate cache
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     // Log audit
     logAudit('UPDATE', 'GIG', id, req.user._id, {
@@ -1674,15 +1785,24 @@ if (sanitizedData.removeImages && Array.isArray(sanitizedData.removeImages)) {
     const responseTime = Date.now() - startTime;
     console.log(`[${requestId}] Update completed in ${responseTime}ms`);
     
-    res.json({
-      success: true,
-      data: safeGig,
-      message: 'Gig updated successfully',
-      newVersion: updatedGig.version,
-      requestId,
-      timestamp: new Date().toISOString(),
-      responseTime: `${responseTime}ms`
-    });
+    res.set({
+  'Cache-Control': 'no-cache, no-store, must-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'X-Cache-Invalidated': 'true',
+  'X-Gig-Version': updatedGig.version
+});
+
+res.json({
+  success: true,
+  data: safeGig,
+  message: 'Gig updated successfully',
+  newVersion: updatedGig.version,
+  requestId,
+  timestamp: new Date().toISOString(),
+  responseTime: `${responseTime}ms`,
+  cacheInvalidated: true
+});
 
   } catch (error) {
     console.error(`[${requestId}] Update gig error:`, error);
@@ -1851,15 +1971,15 @@ const handleImageOperations = async (req, gig) => {
 const getGigsBySubcategory = async (req, res, next) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
-  const cacheKey = generateCacheKey('gigs:by_subcategory', {
+  const cacheKey = generateCacheKey('gigs_subcategory', {
   subcategoryId,
   page: pageNum,
   limit: limitNum,
-  sort: JSON.stringify(sortOptions),
+  sort: 'createdAt',
+  order: 'desc',
   minBudget,
   maxBudget,
-  minRating,
-  timestamp: Math.floor(Date.now() / 60000)
+  minRating
 });
 
 const cached = await cache.get(cacheKey);
@@ -2096,7 +2216,7 @@ const uploadImages = async (req, res, next) => {
     await gig.save();
 
     // Invalidate cache after image upload
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     logAudit('UPLOAD_IMAGES', 'GIG', id, req.user._id, {
       imagesAdded: uploadedImages.length,
@@ -2198,7 +2318,7 @@ const removeImage = async (req, res, next) => {
     await deleteCloudinaryImages([imageToRemove]);
 
     // Invalidate cache after image removal
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     logAudit('REMOVE_IMAGE', 'GIG', id, req.user._id, {
       imagePublicId: publicId,
@@ -2289,7 +2409,7 @@ const setThumbnail = async (req, res, next) => {
     await gig.save();
 
     // Invalidate cache after thumbnail change
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     logAudit('SET_THUMBNAIL', 'GIG', id, req.user._id, {
       thumbnail: image.url
@@ -2409,7 +2529,7 @@ const uploadThumbnail = async (req, res, next) => {
     await gig.save();
 
     // Invalidate cache after thumbnail upload
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     logAudit('UPLOAD_THUMBNAIL', 'GIG', id, req.user._id, {
       thumbnail: uploadedImage.url
@@ -2711,7 +2831,7 @@ const deleteGig = async (req, res, next) => {
     }
     
     // Invalidate cache
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
     
     const responseTime = Date.now() - startTime;
     console.log(`[${requestId}] Delete completed in ${responseTime}ms`);
@@ -2839,7 +2959,7 @@ if (gig.status === 'open') {
     await gig.save();
 
     // Invalidate cache after restoration
-    await invalidateGigCache(id);
+    await invalidateCache('gig', id, { clearAll: false });
 
     logAudit('RESTORE', 'GIG', id, req.user._id);
 
@@ -2904,9 +3024,10 @@ const getGigStats = async (req, res, next) => {
 
     // Generate cache key for stats
     const cacheKey = generateCacheKey('gig_stats', {
-      userId: req.user._id,
-      role: req.user.role
-    });
+  userId: req.user._id,
+  role: req.user.role,
+  timestamp: Math.floor(Date.now() / 300000) 
+});
 
     let stats;
     const shouldUseCache = true; // Always cache stats for 5 minutes
@@ -3117,7 +3238,11 @@ const exportGigs = async (req, res) => {
     });
 
     // Generate cache key
-    const cacheKey = generateCacheKey('admin:export:gigs', { format });
+   const cacheKey = generateCacheKey('gigs_export', {
+  format,
+  userRole: req.user?.role,
+  timestamp: Math.floor(Date.now() / 3600000) // 1-hour intervals
+});
     
     // Try cache if enabled
     const useCache = useCacheParam === 'true';

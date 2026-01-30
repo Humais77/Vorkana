@@ -29,7 +29,7 @@ const User = require('../models/user.model.js');
 
 const CSRFMiddleware = require('../middleware/csrf.middleware');
 const SessionMiddleware = require('../middleware/session.middleware');
-const { validateCreate, validateUpdate } = require('../middleware/validators/category.validator.js');
+const categoryValidator = require('../middleware/validators/category.validator.js');
 
 const ADMIN_CACHE_CONFIG = {
   DASHBOARD: {
@@ -117,7 +117,7 @@ router.get('/subcategories/stats',
   auditLog('VIEW_SUBCATEGORY_STATS', 'categories'),
   cacheControlMiddleware({ public: false, maxAge: 180 }),
   cacheStats,
-  adminController.getSubcategoryStats
+  subcategoryController.getSubcategoryStats
 );
 
 router.get('/services/stats', 
@@ -235,7 +235,7 @@ router.get('/categories/:categoryId/subcategories/dropdown',
   auditLog('VIEW_SUBCATEGORIES_DROPDOWN', 'categories'),
   cacheControlMiddleware({ public: false, maxAge: 600 }),
   cacheDropdown,
-  adminController.getSubcategoriesDropdown
+  subcategoryController.getSubcategoriesDropdown
 );
 
 router.get('/subcategories/dropdown', 
@@ -360,7 +360,7 @@ router.get('/subcategories',
       next(error);
     }
   },
-  adminController.getSubcategories
+  subcategoryController.getSubcategories
 );
 
 router.post('/subcategories/bulk', 
@@ -371,7 +371,7 @@ router.post('/subcategories/bulk',
   auditLog('BULK_SUBCATEGORY_ACTION', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  adminController.bulkUpdateSubcategories
+  subcategoryController.bulkUpdateSubcategories
 );
 
 router.get('/subcategories/export', 
@@ -379,8 +379,9 @@ router.get('/subcategories/export',
   requirePermission('manage_categories'),
   auditLog('EXPORT_SUBCATEGORIES', 'categories'),
   cacheControlMiddleware({ noStore: true }),
-  adminController.exportSubcategories
+  subcategoryController.exportSubcategories
 );
+
 
 router.get('/subcategories/:id', 
   verifyAdmin, 
@@ -404,7 +405,7 @@ router.get('/subcategories/:id',
       next(error);
     }
   },
-  adminController.getSubcategoryById
+  subcategoryController.getSubcategoryById
 );
 
 router.post('/subcategories', 
@@ -415,7 +416,7 @@ router.post('/subcategories',
   auditLog('CREATE_SUBCATEGORY', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  adminController.createSubcategory
+  subcategoryController.createSubcategory
 );
 
 router.put('/subcategories/:id', 
@@ -427,7 +428,7 @@ router.put('/subcategories/:id',
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
   express.json({ limit: '10mb' }),
-  adminController.updateSubcategory
+  subcategoryController.updateSubcategory
 );
 
 router.delete('/subcategories/:id', 
@@ -438,7 +439,7 @@ router.delete('/subcategories/:id',
   auditLog('DELETE_SUBCATEGORY', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  adminController.deleteSubcategory
+  subcategoryController.deleteSubcategory
 );
 
 router.get('/users', 
@@ -577,7 +578,7 @@ router.post('/categories',
   auditLog('CREATE_CATEGORY', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  validateCreate,
+  categoryValidator.validateCreate,
   categoryController.createCategory
 );
 
@@ -589,7 +590,7 @@ router.put('/categories/:id',
   auditLog('UPDATE_CATEGORY', 'categories'),
   cacheControlMiddleware({ noStore: true }),
   clearAdminCache,
-  validateUpdate,
+  categoryValidator.validateUpdate,
   categoryController.updateCategory
 );
 
@@ -683,7 +684,13 @@ router.get('/services',
   },
   serviceController.getAdminServices
 );
-
+router.get('/services/export', 
+  verifyAdmin, 
+  requirePermission('manage_services'),
+  auditLog('EXPORT_SERVICES', 'services'),
+  cacheControlMiddleware({ noStore: true }),
+  serviceController.exportServices
+);
 router.get('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 

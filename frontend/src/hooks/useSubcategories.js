@@ -1,4 +1,3 @@
-// useSubcategories.js - Production-ready hooks with CSRF protection
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { subcategoriesAPI } from '../api/subcategories';
 import { useSubcategoryStore } from '../store/useSubcategoryStore';
@@ -7,12 +6,10 @@ import { useState, useCallback } from 'react';
 import { useCSRF } from './useAuth';
 import toast from 'react-hot-toast';
 
-// Helper to handle CSRF errors
 const handleCSRFError = (error, retryAction = null) => {
   if (error.code === 'CSRF_TOKEN_INVALID' || error.requiresCSRFRefresh) {
     toast.error('Security session expired. Refreshing...');
     
-    // Try to refresh CSRF token
     subcategoriesAPI.refreshCSRFToken().then(() => {
       toast.success('Security session refreshed. Please try again.');
       if (retryAction) retryAction();
@@ -214,205 +211,6 @@ export const useSubcategory = (identifier, options = {}) => {
     ...options,
   });
 };
-
-/**
- * Hook to create a subcategory
- */
-export const useCreateSubcategory = () => {
-  const queryClient = useQueryClient();
-  const addSubcategory = useSubcategoryStore((state) => state.addSubcategory);
-  const { validate: validateCSRF } = useCSRF();
-  
-  return useMutation({
-    mutationFn: async (subcategoryData) => {
-      // Validate CSRF token
-      const hasValidCSRF = await validateCSRF();
-      if (!hasValidCSRF) {
-        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
-      }
-      
-      return await subcategoriesAPI.create(subcategoryData);
-    },
-    onMutate: () => {
-      toast.loading('Creating subcategory...');
-    },
-    onSuccess: (response, variables) => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['subcategories'] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', 'category', variables.category] });
-      
-      // Update local store
-      if (response.data) {
-        addSubcategory(response.data);
-      }
-      
-      toast.success(response.message || 'Subcategory created successfully');
-    },
-    onError: (error) => {
-      console.error('Create subcategory error:', error);
-      
-      if (handleCSRFError(error, () => {})) {
-        return;
-      }
-      
-      if (error.type === 'VALIDATION_ERROR') {
-        toast.error('Validation failed. Please check the form.');
-        error.errors.forEach(err => {
-          toast.error(`${err.field}: ${err.message}`, { duration: 3000 });
-        });
-      } else {
-        toast.error(error.message || 'Failed to create subcategory');
-      }
-    },
-    onSettled: () => {
-      toast.dismiss();
-    },
-  });
-};
-
-/**
- * Hook to update a subcategory
- */
-export const useUpdateSubcategory = () => {
-  const queryClient = useQueryClient();
-  const updateSubcategoryInStore = useSubcategoryStore((state) => state.updateSubcategory);
-  const { validate: validateCSRF } = useCSRF();
-  
-  return useMutation({
-    mutationFn: async ({ id, data }) => {
-      // Validate CSRF token
-      const hasValidCSRF = await validateCSRF();
-      if (!hasValidCSRF) {
-        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
-      }
-      
-      return await subcategoriesAPI.update(id, data);
-    },
-    onMutate: () => {
-      toast.loading('Updating subcategory...');
-    },
-    onSuccess: (response, variables) => {
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: ['subcategories'] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', variables.id] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', 'category'] });
-      
-      // Update store
-      if (response.data) {
-        updateSubcategoryInStore(variables.id, response.data);
-      }
-      
-      toast.success(response.message || 'Subcategory updated successfully');
-    },
-    onError: (error) => {
-      console.error('Update subcategory error:', error);
-      
-      if (handleCSRFError(error, () => {})) {
-        return;
-      }
-      
-      toast.error(error.message || 'Failed to update subcategory');
-    },
-    onSettled: () => {
-      toast.dismiss();
-    },
-  });
-};
-
-/**
- * Hook to delete a subcategory
- */
-export const useDeleteSubcategory = () => {
-  const queryClient = useQueryClient();
-  const removeSubcategory = useSubcategoryStore((state) => state.removeSubcategory);
-  const { validate: validateCSRF } = useCSRF();
-  
-  return useMutation({
-    mutationFn: async ({ id, force = false }) => {
-      // Validate CSRF token
-      const hasValidCSRF = await validateCSRF();
-      if (!hasValidCSRF) {
-        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
-      }
-      
-      return await subcategoriesAPI.delete(id, force);
-    },
-    onMutate: () => {
-      toast.loading('Deleting subcategory...');
-    },
-    onSuccess: (response, variables) => {
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: ['subcategories'] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', 'category'] });
-      
-      // Remove from store
-      removeSubcategory(variables.id);
-      
-      toast.success(response.message || 'Subcategory deleted successfully');
-    },
-    onError: (error) => {
-      console.error('Delete subcategory error:', error);
-      
-      if (handleCSRFError(error, () => {})) {
-        return;
-      }
-      
-      toast.error(error.message || 'Failed to delete subcategory');
-    },
-    onSettled: () => {
-      toast.dismiss();
-    },
-  });
-};
-
-/**
- * Hook to restore a subcategory
- */
-export const useRestoreSubcategory = () => {
-  const queryClient = useQueryClient();
-  const addSubcategory = useSubcategoryStore((state) => state.addSubcategory);
-  const { validate: validateCSRF } = useCSRF();
-  
-  return useMutation({
-    mutationFn: async (id) => {
-      // Validate CSRF token
-      const hasValidCSRF = await validateCSRF();
-      if (!hasValidCSRF) {
-        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
-      }
-      
-      return await subcategoriesAPI.restore(id);
-    },
-    onMutate: () => {
-      toast.loading('Restoring subcategory...');
-    },
-    onSuccess: (response, variables) => {
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: ['subcategories'] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', 'category'] });
-      
-      // Add to store
-      if (response.data) {
-        addSubcategory(response.data);
-      }
-      
-      toast.success(response.message || 'Subcategory restored successfully');
-    },
-    onError: (error) => {
-      console.error('Restore subcategory error:', error);
-      
-      if (handleCSRFError(error, () => {})) {
-        return;
-      }
-      
-      toast.error(error.message || 'Failed to restore subcategory');
-    },
-    onSettled: () => {
-      toast.dismiss();
-    },
-  });
-};
-
 /**
  * Hook to search subcategories
  */
@@ -452,49 +250,6 @@ export const useSearchSubcategories = (query, options = {}) => {
     ...options,
   });
 };
-
-/**
- * Hook for bulk operations
- */
-export const useBulkSubcategoryOperations = () => {
-  const queryClient = useQueryClient();
-  const { validate: validateCSRF } = useCSRF();
-  
-  return useMutation({
-    mutationFn: async ({ operation, ids, data = {} }) => {
-      // Validate CSRF token
-      const hasValidCSRF = await validateCSRF();
-      if (!hasValidCSRF) {
-        throw { code: 'CSRF_TOKEN_INVALID', message: 'Security validation required' };
-      }
-      
-      return await subcategoriesAPI.bulk(operation, ids, data);
-    },
-    onMutate: () => {
-      toast.loading('Processing bulk operation...');
-    },
-    onSuccess: (response) => {
-      // Invalidate all subcategory queries
-      queryClient.invalidateQueries({ queryKey: ['subcategories'] });
-      queryClient.invalidateQueries({ queryKey: ['subcategories', 'category'] });
-      
-      toast.success(response.message || 'Bulk operation completed successfully');
-    },
-    onError: (error) => {
-      console.error('Bulk operation error:', error);
-      
-      if (handleCSRFError(error, () => {})) {
-        return;
-      }
-      
-      toast.error(error.message || 'Bulk operation failed');
-    },
-    onSettled: () => {
-      toast.dismiss();
-    },
-  });
-};
-
 /**
  * SIMPLIFIED version for subcategory selection
  */
