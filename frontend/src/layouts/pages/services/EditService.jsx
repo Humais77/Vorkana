@@ -41,7 +41,8 @@ import {
   ExternalLink,
   GitBranch,
   AlertTriangle,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Lightbulb
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -914,18 +915,18 @@ const EditService = () => {
   // Memoized render functions
   const renderTopInfo = useMemo(() => (
     <div className="max-w-6xl mx-auto mb-8">
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 md:p-8 shadow-lg border border-emerald-100">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 md:p-8 shadow-lg border border-blue-100">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="md:w-2/3">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
                 <Edit className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
                 <h1 className="text-2xl md:text-4xl font-bold text-gray-900">
                   Edit Service
                 </h1>
-                <p className="text-emerald-700 font-medium text-sm md:text-base">
+                <p className="text-blue-700 font-medium text-sm md:text-base">
                   Update your service details
                 </p>
               </div>
@@ -937,13 +938,13 @@ const EditService = () => {
           <div className="md:w-1/3 w-full">
             <div className="bg-white rounded-xl p-4 md:p-6 shadow-lg border border-gray-200">
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm md:text-base">
-                <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
+                <Info className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                 Quick Tips
               </h3>
               <ul className="space-y-2 text-xs md:text-sm text-gray-600">
                 {QUICK_TIPS.map((tip, index) => (
                   <li key={index} className="flex items-start gap-2">
-                    <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                     <span>{tip}</span>
                   </li>
                 ))}
@@ -977,13 +978,13 @@ const EditService = () => {
                 <>
                   <button
                     onClick={() => handleManualResolve('keep_my_changes')}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
                   >
                     Keep My Changes
                   </button>
                   <button
                     onClick={() => handleManualResolve('use_server_changes')}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
                   >
                     Use Server Version
                   </button>
@@ -1011,14 +1012,14 @@ const EditService = () => {
 
   const renderRightPanel = useMemo(() => (
     <div className="lg:col-span-1">
-      <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
+      <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl shadow-2xl p-6 md:p-8 text-white h-full">
         <div className="mb-6">
           <div className="flex items-center mb-4">
-            <Eye className="mr-3" size={20} />
+            <Lightbulb className="mr-3" size={20} />
             <h2 className="text-xl font-bold">Service Preview</h2>
           </div>
         
-          <p className="text-emerald-100 text-sm">
+          <p className="text-blue-100 text-sm">
             Review your changes before updating. This preview shows how your service will appear to clients.
           </p>
         </div>
@@ -1028,47 +1029,47 @@ const EditService = () => {
             <h3 className="font-bold text-lg mb-3">Current Information</h3>
             <ul className="space-y-2 text-sm">
               <li className="flex justify-between">
-                <span className="text-emerald-100">Title:</span>
+                <span className="text-blue-100">Title:</span>
                 <span className="font-medium truncate max-w-[150px]">
                   {formData.title || 'Not set'}
                 </span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Category:</span>
+                <span className="text-blue-100">Category:</span>
                 <span className="font-medium truncate max-w-[120px]">
                   {getCategoryName() || 'Not selected'}
                 </span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Subcategory:</span>
+                <span className="text-blue-100">Subcategory:</span>
                 <span className="font-medium truncate max-w-[120px]">
                   {getSubcategoryName() || 'Not selected'}
                 </span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Price:</span>
+                <span className="text-blue-100">Price:</span>
                 <span className="font-medium">
                   ${formatPrice(formData.price)}
                 </span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Delivery Time:</span>
+                <span className="text-blue-100">Delivery Time:</span>
                 <span className="font-medium">{formData.deliveryTime || 'Not set'} {formData.deliveryTimeUnit}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Status:</span>
+                <span className="text-blue-100">Status:</span>
                 <span className="font-medium capitalize">{formData.status}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Tags:</span>
+                <span className="text-blue-100">Tags:</span>
                 <span className="font-medium">{formData.tags.length} added</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Features:</span>
+                <span className="text-blue-100">Features:</span>
                 <span className="font-medium">{formData.features.length} added</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-emerald-100">Total Images:</span>
+                <span className="text-blue-100">Total Images:</span>
                 <span className="font-medium">
                   {existingImages.length + uploadedImages.length}/10
                 </span>
@@ -1080,15 +1081,15 @@ const EditService = () => {
             <h3 className="font-bold text-lg mb-3">Changes Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-emerald-100">Form Fields Updated:</span>
+                <span className="text-blue-100">Form Fields Updated:</span>
                 <span className="font-medium">Multiple</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-100">New Images:</span>
+                <span className="text-blue-100">New Images:</span>
                 <span className="font-medium">{uploadedImages.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-100">New Thumbnail:</span>
+                <span className="text-blue-100">New Thumbnail:</span>
                 <span className="font-medium">{thumbnailFile ? 'Yes' : 'No'}</span>
               </div>
             </div>
@@ -1096,7 +1097,7 @@ const EditService = () => {
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
             <h3 className="font-bold text-lg mb-3">Update Tips</h3>
-            <ul className="space-y-2 text-sm text-emerald-100">
+            <ul className="space-y-2 text-sm text-blue-100">
               <li className="flex items-start gap-2">
                 <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                 <span>Update at least once a month to stay relevant</span>
@@ -1110,11 +1111,11 @@ const EditService = () => {
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-emerald-100">Status:</span>
+                <span className="text-blue-100">Status:</span>
                 <span className="font-medium capitalize">{formData.status}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-emerald-100">Last Edited:</span>
+                <span className="text-blue-100">Last Edited:</span>
                 <span className="font-medium">
                   {currentService?.updatedAt ?
                     new Date(currentService.updatedAt).toLocaleDateString() :
@@ -1221,7 +1222,7 @@ const EditService = () => {
                     <input type="hidden" name="version" value={formData.version} />
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <Briefcase className="h-5 w-5 text-emerald-600" />
+                        <Briefcase className="h-5 w-5 text-blue-600" />
                         Basic Information
                       </h2>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -1241,7 +1242,7 @@ const EditService = () => {
                             name="title"
                             value={formData.title}
                             onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="e.g., Professional Web Development Service"
                             required
                           />
@@ -1260,7 +1261,7 @@ const EditService = () => {
                               name="category"
                               value={formData.category}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               required
                             >
                               <option value="">Select a category</option>
@@ -1284,7 +1285,7 @@ const EditService = () => {
                               name="subcategory"
                               value={formData.subcategory}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               disabled={!formData.category || subcategoriesData.isLoading}
                               required={subcategories.length > 0}
                             >
@@ -1314,7 +1315,7 @@ const EditService = () => {
                             value={formData.shortDescription}
                             onChange={handleInputChange}
                             rows="3"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Brief description of your service (appears in listings)"
                             required
                             maxLength={250}
@@ -1340,7 +1341,7 @@ const EditService = () => {
                             value={formData.description}
                             onChange={handleInputChange}
                             rows="6"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Detailed description of your service..."
                             required
                             maxLength={5000}
@@ -1361,7 +1362,7 @@ const EditService = () => {
                     {/* Pricing & Delivery */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <DollarSign className="h-5 w-5 text-emerald-600" />
+                        <DollarSign className="h-5 w-5 text-blue-600" />
                         Pricing & Delivery
                       </h2>
                       <div className="space-y-6">
@@ -1377,7 +1378,7 @@ const EditService = () => {
                               name="price"
                               value={formData.price}
                               onChange={handleInputChange}
-                              className="w-full pl-10 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full pl-10 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               placeholder="Enter your price"
                               min="1"
                               max="100000"
@@ -1388,7 +1389,7 @@ const EditService = () => {
                           <div className="flex justify-between mt-2">
                             <p className="text-xs text-gray-500">Minimum $1, maximum $100,000</p>
                             {formData.price && (
-                              <span className="text-sm font-semibold text-emerald-600">
+                              <span className="text-sm font-semibold text-blue-600">
                                 ${formatPrice(formData.price)}
                               </span>
                             )}
@@ -1408,7 +1409,7 @@ const EditService = () => {
                               name="currency"
                               value={formData.currency}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
                               {CURRENCY_OPTIONS.map(currency => (
                                 <option key={currency.value} value={currency.value}>
@@ -1428,7 +1429,7 @@ const EditService = () => {
                               name="revisions"
                               value={formData.revisions}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               placeholder="Number of revisions"
                               min="0"
                               max="99"
@@ -1448,7 +1449,7 @@ const EditService = () => {
                                 name="deliveryTime"
                                 value={formData.deliveryTime}
                                 onChange={handleInputChange}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 placeholder="e.g., 7"
                                 min="1"
                                 max="365"
@@ -1461,7 +1462,7 @@ const EditService = () => {
                                 name="deliveryTimeUnit"
                                 value={formData.deliveryTimeUnit}
                                 onChange={handleInputChange}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               >
                                 {DELIVERY_TIME_UNITS.map(unit => (
                                   <option key={unit.value} value={unit.value}>
@@ -1474,7 +1475,7 @@ const EditService = () => {
                           <div className="flex justify-between mt-2">
                             <p className="text-xs text-gray-500">Minimum 1, maximum 365</p>
                             {formData.deliveryTime && (
-                              <span className="text-sm font-semibold text-emerald-600">
+                              <span className="text-sm font-semibold text-blue-600">
                                 {formData.deliveryTime} {formData.deliveryTimeUnit}
                               </span>
                             )}
@@ -1489,7 +1490,7 @@ const EditService = () => {
                     {/* Tags & Keywords */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <Tag className="h-5 w-5 text-emerald-600" />
+                        <Tag className="h-5 w-5 text-blue-600" />
                         Tags & Keywords
                       </h2>
                       <div className="space-y-6">
@@ -1520,12 +1521,12 @@ const EditService = () => {
                           {formData.tags.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-2">
                               {formData.tags.map((tag, index) => (
-                                <div key={index} className="flex items-center bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+                                <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
                                   {tag}
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveTag(tag)}
-                                    className="ml-2 text-emerald-600 hover:text-emerald-800"
+                                    className="ml-2 text-blue-600 hover:text-blue-800"
                                   >
                                     <X size={14} />
                                   </button>
@@ -1584,7 +1585,7 @@ const EditService = () => {
                     {/* Features */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <CheckSquare className="h-5 w-5 text-emerald-600" />
+                        <CheckSquare className="h-5 w-5 text-blue-600" />
                         Service Features
                       </h2>
                       <div className="space-y-4">
@@ -1624,14 +1625,14 @@ const EditService = () => {
                                 type="checkbox"
                                 checked={newFeature.included}
                                 onChange={(e) => setNewFeature(prev => ({ ...prev, included: e.target.checked }))}
-                                className="h-4 w-4 text-emerald-600 rounded"
+                                className="h-4 w-4 text-blue-600 rounded"
                               />
                               <span className="ml-2 text-sm text-gray-700">Included in service</span>
                             </label>
                             <button
                               type="button"
                               onClick={handleAddFeature}
-                              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                               Add Feature
                             </button>
@@ -1643,7 +1644,7 @@ const EditService = () => {
                             {formData.features.map((feature, index) => (
                               <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                                 <div className="flex items-center">
-                                  <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-emerald-500' : 'text-gray-400'}`} />
+                                  <CheckCircle className={`w-5 h-5 mr-3 ${feature.included ? 'text-blue-500' : 'text-gray-400'}`} />
                                   <div>
                                     <h4 className="font-medium text-gray-900">{feature.title}</h4>
                                     {feature.description && (
@@ -1668,7 +1669,7 @@ const EditService = () => {
                     {/* Images Section */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <ImageIcon className="h-5 w-5 text-emerald-600" />
+                        <ImageIcon className="h-5 w-5 text-blue-600" />
                         Images
                       </h2>
 
@@ -1694,7 +1695,7 @@ const EditService = () => {
                                   </button>
                                 </div>
                                 {existingThumbnail?.public_id === image.public_id && (
-                                  <div className="absolute top-2 left-2 bg-emerald-500 text-white text-xs px-2 py-1 rounded">
+                                  <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded">
                                     Thumbnail
                                   </div>
                                 )}
@@ -1707,7 +1708,7 @@ const EditService = () => {
                       {/* New Images Upload */}
                       <div className="mb-6">
                         <h3 className="font-semibold text-gray-900 mb-4">Add New Images</h3>
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors">
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
                           <input
                             type="file"
                             id="image-upload"
@@ -1779,7 +1780,7 @@ const EditService = () => {
 
                         {existingThumbnail && !thumbnailFile && (
                           <div className="mb-4">
-                            <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-lg">
+                            <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg">
                               <img
                                 src={existingThumbnail.url}
                                 alt="Current thumbnail"
@@ -1803,7 +1804,7 @@ const EditService = () => {
                         )}
 
                         {thumbnailFile ? (
-                          <div className="flex items-start gap-4 p-4 bg-emerald-50 rounded-lg">
+                          <div className="flex items-start gap-4 p-4 bg-blue-50 rounded-lg">
                             <img
                               src={thumbnailFile.preview}
                               alt="New thumbnail"
@@ -1822,7 +1823,7 @@ const EditService = () => {
                             </button>
                           </div>
                         ) : (
-                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors">
+                          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors">
                             <input
                               type="file"
                               id="thumbnail-upload"
@@ -1851,7 +1852,7 @@ const EditService = () => {
                     {/* FAQs */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <HelpCircle className="h-5 w-5 text-emerald-600" />
+                        <HelpCircle className="h-5 w-5 text-blue-600" />
                         Frequently Asked Questions
                       </h2>
                       <div className="space-y-4">
@@ -1887,7 +1888,7 @@ const EditService = () => {
                             <button
                               type="button"
                               onClick={handleAddFAQ}
-                              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                               Add FAQ
                             </button>
@@ -1919,7 +1920,7 @@ const EditService = () => {
                     {/* Status & Metadata */}
                     <div className="mb-8">
                       <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <Shield className="h-5 w-5 text-emerald-600" />
+                        <Shield className="h-5 w-5 text-blue-600" />
                         Status & Metadata
                       </h2>
                       <div className="space-y-6">
@@ -1941,7 +1942,7 @@ const EditService = () => {
                                 <div className={`
                                   w-full px-4 py-3 text-center border rounded-lg cursor-pointer
                                   ${formData.status === status.value
-                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                                    ? 'border-blue-500 bg-blue-50 text-blue-600'
                                     : 'border-gray-300 hover:border-gray-400'
                                   }
                                 `}>
@@ -1964,7 +1965,7 @@ const EditService = () => {
                               name="metaTitle"
                               value={formData.metaTitle}
                               onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               placeholder="SEO title"
                               maxLength="60"
                             />
@@ -1980,7 +1981,7 @@ const EditService = () => {
                               value={formData.metaDescription}
                               onChange={handleInputChange}
                               rows="3"
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               placeholder="SEO description"
                               maxLength="160"
                             />
@@ -2002,7 +2003,7 @@ const EditService = () => {
                       <button
                         type="submit"
                         disabled={isSubmitting || updateLoading}
-                        className="flex-1 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {isSubmitting || updateLoading ? (
                           <>

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { lazy, Suspense, useState } from 'react'; // Added useState
+import { lazy, Suspense, useState } from 'react'; 
 import { SecurityProvider } from './context/SecurityContext';
 import { useAuthSync } from './hooks/useAuthSync';
 import PublicLayout from './layouts/PublicLayout';
@@ -17,10 +17,8 @@ import AdminLayoutWrapper from './layouts/AdminLayoutWrapper';
 import TermsPage from './layouts/pages/footer/TermsPage';
 import PrivacyPage from './layouts/pages/footer/PrivacyPage';
 
-// Minimal loading fallback
 const LoadingFallback = () => null;
 
-// Lazy load components
 const Home = lazy(() => import('./layouts/pages/home/Home'));
 const AboutUsPage = lazy(() => import('./layouts/pages/footer/AboutUsPage'));
 const Signin = lazy(() => import('./layouts/pages/auth/Signin'));
@@ -61,7 +59,6 @@ const VerificationStatus = lazy(() => import('./layouts/pages/profile/Verificati
 const App = () => {
   useAuthSync();
   
-  // Add modal state here
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState('signin');
 
@@ -96,16 +93,15 @@ const App = () => {
               />
             }>
               <Route path="/" element={
-                <Home 
-                  openAuthModal={() => {
+                <Home
+                 openAuthModal={() => {
                     setActiveTab('signin');
                     setShowAuthModal(true);
-                  }}
+                  }} 
                 />
               } />
               <Route path="/about-us" element={<AboutUsPage />} />
               
-              {/* Auth routes - redirect if already logged in */}
               <Route path="/signin" element={
                 <AuthenticatedRouteGuard>
                   <Signin />

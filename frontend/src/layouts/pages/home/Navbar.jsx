@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
+import hamburgerMenu from '../../../assets/icons/hamburger_icon.svg';
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -226,7 +227,7 @@ useEffect(() => {
                 {mobileMenuOpen ? (
                   <X className="w-6 h-6" />
                 ) : (
-                  <Menu className="w-6 h-6" />
+                  <img src={hamburgerMenu} alt="Menu" className="w-8 h-8 mt-1" />
                 )}
               </button>
             </div>
@@ -398,7 +399,7 @@ useEffect(() => {
                       closeAllDropdowns();
                       onSignupClick?.();
                     }}
-                    className="px-4 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm flex items-center justify-center h-full"
+                    className="px-4 mt-1 py-2 bg-black text-white rounded-full hover:bg-gray-800 font-medium transition-all duration-150 text-sm flex items-center justify-center h-full"
                   >
                     <span className="hidden xs:inline">Join Free</span>
                     <span className="xs:hidden">Join</span>
