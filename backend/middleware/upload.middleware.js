@@ -107,7 +107,7 @@ const thumbnailUpload = multer({
 });
 
 const profilePicUpload = multer({
-  storage: storage,
+  storage: storageMemory,
   limits: {
     fileSize: 2 * 1024 * 1024, // 2MB for profile pictures
     files: 1

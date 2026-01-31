@@ -141,28 +141,6 @@ router.get('/my-services',
   validateQuery, 
   controller.getMyServices
 );
-
-
-
-// Search services
-router.get('/search', 
-  optionalAuth, 
-  serviceLimiter,
-  cacheControlMiddleware({ public: true, maxAge: 180 }),
-  cachePublicList,
-  validateQuery, 
-  controller.searchServices
-);
-
-// Get service by ID or slug
-router.get('/:id', 
-  optionalAuth, 
-  serviceLimiter,
-  cacheControlMiddleware({ public: true, maxAge: 600 }),
-  cacheDetail,
-  controller.getServiceById
-);
-
 // Get popular services
 router.get('/popular', 
   optionalAuth, 
@@ -190,6 +168,28 @@ router.get('/stats',
   cacheStats,
   controller.getServiceStats
 );
+
+
+
+// Search services
+router.get('/search', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 180 }),
+  cachePublicList,
+  validateQuery, 
+  controller.searchServices
+);
+
+// Get service by ID or slug
+router.get('/:id', 
+  optionalAuth, 
+  serviceLimiter,
+  cacheControlMiddleware({ public: true, maxAge: 600 }),
+  cacheDetail,
+  controller.getServiceById
+);
+
 
 // Create service
 router.post('/', 

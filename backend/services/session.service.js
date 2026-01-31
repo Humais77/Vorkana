@@ -186,7 +186,7 @@ class SessionService {
       const idleTime = Date.now() - session.lastActivity.getTime();
       if (idleTime > this.idleTimeout) {
         console.log('⏰ Session idle, logging out');
-        await session.logout('inactive');
+        await session.logoutAt('inactive');
         throw new Error('Session idle timeout');
       }
 
@@ -248,7 +248,7 @@ validateSession = async (token, refreshToken) => {
           
           if (Date.now() - session.lastActivity.getTime() > idleTimeout) {
             // Mark session as inactive
-            await session.logout('idle_timeout');
+            await session.logoutAt('idle_timeout');
             return { valid: false, reason: 'SESSION_IDLE' };
           }
           
@@ -414,65 +414,35 @@ validateSession = async (token, refreshToken) => {
   }
 }
 
-  async logoutAllUserSessions(userId, excludeSessionId = null) {
+  // services/session.service.js - COMPLETE FIX
+async logoutAllUserSessions(userId, excludeSessionId = null) {
   try {
     console.log(`🧹 LOGOUT ALL: Terminating ALL sessions for user: ${userId}`);
+    
+    // DON'T SET TOKEN TO UNIQUE VALUES - IT'S ALREADY A UNIQUE INDEX
+    // Just mark as inactive without changing the token (which causes duplicate key error)
     
     const query = {
       userId: userId,
       isActive: true
     };
-    
-    // Don't exclude any sessions when logging out ALL
-    // if (excludeSessionId) {
-    //   query._id = { $ne: excludeSessionId };
-    // }
 
-    // COMPREHENSIVE SESSION TERMINATION
-    const updateData = {
+    // ONLY UPDATE isActive status, don't touch tokens
+    const result = await Session.updateMany(query, {
       $set: {
         isActive: false,
         logoutReason: 'logout_all',
         logoutAt: new Date(),
-        token: `terminated_all_${Date.now()}`,
-        refreshToken: `terminated_all_${Date.now()}`,
-        lastActivity: new Date(),
-        expiresAt: new Date(), // Immediate expiration
-        metadata: {
-          ...(await Session.findOne({ userId, isActive: true }).select('metadata') || {}),
-          terminatedBy: 'logoutAllUserSessions',
-          terminatedAt: new Date().toISOString()
-        }
+        lastActivity: new Date()
       }
-    };
-
-    const result = await Session.updateMany(query, updateData);
-
-    console.log(`✅ LOGOUT ALL: Terminated ${result.modifiedCount} sessions for user: ${userId}`);
-    
-    // Also delete old inactive sessions for cleanup
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    await Session.deleteMany({
-      userId: userId,
-      isActive: false,
-      logoutAt: { $lt: thirtyDaysAgo }
     });
+
+    console.log(`✅ LOGOUT ALL: Marked ${result.modifiedCount} sessions as inactive for user: ${userId}`);
     
     return result.modifiedCount;
   } catch (error) {
     console.error('❌ Logout all sessions error:', error);
-    
-    // Emergency fallback - delete sessions
-    try {
-      await Session.deleteMany({ userId: userId });
-      console.log(`⚠️ Emergency: Deleted all sessions for user: ${userId}`);
-      return 1;
-    } catch (deleteError) {
-      console.error('Emergency delete also failed:', deleteError.message);
-      return 0;
-    }
+    return 0;
   }
 }
 

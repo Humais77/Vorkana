@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const SessionMiddleware = require('../middleware/session.middleware');
+const CSRFMiddleware = require('../middleware/csrf.middleware');
 const { switchRole } = require('../controllers/user.controller');
 const { 
   profilePicUpload, 
@@ -10,17 +11,91 @@ const {
 } = require('../middleware/upload.middleware');
 const User = require('../models/user.model');
 
+// Import cache middleware
+const { 
+  createCacheMiddleware, 
+  createClearCacheMiddleware,
+  cacheControlMiddleware,
+  CACHE_TTL,
+  NAMESPACES 
+} = require('../middleware/cacheMiddleware');
+
+// Rate limiting
+const rateLimit = require('express-rate-limit');
+
+const userLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Debug middleware to log requests
 router.use((req, res, next) => {
   console.log(`[USER ROUTE] ${req.method} ${req.path}`);
   next();
 });
 
-router.patch('/switch-role', SessionMiddleware.authenticate, switchRole);
+// Switch role route
+router.patch('/switch-role', 
+  SessionMiddleware.authenticate,
+  CSRFMiddleware.requireCSRF,
+  userLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  switchRole
+);
 
-// routes/user.route.js - Add more detailed logging
+// Helper middleware to clear user cache
+const clearUserCacheMiddleware = async (req, res, next) => {
+  const originalJson = res.json;
+  
+  res.json = function(data) {
+    // Only clear cache on successful operations
+    if (data && data.success !== false && req.user && req.user._id) {
+      try {
+        // Clear user cache patterns
+        const cache = require('../utils/cache');
+        const patterns = [
+          `usr:${req.user._id}`,
+          `usr:*${req.user._id}*`,
+          `user:*${req.user._id}*`,
+          '*:tags:*user*',
+          '*:tags:*profile*'
+        ];
+        
+        patterns.forEach(async (pattern) => {
+          try {
+            await cache.del(pattern);
+          } catch (cacheError) {
+            console.warn('Cache clear warning:', cacheError.message);
+          }
+        });
+        
+        console.log(`🧹 Cleared user cache for: ${req.user._id}`);
+      } catch (error) {
+        console.error('Cache clearing error:', error.message);
+      }
+    }
+    
+    // Call original json method
+    return originalJson.call(this, data);
+  };
+  
+  next();
+};
+
+// Profile picture upload route
 router.post('/upload-profile-picture', 
   SessionMiddleware.authenticate,
+  CSRFMiddleware.requireCSRF,
+  userLimiter,
+  cacheControlMiddleware({ noStore: true }),
+  clearUserCacheMiddleware,
   (req, res, next) => {
     console.log('=== UPLOAD REQUEST START ===');
     console.log('Headers:', req.headers);
@@ -157,4 +232,5 @@ router.post('/upload-profile-picture',
     }
   }
 );
+
 module.exports = router;

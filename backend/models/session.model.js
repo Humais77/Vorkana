@@ -79,7 +79,6 @@ const sessionSchema = new mongoose.Schema({
 
 // Indexes for performance
 sessionSchema.index({ userId: 1, isActive: 1 });
-sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 sessionSchema.index({ 'deviceInfo.ip': 1, userId: 1 });
 sessionSchema.index({ userId: 1, isActive: 1, expiresAt: 1 });
 sessionSchema.index({ token: 1, refreshToken: 1 });

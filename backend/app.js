@@ -11,23 +11,9 @@ const responseTime = require('response-time');
 const morgan = require('morgan');
 const csrfRoutes = require('./routes/csrf.route');
 const sessionCleanup = require('./cron/sessionCleanup');
-dotenv.config();
-// Validate environment variables
-const validateEnv = () => {
-  const requiredEnvVars = ['JWT_SECRET', 'MONGO_URL', 'FRONTEND_URL'];
-  const missing = requiredEnvVars.filter(env => !process.env[env]);
-  
-  if (missing.length > 0) {
-    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-    process.exit(1);
-  }
-  
-  if (process.env.NODE_ENV === 'production' && !process.env.COOKIE_SECRET) {
-    console.error('❌ COOKIE_SECRET is required in production');
-    process.exit(1);
-  }
-};
+const { validateEnv } = require('./config/env-check');
 
+dotenv.config();
 validateEnv();
 
 const connectDB = require('./config/db');
@@ -41,7 +27,6 @@ const gigRoutes = require('./routes/gig.route.js');
 const userRoutes = require('./routes/user.route.js');
 const adminRoutes = require('./routes/admin.route.js');
 const searchRoute = require("./routes/search.routes.js");
-const popularServicesRoute = require('./routes/popularService.route.js');
 const subscribeRoute = require('./routes/subscribe.route.js');
 const contactRoutes = require('./routes/contact.route.js');
 const passport = require("passport");
@@ -56,9 +41,7 @@ connectDB().then(() => {
 const app = express();
 const server = http.createServer(app);
 
-// ==================== PERFORMANCE MIDDLEWARE ====================
 
-// 1. Compression
 app.use(compression({
   level: 6,
   threshold: 1024,
@@ -68,16 +51,14 @@ app.use(compression({
   }
 }));
 
-// 2. Response Time Tracking
 app.use(responseTime((req, res, time) => {
   if (time > 500) {
-    console.warn(`🚨 SLOW ENDPOINT: ${req.method} ${req.originalUrl} - ${time.toFixed(2)}ms`);
+    console.warn(`SLOW ENDPOINT: ${req.method} ${req.originalUrl} - ${time.toFixed(2)}ms`);
   }
   
   res.setHeader('X-Response-Time', `${time.toFixed(2)}ms`);
 }));
 
-// 3. Optimized Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else if (process.env.NODE_ENV === 'production') {
@@ -86,8 +67,6 @@ if (process.env.NODE_ENV === 'development') {
     stream: process.stderr
   }));
 }
-
-// ==================== SECURITY MIDDLEWARE ====================
 
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
 
@@ -104,7 +83,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.warn(`⚠️ CORS blocked for origin: ${origin}`);
+      console.warn(`CORS blocked for origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -145,8 +124,6 @@ security(app);
 console.log('Server time:', new Date());
 console.log('UTC time:', new Date().toUTCString());
 console.log('Timezone offset:', new Date().getTimezoneOffset());
-// ==================== RATE LIMITING ====================
-
 const MemoryStore = require('express-rate-limit').MemoryStore;
 
 const globalLimiter = rateLimit({
@@ -167,8 +144,6 @@ const globalLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
-
-// ==================== BODY PARSING ====================
 
 app.use(hpp({
   whitelist: ['sort', 'limit', 'page']
@@ -191,8 +166,6 @@ app.use(express.urlencoded({
   parameterLimit: 50
 }));
 
-// ==================== STATIC FILES ====================
-
 if (process.env.NODE_ENV === 'production') {
   app.use('/public', express.static('public', {
     maxAge: '1d',
@@ -206,11 +179,7 @@ if (process.env.NODE_ENV === 'production') {
   }));
 }
 
-// ==================== PASSPORT INITIALIZATION ====================
-
 app.use(passport.initialize());
-
-// ==================== HEALTH CHECK ====================
 
 app.get('/health', (req, res) => {
   const memoryUsage = process.memoryUsage();
@@ -229,9 +198,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ==================== ROUTES ====================
-
-// Cache control middleware
 const cacheControl = (seconds = 60) => (req, res, next) => {
   if (req.method === 'GET' && !req.path.includes('/api/auth')) {
     res.set('Cache-Control', `public, max-age=${seconds}`);
@@ -250,12 +216,9 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/gigs', gigRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/search', searchRoute);
-app.use('/api/popular-services', popularServicesRoute);
 app.use('/api/subscribe-email', subscribeRoute);
 app.use('/api/contact', contactRoutes); 
 app.use('/api/csrf', csrfRoutes);
-
-// ==================== SECURITY HEADERS ====================
 
 app.use((req, res, next) => {
   if (req.csrfToken) {
@@ -268,8 +231,6 @@ app.use((req, res, next) => {
   
   next();
 });
-
-// ==================== ERROR HANDLING ====================
 
 // 404 Handler
 app.use((req, res, next) => {
@@ -285,7 +246,7 @@ app.use((err, req, res, next) => {
   const errorId = Math.random().toString(36).substr(2, 9);
   const timestamp = new Date().toISOString();
   
-  console.error(`🔴 [${errorId}] Error:`, {
+  console.error(`[${errorId}] Error:`, {
     message: err.message,
     path: req.path,
     method: req.method,
@@ -355,33 +316,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==================== SERVER OPTIMIZATION ====================
 
-// Increase server timeouts for production
 if (process.env.NODE_ENV === 'production') {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
 }
-
-// Request timeout middleware
 app.use((req, res, next) => {
   req.setTimeout(30000, () => {
     console.warn(`Request timeout: ${req.method} ${req.url}`);
   });
   next();
 });
-
-// ==================== MEMORY MONITORING ====================
-
-// Periodic memory monitoring
-if (process.env.NODE_ENV === 'production') {
-  setInterval(() => {
-    const memoryUsage = process.memoryUsage();
-    console.log(`📊 Memory Stats: RSS=${Math.round(memoryUsage.rss / 1024 / 1024)}MB, Heap=${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB/${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`);
-  }, 5 * 60 * 1000); // Every 5 minutes
-}
-
-// ==================== EXPORT ====================
-
-// Export both app and server
 module.exports = { app, server };
