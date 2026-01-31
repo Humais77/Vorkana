@@ -285,9 +285,51 @@ export const usePopularServicesByCategory = (params = {}) => {
     queryFn: async () => {
       try {
         const result = await servicesAPI.getPopularServicesByCategory(params);
-        return result;
+        
+        // Handle different response structures
+        if (result.data) {
+          // New structure
+          return {
+            success: result.success !== false,
+            data: Array.isArray(result.data) ? result.data : [],
+            count: result.count || 0,
+            categoryStats: result.categoryStats || []
+          };
+        } else if (result.success && Array.isArray(result.services)) {
+          // Alternative structure
+          return {
+            success: true,
+            data: result.services,
+            count: result.services.length,
+            categoryStats: result.categoryStats || []
+          };
+        } else if (Array.isArray(result)) {
+          // Direct array response
+          return {
+            success: true,
+            data: result,
+            count: result.length,
+            categoryStats: []
+          };
+        }
+        
+        // Default fallback
+        return {
+          success: false,
+          data: [],
+          count: 0,
+          categoryStats: [],
+          error: 'Unexpected response structure'
+        };
       } catch (error) {
-        throw error;
+        console.error('Error in usePopularServicesByCategory:', error);
+        return {
+          success: false,
+          data: [],
+          count: 0,
+          categoryStats: [],
+          error: error.message
+        };
       }
     },
     refetchOnWindowFocus: false,

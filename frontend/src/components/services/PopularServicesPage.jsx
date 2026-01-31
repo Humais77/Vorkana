@@ -56,14 +56,23 @@ const PopularServicesPage = () => {
   }, [categoriesData]);
 
   const services = useMemo(() => {
-    if (!servicesData?.data) return [];
-    // Filter services by selected category
-    return servicesData.data.filter(service => {
-      if (!selectedCategory) return true;
-      const serviceCategoryId = service.categoryId || service.category?._id;
-      return serviceCategoryId === selectedCategory._id;
-    });
-  }, [servicesData, selectedCategory]);
+  if (!servicesData) {
+    console.log('No services data');
+    return [];
+  }
+  
+  // Extract services array from response
+  let servicesArray = [];
+  
+  if (servicesData.data && Array.isArray(servicesData.data)) {
+    servicesArray = servicesData.data;
+  } else if (Array.isArray(servicesData)) {
+    servicesArray = servicesData;
+  }
+  
+
+  return servicesArray;
+}, [servicesData]);
 
   // Set initial category
   useEffect(() => {
@@ -83,42 +92,13 @@ const PopularServicesPage = () => {
   };
 
   // Filter and sort services
-  const filteredServices = useMemo(() => {
-    let result = [...services];
+ const filteredServices = useMemo(() => {
+  
+  let result = [...services];
 
-    // Search filter
-    if (searchTerm.trim()) {
-      const query = searchTerm.toLowerCase();
-      result = result.filter(service =>
-        service.title?.toLowerCase().includes(query) ||
-        service.description?.toLowerCase().includes(query)
-      );
-    }
 
-    // Price filter
-    result = result.filter(service => {
-      const price = service.price || 0;
-      return price >= priceRange[0] && price <= priceRange[1];
-    });
-
-    // Sort
-    result.sort((a, b) => {
-      switch(sortBy) {
-        case "price-low":
-          return (a.price || 0) - (b.price || 0);
-        case "price-high":
-          return (b.price || 0) - (a.price || 0);
-        case "rating":
-          return (b.rating || 0) - (a.rating || 0);
-        case "views":
-          return (b.views || 0) - (a.views || 0);
-        default: // popular
-          return (b.popularity || 0) - (a.popularity || 0);
-      }
-    });
-
-    return result;
-  }, [services, searchTerm, priceRange, sortBy]);
+  return result;
+}, [services, selectedCategory]);
 
   // Handle like
   const handleLike = (serviceId, e) => {
@@ -149,7 +129,6 @@ const PopularServicesPage = () => {
     return service.imageUrl || service.thumbnail?.url || 
      DEFAULT_IMAGES.GENERIC;
   };
-
   // Loading state
   if (categoriesLoading || servicesLoading) {
     return (

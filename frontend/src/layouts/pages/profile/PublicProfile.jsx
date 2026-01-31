@@ -601,7 +601,6 @@ const PublicProfile = () => {
                           <div className="mt-2 text-xs text-blue-600">
                             <p>• Email is {profile.privacySettings?.showEmail ? 'public' : 'private'}</p>
                             <p>• Phone is {profile.privacySettings?.showPhone ? 'public' : 'private'}</p>
-                            <p>• Location is {profile.privacySettings?.showLocation ? 'public' : 'private'}</p>
                           </div>
                         </div>
                       </div>

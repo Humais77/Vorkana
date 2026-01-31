@@ -656,7 +656,7 @@ export const gigsAPI = {
   // Get gig stats
   getStats: async () => {
     try {
-      const response = await axiosInstance.get('/api/gigs/stats');
+      const response = await axiosInstance.get('/api/admin/gigs/stats');
       return response.data;
       
     } catch (error) {

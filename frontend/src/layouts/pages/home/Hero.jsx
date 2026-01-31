@@ -351,7 +351,7 @@ useEffect(() => {
             </div>
           ) : (
             <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg border border-red-700/50">
-              No matching categories found in database. Please add the required subcategories.
+              No subcategories available.
             </div>
           )}
         </div>

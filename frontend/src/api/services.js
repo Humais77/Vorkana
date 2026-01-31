@@ -897,46 +897,65 @@ export const servicesAPI = {
   },
   
   getPopularServicesByCategory: async (params = {}) => {
-    try {
-      const cleanParams = {};
-      Object.keys(params).forEach(key => {
-        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
-          cleanParams[key] = params[key];
-        }
-      });
+  try {
+    const cleanParams = {};
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+        cleanParams[key] = params[key];
+      }
+    });
 
-      console.log('Fetching popular services by category:', cleanParams);
-      
-      const queryString = new URLSearchParams(cleanParams).toString();
-      const url = `/api/services/popular/category${queryString ? '?' + queryString : ''}`;
-      
-      const response = await axiosInstance.get(url);
-      
-      if (response.data && response.data.success) {
-        return {
-          success: true,
-          data: response.data.data || response.data.services || [],
-          count: response.data.count || 0,
-          ...response.data
-        };
+    
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const url = `/api/services/popular/category${queryString ? '?' + queryString : ''}`;
+    
+    const response = await axiosInstance.get(url);
+    
+    
+    // Handle different response structures
+    let data = [];
+    let count = 0;
+    
+    if (response.data) {
+      if (response.data.data && Array.isArray(response.data.data)) {
+        data = response.data.data;
+        count = response.data.count || response.data.data.length;
+      } else if (Array.isArray(response.data)) {
+        data = response.data;
+        count = response.data.length;
+      } else if (response.data.services && Array.isArray(response.data.services)) {
+        data = response.data.services;
+        count = response.data.count || response.data.services.length;
       }
       
       return {
-        success: true,
-        data: [],
-        count: 0
-      };
-      
-    } catch (error) {
-      console.error('Popular services by category error:', error);
-      return {
-        success: false,
-        data: [],
-        count: 0,
-        error: error.message
+        success: response.data.success !== false,
+        data: data,
+        count: count,
+        categoryStats: response.data.categoryStats || [],
+        ...response.data
       };
     }
-  },
+    
+    return {
+      success: false,
+      data: [],
+      count: 0,
+      error: 'No data received'
+    };
+    
+  } catch (error) {
+    console.error('Popular services by category error:', error);
+    console.error('Error details:', error.response?.data);
+    
+    return {
+      success: false,
+      data: [],
+      count: 0,
+      error: error.message
+    };
+  }
+},
   
   togglePopularStatus: async (serviceId, isPopular) => {
     try {

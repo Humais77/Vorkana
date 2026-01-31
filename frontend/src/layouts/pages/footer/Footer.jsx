@@ -5,7 +5,6 @@ import {
   FaLinkedin,
   FaXTwitter,
   FaChevronDown,
-  FaChevronUp,
 } from 'react-icons/fa6';
 import TrackedLink from '../../../components/TrackedLink';
 import { useParentCategories } from "../../../hooks/useCategories";
@@ -16,6 +15,7 @@ const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
 });
+
 const Footer = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -40,9 +40,15 @@ const Footer = () => {
     reset: resetSubscription
   } = useSubscribe();
 
-  // Limit to 10 categories for initial display
-  const initialCategories = categoriesData.slice(0, 10);
-  const remainingCategories = categoriesData.slice(10);
+  // Check if we have categories and how many
+  const hasCategories = categoriesData && categoriesData.length > 0;
+  const categoryCount = categoriesData?.length || 0;
+  const showViewAllButton = categoryCount > 10;
+  
+  // Determine what to show based on viewAll state
+  const categoriesToShow = showAllCategories 
+    ? categoriesData 
+    : categoriesData.slice(0, 10);
   
   // Use subscription status query
   const { 
@@ -58,14 +64,14 @@ const Footer = () => {
   const footerLinks = {
     categories: {
       title: "Categories",
-      links: initialCategories
-        .filter(category => category && category.name)
+      links: categoriesData
+        ?.filter(category => category && category.name)
         .map(category => ({
           label: category.name,
           path: `/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`,
           source: "footer",
           section: "categories"
-        }))
+        })) || []
     },
     discover: {
       title: "Discover",
@@ -88,7 +94,6 @@ const Footer = () => {
         { label: "Contact Us", path: "/contact", source: "footer", section: "support" },
         { label: "Trust & Safety", path: "/trust", source: "footer", section: "support" },
         { label: "FAQ", path: "/faq", source: "footer", section: "support" },
-        { label: "Help", path: "/help", source: "footer", section: "support"}
       ]
     },
   };
@@ -329,76 +334,178 @@ const Footer = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
         {/* Mobile Dropdowns (sm only) */}
         <div className="md:hidden mb-8">
-          {Object.entries(footerLinks).map(([key, section]) => (
-            <div key={key} className="mb-2 border-b border-gray-200">
-              <button
-                onClick={() => toggleDropdown(key)}
-                className="w-full flex justify-between items-center py-4 px-2 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150"
-              >
-                <span className="font-bold text-black tracking-wide text-sm uppercase">
-                  {section.title}
-                </span>
-                <span className={`text-gray-500 transition-transform duration-200 ${openDropdown === key ? 'rotate-180' : ''}`}>
-                  <FaChevronDown />
-                </span>
-              </button>
-              
-              {openDropdown === key && (
-                <div className="overflow-hidden">
-                  <ul className="pb-4 px-2 space-y-2">
-                    {section.links
-                      .filter(link => link && link.label)
-                      .map((link, linkIndex) => (
-                      <li key={linkIndex}>
-                        <TrackedLink 
-                          to={link.path}
-                          source={link.source}
-                          medium="website"
-                          campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
-                          className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded"
-                          onClick={() => setOpenDropdown(null)}
-                        >
-                          {link.label}
-                        </TrackedLink>
-                      </li>
-                    ))}
-                    
-                    {key === 'categories' && categoriesData.length > 10 && (
-                      <li>
-                        <button
-                          onClick={() => {
-                            setShowAllCategories(!showAllCategories);
-                            setOpenDropdown(key);
-                          }}
-                          className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded w-full text-left"
-                        >
-                          {showAllCategories ? "Show Less" : `View All Categories (${categoriesData.length})`}
-                        </button>
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
-          ))}
+          {Object.entries(footerLinks).map(([key, section]) => {
+            // Don't show empty categories section on mobile
+            if (key === 'categories' && (!hasCategories || categoriesLoading)) {
+              return null;
+            }
+            
+            return (
+              <div key={key} className="mb-2 border-b border-gray-200">
+                <button
+                  onClick={() => toggleDropdown(key)}
+                  className="w-full flex justify-between items-center py-4 px-2 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150"
+                >
+                  <span className="font-bold text-black tracking-wide text-sm uppercase">
+                    {section.title}
+                  </span>
+                  <span className={`text-gray-500 transition-transform duration-200 ${openDropdown === key ? 'rotate-180' : ''}`}>
+                    <FaChevronDown />
+                  </span>
+                </button>
+                
+                {openDropdown === key && (
+                  <div className="overflow-hidden">
+                    <ul className="pb-4 px-2 space-y-2">
+                      {/* Show categories or loading state */}
+                      {key === 'categories' ? (
+                        <>
+                          {categoriesLoading ? (
+                            <li className="text-gray-500 text-sm py-2">Loading categories...</li>
+                          ) : !hasCategories ? (
+                            <li className="text-gray-500 text-sm py-2">No categories available</li>
+                          ) : (
+                            <>
+                              {(showAllCategories ? categoriesData : categoriesData.slice(0, 10))
+                                .filter(category => category && category.name)
+                                .map((category, index) => (
+                                  <li key={index}>
+                                    <TrackedLink 
+                                      to={`/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`}
+                                      source="footer"
+                                      medium="website"
+                                      campaign={`footer_category_${category.name.toLowerCase().replace(/\s+/g, '_')}`}
+                                      className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded"
+                                      onClick={() => setOpenDropdown(null)}
+                                    >
+                                      {category.name}
+                                    </TrackedLink>
+                                  </li>
+                                ))}
+                              
+                              {/* Show View All button only if we have more than 10 categories */}
+                              {showViewAllButton && !showAllCategories && (
+                                <li>
+                                  <button
+                                    onClick={() => setShowAllCategories(true)}
+                                    className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded w-full text-left"
+                                  >
+                                    View All Categories ({categoryCount}) →
+                                  </button>
+                                </li>
+                              )}
+                              
+                              {/* Show Less button when all categories are shown */}
+                              {showViewAllButton && showAllCategories && (
+                                <li>
+                                  <button
+                                    onClick={() => setShowAllCategories(false)}
+                                    className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded w-full text-left"
+                                  >
+                                    Show Less Categories
+                                  </button>
+                                </li>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        // For non-category sections
+                        section.links
+                          .filter(link => link && link.label)
+                          .map((link, linkIndex) => (
+                            <li key={linkIndex}>
+                              <TrackedLink 
+                                to={link.path}
+                                source={link.source}
+                                medium="website"
+                                campaign={link.campaign || `footer_${link.label.toLowerCase().replace(/\s+/g, '_')}`}
+                                className="text-gray-600 hover:text-black transition-colors duration-150 text-sm block py-2 px-2 hover:bg-gray-50 rounded"
+                                onClick={() => setOpenDropdown(null)}
+                              >
+                                {link.label}
+                              </TrackedLink>
+                            </li>
+                          ))
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Desktop Grid Layout (md and above) */}
         <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12 mb-16">
-          {Object.entries(footerLinks).map(([key, section]) => (
-            <div key={key} className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-black mb-6 tracking-wide text-sm uppercase">
-                  {section.title}
-                </h3>
-              </div>
+          {/* Categories Column - Only show if we have categories */}
+          {(hasCategories || categoriesLoading) && (
+            <div className="space-y-4 lg:col-span-2">
+              <h3 className="font-bold text-black mb-6 tracking-wide text-sm uppercase">
+                Categories
+              </h3>
+              
+              {categoriesLoading ? (
+                <div className="text-gray-500 text-sm">Loading categories...</div>
+              ) : !hasCategories ? (
+                <div className="text-gray-500 text-sm">No categories available</div>
+              ) : (
+                <>
+                  <ul className="space-y-3">
+                    {categoriesToShow
+                      .filter(category => category && category.name)
+                      .map((category, index) => (
+                        <li key={index}>
+                          <TrackedLink 
+                            to={`/categories/${category.slug || category.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            source="footer"
+                            medium="website"
+                            campaign={`footer_category_${category.name.toLowerCase().replace(/\s+/g, '_')}`}
+                            className="text-gray-600 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium"
+                          >
+                            {category.name}
+                          </TrackedLink>
+                        </li>
+                      ))}
+                    
+                    {/* View All / Show Less Categories - Only show if we have more than 10 */}
+                    {showViewAllButton && (
+                      <li>
+                        <button
+                          onClick={() => setShowAllCategories(!showAllCategories)}
+                          className="text-gray-500 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium w-full text-left"
+                        >
+                          {showAllCategories 
+                            ? `Show Less Categories` 
+                            : `View All ${categoryCount} Categories →`}
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* Adjust grid span if no categories */}
+          {!hasCategories && !categoriesLoading && (
+            <div className="lg:col-span-2"></div>
+          )}
+
+          {/* Other Footer Links */}
+          {['discover', 'company', 'support'].map((key) => (
+            <div 
+              key={key} 
+              className={`space-y-4 ${!hasCategories && !categoriesLoading ? 'lg:col-span-1' : ''}`}
+            >
+              <h3 className="font-bold text-black mb-6 tracking-wide text-sm uppercase">
+                {footerLinks[key].title}
+              </h3>
               
               <ul className="space-y-3">
-                {(key === 'categories' && showAllCategories
-                  ? categoriesData
-                  : section.links
-                ).filter(link => link && link.label)
-                 .map((link, linkIndex) => (
+                {footerLinks[key].links
+                  .filter(link => link && link.label)
+                  .map((link, linkIndex) => (
                   <li key={linkIndex}>
                     <TrackedLink 
                       to={link.path}
@@ -411,30 +518,6 @@ const Footer = () => {
                     </TrackedLink>
                   </li>
                 ))}
-                
-                {/* View All Categories link */}
-                {key === 'categories' && !showAllCategories && categoriesData.length > 10 && (
-                  <li>
-                    <button
-                      onClick={() => setShowAllCategories(true)}
-                      className="text-gray-500 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium w-full text-left"
-                    >
-                      View All {categoriesData.length} Categories →
-                    </button>
-                  </li>
-                )}
-                
-                {/* Show Less link when all categories are shown */}
-                {key === 'categories' && showAllCategories && categoriesData.length > 10 && (
-                  <li>
-                    <button
-                      onClick={() => setShowAllCategories(false)}
-                      className="text-gray-500 hover:text-black transition-colors duration-200 text-sm block py-2 hover:font-medium w-full text-left"
-                    >
-                      Show Less Categories
-                    </button>
-                  </li>
-                )}
               </ul>
             </div>
           ))}
@@ -536,30 +619,7 @@ const Footer = () => {
               </p>
             </form>
             
-            {/* Preference Toggle (Optional) */}
-            <div className="pt-4 border-t border-gray-100">
-              <details className="group">
-                <summary className="flex items-center gap-2 text-sm text-gray-600 hover:text-black cursor-pointer">
-                  <span>Email Preferences</span>
-                  <FaChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="mt-3 space-y-3 text-sm text-gray-600">
-                  <div>
-                    <label className="block mb-2">Frequency:</label>
-                    <select 
-                      value={preferences.frequency}
-                      onChange={(e) => {}}
-                      className="w-full p-2 border border-gray-300 rounded bg-white"
-                      disabled
-                    >
-                      <option value="weekly">Weekly</option>
-                      <option value="bi-weekly">Bi-weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                </div>
-              </details>
-            </div>
+        
           </div>
 
           {/* Contact Info */}
@@ -569,19 +629,19 @@ const Footer = () => {
               <p className="text-gray-600 mb-4 md:mb-6 text-sm md:text-base">We're here to help you succeed</p>
             </div>
             <div className="space-y-4 md:space-y-6">
-              <div className="hover:scale-[1.02] transition-transform duration-200">
+              <div className="">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Email</div>
                 <div className="text-gray-700 text-base md:text-lg hover:text-black transition-colors">
                   support@Vorkanna.com
                 </div>
               </div>
-              <div className="hover:scale-[1.02] transition-transform duration-200">
+              <div className="">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Business Hours</div>
-                <div className="text-gray-700 text-sm md:text-base">Monday - Friday, 9AM - 6PM EST</div>
+                <div className="text-gray-700 text-sm md:text-base hover:text-black transition-colors">Monday - Friday, 9AM - 6PM EST</div>
               </div>
-              <div className="hover:scale-[1.02] transition-transform duration-200">
+              <div className="">
                 <div className="font-medium text-black mb-1 md:mb-2 text-base md:text-lg">Newsletter Support</div>
-                <div className="text-gray-700 text-sm">Need help with your subscription? Email: newsletter@Vorkanna.com</div>
+                <div className="text-gray-700 text-sm hover:text-black transition-colors">Need help with your subscription? Email: newsletter@Vorkanna.com</div>
               </div>
             </div>
           </div>
@@ -600,10 +660,10 @@ const Footer = () => {
                 className="text-3xl md:text-5xl font-black text-black transition-colors tracking-tighter"
               >
                <img
-  src={Logo_URL}
-  alt="Vorkanna"
-  className="h-12 lg:h-12 w-auto object-contain"
- />
+                  src={Logo_URL}
+                  alt="Vorkanna"
+                  className="h-12 lg:h-12 w-auto object-contain"
+                />
               </TrackedLink>
             </div>
             

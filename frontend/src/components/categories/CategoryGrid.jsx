@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { categoriesAPI } from "../../api/categories";
 
-// Icon mapping based on category/subcategory names
 const getCategoryIcon = (name) => {
   const lowerName = name.toLowerCase();
   

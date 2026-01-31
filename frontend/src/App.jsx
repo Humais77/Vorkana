@@ -13,6 +13,9 @@ import Toaster from './components/Toaster';
 import ErrorBoundary from './components/ErrorBoundary';
 import AuthenticatedRouteGuard from './components/AuthenticatedRouteGuard';
 import RoutePreloader from './components/RoutePreloader';
+import AdminLayoutWrapper from './layouts/AdminLayoutWrapper';
+import TermsPage from './layouts/pages/footer/TermsPage';
+import PrivacyPage from './layouts/pages/footer/PrivacyPage';
 
 // Minimal loading fallback
 const LoadingFallback = () => null;
@@ -159,6 +162,8 @@ const App = () => {
               <Route path="/help" element={<HelpCenterPage />} />
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/faq" element={<FaqPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/verify-email/:token?" element={
                 <VerificationWrapper>
                   <VerifyEmail />
@@ -178,9 +183,11 @@ const App = () => {
             </Route>
             <Route path="/admin/*" element={
               <ProtectedAdminRoute>
+                <AdminLayoutWrapper>
                 <AdminLayout>
                   <AdminRoutes />
                 </AdminLayout>
+                </AdminLayoutWrapper>
               </ProtectedAdminRoute>
             } />
           </Routes>

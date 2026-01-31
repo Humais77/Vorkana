@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom' // Import useLocation
+import { useLocation } from 'react-router-dom' 
 import Hero from './Hero'
 import CategoryGrid from '../../../components/categories/CategoryGrid'
 import Testimonials from './Testimonal'
@@ -9,10 +9,9 @@ import GetQuoteBanner from './GetQuoteBanner'
 import PopularCategoriesSection from '../../../components/home/PopularCategoriesSection'
 import { SeoWrapper } from '../../../components/SeoWrapper' 
 
-const Home = ({ openAuthModal }) => { // Receive prop from parent
-  const location = useLocation(); // Get current location
+const Home = ({ openAuthModal }) => { 
+  const location = useLocation(); 
 
-  // Check if user is on auth pages
   const isOnAuthPage = location.pathname === '/signin' || location.pathname === '/signup';
 
   return (
@@ -41,10 +40,8 @@ const Home = ({ openAuthModal }) => { // Receive prop from parent
       ]}
     >
       <div>
-        {/* Pass null or conditionally render based on auth page */}
         <Hero openAuthModal={isOnAuthPage ? null : openAuthModal} />
 
-        {/* REMOVED AuthModal from here - it's now managed in PublicLayout */}
 
         <CategoryGrid />
         <PopularCategoriesSection/>

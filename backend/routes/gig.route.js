@@ -207,6 +207,14 @@ router.get('/',
   validateQuery, 
   getGigs
 );
+// Get gig stats (user specific)
+router.get('/stats', 
+  SessionMiddleware.authenticate, 
+  gigLimiter,
+  cacheControlMiddleware({ public: false, maxAge: 120 }),
+  cacheStats,
+  getGigStats
+);
 
 // Search gigs
 router.get('/search', 
@@ -238,14 +246,6 @@ router.get('/:id',
 );
 
 
-// Get gig stats (user specific)
-router.get('/stats', 
-  SessionMiddleware.authenticate, 
-  gigLimiter,
-  cacheControlMiddleware({ public: false, maxAge: 120 }),
-  cacheStats,
-  getGigStats
-);
 
 
 // Create gig

@@ -1,6 +1,6 @@
 // components/AuthModal.jsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams , Link} from 'react-router-dom';
 import { FaCheck, FaExclamationTriangle } from 'react-icons/fa';
 import { X, Mail, Lock, LogIn, UserPlus, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -563,26 +563,45 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
             {/* Terms Agreement */}
             <div className="flex items-start mt-6">
-              <input
-                type="checkbox"
-                id="terms"
-                checked={agreedToTerms}
-                onChange={e => {
-                  setAgreedToTerms(e.target.checked);
-                  if (errors.terms) {
-                    setErrors(prev => ({ ...prev, terms: '' }));
-                  }
-                }}
-                className={`w-4 h-4 mt-1 rounded focus:ring-2 focus:ring-emerald-100 ${
-                  errors.terms ? 'border-red-300 text-red-600' : 'border-gray-300 text-emerald-600'
-                }`}
-                required
-              />
-              <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
-                I agree to the Vorkanna Terms of Service and Privacy Policy. I understand that I will receive
-                account-related emails.
-              </label>
-            </div>
+            <input
+              type="checkbox"
+              id="terms"
+              checked={agreedToTerms}
+              onChange={e => {
+                setAgreedToTerms(e.target.checked);
+                if (errors.terms) {
+                  setErrors(prev => ({ ...prev, terms: '' }));
+                }
+              }}
+              className={`w-4 h-4 mt-1 rounded focus:ring-2 focus:ring-emerald-100 ${
+                errors.terms ? 'border-red-300 text-red-600' : 'border-gray-300 text-emerald-600'
+              }`}
+              required
+            />
+            <label htmlFor="terms" className="ml-3 text-sm text-gray-600">
+              I agree to the{' '}
+              <Link 
+                to="/terms" 
+                className="text-emerald-600 hover:text-emerald-700 hover:underline font-medium"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link 
+                to="/privacy" 
+                className="text-emerald-600 hover:text-emerald-700 hover:underline font-medium"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Privacy Policy
+              </Link>. I understand that I will receive
+              account-related emails.
+            </label>
+          </div>
             {errors.terms && <p className="mt-2 text-sm text-red-600 animate-fadeIn">{errors.terms}</p>}
 
             <button
@@ -755,13 +774,32 @@ const AuthModal = ({ activeTab, onSwitchTab, onClose }) => {
 
                 {/* Footer Terms */}
                 <div className="pt-6 border-t border-gray-200 mt-6">
-                  <p className="text-center text-gray-600 text-sm">
-                    By joining, you agree to the Vorkanna Terms of Service and Privacy Policy.
-                  </p>
-                  <p className="text-center text-gray-500 text-sm mt-2">
-                    © {new Date().getFullYear()} Vorkanna. All rights reserved.
-                  </p>
-                </div>
+            <p className="text-center text-gray-600 text-sm">
+              By joining, you agree to the{' '}
+              <Link 
+                to="/terms" 
+                className="text-emerald-600 hover:text-emerald-700 hover:underline font-medium"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()} // Prevent modal close
+              >
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link 
+                to="/privacy" 
+                className="text-emerald-600 hover:text-emerald-700 hover:underline font-medium"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()} // Prevent modal close
+              >
+                Privacy Policy
+              </Link>.
+            </p>
+            <p className="text-center text-gray-500 text-sm mt-2">
+              © {new Date().getFullYear()} Vorkanna. All rights reserved.
+            </p>
+          </div>
               </div>
             </div>
           </div>

@@ -96,7 +96,6 @@ useEffect(() => {
   const emergencyLogout = urlParams.get('emergency_logout');
   
   if (logoutId || emergencyLogout) {
-    console.log('🔄 Detected logout from URL, forcing re-sync');
     
     // Clear local storage
     localStorage.removeItem('vorkanna_user_v1');
@@ -113,7 +112,6 @@ useEffect(() => {
   // Listen for storage events from other tabs
   const handleStorageChange = (e) => {
     if (e.key === 'vorkanna_user_v1' || e.key === null) {
-      console.log('🔄 Storage changed, syncing auth state');
       syncFromStorage();
     }
   };
@@ -814,14 +812,7 @@ useEffect(() => {
                           <span className="font-medium text-gray-800">Dashboard</span>
                         </Link>
 
-                        <Link
-                          to="/settings"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className="flex items-center space-x-3 px-3 py-3.5 rounded-lg hover:bg-gray-50 transition-all duration-150"
-                        >
-                          <Settings className="w-5 h-5 text-gray-600" />
-                          <span className="font-medium text-gray-800">Settings</span>
-                        </Link>
+                       
 
                         <button
                           onClick={handleLogout}

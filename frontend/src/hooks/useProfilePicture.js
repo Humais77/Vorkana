@@ -1,12 +1,26 @@
-// hooks/useProfilePicture.js - UPDATED
+// hooks/useProfilePicture.js - COMPREHENSIVE FIX
 import { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 
+// Create a global event emitter for picture updates
+const profilePictureUpdateEvents = {
+  listeners: new Set(),
+  
+  subscribe(callback) {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  },
+  
+  emit(newPictureUrl, userData) {
+    this.listeners.forEach(callback => callback(newPictureUrl, userData));
+  }
+};
+
 export const useProfilePicture = () => {
   const [isUploading, setIsUploading] = useState(false);
-  const { setUser } = useAuthStore();
+  const { user, setUser } = useAuthStore();
 
   const uploadProfilePicture = async (file) => {
     if (!file) {
@@ -32,84 +46,106 @@ export const useProfilePicture = () => {
       const formData = new FormData();
       formData.append('profilePicture', file);
       
-      const token = localStorage.getItem('userToken');
+      // Get tokens
+      const csrfToken = localStorage.getItem('csrfToken');
+      const userToken = localStorage.getItem('token');
       const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
       
-      console.log('🚀 Uploading profile picture to:', `${API_URL}/api/users/upload-profile-picture`);
+      console.log('🚀 Uploading profile picture...');
       
       const response = await axios.post(
         `${API_URL}/api/users/upload-profile-picture`, 
         formData, 
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
-            // DO NOT set Content-Type header here - let axios handle it
+            'Authorization': userToken ? `Bearer ${userToken}` : undefined,
+            'X-CSRF-Token': csrfToken,
           },
           withCredentials: true,
           timeout: 30000
         }
       );
       
-      console.log('✅ Upload response:', {
-        success: response.data.success,
-        hasPicture: !!response.data.picture,
-        pictureUrl: response.data.picture,
-        pictureType: typeof response.data.picture,
-        pictureFirst100: response.data.picture?.substring(0, 100)
-      });
+      console.log('✅ Upload successful');
       
       if (response.data.success && response.data.picture) {
         const pictureUrl = response.data.picture;
         
-        // Check if it's a proper URL or base64
+        // Check if valid URL
         if (pictureUrl.startsWith('data:')) {
-          console.error('❌ Received base64 instead of URL:', pictureUrl.substring(0, 100) + '...');
-          throw new Error('Server returned base64 data instead of URL');
+          throw new Error('Invalid image URL format');
         }
         
         if (!pictureUrl.startsWith('http')) {
-          console.error('❌ Invalid URL format:', pictureUrl);
-          throw new Error('Invalid URL format received from server');
+          throw new Error('Invalid URL format');
         }
         
-        // Add cache busting parameter
-        const cacheBustedUrl = `${pictureUrl}?t=${Date.now()}`;
+        // IMPORTANT: Create a cache-busted URL
+        const cacheBustedUrl = `${pictureUrl}${pictureUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
         
-        // Update Zustand store with the complete user object from response
-        if (response.data.user) {
-          // Ensure we have the cache-busted URL in user object
-          const updatedUser = {
-            ...response.data.user,
-            picture: cacheBustedUrl
+        // Update Zustand store - FORCE UPDATE
+        const updatedUser = response.data.user || user;
+        const finalUserData = {
+          ...updatedUser,
+          picture: cacheBustedUrl
+        };
+        
+        // CRITICAL: Update Zustand store
+        setUser(finalUserData);
+        console.log('✅ Zustand store updated');
+        
+        // Update localStorage with FRESH data
+        try {
+          // Get current user info from localStorage
+          const currentUserInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+          
+          // Merge with new data
+          const newUserInfo = {
+            ...currentUserInfo,
+            ...finalUserData,
+            picture: cacheBustedUrl,
+            // Ensure we have all fields from response
+            ...(response.data.user || {})
           };
           
-          setUser(updatedUser);
-          console.log('✅ Updated Zustand store with user:', updatedUser);
+          localStorage.setItem('userInfo', JSON.stringify(newUserInfo));
+          console.log('✅ localStorage updated');
           
-          // Update localStorage
-          localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-          console.log('✅ Updated localStorage');
-        } else {
-          console.warn('⚠️ No user object in response');
+          // Also update the Zustand persist storage
+          const authStore = JSON.parse(localStorage.getItem('vorkanna_user_v1') || '{}');
+          if (authStore.state) {
+            authStore.state.user = newUserInfo;
+            localStorage.setItem('vorkanna_user_v1', JSON.stringify(authStore));
+          }
+        } catch (e) {
+          console.error('LocalStorage update error:', e);
         }
         
-        toast.success('Profile picture updated successfully!');
+        // EMIT GLOBAL EVENT - Notify all components
+        profilePictureUpdateEvents.emit(cacheBustedUrl, finalUserData);
+        
+        // Force a storage event to trigger updates in other tabs/windows
+        localStorage.setItem('profile_picture_last_updated', Date.now().toString());
+        window.dispatchEvent(new Event('storage'));
+        
+        toast.success('Profile picture updated!');
         return cacheBustedUrl;
         
       } else {
-        console.error('❌ Upload failed:', response.data.message);
         throw new Error(response.data.message || 'Upload failed');
       }
     } catch (error) {
-      console.error('❌ Profile picture upload error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
+      console.error('❌ Upload error:', error);
       
       let errorMessage = 'Failed to upload profile picture';
       
-      if (error.response?.data?.message) {
+      if (error.response?.status === 401) {
+        errorMessage = 'Session expired. Please sign in again.';
+        localStorage.clear();
+        window.location.href = '/signin';
+      } else if (error.response?.status === 403 && error.response?.data?.code === 'CSRF_TOKEN_INVALID') {
+        errorMessage = 'Security validation failed. Please refresh the page.';
+      } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
@@ -122,5 +158,10 @@ export const useProfilePicture = () => {
     }
   };
 
-  return { uploadProfilePicture, isUploading };
+  // Export the event emitter for other components to subscribe
+  return { 
+    uploadProfilePicture, 
+    isUploading,
+    subscribeToUpdates: profilePictureUpdateEvents.subscribe.bind(profilePictureUpdateEvents)
+  };
 };

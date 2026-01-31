@@ -484,7 +484,37 @@ export const useChangePassword = () => {
     },
   });
 };
+// Add this hook to useAuth.js
+export const useCheckResetToken = (token) => {
+  const [isValid, setIsValid] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  const checkToken = useCallback(async () => {
+    if (!token) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // You need to create this API method in auth.js
+      const result = await authAPI.checkResetToken(token);
+      setIsValid(result.success && result.valid);
+    } catch (error) {
+      console.error('Token check error:', error);
+      setError(error.message);
+      setIsValid(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    checkToken();
+  }, [checkToken]);
+
+  return { isValid, isLoading, error, refetch: checkToken };
+};
 
 // Email verification hooks
 export const useVerifyEmail = () => {

@@ -170,7 +170,7 @@ export const validateName = (name) => {
 
 // Main auth API functions
 export const authAPI = {
-  login: async (userData) => {
+login: async (userData) => {
   try {
     console.log('Starting login process...');
     
@@ -387,7 +387,14 @@ export const authAPI = {
       throw error.response?.data || { success: false, message: 'Email verification failed' };
     }
   },
-  
+  checkResetToken: async (token) => {
+  try {
+    const response = await axiosInstance.get(`/api/auth/reset/redirect/${token}`);
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || { success: false, message: 'Invalid or expired reset token' };
+  }
+},
   resendVerification: async (email) => {
     try {
       const response = await axiosInstance.post('/api/auth/resend-verification', { email });
@@ -498,7 +505,7 @@ export const authAPI = {
     }
   },
   
- checkAuth: async () => {
+checkAuth: async () => {
   try {
     const response = await axiosInstance.get('/api/auth/check-auth');
     
@@ -518,11 +525,24 @@ export const authAPI = {
         phoneNumber: user.phoneNumber || null,
         country: user.country || null,
         city: user.city || null,
-        bio: user.bio || null
+        bio: user.bio || null,
+        createdAt: user.createdAt || null,
+        updatedAt: user.updatedAt || null
       };
       
       // Store in localStorage for persistence
       localStorage.setItem('vorkanna_user_v1', JSON.stringify(completeUser));
+      
+      // Check and update CSRF token if needed
+      const currentCSRFToken = localStorage.getItem('csrfToken');
+      if (!currentCSRFToken || Date.now() > parseInt(localStorage.getItem('csrfTokenExpiry') || 0)) {
+        // Try to get new CSRF token
+        try {
+          await authAPI.getCSRFToken();
+        } catch (error) {
+          console.warn('Failed to refresh CSRF token during auth check:', error.message);
+        }
+      }
       
       return {
         success: true,

@@ -736,13 +736,7 @@ const GigDetails = () => {
                             {gigUser.languages.length} language{gigUser.languages.length !== 1 ? 's' : ''}
                           </span>
                         )}
-                        
-                        {gigUser?.createdAt && (
-                          <span className="flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" aria-hidden="true" />
-                            Member for {accountAge}
-                          </span>
-                        )}
+                       
                       </div>
                       
                       {/* User Stats */}
