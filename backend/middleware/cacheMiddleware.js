@@ -1,27 +1,24 @@
-// middleware/cacheMiddleware.js - Production Ready
 const cache = require('../utils/cache');
 const crypto = require('crypto');
 
-// Cache duration presets (in seconds)
 const CACHE_TTL = {
   PUBLIC: {
-    SHORT: 60,      // 1 minute
-    MEDIUM: 300,    // 5 minutes
-    LONG: 1800,     // 30 minutes
-    VERY_LONG: 3600 // 1 hour
+    SHORT: 60,
+    MEDIUM: 300,
+    LONG: 1800,
+    VERY_LONG: 3600
   },
   PRIVATE: {
-    SHORT: 30,      // 30 seconds
-    MEDIUM: 120,    // 2 minutes
-    LONG: 600       // 10 minutes
+    SHORT: 30,
+    MEDIUM: 120,
+    LONG: 600
   },
   STATIC: {
-    DAY: 86400,     // 24 hours
-    WEEK: 604800    // 7 days
+    DAY: 86400,
+    WEEK: 604800
   }
 };
 
-// Namespace prefixes for different routes
 const NAMESPACES = {
   PUBLIC: 'pub',
   ADMIN: 'admin',
@@ -31,11 +28,9 @@ const NAMESPACES = {
   DASHBOARD: 'dashboard'
 };
 
-// Generate cache key from request
 const generateCacheKey = (req, namespace = NAMESPACES.PUBLIC) => {
   const { method, originalUrl, query, params, user } = req;
   
-  // For GET requests, include query params
   const keyData = {
     method,
     path: originalUrl.split('?')[0],
@@ -45,7 +40,6 @@ const generateCacheKey = (req, namespace = NAMESPACES.PUBLIC) => {
     role: user?.role || 'guest'
   };
   
-  // Create hash of key data
   const hash = crypto
     .createHash('md5')
     .update(JSON.stringify(keyData))
@@ -54,7 +48,6 @@ const generateCacheKey = (req, namespace = NAMESPACES.PUBLIC) => {
   return cache.generateKey(`${namespace}:${hash}`, keyData);
 };
 
-// Cache middleware factory
 const createCacheMiddleware = (options = {}) => {
   const {
     ttl = CACHE_TTL.PUBLIC.MEDIUM,
@@ -72,50 +65,41 @@ const createCacheMiddleware = (options = {}) => {
   } = options;
 
   return async (req, res, next) => {
-    // Skip non-GET methods or explicitly bypassed
     if (skipMethods.includes(req.method)) {
       res.set('X-Cache', 'BYPASSED_METHOD');
       return next();
     }
 
-    // Check bypass cookies
     if (bypassCookies.some(cookie => req.cookies?.[cookie])) {
       res.set('X-Cache', 'BYPASSED_COOKIE');
       return next();
     }
 
-    // Check bypass headers
     if (bypassHeaders.some(header => req.headers[header])) {
       res.set('X-Cache', 'BYPASSED_HEADER');
       return next();
     }
 
-    // Check user role bypass
     if (checkUserRole && req.user && rolesToBypass.includes(req.user.role)) {
       res.set('X-Cache', 'BYPASSED_ROLE');
       return next();
     }
 
-    // Public only check
     if (publicOnly && req.user) {
       res.set('X-Cache', 'BYPASSED_AUTH');
       return next();
     }
 
-    // Generate cache key
     const cacheKey = customKeyFn ? customKeyFn(req) : generateCacheKey(req, namespace);
     
-    // Add tags to cache key for invalidation
     const taggedKey = tags.length > 0 
       ? `${cacheKey}:tags:${tags.join(':')}` 
       : cacheKey;
 
     try {
-      // Try to get from cache
       const cachedData = await cache.get(taggedKey, { namespace });
 
       if (cachedData) {
-        // Cache hit
         res.set({
           'X-Cache': 'HIT',
           'X-Cache-Key': taggedKey,
@@ -123,9 +107,7 @@ const createCacheMiddleware = (options = {}) => {
           'X-Cache-Generated': new Date().toISOString()
         });
 
-        // If staleWhileRevalidate is enabled, serve stale data and refresh in background
         if (staleWhileRevalidate) {
-          // Serve cached response immediately
           res.json({
             ...cachedData,
             cached: true,
@@ -133,43 +115,17 @@ const createCacheMiddleware = (options = {}) => {
             timestamp: new Date().toISOString()
           });
 
-          // Refresh cache in background
           setTimeout(async () => {
             try {
-              // Store original json method
-              const originalJson = res.json;
-              
-              // Create a mock response to capture fresh data
-              const mockRes = {
-                json: function(data) {
-                  if (data && data.success !== false) {
-                    cache.set(taggedKey, data, ttl, { namespace })
-                      .then(() => console.log(`🔄 Cache revalidated: ${taggedKey}`))
-                      .catch(err => console.warn('Cache revalidation error:', err.message));
-                  }
-                  return this;
-                }
-              };
-
-              // Create a mock next function
-              const mockNext = () => {
-                // This would normally call the route handler
-                // For background refresh, we need a different approach
-                console.log(`⚠️ Stale-while-revalidate not implemented for background refresh on ${req.path}`);
-              };
-
-              // We need a better approach for background refresh
-              // This is a simplified version
               console.log(`📡 Background revalidation scheduled for: ${taggedKey}`);
             } catch (error) {
               console.warn('Background revalidation failed:', error.message);
             }
-          }, 100); // Small delay to not block response
+          }, 100);
           
-          return; // Response already sent
+          return;
         }
 
-        // Normal cache hit response
         return res.json({
           ...cachedData,
           cached: true,
@@ -177,21 +133,16 @@ const createCacheMiddleware = (options = {}) => {
         });
       }
 
-      // Cache miss
       res.set({
         'X-Cache': 'MISS',
         'X-Cache-Key': taggedKey,
         'X-Cache-TTL': ttl
       });
 
-      // Store original json method
       const originalJson = res.json;
 
-      // Override json method to cache response
       res.json = function(data) {
-        // Only cache successful responses
         if (data && data.success !== false) {
-          // Add cache metadata
           const cacheableData = {
             ...data,
             _cacheMetadata: {
@@ -202,13 +153,11 @@ const createCacheMiddleware = (options = {}) => {
             }
           };
 
-          // Store in cache
           cache.set(taggedKey, cacheableData, ttl, { namespace })
             .then(() => console.log(`💾 Cache stored: ${taggedKey}`))
             .catch(err => console.warn('Cache store error:', err.message));
         }
 
-        // Call original json method
         return originalJson.call(this, data);
       };
 
@@ -221,7 +170,6 @@ const createCacheMiddleware = (options = {}) => {
   };
 };
 
-// Clear cache middleware (for POST/PUT/DELETE operations)
 const createClearCacheMiddleware = (options = {}) => {
   const {
     patterns = [],
@@ -231,22 +179,18 @@ const createClearCacheMiddleware = (options = {}) => {
   } = options;
 
   return async (req, res, next) => {
-    // Store original json method
     const originalJson = res.json;
 
     res.json = async function(data) {
-      // Only clear cache on successful operations
       if (data && data.success !== false) {
         try {
           const clearPromises = [];
 
-          // Clear specific patterns
           patterns.forEach(pattern => {
             const fullPattern = namespace !== 'default' ? `${namespace}:${pattern}` : pattern;
             clearPromises.push(cache.del(fullPattern));
           });
 
-          // Clear by tags if provided
           if (tags.length > 0) {
             tags.forEach(tag => {
               const tagPattern = `${namespace}:*:tags:*${tag}*`;
@@ -254,18 +198,15 @@ const createClearCacheMiddleware = (options = {}) => {
             });
           }
 
-          // Clear all if specified
           if (clearAllOnWrite) {
             clearPromises.push(cache.clearNamespace(namespace));
           }
 
-          // Clear cache for the specific resource if ID is in params
           if (req.params.id) {
             const resourcePattern = `${namespace}:*${req.params.id}*`;
             clearPromises.push(cache.del(resourcePattern));
           }
 
-          // Execute all cache clearing
           const results = await Promise.allSettled(clearPromises);
           
           const failed = results.filter(r => r.status === 'rejected');
@@ -281,7 +222,6 @@ const createClearCacheMiddleware = (options = {}) => {
         }
       }
 
-      // Call original json method
       return originalJson.call(this, data);
     };
 
@@ -289,7 +229,6 @@ const createClearCacheMiddleware = (options = {}) => {
   };
 };
 
-// Cache stats middleware
 const cacheStatsMiddleware = async (req, res, next) => {
   try {
     const stats = cache.stats();
@@ -304,7 +243,6 @@ const cacheStatsMiddleware = async (req, res, next) => {
       }
     };
     
-    // Add headers to response
     res.set('X-Cache-Stats', JSON.stringify(stats));
     res.set('X-Cache-Health', health.overall ? 'healthy' : 'unhealthy');
     
@@ -315,7 +253,6 @@ const cacheStatsMiddleware = async (req, res, next) => {
   }
 };
 
-// Cache control header middleware
 const cacheControlMiddleware = (options = {}) => {
   const {
     public: isPublic = true,

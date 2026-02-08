@@ -4,7 +4,6 @@ const controller = require('../controllers/subcategory.controller.js');
 const {optionalAuth } = require('../middleware/auth.middleware.js');
 const rateLimit = require('express-rate-limit');
 
-// Import cache middleware
 const { 
   createCacheMiddleware, 
   cacheControlMiddleware,
@@ -12,7 +11,6 @@ const {
   NAMESPACES 
 } = require('../middleware/cacheMiddleware');
 
-// Cache configuration for subcategories
 const SUBCATEGORY_CACHE_CONFIG = {
   PUBLIC_LIST: {
     ttl: CACHE_TTL.PUBLIC.MEDIUM,
@@ -37,13 +35,11 @@ const SUBCATEGORY_CACHE_CONFIG = {
   }
 };
 
-// Create cache middleware instances
 const cachePublicList = createCacheMiddleware(SUBCATEGORY_CACHE_CONFIG.PUBLIC_LIST);
 const cacheDetail = createCacheMiddleware(SUBCATEGORY_CACHE_CONFIG.DETAIL);
 const cacheByCategory = createCacheMiddleware(SUBCATEGORY_CACHE_CONFIG.BY_CATEGORY);
 const cacheDropdown = createCacheMiddleware(SUBCATEGORY_CACHE_CONFIG.DROPDOWN);
 
-// Rate limiting
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -68,7 +64,6 @@ const adminLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Get all subcategories (public - cached)
 router.get('/', 
   publicLimiter, 
   optionalAuth,
@@ -77,7 +72,6 @@ router.get('/',
   controller.getSubcategories
 );
 
-// Get subcategory by ID (public - cached)
 router.get('/:id', 
   publicLimiter, 
   optionalAuth,
@@ -86,7 +80,6 @@ router.get('/:id',
   controller.getSubcategoryById
 );
 
-// Get subcategories by category (public - cached)
 router.get('/category/:categoryId', 
   publicLimiter, 
   optionalAuth,
@@ -95,7 +88,6 @@ router.get('/category/:categoryId',
   controller.getSubcategoriesByCategory
 );
 
-// Get subcategory by slug (public - cached)
 router.get('/slug/:slug', 
   publicLimiter, 
   optionalAuth,
@@ -104,7 +96,6 @@ router.get('/slug/:slug',
   controller.getSubcategoryBySlug
 );
 
-// Get subcategories dropdown (public - cached)
 router.get('/dropdown/list', 
   publicLimiter,
   optionalAuth,
@@ -112,7 +103,6 @@ router.get('/dropdown/list',
   cacheDropdown,
   async (req, res, next) => {
     try {
-      // Set flag for controller to return dropdown format
       req.query.dropdown = true;
       next();
     } catch (error) {
@@ -122,7 +112,6 @@ router.get('/dropdown/list',
   controller.getSubcategories
 );
 
-// Health check endpoint (with cache control)
 router.get('/health', 
   publicLimiter,
   cacheControlMiddleware({ maxAge: 30 }),
@@ -136,7 +125,6 @@ router.get('/health',
         timestamp: new Date().toISOString(),
         database: 'connected',
         cache: {
-          redis: health.redis.healthy,
           memory: health.memory.healthy,
           overall: health.overall
         }
@@ -150,4 +138,5 @@ router.get('/health',
     }
   }
 );
+
 module.exports = router;

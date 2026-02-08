@@ -50,8 +50,6 @@ const publicLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-
-// Get all categories (public - cached)
 router.get('/', 
   publicLimiter, 
   optionalAuth,
@@ -61,7 +59,6 @@ router.get('/',
   controller.getCategories
 );
 
-// Search categories (public - cached)
 router.get('/search', 
   publicLimiter, 
   optionalAuth,
@@ -71,7 +68,6 @@ router.get('/search',
   controller.searchCategories
 );
 
-// Get category by ID or slug (public - cached)
 router.get('/:id', 
   publicLimiter, 
   optionalAuth,
@@ -80,7 +76,6 @@ router.get('/:id',
   controller.getCategoryById
 );
 
-// Get categories dropdown (public - cached)
 router.get('/dropdown/list', 
   publicLimiter,
   optionalAuth,
@@ -88,7 +83,6 @@ router.get('/dropdown/list',
   cacheDropdown,
   async (req, res, next) => {
     try {
-      // Set flag for controller to return dropdown format
       req.query.dropdown = true;
       next();
     } catch (error) {
@@ -97,7 +91,6 @@ router.get('/dropdown/list',
   },
   controller.getCategories
 );
-
 
 router.get('/health', 
   publicLimiter,
@@ -112,7 +105,6 @@ router.get('/health',
         timestamp: new Date().toISOString(),
         database: 'connected',
         cache: {
-          redis: health.redis.healthy,
           memory: health.memory.healthy,
           overall: health.overall
         }

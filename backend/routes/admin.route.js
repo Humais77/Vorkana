@@ -382,7 +382,6 @@ router.get('/subcategories/export',
   subcategoryController.exportSubcategories
 );
 
-
 router.get('/subcategories/:id', 
   verifyAdmin, 
   adminApiLimiter,
@@ -684,6 +683,7 @@ router.get('/services',
   },
   serviceController.getAdminServices
 );
+
 router.get('/services/export', 
   verifyAdmin, 
   requirePermission('manage_services'),
@@ -691,6 +691,7 @@ router.get('/services/export',
   cacheControlMiddleware({ noStore: true }),
   serviceController.exportServices
 );
+
 router.get('/services/:id', 
   verifyAdmin, 
   adminApiLimiter, 
@@ -1022,7 +1023,6 @@ router.get('/health',
         timestamp: new Date().toISOString(),
         admin: req.admin?.email,
         cache: {
-          redis: health.redis.healthy,
           memory: health.memory.healthy,
           overall: health.overall
         }

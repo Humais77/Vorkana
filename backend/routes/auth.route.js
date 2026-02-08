@@ -1,4 +1,3 @@
-// routes/auth.route.js - Production Ready with Redis Cache
 const express = require("express");
 const passport = require("passport");
 const crypto = require("crypto");
@@ -45,7 +44,6 @@ const SessionService = require("../services/session.service");
 const CSRFMiddleware = require("../middleware/csrf.middleware");
 const Session = require("../models/session.model")
 const jwt = require("jsonwebtoken");
-// Import cache middleware
 const { 
   createCacheMiddleware, 
   createClearCacheMiddleware,
@@ -54,7 +52,6 @@ const {
   NAMESPACES 
 } = require('../middleware/cacheMiddleware');
 
-// Cache configurations for auth
 const AUTH_CACHE_CONFIG = {
   PUBLIC_PROFILE: {
     ttl: CACHE_TTL.PUBLIC.MEDIUM,
@@ -79,13 +76,11 @@ const AUTH_CACHE_CONFIG = {
   }
 };
 
-// Create cache middlewares
 const cachePublicProfile = createCacheMiddleware(AUTH_CACHE_CONFIG.PUBLIC_PROFILE);
 const cacheUserProfile = createCacheMiddleware(AUTH_CACHE_CONFIG.USER_PROFILE);
 const cacheSessions = createCacheMiddleware(AUTH_CACHE_CONFIG.SESSIONS);
 const cacheCSRF = createCacheMiddleware(AUTH_CACHE_CONFIG.CSRF);
 
-// Clear cache middleware for write operations
 const clearAuthCache = createClearCacheMiddleware({
   patterns: [
     'auth:*',
@@ -100,7 +95,6 @@ const clearAuthCache = createClearCacheMiddleware({
 
 const router = express.Router();
 
-// Validation schemas
 const registerValidation = validateRequest({
   body: {
     name: { type: 'string', minLength: 2, maxLength: 50, required: true },
@@ -186,9 +180,6 @@ const reactivateValidation = validateRequest({
   }
 });
 
-// ==================== AUTHENTICATION ROUTES (No Cache) ====================
-
-// Register
 router.post("/register", 
   registerLimiter,
   cacheControlMiddleware({ noStore: true }),
@@ -197,7 +188,6 @@ router.post("/register",
   register
 );
 
-// Login
 router.post("/login", 
   authLimiter,
   cacheControlMiddleware({ noStore: true }),
@@ -206,7 +196,6 @@ router.post("/login",
   login
 );
 
-// Logout
 router.post("/logout", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
@@ -214,7 +203,6 @@ router.post("/logout",
   logout
 );
 
-// Refresh session
 router.post("/refresh", 
   (req, res, next) => {
     const refreshToken = req.cookies?.refreshToken;
@@ -227,14 +215,13 @@ router.post("/refresh",
   clearAuthCache,
   refreshSession
 );
+
 router.get("/check-auth", 
   SessionMiddleware.optionalAuth, 
   cacheControlMiddleware({ public: true, maxAge: 60 }),
   async (req, res) => {
     try {
       if (req.user) {
-        // Don't trigger full session validation here
-        // Just return basic user info
         const userResponse = {
           _id: req.user._id,
           name: req.user.name,
@@ -254,7 +241,6 @@ router.get("/check-auth",
           cached: false
         });
       } else {
-        // User is not authenticated
         res.json({
           success: true,
           isAuthenticated: false,
@@ -271,14 +257,13 @@ router.get("/check-auth",
     }
   }
 );
-// Get public profile
+
 router.get("/profile/:userId/public", 
   cacheControlMiddleware({ public: true, maxAge: 300 }),
   cachePublicProfile,
   getPublicProfile
 );
 
-// CSRF token
 router.get("/csrf-token", 
   cacheControlMiddleware({ public: true, maxAge: 60 }),
   cacheCSRF,
@@ -299,9 +284,6 @@ router.get("/csrf-token",
   }
 );
 
-// ==================== PROTECTED ROUTES (Cached for user) ====================
-
-// Get profile
 router.get("/profile", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ public: false, maxAge: 120 }),
@@ -309,7 +291,6 @@ router.get("/profile",
   getProfile
 );
 
-// Update profile
 router.put("/profile", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
@@ -318,7 +299,6 @@ router.put("/profile",
   updateProfile
 );
 
-// Change password
 router.post("/change-password", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
@@ -327,7 +307,6 @@ router.post("/change-password",
   changePassword
 );
 
-// Get active sessions
 router.get("/sessions", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ public: false, maxAge: 60 }),
@@ -335,14 +314,13 @@ router.get("/sessions",
   getActiveSessions
 );
 
-// Terminate session
 router.delete("/sessions/:sessionId", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
   clearAuthCache,
   terminateSession
 );
-// Add to auth.route.js
+
 router.get("/test/session-timing", 
   SessionMiddleware.authenticate,
   async (req, res) => {
@@ -360,7 +338,7 @@ router.get("/test/session-timing",
     });
   }
 );
-// Terminate all other sessions
+
 router.delete("/sessions/others", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
@@ -368,7 +346,6 @@ router.delete("/sessions/others",
   terminateAllOtherSessions
 );
 
-// Check session status
 router.get("/session/status", 
   SessionMiddleware.optionalAuth,
   cacheControlMiddleware({ public: true, maxAge: 30 }),
@@ -387,7 +364,6 @@ router.get("/session/status",
   }
 );
 
-// Deactivate account
 router.post("/deactivate", 
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
@@ -396,7 +372,6 @@ router.post("/deactivate",
   deactivateAccount
 );
 
-// Reactivate account
 router.post("/reactivate", 
   cacheControlMiddleware({ noStore: true }),
   clearAuthCache,
@@ -404,13 +379,13 @@ router.post("/reactivate",
   reactivateAccount
 );
 
-// Refresh CSRF token
 router.post("/csrf-token/refresh",
   SessionMiddleware.authenticate,
   cacheControlMiddleware({ noStore: true }),
   clearAuthCache,
   refreshCSRFToken
 );
+
 router.get("/debug/session",
   SessionMiddleware.authenticate,
   async (req, res) => {
@@ -429,7 +404,6 @@ router.get("/debug/session",
     
     if (token) {
       try {
-        // Try to verify
         decoded = jwt.verify(token, process.env.JWT_SECRET);
         verification.success = true;
         verification.expiresAt = new Date(decoded.exp * 1000);
@@ -453,7 +427,6 @@ router.get("/debug/session",
         verification.error = verifyError.name;
         verification.message = verifyError.message;
         
-        // Try to decode anyway
         decoded = jwt.decode(token);
         
         tokenStatus = {
@@ -467,7 +440,6 @@ router.get("/debug/session",
       }
     }
     
-    // Get session
     const session = await Session.findOne({
       token: token,
       userId: req.user?._id
@@ -507,6 +479,7 @@ router.get("/debug/session",
   }
 }
 )
+
 router.get('/debug/sessions', 
   SessionMiddleware.authenticate,
   async (req, res) => {
@@ -531,14 +504,12 @@ router.get('/debug/sessions',
   }
 );
 
-// Verify email
 router.get("/verify-email/:token", 
   cacheControlMiddleware({ noStore: true }),
   clearAuthCache,
   verifyEmail
 );
 
-// Verification redirect
 router.get("/verify/:token", 
   cacheControlMiddleware({ noStore: true }),
   (req, res) => {
@@ -547,7 +518,6 @@ router.get("/verify/:token",
   }
 );
 
-// Resend verification
 router.post("/resend-verification", 
   passwordResetLimiter,
   cacheControlMiddleware({ noStore: true }),
@@ -556,7 +526,6 @@ router.post("/resend-verification",
   resendVerificationEmail
 );
 
-// Verified status
 router.get("/verified-status", 
   cacheControlMiddleware({ public: true, maxAge: 30 }),
   (req, res) => {
@@ -565,15 +534,11 @@ router.get("/verified-status",
   }
 );
 
-// Check verification status
 router.get("/check-verification", 
   cacheControlMiddleware({ public: true, maxAge: 60 }),
   checkVerificationStatus
 );
 
-// ==================== PASSWORD RESET ROUTES (No Cache) ====================
-
-// Forgot password
 router.post("/forgot-password", 
   passwordResetLimiter,
   cacheControlMiddleware({ noStore: true }),
@@ -582,7 +547,6 @@ router.post("/forgot-password",
   forgotPassword
 );
 
-// Reset password redirect
 router.get("/reset/redirect/:token", 
   cacheControlMiddleware({ noStore: true }),
   (req, res) => {
@@ -594,7 +558,6 @@ router.get("/reset/redirect/:token",
   }
 );
 
-// Reset password
 router.post("/reset-password", 
   passwordResetLimiter,
   cacheControlMiddleware({ noStore: true }),
@@ -603,17 +566,14 @@ router.post("/reset-password",
   resetPassword
 );
 
-// ==================== OAUTH ROUTES (No Cache) ====================
-
-// Google OAuth
 router.get("/google",
   cacheControlMiddleware({ noStore: true }),
   (req, res, next) => {
     const state = crypto.randomBytes(32).toString('hex');
     
     res.cookie('oauth_just_logged_in', 'true', {
-  maxAge: 10000, // 10 seconds
-  httpOnly: false, // Client needs to read this
+  maxAge: 10000,
+  httpOnly: false,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
   path: '/'
@@ -627,7 +587,6 @@ router.get("/google",
   }
 );
 
-// In your Google OAuth callback route handler (backend)
 router.get('/google/callback', 
   passport.authenticate('google', { 
     failureRedirect: '/signin',
@@ -637,7 +596,6 @@ router.get('/google/callback',
     try {
       console.log('✅ Google OAuth successful for:', req.user.email);
       
-      // CRITICAL: Create a proper session for the user
       const session = await SessionService.createSession(
         req.user._id, 
         req, 
@@ -648,17 +606,14 @@ router.get('/google/callback',
         }
       );
       
-      // Set cookies with session tokens
       SessionMiddleware.setAuthCookies(
         res, 
         session.token, 
         session.refreshToken
       );
       
-      // Generate CSRF token
       const csrfToken = CSRFMiddleware.generateToken(req, res);
       
-      // Prepare user data for frontend
       const userResponse = {
         _id: req.user._id,
         name: req.user.name,
@@ -671,7 +626,6 @@ router.get('/google/callback',
         lastSeenAt: new Date().toISOString()
       };
       
-      // Store in localStorage format
       const redirectData = {
         success: true,
         isAuthenticated: true,
@@ -684,7 +638,6 @@ router.get('/google/callback',
         timestamp: Date.now()
       };
       
-      // Redirect with data
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       const encodedData = encodeURIComponent(JSON.stringify(redirectData));
       res.redirect(`${frontendUrl}/oauth-success#data=${encodedData}`);
@@ -711,17 +664,17 @@ router.get("/health",
     });
   }
 );
+
 router.get("/test/cookie-behavior", (req, res) => {
   const now = Date.now();
-  const testExpiration = 5 * 60 * 1000; // 5 minutes
+  const testExpiration = 5 * 60 * 1000;
   
-  // Set test cookies with different configurations
   res.cookie('test_cookie_maxage', 'maxage_value', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: testExpiration // 5 minutes in milliseconds
+    maxAge: testExpiration
   });
   
   res.cookie('test_cookie_expires', 'expires_value', {
@@ -729,7 +682,7 @@ router.get("/test/cookie-behavior", (req, res) => {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    expires: new Date(now + testExpiration) // Absolute time
+    expires: new Date(now + testExpiration)
   });
   
   res.json({
@@ -755,4 +708,5 @@ router.get("/test/cookie-behavior", (req, res) => {
     recommendation: 'USE maxAge FOR CROSS-TIMEZONE COMPATIBILITY'
   });
 });
+
 module.exports = router;

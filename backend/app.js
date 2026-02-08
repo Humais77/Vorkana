@@ -32,7 +32,6 @@ const contactRoutes = require('./routes/contact.route.js');
 const passport = require("passport");
 require("./config/passport.js");
 
-// Connect to database
 connectDB().then(() => {
   console.log('✅ Database connected');
    sessionCleanup.init();
@@ -40,7 +39,6 @@ connectDB().then(() => {
 
 const app = express();
 const server = http.createServer(app);
-
 
 app.use(compression({
   level: 6,
@@ -207,7 +205,6 @@ const cacheControl = (seconds = 60) => (req, res, next) => {
 
 app.use(cacheControl(60));
 
-// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -232,7 +229,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// 404 Handler
 app.use((req, res, next) => {
   res.status(404).json({
     success: false,
@@ -241,7 +237,6 @@ app.use((req, res, next) => {
   });
 });
 
-// Global Error Handler
 app.use((err, req, res, next) => {
   const errorId = Math.random().toString(36).substr(2, 9);
   const timestamp = new Date().toISOString();
@@ -316,15 +311,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-
 if (process.env.NODE_ENV === 'production') {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
 }
+
 app.use((req, res, next) => {
   req.setTimeout(30000, () => {
     console.warn(`Request timeout: ${req.method} ${req.url}`);
   });
   next();
 });
+
 module.exports = { app, server };

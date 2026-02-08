@@ -1,5 +1,3 @@
-// search.route.js - Production Ready with CSRF Protection and Redis Caching
-// FIXED VERSION - All headers sent errors resolved
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -12,19 +10,9 @@ const Category = require('../models/category.model');
 const Subcategory = require('../models/subcategory.model');
 const User = require('../models/user.model');
 
-// CSRF Protection
 const CSRFMiddleware = require('../middleware/csrf.middleware');
+const SessionMiddleware = require("../middleware/session.middleware");
 
-// Session Middleware
-const SessionMiddleware = require('../middleware/session.middleware');
-
-// Rate limiting middleware
-const rateLimit = require('express-rate-limit');
-
-// Search rate limiter
-
-
-// Helper functions
 const generateRequestId = () => crypto.randomBytes(8).toString('hex');
 
 const generateCacheKey = (prefix, params) => {
@@ -32,20 +20,19 @@ const generateCacheKey = (prefix, params) => {
   return crypto.createHash('md5').update(key).digest('hex');
 };
 
-// Enhanced sanitization
 const sanitizeSearchInput = (value) => {
   if (typeof value !== 'string') return value;
   
   const dangerousPatterns = [
-        /<script[^>]*>/i,  // Script tags
-        /javascript:/i,     // JavaScript protocol
-        /on\w+\s*=/,        // Event handlers
-        /eval\(/,           // eval function
-        /alert\(/,          // alert function
-        /document\./,       // Document access
-        /window\./,         // Window access
-        /\.\.\/\.\.\//,     // Directory traversal
-        /null.*null/i,      // Null byte injection attempts
+        /<script[^>]*>/i,
+        /javascript:/i,
+        /on\w+\s*=/,
+        /eval\(/,
+        /alert\(/,
+        /document\./,
+        /window\./,
+        /\.\.\/\.\.\//,
+        /null.*null/i,
       ];
   
   let sanitized = value;
@@ -62,7 +49,6 @@ const sanitizeSearchInput = (value) => {
   return sanitized;
 };
 
-// Parameter cleaning
 const cleanSearchParams = (params, user) => {
   const cleaned = {};
   
@@ -213,19 +199,16 @@ const cleanSearchParams = (params, user) => {
   return cleaned;
 };
 
-// ObjectId validation
 const isValidObjectId = (id) => {
   if (!id || typeof id !== 'string') return false;
   return mongoose.Types.ObjectId.isValid(id);
 };
 
-// Escape regex
 const escapeRegex = (string) => {
   if (typeof string !== 'string') return string;
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
 
-// Build search filter
 const buildSearchFilter = (params, searchType, user) => {
   const filter = {};
   const conditions = [];
@@ -366,7 +349,6 @@ const buildSearchFilter = (params, searchType, user) => {
   return filter;
 };
 
-// Build text search query
 const buildTextSearchQuery = (searchQuery, searchType, params) => {
   const { fuzzy = 'false', exact = 'false' } = params;
   const sanitizedQuery = searchQuery.trim();
@@ -409,7 +391,6 @@ const buildTextSearchQuery = (searchQuery, searchType, params) => {
   };
 };
 
-// Get sort options
 const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
   const sort = sortParam || 'relevance';
   const sortOrder = params.order || 'desc';
@@ -507,7 +488,6 @@ const getSortOptions = (sortParam, searchType, hasTextSearch, params, user) => {
   return sortConfig;
 };
 
-// Get user personalization
 const getUserPersonalization = async (userId, searchType) => {
   if (!userId) return null;
   
@@ -537,7 +517,6 @@ const getUserPersonalization = async (userId, searchType) => {
       pastSearches: user.searchHistory?.slice(-10).map(h => h.query).filter(Boolean) || []
     };
     
-    // Cache for 5 minutes
     await cache.set(cacheKey, personalization, 300);
     
     return personalization;
@@ -547,7 +526,6 @@ const getUserPersonalization = async (userId, searchType) => {
   }
 };
 
-// Update user search history
 const updateUserSearchHistory = async (userId, searchQuery, searchType, filters) => {
   if (!userId) return;
   
@@ -566,14 +544,12 @@ const updateUserSearchHistory = async (userId, searchQuery, searchType, filters)
       }
     });
     
-    // Invalidate personalization cache
     await cache.del(`user:${userId}:personalization`);
   } catch (error) {
     console.error('Error updating user search history:', error);
   }
 };
 
-// Calculate relevance score
 const calculateRelevanceScore = (item, searchQuery, personalization) => {
   let score = 0;
   
@@ -634,7 +610,6 @@ const calculateRelevanceScore = (item, searchQuery, personalization) => {
   return Math.round(score * 100) / 100;
 };
 
-// Get related data
 const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId, userId) => {
   const relatedData = {
     categories: [],
@@ -689,7 +664,6 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
           }
         ]);
         
-        // Cache for 10 minutes
         await cache.set(cacheKey, relatedData.categories, 600);
       }
     }
@@ -711,7 +685,6 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
         .limit(8)
         .lean();
         
-        // Cache for 15 minutes
         await cache.set(cacheKey, relatedData.subcategories, 900);
       }
     }
@@ -723,7 +696,6 @@ const getRelatedData = async (searchQuery, searchType, categoryId, subcategoryId
   return relatedData;
 };
 
-// Cache or fetch users
 const cacheOrFetchUsers = async (userIds) => {
   if (!userIds || userIds.length === 0) return [];
   
@@ -731,7 +703,6 @@ const cacheOrFetchUsers = async (userIds) => {
   const cachedUsers = {};
   const uncachedIds = [];
   
-  // Try to get from cache first
   await Promise.all(uniqueIds.map(async (id) => {
     const cacheKey = `user:${id}:basic`;
     const cached = await cache.get(cacheKey, { 
@@ -746,13 +717,11 @@ const cacheOrFetchUsers = async (userIds) => {
     }
   }));
   
-  // Fetch uncached users
   if (uncachedIds.length > 0) {
     const users = await User.find({ _id: { $in: uncachedIds } })
       .select('name username picture rating completedOrders responseRate responseTime accountType level country joinedAt lastSeenAt')
       .lean();
     
-    // Cache fetched users
     await Promise.all(users.map(async (user) => {
       const cacheKey = `user:${user._id}:basic`;
       await cache.set(cacheKey, user, 300, { 
@@ -766,7 +735,6 @@ const cacheOrFetchUsers = async (userIds) => {
   return Object.values(cachedUsers);
 };
 
-// Cache or fetch categories
 const cacheOrFetchCategories = async (categoryIds) => {
   if (!categoryIds || categoryIds.length === 0) return [];
   
@@ -774,7 +742,6 @@ const cacheOrFetchCategories = async (categoryIds) => {
   const cachedCategories = {};
   const uncachedIds = [];
   
-  // Try to get from cache first
   await Promise.all(uniqueIds.map(async (id) => {
     const cacheKey = `category:${id}:basic`;
     const cached = await cache.get(cacheKey, { 
@@ -789,13 +756,11 @@ const cacheOrFetchCategories = async (categoryIds) => {
     }
   }));
   
-  // Fetch uncached categories
   if (uncachedIds.length > 0) {
     const categories = await Category.find({ _id: { $in: uncachedIds } })
       .select('name slug icon description')
       .lean();
     
-    // Cache fetched categories
     await Promise.all(categories.map(async (category) => {
       const cacheKey = `category:${category._id}:basic`;
       await cache.set(cacheKey, category, 300, { 
@@ -809,9 +774,6 @@ const cacheOrFetchCategories = async (categoryIds) => {
   return Object.values(cachedCategories);
 };
 
-// ==================== MAIN SEARCH ENDPOINTS ====================
-
-// MAIN SEARCH ENDPOINT
 router.get('/search', 
   SessionMiddleware.optionalAuth,
   async (req, res) => {
@@ -1133,7 +1095,6 @@ router.get('/search',
   }
 );
 
-// SUGGESTIONS ENDPOINT
 router.get('/suggestions', 
   SessionMiddleware.optionalAuth,
   async (req, res) => {
@@ -1301,7 +1262,6 @@ router.get('/suggestions',
   }
 );
 
-// QUICK SEARCH ENDPOINT - FIXED VERSION
 router.get('/quick', 
   async (req, res) => {
     const requestId = generateRequestId();
@@ -1435,7 +1395,6 @@ router.get('/quick',
   }
 );
 
-// FILTER OPTIONS ENDPOINT
 router.get('/filters', 
   SessionMiddleware.optionalAuth,
   async (req, res) => {
@@ -1668,7 +1627,6 @@ router.get('/filters',
   }
 );
 
-// SEARCH HISTORY ENDPOINTS
 router.get('/history', 
   SessionMiddleware.authenticate,
   async (req, res) => {
@@ -1803,7 +1761,6 @@ router.delete('/history',
   }
 );
 
-// SEARCH STATISTICS ENDPOINT
 router.get('/stats', 
   SessionMiddleware.optionalAuth,
   async (req, res) => {
@@ -1970,7 +1927,6 @@ router.get('/stats',
   }
 );
 
-// ADVANCED SEARCH ENDPOINT (POST) - Requires CSRF
 router.post('/advanced', 
   SessionMiddleware.optionalAuth,
   CSRFMiddleware.requireCSRF,
@@ -2102,7 +2058,6 @@ router.post('/advanced',
   }
 );
 
-// SEARCH CACHE MANAGEMENT (Admin only)
 router.post('/cache/clear', 
   SessionMiddleware.authenticate,
   SessionMiddleware.authorize(['admin', 'moderator']),
@@ -2128,7 +2083,6 @@ router.post('/cache/clear',
   }
 );
 
-// HEALTH CHECK ENDPOINT
 router.get('/health', 
   async (req, res) => {
     try {
@@ -2168,7 +2122,6 @@ router.get('/health',
   }
 );
 
-// CSRF Token endpoint for search page
 router.get('/csrf-token',
   SessionMiddleware.optionalAuth,
   (req, res) => {
@@ -2182,7 +2135,6 @@ router.get('/csrf-token',
   }
 );
 
-// DEBUG ENDPOINT (Development only)
 if (process.env.NODE_ENV === 'development') {
   router.get('/debug/cache', async (req, res) => {
     try {

@@ -29,7 +29,6 @@ const { handleMulterError } = require('../middleware/upload.middleware.js');
 const SessionMiddleware = require("../middleware/session.middleware");
 const CSRFMiddleware = require('../middleware/csrf.middleware');
 
-// Import cache middleware
 const { 
   createCacheMiddleware, 
   createClearCacheMiddleware,
@@ -38,7 +37,6 @@ const {
   NAMESPACES 
 } = require('../middleware/cacheMiddleware');
 
-// Cache configurations for gigs
 const GIG_CACHE_CONFIG = {
   PUBLIC_LIST: {
     ttl: CACHE_TTL.PUBLIC.MEDIUM,
@@ -63,12 +61,10 @@ const GIG_CACHE_CONFIG = {
   }
 };
 
-// Create cache middlewares
 const cachePublicList = createCacheMiddleware(GIG_CACHE_CONFIG.PUBLIC_LIST);
 const cacheDetail = createCacheMiddleware(GIG_CACHE_CONFIG.DETAIL);
 const cacheStats = createCacheMiddleware(GIG_CACHE_CONFIG.STATS);
 
-// Clear cache middleware for write operations
 const clearGigCache = createClearCacheMiddleware({
   patterns: [
     'gigs:*',
@@ -80,7 +76,6 @@ const clearGigCache = createClearCacheMiddleware({
   clearAllOnWrite: false
 });
 
-// Configure multer
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -183,7 +178,6 @@ const handleThumbnailUpload = (req, res, next) => {
   });
 };
 
-// Rate limiting
 const rateLimit = require('express-rate-limit');
 
 const gigLimiter = rateLimit({
@@ -198,7 +192,6 @@ const gigLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Get all gigs
 router.get('/', 
   optionalAuth, 
   gigLimiter,
@@ -207,7 +200,7 @@ router.get('/',
   validateQuery, 
   getGigs
 );
-// Get gig stats (user specific)
+
 router.get('/stats', 
   SessionMiddleware.authenticate, 
   gigLimiter,
@@ -216,7 +209,6 @@ router.get('/stats',
   getGigStats
 );
 
-// Search gigs
 router.get('/search', 
   optionalAuth, 
   gigLimiter,
@@ -226,7 +218,6 @@ router.get('/search',
   searchGigs
 );
 
-// Get gigs by subcategory
 router.get('/subcategory/:subcategoryId', 
   optionalAuth, 
   gigLimiter,
@@ -236,7 +227,6 @@ router.get('/subcategory/:subcategoryId',
   getGigsBySubcategory
 );
 
-// Get gig by ID
 router.get('/:id', 
   optionalAuth, 
   gigLimiter,
@@ -245,10 +235,6 @@ router.get('/:id',
   getGigById
 );
 
-
-
-
-// Create gig
 router.post('/', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -260,7 +246,6 @@ router.post('/',
   createGig
 );
 
-// Update gig
 router.put('/:id', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -272,7 +257,6 @@ router.put('/:id',
   updateGig
 );
 
-// Delete gig
 router.delete('/:id', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -282,7 +266,6 @@ router.delete('/:id',
   deleteGig
 );
 
-// Restore gig
 router.patch('/:id/restore', 
   SessionMiddleware.authenticate, 
   gigLimiter,
@@ -291,7 +274,6 @@ router.patch('/:id/restore',
   restoreGig
 );
 
-// Upload images
 router.post('/:id/images/upload', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -302,7 +284,6 @@ router.post('/:id/images/upload',
   uploadImages
 );
 
-// Remove image
 router.delete('/:id/images/:publicId', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -312,7 +293,6 @@ router.delete('/:id/images/:publicId',
   removeImage
 );
 
-// Set thumbnail
 router.put('/:id/thumbnail/:publicId', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -322,7 +302,6 @@ router.put('/:id/thumbnail/:publicId',
   setThumbnail
 );
 
-// Upload thumbnail
 router.post('/:id/thumbnail/upload', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF, 
@@ -332,8 +311,6 @@ router.post('/:id/thumbnail/upload',
   handleThumbnailUpload, 
   uploadThumbnail
 );
-
-// ==================== HEALTH CHECK ====================
 
 router.get('/health/check', 
   gigLimiter,

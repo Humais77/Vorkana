@@ -26,7 +26,6 @@ const {
   NAMESPACES 
 } = require('../middleware/cacheMiddleware');
 
-// Cache configurations for services
 const SERVICE_CACHE_CONFIG = {
   PUBLIC_LIST: {
     ttl: CACHE_TTL.PUBLIC.MEDIUM,
@@ -56,14 +55,12 @@ const SERVICE_CACHE_CONFIG = {
   }
 };
 
-// Create cache middlewares
 const cachePublicList = createCacheMiddleware(SERVICE_CACHE_CONFIG.PUBLIC_LIST);
 const cacheDetail = createCacheMiddleware(SERVICE_CACHE_CONFIG.DETAIL);
 const cachePopular = createCacheMiddleware(SERVICE_CACHE_CONFIG.POPULAR);
 const cacheUserServices = createCacheMiddleware(SERVICE_CACHE_CONFIG.USER_SERVICES);
 const cacheStats = createCacheMiddleware(SERVICE_CACHE_CONFIG.STATS);
 
-// Clear cache middleware for write operations
 const clearServiceCache = createClearCacheMiddleware({
   patterns: [
     'services:*',
@@ -75,7 +72,6 @@ const clearServiceCache = createClearCacheMiddleware({
   clearAllOnWrite: false
 });
 
-// Rate limiting
 const serviceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -115,14 +111,11 @@ const imageUploadLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Create combined upload middleware
 const uploadWithThumbnail = upload.fields([
   { name: 'images', maxCount: 10 },
   { name: 'thumbnail', maxCount: 1 }
 ]);
 
-
-// Get all services (public - cached)
 router.get('/', 
   optionalAuth, 
   serviceLimiter,
@@ -131,7 +124,7 @@ router.get('/',
   validateQuery, 
   controller.getServices
 );
-// Get my services
+
 router.get('/my-services', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -141,7 +134,7 @@ router.get('/my-services',
   validateQuery, 
   controller.getMyServices
 );
-// Get popular services
+
 router.get('/popular', 
   optionalAuth, 
   serviceLimiter,
@@ -150,7 +143,6 @@ router.get('/popular',
   controller.getPopularServices
 );
 
-// Get popular services by category
 router.get('/popular/category', 
   optionalAuth, 
   serviceLimiter,
@@ -159,8 +151,6 @@ router.get('/popular/category',
   controller.getPopularServicesByCategory
 );
 
-
-// Get service stats (user specific)
 router.get('/stats', 
   SessionMiddleware.authenticate, 
   serviceLimiter,
@@ -169,9 +159,6 @@ router.get('/stats',
   controller.getServiceStats
 );
 
-
-
-// Search services
 router.get('/search', 
   optionalAuth, 
   serviceLimiter,
@@ -181,7 +168,6 @@ router.get('/search',
   controller.searchServices
 );
 
-// Get service by ID or slug
 router.get('/:id', 
   optionalAuth, 
   serviceLimiter,
@@ -190,8 +176,6 @@ router.get('/:id',
   controller.getServiceById
 );
 
-
-// Create service
 router.post('/', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -204,7 +188,6 @@ router.post('/',
   controller.createService
 );
 
-// Update my service
 router.put('/:id', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -217,7 +200,6 @@ router.put('/:id',
   controller.updateService
 );
 
-// Delete my service
 router.delete('/:id', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -227,7 +209,6 @@ router.delete('/:id',
   controller.deleteService
 );
 
-// Restore my service
 router.patch('/:id/restore', 
   SessionMiddleware.authenticate, 
   serviceLimiter,
@@ -236,7 +217,6 @@ router.patch('/:id/restore',
   controller.restoreService
 );
 
-// Upload additional images
 router.post('/:id/images', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -248,7 +228,6 @@ router.post('/:id/images',
   controller.uploadImages
 );
 
-// Remove specific image
 router.delete('/:id/images/:publicId', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -258,7 +237,6 @@ router.delete('/:id/images/:publicId',
   controller.removeImage
 );
 
-// Set existing image as thumbnail
 router.put('/:id/thumbnail/:publicId', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -268,7 +246,6 @@ router.put('/:id/thumbnail/:publicId',
   controller.setThumbnail
 );
 
-// Upload new thumbnail
 router.post('/:id/thumbnail', 
   SessionMiddleware.authenticate, 
   CSRFMiddleware.requireCSRF,
@@ -279,6 +256,7 @@ router.post('/:id/thumbnail',
   handleMulterError, 
   controller.uploadThumbnail
 );
+
 router.get('/health/check', 
   serviceLimiter,
   cacheControlMiddleware({ maxAge: 30 }),
