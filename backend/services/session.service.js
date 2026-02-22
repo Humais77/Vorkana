@@ -4,7 +4,6 @@ const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const UAParser = require('ua-parser-js');
-const geoip = require('geoip-lite');
 const mongoose = require('mongoose');
 class SessionService {
   constructor() {
@@ -102,7 +101,6 @@ class SessionService {
     const parser = new UAParser(req.headers['user-agent']);
     const uaResult = parser.getResult();
     const ip = this.getClientIp(req);
-    const geo = geoip.lookup(ip) || {};
     
     // Calculate expiration (30 days from now)
     const expiresAt = new Date(currentTime.getTime() + this.sessionDuration);
@@ -125,11 +123,6 @@ class SessionService {
         browser: uaResult.browser.name || 'Unknown',
         os: uaResult.os.name || 'Unknown',
         device: uaResult.device.type || 'Desktop',
-        location: {
-          country: geo.country || 'Unknown',
-          region: geo.region || 'Unknown',
-          city: geo.city || 'Unknown'
-        }
       },
       expiresAt: expiresAt,
       lastActivity: currentTime,

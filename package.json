@@ -1,7 +1,8 @@
 {
-  "name": "Vorkanna",
+  "name": "vorkanna",
   "version": "1.0.0",
-  "main": "server.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
     "dev": "nodemon backend/server.js",
     "start": "node backend/server.js",
@@ -11,48 +12,50 @@
     "security:check": "npx nodejsscan -d .",
     "security:all": "npm run security:audit && npm run security:scan && npm run security:check"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Humais77/Vorkana.git"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Humais77/Vorkana/issues"
+  },
+  "homepage": "https://github.com/Humais77/Vorkana#readme",
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "compression": "^1.8.1",
-    "connect-mongo": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dompurify": "^3.3.1",
-    "dotenv": "^17.2.4",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-async-handler": "^1.2.0",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
     "express-slow-down": "^3.0.1",
-    "geoip-lite": "^1.4.10",
     "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
     "hpp": "^0.2.3",
-    "ioredis": "^5.9.2",
     "joi": "^18.0.2",
-    "jsdom": "^28.0.0",
+    "jsdom": "^28.1.0",
     "jsonwebtoken": "^9.0.3",
-    "libphonenumber-js": "^1.12.36",
+    "libphonenumber-js": "^1.12.37",
     "mongodb": "^7.1.0",
-    "mongoose": "^9.1.6",
+    "mongoose": "^9.2.1",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.1",
     "nodemailer-express-handlebars": "^7.0.0",
-    "nodemon": "^3.1.11",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "rate-limit-redis": "^4.3.1",
-    "redis": "^5.10.0",
     "response-time": "^2.3.4",
-    "sanitize-html": "^2.17.0",
+    "sanitize-html": "^2.17.1",
     "slugify": "^1.6.6",
     "socket.io": "^4.8.3",
     "ua-parser-js": "^2.0.9",
@@ -62,10 +65,9 @@
     "xss": "^1.0.15"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "eslint": "^9.39.2",
-    "jest": "^30.2.0",
-    "mongodb-memory-server": "^10.4.3",
-    "supertest": "^7.2.2"
+    "eslint": "^10.0.1",
+    "glob": "^13.0.6",
+    "nodemon": "^3.1.14",
+    "rimraf": "^6.1.3"
   }
 }
