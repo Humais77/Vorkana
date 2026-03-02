@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
-const hbs = require('nodemailer-express-handlebars').default;
+// const hbs = require('nodemailer-express-handlebars').default;
 
 class EmailService {
   constructor() {
@@ -40,7 +40,7 @@ class EmailService {
       };
 
       // Use the plugin
-      this.transporter.use('compile', hbs(handlebarOptions));
+      // this.transporter.use('compile', hbs(handlebarOptions));
       
       console.log('✅ Email templates configured successfully');
     } catch (error) {
