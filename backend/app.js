@@ -216,7 +216,14 @@ app.use('/api/search', searchRoute);
 app.use('/api/subscribe-email', subscribeRoute);
 app.use('/api/contact', contactRoutes); 
 app.use('/api/csrf', csrfRoutes);
+if (process.env.NODE_ENV === 'production') {
+  // Set static folder (usually 'dist' for Vite or 'build' for CRA)
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
+  app.get('*', (req, res) => {
+    res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
+  });
+}
 app.use((req, res, next) => {
   if (req.csrfToken) {
     res.setHeader('X-CSRF-Token', req.csrfToken);
