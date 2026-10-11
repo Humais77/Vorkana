@@ -131,6 +131,8 @@ security(app);
 console.log('Server time:', new Date());
 console.log('UTC time:', new Date().toUTCString());
 console.log('Timezone offset:', new Date().getTimezoneOffset());
+console.log('🔒 Allowed CORS origins:', allowedOrigins);
+console.log('🔒 FRONTEND_URL from env:', JSON.stringify(process.env.FRONTEND_URL));
 const MemoryStore = require('express-rate-limit').MemoryStore;
 
 const globalLimiter = rateLimit({
