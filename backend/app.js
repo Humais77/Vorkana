@@ -35,7 +35,7 @@ require("./config/passport.js");
 
 connectDB().then(() => {
   console.log('✅ Database connected');
-   sessionCleanup.init();
+  sessionCleanup.init();
 });
 
 const app = express();
@@ -54,7 +54,7 @@ app.use(responseTime((req, res, time) => {
   if (time > 500) {
     console.warn(`SLOW ENDPOINT: ${req.method} ${req.originalUrl} - ${time.toFixed(2)}ms`);
   }
-  
+
   res.setHeader('X-Response-Time', `${time.toFixed(2)}ms`);
 }));
 
@@ -69,35 +69,43 @@ if (process.env.NODE_ENV === 'development') {
 
 app.use(cookieParser(process.env.COOKIE_SECRET || 'your-cookie-secret-key-change-this'));
 
+// ✅ FIX: Split FRONTEND_URL on commas so multiple origins are supported
+const extraOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+  ...extraOrigins
+];
 
 const corsOptions = {
+  // ✅ FIX: Return callback(null, false) instead of throwing so CORS
+  // rejections don't crash preflight requests with a 500.
   origin: function (origin, callback) {
     if (!origin || process.env.NODE_ENV === 'test') return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS blocked for origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+
+    console.warn(`CORS blocked for origin: ${origin}`);
+    return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'X-Request-ID',
     'X-CSRF-Token',
     'Accept',
-    'X-Admin-Request', 
+    'X-Admin-Request',
     'X-Admin-Token',
     'X-Request-Source',
     'X-Client-Version',
-    'Cache-Control', 
+    'Cache-Control',
     'If-Modified-Since'
   ],
   exposedHeaders: [
@@ -136,7 +144,7 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   store: new MemoryStore(),
   skip: (req) => {
-    return req.path === '/health' || 
+    return req.path === '/health' ||
            req.path.startsWith('/public/') ||
            req.method === 'OPTIONS';
   }
@@ -148,7 +156,7 @@ app.use(hpp({
   whitelist: ['sort', 'limit', 'page']
 }));
 
-app.use(express.json({ 
+app.use(express.json({
   limit: '5mb',
   verify: (req, res, buf) => {
     try {
@@ -159,8 +167,8 @@ app.use(express.json({
   }
 }));
 
-app.use(express.urlencoded({ 
-  extended: true, 
+app.use(express.urlencoded({
+  extended: true,
   limit: '5mb',
   parameterLimit: 50
 }));
@@ -182,10 +190,10 @@ app.use(passport.initialize());
 
 app.get('/health', (req, res) => {
   const memoryUsage = process.memoryUsage();
-  
-  res.json({ 
-    success: true, 
-    message: 'API is healthy', 
+
+  res.json({
+    success: true,
+    message: 'API is healthy',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     memory: {
@@ -215,25 +223,24 @@ app.use('/api/gigs', gigRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/search', searchRoute);
 app.use('/api/subscribe-email', subscribeRoute);
-app.use('/api/contact', contactRoutes); 
+app.use('/api/contact', contactRoutes);
 app.use('/api/csrf', csrfRoutes);
-if (process.env.NODE_ENV === 'production') {
-  // Set static folder (usually 'dist' for Vite or 'build' for CRA)
-  app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-  app.use((req, res) => {
-  res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
-});
-}
+// ✅ FIX: Removed the SPA static/fallback block entirely.
+// The frontend is hosted separately at https://vorkanna.com, and the backend
+// is a pure API at https://vorkanna.growvest.live. Serving `frontend/dist`
+// from here was causing ENOENT crashes since that folder doesn't exist on
+// the server.
+
 app.use((req, res, next) => {
   if (req.csrfToken) {
     res.setHeader('X-CSRF-Token', req.csrfToken);
   }
-  
+
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  
+
   next();
 });
 
@@ -248,7 +255,7 @@ app.use((req, res, next) => {
 app.use((err, req, res, next) => {
   const errorId = Math.random().toString(36).substr(2, 9);
   const timestamp = new Date().toISOString();
-  
+
   console.error(`[${errorId}] Error:`, {
     message: err.message,
     path: req.path,
@@ -257,14 +264,9 @@ app.use((err, req, res, next) => {
     timestamp
   });
 
-  if (err.message === 'Not allowed by CORS policy') {
-    return res.status(403).json({
-      success: false,
-      message: 'Cross-origin request blocked',
-      errorId,
-      timestamp
-    });
-  }
+  // ✅ FIX: Removed the dead 'Not allowed by CORS policy' branch.
+  // The CORS callback now returns callback(null, false) instead of throwing,
+  // so this error can never reach the handler.
 
   if (err.status === 429) {
     return res.status(429).json({
@@ -304,8 +306,8 @@ app.use((err, req, res, next) => {
   }
 
   const statusCode = err.statusCode || 500;
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Internal Server Error' 
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal Server Error'
     : err.message;
 
   res.status(statusCode).json({
@@ -313,7 +315,7 @@ app.use((err, req, res, next) => {
     message,
     errorId,
     timestamp,
-    ...(process.env.NODE_ENV === 'development' && { 
+    ...(process.env.NODE_ENV === 'development' && {
       stack: err.stack
     })
   });
