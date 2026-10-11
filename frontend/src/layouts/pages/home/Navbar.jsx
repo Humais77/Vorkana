@@ -4,10 +4,10 @@ import { useAuthStore } from "../../../store/useAuthStore";
 import { useLogout } from "../../../hooks/useAuth";
 import { Search, User, Globe, LogOut, Settings, Package, ChevronDown, Menu, X, Home, Briefcase, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import SearchComponent from "../../../components/search/SearchComponent";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import hamburgerMenu from '../../../assets/icons/hamburger_icon.svg';
+import SearchComponent from "../../../components/search/SearchComponent";
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
@@ -269,7 +269,7 @@ useEffect(() => {
             {/* Desktop: Search */}
             <div className="hidden lg:flex items-center flex-1 max-w-lg xl:max-w-2xl 2xl:max-w-3xl mx-4 xl:mx-6 2xl:mx-8 h-full">
               <div className="w-full">
-                <SearchComponent 
+                <SearchComponent
                   placeholder="What service are you looking for today?"
                   className="w-full" 
                 />
