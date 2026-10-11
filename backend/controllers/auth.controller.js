@@ -256,29 +256,38 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     // 2. Check for existing user
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    
+    const existingUser = await User.findOne({ email: normalizedEmail });
+
     if (existingUser) {
-      // If user exists and is verified
-      if (existingUser.emailVerified) {
+      if (existingUser.emailVerified && existingUser.registrationStatus === 'verified') {
         return res.status(409).json({
           success: false,
           message: 'User already exists with this email'
         });
       }
-      
-      // If user exists but is pending, delete it
-      if (existingUser.registrationStatus === 'pending') {
+
+      // Clean up any stale pending/expired registration
+      if (
+        existingUser.registrationStatus === 'pending' ||
+        existingUser.registrationStatus === 'expired' ||
+        existingUser.registrationStatus === 'cancelled' ||
+        !existingUser.emailVerified
+      ) {
         await User.deleteOne({ _id: existingUser._id });
       }
     }
 
-    // 3. Prepare registration data
+    // 3. Hash the password ONCE
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // 4. Registration profile data (NO password inside)
     const registrationData = {
       name: name.trim(),
-      email: email.toLowerCase().trim(),
-      password: password,
+      email: normalizedEmail,
       phoneNumber: phoneNumber || '',
       dateOfBirth: dateOfBirth || null,
       gender: gender || '',
@@ -287,33 +296,57 @@ const register = asyncHandler(async (req, res) => {
       role: 'user'
     };
 
-    // 4. Create minimal user document
+    // 5. Create user with password on TOP-LEVEL field
     const user = new User({
-      email: registrationData.email,
-      registrationData: registrationData,
+      email: normalizedEmail,
+      password: hashedPassword,          // ✅ top-level
+      registrationData: registrationData, // profile only
       registrationStatus: 'pending',
       emailVerified: false,
-      isActive: false,
+      isActive: false
     });
 
-    // 5. Generate verification token - FIXED METHOD NAME
+    // 6. Generate verification token
     const verificationToken = user.generateVerificationToken();
-    
-    // 6. Save user with pending status
+
+    // 7. Persist
     await user.save({ validateBeforeSave: false });
 
-    // 7. Send verification email
+    console.log('💾 User saved:', {
+      id: user._id,
+      email: user.email,
+      hasPassword: !!user.password,
+      passwordPrefix: user.password?.substring(0, 7)
+    });
+
+    // 8. Sanity check — confirm password persisted
+    const check = await User.findById(user._id).select('+password');
+    if (!check || !check.password) {
+      console.error('❌ CRITICAL: password was not persisted during registration');
+      return res.status(500).json({
+        success: false,
+        message: 'Registration failed to persist credentials. Please try again.'
+      });
+    }
+
+    console.log('✅ Password confirmed in DB:', check.password.substring(0, 7));
+
+    // 9. Send verification email (non-blocking failure)
     try {
-      await EmailService.sendVerificationEmail(user.email, user.registrationData.name, verificationToken);
+      await EmailService.sendVerificationEmail(
+        user.email,
+        registrationData.name,
+        verificationToken
+      );
     } catch (emailError) {
       console.error('Email sending error:', emailError.message);
       // Don't fail registration if email fails
     }
 
     const csrfToken = CSRFMiddleware.generateToken(req, res);
-    console.log(`✅ Registration initiated for: ${email}`);
+    console.log(`✅ Registration initiated for: ${normalizedEmail}`);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Registration successful! Please check your email to verify your account.',
       requiresVerification: true,
@@ -325,7 +358,12 @@ const register = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration error:', error.message);
+    console.error('Registration error:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      errors: error.errors ? Object.keys(error.errors) : undefined
+    });
 
     if (error.code === 11000) {
       return res.status(409).json({
@@ -334,7 +372,7 @@ const register = asyncHandler(async (req, res) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Server error during registration',
       code: 'REGISTRATION_ERROR'
@@ -345,20 +383,21 @@ const register = asyncHandler(async (req, res) => {
 
 const login = asyncHandler(async (req, res) => {
   const startTime = Date.now();
-   const loginId = `login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const loginId = `login_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   try {
     const { email, password, deviceToken, deviceType } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
-    console.log(`🔐 Login attempt ${loginId}:`, { 
+    console.log(`🔐 Login attempt ${loginId}:`, {
       email: req.body.email ? req.body.email.substring(0, 3) + '...' : 'no-email',
       ip: req.ip,
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
-if (req.cookies?.logout_complete) {
+
+    if (req.cookies?.logout_complete) {
       console.log('🧹 Detected previous logout, cleaning cookies...');
-      // Clear all auth cookies before login
       SessionMiddleware.clearAuthCookies(res);
     }
 
@@ -371,16 +410,17 @@ if (req.cookies?.logout_complete) {
       });
     }
 
-    // 2. Find user with optimized query - REMOVED admin controller reference
+    // 2. Find user
     console.time('User lookup');
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       email: email.toLowerCase().trim(),
       emailVerified: true,
       registrationStatus: 'verified',
       isActive: true
-    }).select('+password +failedLoginAttempts +lockUntil +suspiciousActivityDetected name role picture phoneNumber country city bio rating email');
+    }).select('+password');
     console.timeEnd('User lookup');
 
+    // ✅ NULL CHECK MUST COME FIRST — before any property access
     if (!user) {
       console.log('❌ User not found or not verified/active');
       return res.status(401).json({
@@ -388,6 +428,17 @@ if (req.cookies?.logout_complete) {
         message: 'Invalid credentials or account not verified'
       });
     }
+
+    // ✅ Safe to log now that we know user exists
+    console.log('🔎 User loaded:', {
+      email: user.email,
+      hasPassword: !!user.password,
+      passwordLength: user.password?.length,
+      passwordPrefix: user.password?.substring(0, 7),
+      isActive: user.isActive,
+      emailVerified: user.emailVerified,
+      registrationStatus: user.registrationStatus
+    });
 
     // 3. Check if account is locked
     if (user.lockUntil && user.lockUntil > Date.now()) {
@@ -404,19 +455,15 @@ if (req.cookies?.logout_complete) {
     console.time('Password verification');
     const isPasswordValid = await user.comparePassword(password);
     console.timeEnd('Password verification');
-    
+
     if (!isPasswordValid) {
       console.log('❌ Password invalid');
-      
-      // Log failed attempt in background
-      process.nextTick(async () => {
-        try {
-          await user.incrementLoginAttempts();
-          await user.loginHistory(ip, userAgent, false);
-        } catch (err) {
-          console.error('Error logging failed attempt:', err.message);
-        }
-      });
+
+      // Log failed attempt in background (fire-and-forget)
+      Promise.allSettled([
+        user.incrementLoginAttempts(),
+        user.addLoginHistory(ip, userAgent, false)
+      ]).catch(() => {});
 
       return res.status(401).json({
         success: false,
@@ -427,23 +474,39 @@ if (req.cookies?.logout_complete) {
 
     console.log('✅ Password valid, proceeding with login...');
 
-    // 5. Reset login attempts
-    user.failedLoginAttempts = 0;
-    user.lockUntil = undefined;
-    user.lastLoginAt = new Date();
-    user.lastSeenAt = new Date();
-    user.suspiciousActivityDetected = false;
-    
-    // Save user in background
-    process.nextTick(async () => {
-      try {
-        await user.save({ validateBeforeSave: false });
-      } catch (err) {
-        console.error('Error saving user:', err.message);
-      }
-    });
+    // 5. Capture user snapshot BEFORE any async ops can affect the doc
+    const userSnapshot = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      picture: user.picture,
+      emailVerified: user.emailVerified,
+      phoneNumber: user.phoneNumber,
+      country: user.country,
+      city: user.city,
+      bio: user.bio,
+      rating: user.rating,
+      accountType: user.accountType || 'basic',
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
 
-    // 6. Create session - ONLY for regular users, not calling admin controller
+    // 6. Reset login attempts atomically (avoids pre-save hooks entirely)
+    User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          failedLoginAttempts: 0,
+          lastLoginAt: new Date(),
+          lastSeenAt: new Date(),
+          suspiciousActivityDetected: false
+        },
+        $unset: { lockUntil: 1 }
+      }
+    ).catch(err => console.error('Error resetting login attempts:', err.message));
+
+    // 7. Create session
     SessionMiddleware.clearAuthCookies(res);
     console.time('Session creation');
     const session = await SessionService.createSession(user._id, req, {
@@ -458,33 +521,21 @@ if (req.cookies?.logout_complete) {
       userRole: user.role
     });
 
-    // 7. Generate CSRF token
+    // 8. Generate CSRF token
     const csrfToken = CSRFMiddleware.generateToken(req, res);
 
-    // 8. Set cookies
+    // 9. Set cookies
     SessionMiddleware.setAuthCookies(res, session.token, session.refreshToken, csrfToken);
 
-   const userResponse = {
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    picture: user.picture,
-    emailVerified: user.emailVerified,
-    phoneNumber: user.phoneNumber,
-    country: user.country,
-    city: user.city,
-    bio: user.bio,
-    rating: user.rating,
-    isOnline: true,
-    accountType: user.accountType || 'basic',
-    lastSeenAt: new Date().toISOString(),
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt
-  };
+    // 10. Build response from snapshot (guaranteed valid)
+    const userResponse = {
+      ...userSnapshot,
+      isOnline: true,
+      lastSeenAt: new Date().toISOString()
+    };
 
     const responseTime = Date.now() - startTime;
-    console.log(`✅ Login completed in ${responseTime}ms for:`, user.email);
+    console.log(`✅ Login completed in ${responseTime}ms for:`, userSnapshot.email);
 
     res.json({
       success: true,
@@ -492,11 +543,11 @@ if (req.cookies?.logout_complete) {
       user: userResponse,
       session: {
         expiresAt: session.expiresAt,
-        idleTimeout: user.role === 'admin' ? 60 * 60 * 1000 : 3 * 60 * 60 * 1000,
-        timeoutMinutes: user.role === 'admin' ? 60 : 180
+        idleTimeout: userSnapshot.role === 'admin' ? 60 * 60 * 1000 : 3 * 60 * 60 * 1000,
+        timeoutMinutes: userSnapshot.role === 'admin' ? 60 : 180
       },
       csrfToken,
-      loginId, // Send login ID to frontend
+      loginId,
       performance: {
         responseTime: `${responseTime}ms`,
         serverTime: new Date().toISOString()
@@ -506,9 +557,9 @@ if (req.cookies?.logout_complete) {
   } catch (error) {
     console.error('🔥 Login error:', error.message);
     console.error('Error stack:', error.stack);
-    
+
     const responseTime = Date.now() - startTime;
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error during login',
@@ -1015,7 +1066,6 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
     // Complete the registration process
     await user.verifyAndCompleteRegistration();
-    await user.save({ validateBeforeSave: false });
 
     console.log(`✅ Email verified for: ${user.email}`);
 

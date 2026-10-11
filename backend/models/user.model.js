@@ -452,34 +452,31 @@ userSchema.virtual('fullLocation').get(function () {
   return parts.length > 0 ? parts.join(', ') : null;
 });
 
-// ========== MIDDLEWARE ==========
-userSchema.pre('save', async function () {
-  // Don't hash password for pending registrations
-  if (this.registrationStatus === 'pending') {
-    return;
-  }
-
-  if (!this.isModified('password') || !this.password) return;
-
-  if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$')) {
-    return;
-  }
-
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-  } catch (error) {
-    throw error;
-  }
-});
 
 // ========== INSTANCE METHODS ==========
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  if (!this.password) return false;
+  if (!this.password) {
+    console.warn('⚠️ comparePassword called but user.password is undefined for:', this.email);
+    return false;
+  }
+  
+  // Guard against non-hash values
+  if (
+    !this.password.startsWith('$2a$') &&
+    !this.password.startsWith('$2b$') &&
+    !this.password.startsWith('$2y$')
+  ) {
+    console.warn('⚠️ Stored password is not a bcrypt hash for:', this.email, {
+      prefix: this.password.substring(0, 10),
+      length: this.password.length
+    });
+    return false;
+  }
 
   try {
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
+    console.error('❌ bcrypt.compare error for:', this.email, error);
     return false;
   }
 };
@@ -500,65 +497,121 @@ userSchema.methods.generateVerificationToken = function () {
 };
 
 userSchema.methods.verifyAndCompleteRegistration = async function () {
-  // Move registration data to actual user fields
-  if (this.registrationData) {
-    const { password, ...restData } = this.registrationData;
-    
-    // Update user fields with registration data
-    for (const [key, value] of Object.entries(restData)) {
-      if (key !== 'password' && value !== undefined && value !== '') {
-        this[key] = value;
-      }
-    }
-    
-    // Hash and set the password
-    if (password) {
-      const salt = await bcrypt.genSalt(12);
-      this.password = await bcrypt.hash(password, salt);
-    }
-    
-    // Clear temporary data
-    this.registrationData = undefined;
-    this.verificationToken = undefined;
-    this.verificationTokenExpires = undefined;
-    this.registrationExpiresAt = undefined;
-    
-    // Update status
-    this.registrationStatus = 'verified';
-    this.emailVerified = true;
-    this.isActive = true;
-    
-    // Set default privacy settings if not provided
-    if (!this.privacySettings) {
-      this.privacySettings = {
-        profileVisibility: 'public',
-        showEmail: false,
-        showPhone: false,
-        showLocation: true,
-        showLastSeen: true
-      };
+  console.log('🔐 Starting verification and registration completion...');
+
+  if (!this.registrationData) {
+    throw new Error('No registration data to complete');
+  }
+
+  // Copy non-password profile fields from registrationData to top-level
+  const { password, ...restData } = this.registrationData;
+
+  const updateFields = {};
+  for (const [key, value] of Object.entries(restData)) {
+    if (key !== 'password' && value !== undefined && value !== '') {
+      updateFields[key] = value;
     }
   }
-  
+
+  // Password should ALREADY be on this.password (set during register).
+  // Fall back to registrationData.password only if top-level is missing.
+  if (!this.password && password) {
+    let finalPassword = password;
+    if (
+      !finalPassword.startsWith('$2a$') &&
+      !finalPassword.startsWith('$2b$') &&
+      !finalPassword.startsWith('$2y$')
+    ) {
+      finalPassword = await bcrypt.hash(finalPassword, 12);
+    }
+    updateFields.password = finalPassword;
+  }
+
+  updateFields.registrationStatus = 'verified';
+  updateFields.emailVerified = true;
+  updateFields.isActive = true;
+
+  if (!this.privacySettings) {
+    updateFields.privacySettings = {
+      profileVisibility: 'public',
+      showEmail: false,
+      showPhone: false,
+      showLocation: true,
+      showLastSeen: true
+    };
+  }
+
+  console.log('📝 Update fields to persist:', {
+    keys: Object.keys(updateFields),
+    hasPassword: !!updateFields.password,
+    passwordPrefix: updateFields.password
+      ? updateFields.password.substring(0, 7)
+      : null
+  });
+
+  const updated = await this.constructor.findByIdAndUpdate(
+    this._id,
+    {
+      $set: updateFields,
+      $unset: {
+        registrationData: 1,
+        verificationToken: 1,
+        verificationTokenExpires: 1,
+        registrationExpiresAt: 1
+      }
+    },
+    { new: true, runValidators: false }
+  );
+
+  if (!updated) {
+    throw new Error('Failed to update user during verification');
+  }
+
+  // Sanity check that password is actually in the DB now
+  const verifyDoc = await this.constructor.findById(this._id).select('+password');
+  if (!verifyDoc || !verifyDoc.password) {
+    console.error('❌ CRITICAL: password missing after verification for', this.email);
+    throw new Error('Password was not persisted during verification');
+  }
+
+  // Sync in-memory doc
+  this.set(updateFields);
+  this.registrationData = undefined;
+  this.verificationToken = undefined;
+  this.verificationTokenExpires = undefined;
+  this.registrationExpiresAt = undefined;
+
+  console.log('✅ Registration completed for:', this.email, {
+    passwordSaved: true,
+    passwordPrefix: verifyDoc.password.substring(0, 7)
+  });
+
   return this;
 };
 
 userSchema.methods.incrementLoginAttempts = async function () {
+  // Reset if lock expired
   if (this.lockUntil && this.lockUntil < Date.now()) {
-    return await this.updateOne({
-      $set: { failedLoginAttempts: 1 },
-      $unset: { lockUntil: 1 }
-    });
+    return await this.constructor.updateOne(
+      { _id: this._id },
+      {
+        $set: { failedLoginAttempts: 1 },
+        $unset: { lockUntil: 1, suspiciousActivityDetected: 1 }
+      }
+    );
   }
 
+  const current = this.failedLoginAttempts || 0;
   const updates = { $inc: { failedLoginAttempts: 1 } };
 
-  if (this.failedLoginAttempts + 1 >= 5) {
-    updates.$set = { lockUntil: Date.now() + 30 * 60 * 1000 };
-    updates.$set.suspiciousActivityDetected = true;
+  if (current + 1 >= 5) {
+    updates.$set = {
+      lockUntil: new Date(Date.now() + 30 * 60 * 1000),
+      suspiciousActivityDetected: true
+    };
   }
 
-  return await this.updateOne(updates);
+  return await this.constructor.updateOne({ _id: this._id }, updates);
 };
 
 userSchema.methods.resetLoginAttempts = async function () {
@@ -597,12 +650,18 @@ userSchema.methods.addLoginHistory = async function (ip, userAgent, success) {
     success
   };
 
-  if (this.loginHistory.length >= 50) {
-    this.loginHistory.shift();
-  }
-  
-  this.loginHistory.push(loginEntry);
-  return await this.save();
+  // Atomic update — works even if loginHistory wasn't selected
+  return await this.constructor.updateOne(
+    { _id: this._id },
+    {
+      $push: {
+        loginHistory: {
+          $each: [loginEntry],
+          $slice: -50   // keep only last 50
+        }
+      }
+    }
+  );
 };
 
 // ========== STATIC METHODS ==========
@@ -624,7 +683,7 @@ userSchema.statics.findByVerificationToken = function (token) {
       verificationTokenExpires: { $gt: Date.now() },
       registrationStatus: 'pending',
       emailVerified: false
-    }).select('+verificationToken +verificationTokenExpires +registrationData');
+    }).select('+verificationToken +verificationTokenExpires +registrationData +password'); // Added +password
   } catch (error) {
     console.error('Error in findByVerificationToken:', error);
     return null;
@@ -700,24 +759,30 @@ userSchema.pre('save', async function() {
     return;
   }
 
-  // For Google users or pending registrations, skip password hashing
-  if (this.googleId || this.registrationStatus === 'pending') {
+  // For Google users, skip password hashing
+  if (this.googleId) {
     return;
   }
 
+  // For verified users, hash the password normally
   if (!this.isModified('password') || !this.password) {
     return;
   }
 
-  // If password already hashed, skip
-  if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$')) {
+  // If password already hashed, skip (IMPORTANT: This allows the already hashed password from registrationData to pass through)
+  if (this.password.startsWith('$2a$') || this.password.startsWith('$2b$') || this.password.startsWith('$2y$')) {
+    console.log('✅ Password already hashed, skipping hash');
     return;
   }
 
+  // Only hash plaintext passwords
   try {
+    console.log('🔐 Hashing plaintext password for user:', this.email);
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
+    console.log('✅ Password hashed successfully');
   } catch (error) {
+    console.error('❌ Password hashing error:', error);
     throw error;
   }
 });

@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
-// const hbs = require('nodemailer-express-handlebars').default;
-
+const hbsModule = require('nodemailer-express-handlebars');
+const hbs = hbsModule.default || hbsModule;
 class EmailService {
   constructor() {
     // Create transporter
@@ -25,29 +25,26 @@ class EmailService {
     this.verifyTransporter();
   }
 
-  configureTemplates() {
-    // Only configure templates if we have the views folder
-    try {
-      const handlebarOptions = {
-        viewEngine: {
-          extname: '.hbs',
-          partialsDir: path.resolve(__dirname, '../views/emails'),
-          layoutsDir: path.resolve(__dirname, '../views/emails'),
-          defaultLayout: 'layout',
-        },
-        viewPath: path.resolve(__dirname, '../views/emails'),
-        extName: '.hbs',
-      };
+  
+configureTemplates() {
+  const viewsPath = path.resolve(__dirname, '../views/emails');
 
-      // Use the plugin
-      // this.transporter.use('compile', hbs(handlebarOptions));
-      
-      console.log('✅ Email templates configured successfully');
-    } catch (error) {
-      console.warn('⚠️ Email templates not configured:', error.message);
-      console.log('📧 Using inline templates instead');
-    }
-  }
+  const handlebarOptions = {
+    viewEngine: {
+      extname: '.hbs',
+      partialsDir: viewsPath,
+      layoutsDir: viewsPath,
+      defaultLayout: 'layout',
+    },
+    viewPath: viewsPath,
+    extName: '.hbs',
+  };
+
+  this.transporter.use('compile', hbs(handlebarOptions));
+
+  console.log('Email Handlebars templates configured');
+}
+
 
   async verifyTransporter() {
     try {
@@ -59,58 +56,70 @@ class EmailService {
     }
   }
 
-  async sendEmail(to, subject, template, context) {
-    try {
-      const mailOptions = {
-        from: `"Vorkanna" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+  
+async sendEmail(to, subject, template, context = {}) {
+  try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Email credentials are missing in production.');
+      }
+
+      console.log('Email simulation:', {
         to,
         subject,
         template,
-        context: {
-          ...context,
-          year: new Date().getFullYear(),
-          appName: 'Vorkanna',
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@Vorkanna.com',
-          frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-          currentYear: new Date().getFullYear()
-        }
+        context,
+      });
+
+      return {
+        messageId: 'development-mode',
+        accepted: [to],
       };
-
-      // In development without proper email config, log to console
-      if (!process.env.EMAIL_USER) {
-        console.log('\n📧 ===== EMAIL SIMULATION =====');
-        console.log(`To: ${to}`);
-        console.log(`Subject: ${subject}`);
-        console.log(`Template: ${template}`);
-        console.log('Context:', context);
-        console.log('Set EMAIL_USER and EMAIL_PASSWORD in .env to send real emails\n');
-        
-        // Create a preview URL for verification emails
-        if (template === 'verify-email' && context.verificationUrl) {
-          console.log('🔗 Verification Link:', context.verificationUrl);
-        }
-        if (template === 'password-reset' && context.resetUrl) {
-          console.log('🔗 Reset Link:', context.resetUrl);
-        }
-        
-        return { messageId: 'development-mode', accepted: [to] };
-      }
-
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log(`📧 Email sent to ${to}: ${info.messageId}`);
-      return info;
-    } catch (error) {
-      console.error('Email sending error:', error);
-      
-      // Fallback: Log email content
-      console.log(`📧 [FALLBACK] Email would be sent to ${to}:`);
-      console.log(`Subject: ${subject}`);
-      console.log(`Template: ${template}`);
-      console.log('Context:', context);
-      
-      throw error;
     }
+
+    const mailOptions = {
+      from:
+        process.env.EMAIL_FROM ||
+        `"Vorkana" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      template,
+      context: {
+        ...context,
+        year: new Date().getFullYear(),
+        currentYear: new Date().getFullYear(),
+        appName: 'Vorkana',
+        supportEmail:
+          process.env.SUPPORT_EMAIL || 'support@vorkana.com',
+        frontendUrl:
+          process.env.FRONTEND_URL || 'http://localhost:3000',
+      },
+    };
+
+    const info = await this.transporter.sendMail(mailOptions);
+
+    console.log('Email sent:', {
+      to,
+      subject,
+      template,
+      messageId: info.messageId,
+      accepted: info.accepted,
+      rejected: info.rejected,
+    });
+
+    return info;
+  } catch (error) {
+    console.error('Email sending failed:', {
+      to,
+      subject,
+      template,
+      error: error.message,
+    });
+
+    throw error;
   }
+}
+
 
   // Specific email templates
   async sendVerificationEmail(email, name, token, sessionId = null) {
