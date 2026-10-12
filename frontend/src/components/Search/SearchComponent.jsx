@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavbarSearch } from '../../hooks/useSearch';
 
-// Memoized suggestion items
+
 const SuggestionItem = memo(({ item, index, isFocused, onClick }) => {
   const handleClick = useCallback(() => {
     onClick(item);

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import hamburgerMenu from '../../../assets/icons/hamburger_icon.svg';
-import SearchComponent from "../../../components/search/SearchComponent.jsx";
+import SearchComponent from "../../../components/search/SearchComponent";
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
