@@ -37,49 +37,69 @@ class SessionMiddleware {
   return baseConfig;
 };
  authenticate = async (req, res, next) => {
-    try {
-      // 1. Get tokens from cookies
-      const token = req.cookies?.token;
-      const refreshToken = req.cookies?.refreshToken;
-      
-      // 2. Validate with session service
-      const sessionResult = await SessionService.validateSession(token, refreshToken);
-      
-      if (!sessionResult.valid) {
-        // 3. Clear ALL cookies on invalid session
+  try {
+    const token = req.cookies?.token;
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (!token && !refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authenticated',
+        code: 'NOT_AUTHENTICATED'
+      });
+    }
+
+    const sessionResult = await SessionService.validateSession(token, refreshToken);
+
+    if (!sessionResult.valid) {
+      // ONLY clear when the server definitively says the session is dead
+      const isDefinitive =
+        sessionResult.reason === 'expired' ||
+        sessionResult.reason === 'revoked' ||
+        sessionResult.reason === 'not_found';
+
+      if (isDefinitive) {
         this.clearAuthCookies(res);
-        
-        // 4. Return 401 with specific code
         return res.status(401).json({
           success: false,
           message: 'Session expired or invalid',
           code: 'SESSION_EXPIRED',
-          requiresLogin: true,
-          redirectUrl: '/signin'
+          requiresLogin: true
         });
       }
-      
-      // 5. Set user in request if valid
-      const user = await User.findById(sessionResult.userId);
-      req.user = user;
-      req.sessionId = sessionResult.sessionId;
-      
-      // 6. Update last activity
-      await SessionService.updateActivity(sessionResult.sessionId);
-      
-      next();
-    } catch (error) {
-      // 7. Clear cookies on any error
-      this.clearAuthCookies(res);
-      
-      return res.status(401).json({
+
+      // Transient failure — do NOT clear cookies
+      return res.status(503).json({
         success: false,
-        message: 'Authentication failed',
-        code: 'AUTH_FAILED',
-        requiresLogin: true
+        message: 'Session validation temporarily unavailable',
+        code: 'SESSION_UNAVAILABLE'
       });
     }
-  };
+
+    const user = await User.findById(sessionResult.userId);
+    if (!user || !user.isActive) {
+      this.clearAuthCookies(res);
+      return res.status(401).json({
+        success: false,
+        message: 'User not found or inactive',
+        code: 'USER_INVALID'
+      });
+    }
+
+    req.user = user;
+    req.sessionId = sessionResult.sessionId;
+    await SessionService.updateActivity(sessionResult.sessionId);
+    next();
+  } catch (error) {
+    console.error('Authenticate error:', error);
+    // Do NOT clear cookies on unexpected errors
+    return res.status(503).json({
+      success: false,
+      message: 'Authentication temporarily unavailable',
+      code: 'AUTH_UNAVAILABLE'
+    });
+  }
+};
 
   handleUnauthorized = (res, message = 'Unauthorized') => {
     return res.status(401).json({

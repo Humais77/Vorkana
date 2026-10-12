@@ -6,18 +6,20 @@ const mongoose = require('mongoose');
 
 class SessionCleanup {
   constructor() {
-    this.init();
+     this.initialized = false;
     console.log('🔧 SessionCleanup initialized');
   }
 
-  init() {
-    // Run every 5 minutes
+   init() {
+    if (this.initialized) {
+      console.log('⚠️ SessionCleanup already initialized, skipping');
+      return;
+    }
+    this.initialized = true;
+
     cron.schedule('*/5 * * * *', async () => {
       await this.runCleanup();
-    }, {
-      scheduled: true,
-      timezone: "UTC"
-    });
+    }, { scheduled: true, timezone: 'UTC' });
 
     console.log('✅ Session cleanup cron job initialized (every 5 minutes)');
   }
@@ -33,18 +35,14 @@ class SessionCleanup {
       console.log('1. Fixing sessions with invalid userId...');
       try {
         // Update sessions with empty string userId to null
-        const fixResult = await Session.updateMany(
-          { 
-            $or: [
-              { userId: "" },
-              { userId: { $exists: false } }
-            ]
-          },
-          { 
-            $set: { userId: null },
-            $unset: { userId: "" } // Remove empty string
-          }
-        );
+        const fixResult = await Session.deleteMany({
+  $or: [
+    { userId: "" },
+    { userId: null },
+    { userId: { $exists: false } }
+  ]
+});
+console.log(`   Deleted ${fixResult.deletedCount} sessions with invalid userId`);
         
         if (fixResult.modifiedCount > 0) {
           console.log(`   Fixed ${fixResult.modifiedCount} sessions with invalid userId`);

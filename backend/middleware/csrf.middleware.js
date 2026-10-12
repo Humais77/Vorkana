@@ -74,7 +74,8 @@ class CSRFMiddleware {
       '/api/auth/forgot-password',
       '/api/auth/reset-password',
       '/api/auth/reactivate',
-      '/api/auth/refresh'
+      '/api/auth/refresh',
+      '/api/auth/csrf-token/refresh'
     ];
 
     if (publicAuthEndpoints.includes(pathname)) {

@@ -573,22 +573,6 @@ const login = asyncHandler(async (req, res) => {
 const getProfile = asyncHandler(async (req, res) => {
   try {
     // For fresh OAuth logins, accept slightly expired tokens
-    const token = req.cookies?.token;
-    const refreshToken = req.cookies?.refreshToken;
-    
-    // If we have a refresh token but no valid access token, try to refresh
-    if (refreshToken && (!token || await verifyToken(token).catch(() => false))) {
-      try {
-        const refreshed = await SessionService.refreshSession(refreshToken);
-        if (refreshed) {
-          // Set new cookies
-          SessionMiddleware.setAuthCookies(res, refreshed.token, refreshed.refreshToken);
-          // Continue with refreshed token
-        }
-      } catch (refreshError) {
-        // Silent fail - let normal auth flow handle it
-      }
-    }
 
     const cacheKey = `user:${req.user._id}:profile`;
     

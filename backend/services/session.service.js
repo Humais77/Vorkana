@@ -256,72 +256,59 @@ async refreshSession(refreshToken) {
 }
 
 validateSession = async (token, refreshToken) => {
-    try {
-      // 1. Check if token exists
-      if (!token && !refreshToken) {
-        return { valid: false, reason: 'NO_TOKENS' };
-      }
-      
-      // 2. Try to decode and validate access token
-      if (token) {
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          
-          // Check expiration
-          if (decoded.exp * 1000 < Date.now()) {
-            return { valid: false, reason: 'TOKEN_EXPIRED' };
-          }
-          
-          // Check session in database
-          const session = await Session.findOne({
-            token,
-            isActive: true,
-            expiresAt: { $gt: new Date() }
-          });
-          
-          if (!session) {
-            return { valid: false, reason: 'SESSION_NOT_FOUND' };
-          }
-          
-          // Check idle timeout (3 hours for users, 1 hour for admins)
-          const isAdmin = decoded.role === 'admin';
-          const idleTimeout = isAdmin ? 3600000 : 10800000; // 1h or 3h
-          
-          if (Date.now() - session.lastActivity.getTime() > idleTimeout) {
-            // Mark session as inactive
-            await session.logoutAt('idle_timeout');
-            return { valid: false, reason: 'SESSION_IDLE' };
-          }
-          
-          // Update activity
-          session.lastActivity = new Date();
-          await session.save({ validateBeforeSave: false });
-          
-          return { 
-            valid: true, 
-            userId: session.userId, 
-            sessionId: session._id 
-          };
-        } catch (verifyError) {
-          // Token invalid or expired
-        }
-      }
-      
-      // 3. Try to refresh using refresh token
-      if (refreshToken) {
-        try {
-          return await this.refreshSession(refreshToken);
-        } catch (refreshError) {
-          return { valid: false, reason: 'REFRESH_FAILED' };
-        }
-      }
-      
-      return { valid: false, reason: 'INVALID_TOKENS' };
-    } catch (error) {
-      console.error('Session validation error:', error);
-      return { valid: false, reason: 'VALIDATION_ERROR' };
+  try {
+    if (!token && !refreshToken) {
+      return { valid: false, reason: 'NO_TOKENS' };
     }
-  };
+
+    // Try access token ONLY
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        if (decoded.exp * 1000 < Date.now()) {
+          return { valid: false, reason: 'TOKEN_EXPIRED' };
+        }
+
+        const session = await Session.findOne({
+          token,
+          isActive: true,
+          expiresAt: { $gt: new Date() }
+        });
+
+        if (!session) {
+          // Token is valid JWT but no matching DB session — could be stale
+          return { valid: false, reason: 'SESSION_NOT_FOUND' };
+        }
+
+        const isAdmin = decoded.role === 'admin';
+        const idleTimeout = isAdmin ? this.adminIdleTimeout : this.idleTimeout;
+
+        if (Date.now() - session.lastActivity.getTime() > idleTimeout) {
+          await session.logoutSession('idle_timeout');
+          return { valid: false, reason: 'SESSION_IDLE' };
+        }
+
+        session.lastActivity = new Date();
+        await session.save({ validateBeforeSave: false });
+
+        return {
+          valid: true,
+          userId: session.userId,
+          sessionId: session._id
+        };
+      } catch (verifyError) {
+        // Access token itself is bad/expired — fall through
+      }
+    }
+
+    // No auto-refresh here. Return a reason so the caller decides.
+    return { valid: false, reason: 'ACCESS_TOKEN_INVALID' };
+  } catch (error) {
+    console.error('Session validation error:', error);
+    return { valid: false, reason: 'VALIDATION_ERROR' };
+  }
+};
 
   async updateActivity(sessionId) {
     try {
@@ -392,8 +379,8 @@ validateSession = async (token, refreshToken) => {
       session.isActive = false;
       session.logoutReason = reason;
       session.logoutAt = new Date();
-      session.token = `invalidated_${Date.now()}`;
-      session.refreshToken = `invalidated_${Date.now()}`;
+      session.token = `invalidated_${crypto.randomUUID()}`;
+      session.refreshToken = `invalidated_${crypto.randomUUID()}`;
       session.lastActivity = new Date(); // Set to now to prevent reuse
       
       await session.save({ validateBeforeSave: false });
