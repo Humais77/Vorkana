@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo,memo } from 'react';
-import { Search, X, Clock, TrendingUp, Loader2, Sparkles, ChevronRight, History } from 'lucide-react';
+import { Search, X, Clock, TrendingUp, Loader2,ChevronRight, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavbarSearch } from '../../hooks/useSearch';
