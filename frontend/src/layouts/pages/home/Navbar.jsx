@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import hamburgerMenu from '../../../assets/icons/hamburger_icon.svg';
-import SearchComponent from "../../../components/search/SearchComponent";
+import SearchComponent from "E:/humais/Projects/Vorkana/frontend/src/components/search/SearchComponent.jsx";
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
   width: 220
