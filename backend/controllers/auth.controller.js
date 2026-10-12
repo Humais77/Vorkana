@@ -1645,8 +1645,9 @@ const refreshSession = asyncHandler(async (req, res) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
 
-    // CSRF validation (except for refresh token endpoint)
-    if (req.path !== '/api/auth/refresh') {
+    const pathname = req.originalUrl.split('?')[0].replace(/\/+$/, '');
+
+    if (pathname !== '/api/auth/refresh') {
       const csrfValidation = validateCSRF(req);
       if (!csrfValidation.valid) {
         return res.status(403).json({

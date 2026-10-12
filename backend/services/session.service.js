@@ -103,7 +103,12 @@ class SessionService {
     const ip = this.getClientIp(req);
     
     // Calculate expiration (30 days from now)
-    const expiresAt = new Date(currentTime.getTime() + this.sessionDuration);
+    const refreshDuration =
+  String(user.role || "user").toLowerCase() === "admin"
+    ? 7 * 24 * 60 * 60 * 1000
+    : 30 * 24 * 60 * 60 * 1000;
+
+const expiresAt = new Date(currentTime.getTime() + refreshDuration);
     
     console.log('📅 Session timing:', {
       currentTime: currentTime.toISOString(),
@@ -159,54 +164,97 @@ class SessionService {
   }
 }
 
-  async refreshSession(refreshToken) {
-    try {
-      console.log('🔄 Attempting to refresh session...');
-      
-      // Find active session by refreshToken
-      const session = await Session.findOne({
-        refreshToken,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      });
+  
+async refreshSession(refreshToken) {
+  try {
+    console.log("🔄 Attempting to refresh session...");
 
-      if (!session) {
-        console.log('❌ No active session found with this refresh token');
-        throw new Error('Invalid refresh token');
-      }
-
-      // Check if session is idle
-      const idleTime = Date.now() - session.lastActivity.getTime();
-      if (idleTime > this.idleTimeout) {
-        console.log('⏰ Session idle, logging out');
-        await session.logoutAt('inactive');
-        throw new Error('Session idle timeout');
-      }
-
-      // Generate new tokens
-      const { token: newToken, refreshToken: newRefreshToken } = this.generateTokens(session.userId);
-
-      // Update session with new tokens
-      session.token = newToken;
-      session.refreshToken = newRefreshToken;
-      session.lastActivity = new Date();
-      session.expiresAt = new Date(Date.now() + this.sessionDuration);
-      await session.save();
-      
-      console.log('✅ Session refreshed successfully');
-
-      return {
-        token: newToken,
-        refreshToken: newRefreshToken,
-        expiresAt: session.expiresAt,
-        sessionId: session._id,
-        userId: session.userId
-      };
-    } catch (error) {
-      console.error('❌ Session refresh error:', error.message);
-      throw error;
+    if (!refreshToken) {
+      throw new Error("Missing refresh token");
     }
+
+    // Find the active session associated with this refresh token.
+    const session = await Session.findOne({
+      refreshToken,
+      isActive: true,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!session) {
+      console.log("❌ No active session found with this refresh token");
+      throw new Error("Invalid refresh token");
+    }
+
+    // Always read the current role from the database.
+    const user = await User.findById(session.userId).select("role isActive");
+
+    if (!user || user.isActive === false) {
+      session.isActive = false;
+      session.logoutReason = "account_unavailable";
+      session.logoutAt = new Date();
+      await session.save({ validateBeforeSave: false });
+
+      throw new Error("Account unavailable");
+    }
+
+    const role =
+      String(user.role || "user").toLowerCase() === "admin"
+        ? "admin"
+        : "user";
+
+    // Apply the appropriate idle timeout.
+    const idleTimeout =
+      role === "admin" ? this.adminIdleTimeout : this.idleTimeout;
+
+    const idleTime = Date.now() - session.lastActivity.getTime();
+
+    if (idleTime > idleTimeout) {
+      await session.logoutAt("inactive");
+      throw new Error("Session idle timeout");
+    }
+
+    // Generate tokens using the real database role.
+    const {
+      token: newToken,
+      refreshToken: newRefreshToken,
+    } = this.generateTokens(session.userId, role);
+
+    // Keep the database session expiry aligned with the refresh-token lifetime.
+    const refreshDuration =
+      role === "admin"
+        ? 7 * 24 * 60 * 60 * 1000
+        : 30 * 24 * 60 * 60 * 1000;
+
+    session.token = newToken;
+    session.refreshToken = newRefreshToken;
+    session.lastActivity = new Date();
+    session.expiresAt = new Date(Date.now() + refreshDuration);
+
+    await session.save();
+
+    console.log("✅ Session refreshed successfully:", {
+      sessionId: String(session._id),
+      userId: String(session.userId),
+      role,
+      expiresAt: session.expiresAt.toISOString(),
+    });
+
+    return {
+      valid: true,
+      token: newToken,
+      refreshToken: newRefreshToken,
+      expiresAt: session.expiresAt,
+      sessionId: session._id,
+      userId: session.userId,
+      role,
+      isAdmin: role === "admin",
+    };
+  } catch (error) {
+    console.error("❌ Session refresh error:", error.message);
+    throw error;
   }
+}
+
 validateSession = async (token, refreshToken) => {
     try {
       // 1. Check if token exists
