@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParentCategories } from "../../../hooks/useCategories"; 
 import { buildImageUrl } from "../../../utils/cloudinaryFrontend";
 import hamburgerMenu from '../../../assets/icons/hamburger_icon.svg';
-import SearchComponent from "../../../components/search/SearchComponent";
+// import SearchComponent from "../../../components/search/SearchComponent";
 // import SearchComponent from "E:/humais/Projects/Vorkana/frontend/src/components/search/SearchComponent.jsx";
 const Logo_URL = buildImageUrl({
   publicId: "gpepaqvupkzg17xso4b7",
@@ -269,12 +269,12 @@ useEffect(() => {
 
             {/* Desktop: Search */}
             <div className="hidden lg:flex items-center flex-1 max-w-lg xl:max-w-2xl 2xl:max-w-3xl mx-4 xl:mx-6 2xl:mx-8 h-full">
-              <div className="w-full">
+              {/* <div className="w-full">
                 <SearchComponent
                   placeholder="What service are you looking for today?"
                   className="w-full" 
                 />
-              </div>
+              </div> */}
             </div>
 
             {/* Right: Profile/Join Button (Mobile) - FIXED ALIGNMENT */}
@@ -646,14 +646,14 @@ useEffect(() => {
                     </div>
 
                     {/* Search in mobile menu */}
-                    <div className="mb-6">
+                    {/* <div className="mb-6">
                       <SearchComponent
                         placeholder="What service are you looking for?"
                         variant="full"
                         className="w-full"
                         onFocus={() => setMobileMenuOpen(false)}
                       />
-                    </div>
+                    </div> */}
 
                     {isAuthenticated && (
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
